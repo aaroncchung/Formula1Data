@@ -1,0 +1,23 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:80"
+
+  backend:
+    profiles:
+      - backend
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env.example
+    environment:
+      DATA_DIR: /app/data
+      FASTF1_CACHE_DIR: /app/data/cache/fastf1
+      CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - ./backend/data:/app/data
+

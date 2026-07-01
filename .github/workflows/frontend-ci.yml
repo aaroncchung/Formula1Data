@@ -1,0 +1,48 @@
+name: Frontend static build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate offline sample artifacts
+        run: python -m pipeline generate --sample
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build static export
+        working-directory: frontend
+        run: npm run build
+
+      - name: Upload static export
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-out
+          path: frontend/out
+

@@ -1,0 +1,180 @@
+{
+  "session_id": "2025-08-r",
+  "stints": [
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "VER",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 4,
+      "lap_count": 4
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "VER",
+      "stint": 2,
+      "compound": "HARD",
+      "start_lap": 5,
+      "end_lap": 8,
+      "lap_count": 4
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "LEC",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 5,
+      "lap_count": 5
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "LEC",
+      "stint": 2,
+      "compound": "HARD",
+      "start_lap": 6,
+      "end_lap": 8,
+      "lap_count": 3
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "NOR",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 6,
+      "lap_count": 6
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "NOR",
+      "stint": 2,
+      "compound": "HARD",
+      "start_lap": 7,
+      "end_lap": 8,
+      "lap_count": 2
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "HAM",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 7,
+      "lap_count": 7
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "HAM",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 8,
+      "end_lap": 8,
+      "lap_count": 1
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "ALO",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 8,
+      "lap_count": 8
+    }
+  ],
+  "compound_usage": {
+    "MEDIUM": 3,
+    "HARD": 5,
+    "SOFT": 1
+  },
+  "pit_stops": [
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "VER",
+      "lap_number": 4,
+      "duration_ms": 22600,
+      "local_time": "15:41:22"
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "LEC",
+      "lap_number": 5,
+      "duration_ms": 23100,
+      "local_time": "15:42:44"
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "NOR",
+      "lap_number": 6,
+      "duration_ms": 23500,
+      "local_time": "15:44:07"
+    },
+    {
+      "session_id": "2025-08-r",
+      "driver_code": "HAM",
+      "lap_number": 7,
+      "duration_ms": 22900,
+      "local_time": "15:45:28"
+    }
+  ],
+  "pit_loss_estimate_ms": 23025.0,
+  "undercut_overcut": [
+    {
+      "driver_code": "VER",
+      "stop_lap": 4,
+      "first_clean_lap_gain_ms": -3520,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "LEC",
+      "stop_lap": 5,
+      "first_clean_lap_gain_ms": -3260,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "NOR",
+      "stop_lap": 6,
+      "first_clean_lap_gain_ms": -3370,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "HAM",
+      "stop_lap": 7,
+      "first_clean_lap_gain_ms": -3420,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    }
+  ],
+  "race_control_overlays": [
+    {
+      "session_id": "2025-08-r",
+      "lap_number": 1,
+      "timestamp": "15:03:08",
+      "category": "Flag",
+      "message": "Track clear",
+      "flag": "GREEN",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-08-r",
+      "lap_number": 7,
+      "timestamp": "15:17:12",
+      "category": "Flag",
+      "message": "Yellow flag in sector 2",
+      "flag": "YELLOW",
+      "scope": "Sector 2"
+    },
+    {
+      "session_id": "2025-08-r",
+      "lap_number": 8,
+      "timestamp": "15:19:40",
+      "category": "Flag",
+      "message": "Green flag",
+      "flag": "GREEN",
+      "scope": "Track"
+    }
+  ],
+  "caveats": [
+    "Pit loss and undercut/overcut values are simple estimates until full race pace context is available."
+  ]
+}

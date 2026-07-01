@@ -1,0 +1,62 @@
+[
+  {
+    "driver_id": "ver",
+    "code": "VER",
+    "full_name": "Max Verstappen",
+    "number": 1,
+    "team": {
+      "team_id": "red-bull",
+      "name": "Red Bull Racing",
+      "color": "#3671C6"
+    },
+    "country": "Netherlands"
+  },
+  {
+    "driver_id": "lec",
+    "code": "LEC",
+    "full_name": "Charles Leclerc",
+    "number": 16,
+    "team": {
+      "team_id": "ferrari",
+      "name": "Ferrari",
+      "color": "#E80020"
+    },
+    "country": "Monaco"
+  },
+  {
+    "driver_id": "nor",
+    "code": "NOR",
+    "full_name": "Lando Norris",
+    "number": 4,
+    "team": {
+      "team_id": "mclaren",
+      "name": "McLaren",
+      "color": "#FF8000"
+    },
+    "country": "United Kingdom"
+  },
+  {
+    "driver_id": "ham",
+    "code": "HAM",
+    "full_name": "Lewis Hamilton",
+    "number": 44,
+    "team": {
+      "team_id": "mercedes",
+      "name": "Mercedes",
+      "color": "#27F4D2"
+    },
+    "country": "United Kingdom"
+  },
+  {
+    "driver_id": "alo",
+    "code": "ALO",
+    "full_name": "Fernando Alonso",
+    "number": 14,
+    "team": {
+      "team_id": "aston-martin",
+      "name": "Aston Martin",
+      "color": "#229971"
+    },
+    "country": "Spain"
+  }
+]

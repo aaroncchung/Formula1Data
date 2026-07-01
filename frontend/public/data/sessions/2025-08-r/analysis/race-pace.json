@@ -1,0 +1,154 @@
+{
+  "session_id": "2025-08-r",
+  "drivers": [
+    {
+      "driver_code": "VER",
+      "compound": "HARD",
+      "stint": null,
+      "median_lap_ms": 77740.0,
+      "mean_lap_ms": 77770.0,
+      "trimmed_mean_lap_ms": 77773.33333333333,
+      "fastest_clean_lap_ms": 77420,
+      "lap_count": 5,
+      "gap_to_best_ms": 0.0
+    },
+    {
+      "driver_code": "LEC",
+      "compound": "MEDIUM",
+      "stint": null,
+      "median_lap_ms": 78140.0,
+      "mean_lap_ms": 78248.0,
+      "trimmed_mean_lap_ms": 78143.33333333333,
+      "fastest_clean_lap_ms": 77830,
+      "lap_count": 5,
+      "gap_to_best_ms": 400.0
+    },
+    {
+      "driver_code": "NOR",
+      "compound": "MEDIUM",
+      "stint": null,
+      "median_lap_ms": 78640.0,
+      "mean_lap_ms": 78634.0,
+      "trimmed_mean_lap_ms": 78613.33333333333,
+      "fastest_clean_lap_ms": 78220,
+      "lap_count": 5,
+      "gap_to_best_ms": 900.0
+    },
+    {
+      "driver_code": "HAM",
+      "compound": "HARD",
+      "stint": null,
+      "median_lap_ms": 79010.0,
+      "mean_lap_ms": 79094.0,
+      "trimmed_mean_lap_ms": 79070.0,
+      "fastest_clean_lap_ms": 78790,
+      "lap_count": 5,
+      "gap_to_best_ms": 1270.0
+    },
+    {
+      "driver_code": "ALO",
+      "compound": "HARD",
+      "stint": null,
+      "median_lap_ms": 79600.0,
+      "mean_lap_ms": 79581.42857142857,
+      "trimmed_mean_lap_ms": 79576.0,
+      "fastest_clean_lap_ms": 79080,
+      "lap_count": 7,
+      "gap_to_best_ms": 1860.0
+    }
+  ],
+  "stints": [
+    {
+      "driver_code": "VER",
+      "compound": "HARD",
+      "stint": 2,
+      "median_lap_ms": 77600.0,
+      "mean_lap_ms": 77586.66666666667,
+      "trimmed_mean_lap_ms": 77586.66666666667,
+      "fastest_clean_lap_ms": 77420,
+      "lap_count": 3,
+      "gap_to_best_ms": 0.0
+    },
+    {
+      "driver_code": "LEC",
+      "compound": "HARD",
+      "stint": 2,
+      "median_lap_ms": 77900.0,
+      "mean_lap_ms": 77900.0,
+      "trimmed_mean_lap_ms": 77900.0,
+      "fastest_clean_lap_ms": 77830,
+      "lap_count": 2,
+      "gap_to_best_ms": 300.0
+    },
+    {
+      "driver_code": "VER",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "median_lap_ms": 78045.0,
+      "mean_lap_ms": 78045.0,
+      "trimmed_mean_lap_ms": 78045.0,
+      "fastest_clean_lap_ms": 77980,
+      "lap_count": 2,
+      "gap_to_best_ms": 445.0
+    },
+    {
+      "driver_code": "NOR",
+      "compound": "HARD",
+      "stint": 2,
+      "median_lap_ms": 78220.0,
+      "mean_lap_ms": 78220.0,
+      "trimmed_mean_lap_ms": 78220.0,
+      "fastest_clean_lap_ms": 78220,
+      "lap_count": 1,
+      "gap_to_best_ms": 620.0
+    },
+    {
+      "driver_code": "LEC",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "median_lap_ms": 78320.0,
+      "mean_lap_ms": 78480.0,
+      "trimmed_mean_lap_ms": 78480.0,
+      "fastest_clean_lap_ms": 78140,
+      "lap_count": 3,
+      "gap_to_best_ms": 720.0
+    },
+    {
+      "driver_code": "NOR",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "median_lap_ms": 78675.0,
+      "mean_lap_ms": 78737.5,
+      "trimmed_mean_lap_ms": 78675.0,
+      "fastest_clean_lap_ms": 78490,
+      "lap_count": 4,
+      "gap_to_best_ms": 1075.0
+    },
+    {
+      "driver_code": "HAM",
+      "compound": "HARD",
+      "stint": 1,
+      "median_lap_ms": 79010.0,
+      "mean_lap_ms": 79094.0,
+      "trimmed_mean_lap_ms": 79070.0,
+      "fastest_clean_lap_ms": 78790,
+      "lap_count": 5,
+      "gap_to_best_ms": 1410.0
+    },
+    {
+      "driver_code": "ALO",
+      "compound": "HARD",
+      "stint": 1,
+      "median_lap_ms": 79600.0,
+      "mean_lap_ms": 79581.42857142857,
+      "trimmed_mean_lap_ms": 79576.0,
+      "fastest_clean_lap_ms": 79080,
+      "lap_count": 7,
+      "gap_to_best_ms": 2000.0
+    }
+  ],
+  "caveats": [
+    "Lap 1, pit-in, pit-out, deleted, inaccurate, safety car, VSC, and red flag laps are excluded.",
+    "Excluded 13 laps from the pace sample."
+  ]
+}

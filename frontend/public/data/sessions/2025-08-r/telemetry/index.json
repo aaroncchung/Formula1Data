@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-01T20:09:35.802575+00:00",
+  "session_id": "2025-08-r",
+  "max_samples_per_lap": 300,
+  "laps": [
+    {
+      "driver_code": "LEC",
+      "lap_number": 7,
+      "path": "telemetry/lec-lap-7.json",
+      "sample_count": 10,
+      "raw_sample_count": 10,
+      "size_bytes": 2950
+    },
+    {
+      "driver_code": "VER",
+      "lap_number": 6,
+      "path": "telemetry/ver-lap-6.json",
+      "sample_count": 10,
+      "raw_sample_count": 10,
+      "size_bytes": 2950
+    }
+  ]
+}

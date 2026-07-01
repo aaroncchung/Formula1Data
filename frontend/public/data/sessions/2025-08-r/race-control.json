@@ -1,0 +1,29 @@
+[
+  {
+    "session_id": "2025-08-r",
+    "lap_number": 1,
+    "timestamp": "15:03:08",
+    "category": "Flag",
+    "message": "Track clear",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-08-r",
+    "lap_number": 7,
+    "timestamp": "15:17:12",
+    "category": "Flag",
+    "message": "Yellow flag in sector 2",
+    "flag": "YELLOW",
+    "scope": "Sector 2"
+  },
+  {
+    "session_id": "2025-08-r",
+    "lap_number": 8,
+    "timestamp": "15:19:40",
+    "category": "Flag",
+    "message": "Green flag",
+    "flag": "GREEN",
+    "scope": "Track"
+  }
+]

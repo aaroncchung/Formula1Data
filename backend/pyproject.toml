@@ -1,0 +1,15 @@
+[project]
+name = "formula-1-data-backend"
+version = "0.1.0"
+description = "FastAPI backend for personal Formula 1 analytics."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+

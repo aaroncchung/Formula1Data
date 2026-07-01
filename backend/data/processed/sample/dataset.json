@@ -1,0 +1,220 @@
+{
+  "seasons": [
+    {
+      "year": 2025,
+      "meeting_count": 24,
+      "ingested_meeting_count": 1,
+      "is_sample": true
+    }
+  ],
+  "meetings": [
+    {
+      "meeting_id": "2025-08-monaco",
+      "year": 2025,
+      "round": 8,
+      "name": "Monaco Grand Prix",
+      "official_name": "Formula 1 Grand Prix de Monaco 2025",
+      "circuit": {
+        "circuit_id": "monaco",
+        "name": "Circuit de Monaco",
+        "country": "Monaco",
+        "location": "Monte Carlo",
+        "latitude": 43.7347,
+        "longitude": 7.4206
+      },
+      "start_date": "2025-05-25",
+      "country": "Monaco",
+      "sessions_available": ["FP1", "FP2", "FP3", "Q", "R"],
+      "is_ingested": true,
+      "is_sample": true
+    }
+  ],
+  "sessions": [
+    {
+      "session_id": "2025-08-r",
+      "year": 2025,
+      "round": 8,
+      "meeting_id": "2025-08-monaco",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2025-05-25T13:00:00+00:00",
+      "end_time": "2025-05-25T14:45:00+00:00",
+      "status": "sample",
+      "is_sample": true
+    }
+  ],
+  "session_data": {
+    "2025-08-r": {
+      "summary": {
+        "session_id": "2025-08-r",
+        "meeting": "Monaco Grand Prix",
+        "session": "Race",
+        "year": 2025,
+        "round": 8,
+        "circuit": "Circuit de Monaco",
+        "country": "Monaco",
+        "driver_count": 5,
+        "lap_count": 40,
+        "weather_summary": "Dry, track temp rising from 41C to 44C",
+        "is_sample": true,
+        "available_sections": [
+          "drivers",
+          "laps",
+          "results",
+          "stints",
+          "pit_stops",
+          "weather",
+          "race_control",
+          "telemetry"
+        ]
+      },
+      "drivers": [
+        {
+          "driver_id": "ver",
+          "code": "VER",
+          "full_name": "Max Verstappen",
+          "number": 1,
+          "team": {"team_id": "red-bull", "name": "Red Bull Racing", "color": "#3671C6"},
+          "country": "Netherlands"
+        },
+        {
+          "driver_id": "lec",
+          "code": "LEC",
+          "full_name": "Charles Leclerc",
+          "number": 16,
+          "team": {"team_id": "ferrari", "name": "Ferrari", "color": "#E80020"},
+          "country": "Monaco"
+        },
+        {
+          "driver_id": "nor",
+          "code": "NOR",
+          "full_name": "Lando Norris",
+          "number": 4,
+          "team": {"team_id": "mclaren", "name": "McLaren", "color": "#FF8000"},
+          "country": "United Kingdom"
+        },
+        {
+          "driver_id": "ham",
+          "code": "HAM",
+          "full_name": "Lewis Hamilton",
+          "number": 44,
+          "team": {"team_id": "mercedes", "name": "Mercedes", "color": "#27F4D2"},
+          "country": "United Kingdom"
+        },
+        {
+          "driver_id": "alo",
+          "code": "ALO",
+          "full_name": "Fernando Alonso",
+          "number": 14,
+          "team": {"team_id": "aston-martin", "name": "Aston Martin", "color": "#229971"},
+          "country": "Spain"
+        }
+      ],
+      "laps": [
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 1, "lap_time_ms": 84620, "sector_1_ms": 19980, "sector_2_ms": 37120, "sector_3_ms": 27520, "compound": "MEDIUM", "tyre_age": 1, "stint": 1, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 2, "lap_time_ms": 78110, "sector_1_ms": 18450, "sector_2_ms": 33820, "sector_3_ms": 25840, "compound": "MEDIUM", "tyre_age": 2, "stint": 1, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 3, "lap_time_ms": 77980, "sector_1_ms": 18400, "sector_2_ms": 33750, "sector_3_ms": 25830, "compound": "MEDIUM", "tyre_age": 3, "stint": 1, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 4, "lap_time_ms": 83340, "sector_1_ms": 18770, "sector_2_ms": 36650, "sector_3_ms": 27920, "compound": "MEDIUM", "tyre_age": 4, "stint": 1, "position": 1, "is_pit_in_lap": true, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 5, "lap_time_ms": 81500, "sector_1_ms": 19700, "sector_2_ms": 34880, "sector_3_ms": 26920, "compound": "HARD", "tyre_age": 1, "stint": 2, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": true, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "lap_time_ms": 77420, "sector_1_ms": 18320, "sector_2_ms": 33480, "sector_3_ms": 25620, "compound": "HARD", "tyre_age": 2, "stint": 2, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 7, "lap_time_ms": 77600, "sector_1_ms": 18390, "sector_2_ms": 33580, "sector_3_ms": 25630, "compound": "HARD", "tyre_age": 3, "stint": 2, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 8, "lap_time_ms": 77740, "sector_1_ms": 18430, "sector_2_ms": 33640, "sector_3_ms": 25670, "compound": "HARD", "tyre_age": 4, "stint": 2, "position": 1, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 1, "lap_time_ms": 85040, "sector_1_ms": 20030, "sector_2_ms": 37360, "sector_3_ms": 27650, "compound": "MEDIUM", "tyre_age": 1, "stint": 1, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 2, "lap_time_ms": 78320, "sector_1_ms": 18490, "sector_2_ms": 33990, "sector_3_ms": 25840, "compound": "MEDIUM", "tyre_age": 2, "stint": 1, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 3, "lap_time_ms": 78140, "sector_1_ms": 18480, "sector_2_ms": 33820, "sector_3_ms": 25840, "compound": "MEDIUM", "tyre_age": 3, "stint": 1, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 4, "lap_time_ms": 78980, "sector_1_ms": 18610, "sector_2_ms": 34290, "sector_3_ms": 26080, "compound": "MEDIUM", "tyre_age": 4, "stint": 1, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 5, "lap_time_ms": 84990, "sector_1_ms": 19080, "sector_2_ms": 37210, "sector_3_ms": 28700, "compound": "MEDIUM", "tyre_age": 5, "stint": 1, "position": 2, "is_pit_in_lap": true, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 6, "lap_time_ms": 82240, "sector_1_ms": 19910, "sector_2_ms": 35260, "sector_3_ms": 27070, "compound": "HARD", "tyre_age": 1, "stint": 2, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": true, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "lap_time_ms": 77830, "sector_1_ms": 18430, "sector_2_ms": 33610, "sector_3_ms": 25790, "compound": "HARD", "tyre_age": 2, "stint": 2, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 8, "lap_time_ms": 77970, "sector_1_ms": 18480, "sector_2_ms": 33680, "sector_3_ms": 25810, "compound": "HARD", "tyre_age": 3, "stint": 2, "position": 2, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 1, "lap_time_ms": 85620, "sector_1_ms": 20160, "sector_2_ms": 37470, "sector_3_ms": 27990, "compound": "MEDIUM", "tyre_age": 1, "stint": 1, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 2, "lap_time_ms": 78640, "sector_1_ms": 18520, "sector_2_ms": 34100, "sector_3_ms": 26020, "compound": "MEDIUM", "tyre_age": 2, "stint": 1, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 3, "lap_time_ms": 78490, "sector_1_ms": 18500, "sector_2_ms": 33990, "sector_3_ms": 26000, "compound": "MEDIUM", "tyre_age": 3, "stint": 1, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 4, "lap_time_ms": 78710, "sector_1_ms": 18590, "sector_2_ms": 34060, "sector_3_ms": 26060, "compound": "MEDIUM", "tyre_age": 4, "stint": 1, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 5, "lap_time_ms": 79110, "sector_1_ms": 18680, "sector_2_ms": 34260, "sector_3_ms": 26170, "compound": "MEDIUM", "tyre_age": 5, "stint": 1, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 6, "lap_time_ms": 85120, "sector_1_ms": 19120, "sector_2_ms": 37240, "sector_3_ms": 28760, "compound": "MEDIUM", "tyre_age": 6, "stint": 1, "position": 3, "is_pit_in_lap": true, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 7, "lap_time_ms": 82480, "sector_1_ms": 19990, "sector_2_ms": 35340, "sector_3_ms": 27150, "compound": "HARD", "tyre_age": 1, "stint": 2, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": true, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 8, "lap_time_ms": 78220, "sector_1_ms": 18510, "sector_2_ms": 33790, "sector_3_ms": 25920, "compound": "HARD", "tyre_age": 2, "stint": 2, "position": 3, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 1, "lap_time_ms": 86020, "sector_1_ms": 20220, "sector_2_ms": 37760, "sector_3_ms": 28040, "compound": "HARD", "tyre_age": 1, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 2, "lap_time_ms": 78920, "sector_1_ms": 18620, "sector_2_ms": 34230, "sector_3_ms": 26070, "compound": "HARD", "tyre_age": 2, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 3, "lap_time_ms": 78790, "sector_1_ms": 18580, "sector_2_ms": 34170, "sector_3_ms": 26040, "compound": "HARD", "tyre_age": 3, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 4, "lap_time_ms": 79010, "sector_1_ms": 18650, "sector_2_ms": 34260, "sector_3_ms": 26100, "compound": "HARD", "tyre_age": 4, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 5, "lap_time_ms": 79280, "sector_1_ms": 18730, "sector_2_ms": 34400, "sector_3_ms": 26150, "compound": "HARD", "tyre_age": 5, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 6, "lap_time_ms": 79470, "sector_1_ms": 18780, "sector_2_ms": 34480, "sector_3_ms": 26210, "compound": "HARD", "tyre_age": 6, "stint": 1, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 7, "lap_time_ms": 86200, "sector_1_ms": 19360, "sector_2_ms": 37590, "sector_3_ms": 29250, "compound": "HARD", "tyre_age": 7, "stint": 1, "position": 4, "is_pit_in_lap": true, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 8, "lap_time_ms": 82890, "sector_1_ms": 20100, "sector_2_ms": 35530, "sector_3_ms": 27260, "compound": "SOFT", "tyre_age": 1, "stint": 2, "position": 4, "is_pit_in_lap": false, "is_pit_out_lap": true, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 1, "lap_time_ms": 86440, "sector_1_ms": 20350, "sector_2_ms": 37920, "sector_3_ms": 28170, "compound": "HARD", "tyre_age": 1, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 2, "lap_time_ms": 79230, "sector_1_ms": 18710, "sector_2_ms": 34390, "sector_3_ms": 26130, "compound": "HARD", "tyre_age": 2, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 3, "lap_time_ms": 79080, "sector_1_ms": 18680, "sector_2_ms": 34310, "sector_3_ms": 26090, "compound": "HARD", "tyre_age": 3, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 4, "lap_time_ms": 79320, "sector_1_ms": 18740, "sector_2_ms": 34420, "sector_3_ms": 26160, "compound": "HARD", "tyre_age": 4, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 5, "lap_time_ms": 79600, "sector_1_ms": 18820, "sector_2_ms": 34560, "sector_3_ms": 26220, "compound": "HARD", "tyre_age": 5, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 6, "lap_time_ms": 79820, "sector_1_ms": 18880, "sector_2_ms": 34650, "sector_3_ms": 26290, "compound": "HARD", "tyre_age": 6, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 7, "lap_time_ms": 80110, "sector_1_ms": 18960, "sector_2_ms": 34770, "sector_3_ms": 26380, "compound": "HARD", "tyre_age": 7, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "YELLOW"},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "lap_number": 8, "lap_time_ms": 79910, "sector_1_ms": 18890, "sector_2_ms": 34680, "sector_3_ms": 26340, "compound": "HARD", "tyre_age": 8, "stint": 1, "position": 5, "is_pit_in_lap": false, "is_pit_out_lap": false, "is_deleted": false, "is_accurate": true, "track_status": "GREEN"}
+      ],
+      "stints": [
+        {"session_id": "2025-08-r", "driver_code": "VER", "stint": 1, "compound": "MEDIUM", "start_lap": 1, "end_lap": 4, "lap_count": 4},
+        {"session_id": "2025-08-r", "driver_code": "VER", "stint": 2, "compound": "HARD", "start_lap": 5, "end_lap": 8, "lap_count": 4},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "stint": 1, "compound": "MEDIUM", "start_lap": 1, "end_lap": 5, "lap_count": 5},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "stint": 2, "compound": "HARD", "start_lap": 6, "end_lap": 8, "lap_count": 3},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "stint": 1, "compound": "MEDIUM", "start_lap": 1, "end_lap": 6, "lap_count": 6},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "stint": 2, "compound": "HARD", "start_lap": 7, "end_lap": 8, "lap_count": 2},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "stint": 1, "compound": "HARD", "start_lap": 1, "end_lap": 7, "lap_count": 7},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "stint": 2, "compound": "SOFT", "start_lap": 8, "end_lap": 8, "lap_count": 1},
+        {"session_id": "2025-08-r", "driver_code": "ALO", "stint": 1, "compound": "HARD", "start_lap": 1, "end_lap": 8, "lap_count": 8}
+      ],
+      "pit_stops": [
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 4, "duration_ms": 22600, "local_time": "15:41:22"},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 5, "duration_ms": 23100, "local_time": "15:42:44"},
+        {"session_id": "2025-08-r", "driver_code": "NOR", "lap_number": 6, "duration_ms": 23500, "local_time": "15:44:07"},
+        {"session_id": "2025-08-r", "driver_code": "HAM", "lap_number": 7, "duration_ms": 22900, "local_time": "15:45:28"}
+      ],
+      "weather": [
+        {"session_id": "2025-08-r", "lap_number": 1, "timestamp": "15:03:00", "air_temp_c": 25.2, "track_temp_c": 41.0, "humidity_pct": 58.0, "rainfall": false, "wind_speed_kph": 9.0},
+        {"session_id": "2025-08-r", "lap_number": 3, "timestamp": "15:07:00", "air_temp_c": 25.4, "track_temp_c": 42.1, "humidity_pct": 56.0, "rainfall": false, "wind_speed_kph": 10.0},
+        {"session_id": "2025-08-r", "lap_number": 5, "timestamp": "15:12:00", "air_temp_c": 25.7, "track_temp_c": 43.2, "humidity_pct": 55.0, "rainfall": false, "wind_speed_kph": 11.0},
+        {"session_id": "2025-08-r", "lap_number": 8, "timestamp": "15:19:00", "air_temp_c": 26.0, "track_temp_c": 44.0, "humidity_pct": 53.0, "rainfall": false, "wind_speed_kph": 12.0}
+      ],
+      "race_control": [
+        {"session_id": "2025-08-r", "lap_number": 1, "timestamp": "15:03:08", "category": "Flag", "message": "Track clear", "flag": "GREEN", "scope": "Track"},
+        {"session_id": "2025-08-r", "lap_number": 7, "timestamp": "15:17:12", "category": "Flag", "message": "Yellow flag in sector 2", "flag": "YELLOW", "scope": "Sector 2"},
+        {"session_id": "2025-08-r", "lap_number": 8, "timestamp": "15:19:40", "category": "Flag", "message": "Green flag", "flag": "GREEN", "scope": "Track"}
+      ],
+      "results": [
+        {"session_id": "2025-08-r", "position": 1, "driver_code": "VER", "classified_position": "1", "status": "Finished", "points": 25, "grid": 1, "gap": "Winner", "laps": 8},
+        {"session_id": "2025-08-r", "position": 2, "driver_code": "LEC", "classified_position": "2", "status": "Finished", "points": 18, "grid": 2, "gap": "+1.8s", "laps": 8},
+        {"session_id": "2025-08-r", "position": 3, "driver_code": "NOR", "classified_position": "3", "status": "Finished", "points": 15, "grid": 3, "gap": "+4.9s", "laps": 8},
+        {"session_id": "2025-08-r", "position": 4, "driver_code": "HAM", "classified_position": "4", "status": "Finished", "points": 12, "grid": 5, "gap": "+8.2s", "laps": 8},
+        {"session_id": "2025-08-r", "position": 5, "driver_code": "ALO", "classified_position": "5", "status": "Finished", "points": 10, "grid": 4, "gap": "+10.1s", "laps": 8}
+      ],
+      "telemetry": [
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 0, "speed_kph": 102, "throttle_pct": 74, "brake": false, "rpm": 10600, "gear": 3, "drs": 0, "x": 0, "y": 0, "relative_time_ms": 0},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 300, "speed_kph": 214, "throttle_pct": 100, "brake": false, "rpm": 11800, "gear": 7, "drs": 0, "x": 280, "y": 40, "relative_time_ms": 5300},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 620, "speed_kph": 88, "throttle_pct": 18, "brake": true, "rpm": 9300, "gear": 2, "drs": 0, "x": 420, "y": 190, "relative_time_ms": 12600},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 980, "speed_kph": 154, "throttle_pct": 92, "brake": false, "rpm": 11100, "gear": 5, "drs": 0, "x": 260, "y": 360, "relative_time_ms": 20600},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 1320, "speed_kph": 188, "throttle_pct": 98, "brake": false, "rpm": 11600, "gear": 6, "drs": 0, "x": 20, "y": 340, "relative_time_ms": 29100},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 1660, "speed_kph": 111, "throttle_pct": 28, "brake": true, "rpm": 9800, "gear": 3, "drs": 0, "x": -90, "y": 150, "relative_time_ms": 38100},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 2030, "speed_kph": 231, "throttle_pct": 100, "brake": false, "rpm": 12000, "gear": 8, "drs": 0, "x": -40, "y": -70, "relative_time_ms": 48200},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 2340, "speed_kph": 97, "throttle_pct": 22, "brake": true, "rpm": 9100, "gear": 2, "drs": 0, "x": 120, "y": -160, "relative_time_ms": 57100},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 2600, "speed_kph": 146, "throttle_pct": 86, "brake": false, "rpm": 10800, "gear": 4, "drs": 0, "x": 260, "y": -80, "relative_time_ms": 65200},
+        {"session_id": "2025-08-r", "driver_code": "VER", "lap_number": 6, "distance_m": 3337, "speed_kph": 198, "throttle_pct": 100, "brake": false, "rpm": 11700, "gear": 7, "drs": 0, "x": 0, "y": 0, "relative_time_ms": 77420},
+
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 0, "speed_kph": 100, "throttle_pct": 72, "brake": false, "rpm": 10500, "gear": 3, "drs": 0, "x": 0, "y": 0, "relative_time_ms": 0},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 300, "speed_kph": 211, "throttle_pct": 100, "brake": false, "rpm": 11720, "gear": 7, "drs": 0, "x": 276, "y": 42, "relative_time_ms": 5450},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 620, "speed_kph": 89, "throttle_pct": 19, "brake": true, "rpm": 9340, "gear": 2, "drs": 0, "x": 418, "y": 188, "relative_time_ms": 12780},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 980, "speed_kph": 152, "throttle_pct": 90, "brake": false, "rpm": 11050, "gear": 5, "drs": 0, "x": 258, "y": 358, "relative_time_ms": 20820},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 1320, "speed_kph": 185, "throttle_pct": 97, "brake": false, "rpm": 11520, "gear": 6, "drs": 0, "x": 22, "y": 342, "relative_time_ms": 29360},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 1660, "speed_kph": 109, "throttle_pct": 27, "brake": true, "rpm": 9720, "gear": 3, "drs": 0, "x": -88, "y": 150, "relative_time_ms": 38490},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 2030, "speed_kph": 228, "throttle_pct": 100, "brake": false, "rpm": 11910, "gear": 8, "drs": 0, "x": -42, "y": -68, "relative_time_ms": 48600},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 2340, "speed_kph": 96, "throttle_pct": 21, "brake": true, "rpm": 9080, "gear": 2, "drs": 0, "x": 118, "y": -158, "relative_time_ms": 57520},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 2600, "speed_kph": 144, "throttle_pct": 84, "brake": false, "rpm": 10760, "gear": 4, "drs": 0, "x": 258, "y": -78, "relative_time_ms": 65720},
+        {"session_id": "2025-08-r", "driver_code": "LEC", "lap_number": 7, "distance_m": 3337, "speed_kph": 196, "throttle_pct": 100, "brake": false, "rpm": 11660, "gear": 7, "drs": 0, "x": 0, "y": 0, "relative_time_ms": 77830}
+      ]
+    }
+  }
+}
+
