@@ -8,11 +8,12 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
-import { api, dynamicApi, isApiFailure, safeApi } from "@/lib/api";
+import { api, dynamicApi, dynamicApiSourceLabel, isApiFailure, isDynamicApiRouteMissing, safeApi } from "@/lib/api";
 import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
 
 type LoadState =
   | { state: "idle" | "loading" }
+  | { state: "static-only"; detail: string }
   | { state: "error"; error: ApiErrorPayload }
   | { state: "ready"; status: SessionStatusResponse };
 
@@ -51,6 +52,14 @@ export function SessionIngestionPanel({
       setStatusState({ state: "ready", status });
       return status;
     } catch (error) {
+      if (isDynamicApiRouteMissing(error)) {
+        setStatusState({
+          state: "static-only",
+          detail:
+            "This deployment is serving committed static JSON artifacts only. On-demand ingestion requires the Cloudflare Worker API."
+        });
+        return null;
+      }
       setStatusState({ state: "error", error: apiError(error) });
       return null;
     }
@@ -172,6 +181,9 @@ export function SessionIngestionPanel({
   }, [dashboardState.state, loadDashboard, status]);
 
   const queueLabel = useMemo(() => {
+    if (statusState.state === "static-only") {
+      return "Worker API required";
+    }
     if (status?.status === "failed") {
       return "Retry ingestion";
     }
@@ -179,9 +191,13 @@ export function SessionIngestionPanel({
       return "Refresh status";
     }
     return "Queue ingestion";
-  }, [status?.status]);
+  }, [status?.status, statusState.state]);
 
   async function queueIngestion(force = false) {
+    if (statusState.state === "static-only") {
+      await loadStatus();
+      return;
+    }
     if (status?.status === "queued" || status?.status === "ingesting") {
       await loadStatus();
       return;
@@ -223,7 +239,11 @@ export function SessionIngestionPanel({
     <div className="space-y-5">
       <ChartPanel
         title={`${year} Round ${round} ${session.toUpperCase()}`}
-        description="This static page can queue on-demand ingestion through the Cloudflare API layer."
+        description={
+          statusState.state === "static-only"
+            ? "This page can show committed artifacts, but queueing a new ingestion job needs the dynamic API."
+            : "This static page can queue on-demand ingestion through the Cloudflare API layer."
+        }
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <StatusBadge statusState={statusState} />
@@ -235,13 +255,13 @@ export function SessionIngestionPanel({
               disabled={statusState.state === "loading"}
             >
               <RefreshCw size={16} />
-              Refresh
+              {statusState.state === "static-only" ? "Check API" : "Refresh"}
             </button>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded border border-aqua/40 bg-aqua/10 px-3 py-2 text-sm font-semibold text-white hover:border-aqua disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded border border-aqua/40 bg-aqua/10 px-3 py-2 text-sm font-semibold text-white hover:border-aqua disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => void queueIngestion(status?.status === "failed")}
-              disabled={isQueueing}
+              disabled={isQueueing || statusState.state === "static-only"}
             >
               {status?.status === "failed" ? <RotateCcw size={16} /> : <Play size={16} />}
               {queueLabel}
@@ -259,6 +279,14 @@ export function SessionIngestionPanel({
         {statusState.state === "error" ? (
           <div className="mt-4">
             <ErrorState title="Dynamic ingestion API unavailable" detail={statusState.error.message} />
+          </div>
+        ) : null}
+        {statusState.state === "static-only" ? (
+          <div className="mt-4">
+            <EmptyState
+              title="Static-only deployment"
+              detail={`${statusState.detail} Historical browsing does not need a backend; it reads the committed files under /data. Dynamic API target checked: ${dynamicApiSourceLabel()}.`}
+            />
           </div>
         ) : null}
         {dashboardState.state === "loading" ? (
@@ -293,6 +321,14 @@ function StatusBadge({ statusState }: { statusState: LoadState }) {
       <div className="inline-flex items-center gap-2 text-sm font-semibold text-amber">
         <AlertTriangle size={16} />
         API unavailable
+      </div>
+    );
+  }
+  if (statusState.state === "static-only") {
+    return (
+      <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300">
+        <AlertTriangle size={16} />
+        Static-only mode
       </div>
     );
   }

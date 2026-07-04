@@ -34,6 +34,23 @@ export function dynamicApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_DYNAMIC_API_BASE_URL || DEFAULT_DYNAMIC_API_BASE_PATH;
 }
 
+export function dynamicApiSourceLabel(): string {
+  return dynamicApiBaseUrl() || "same-origin /api";
+}
+
+export function isDynamicApiUnavailable(error: unknown): error is ApiClientError {
+  return error instanceof ApiClientError && error.payload.code === "dynamic_api_unavailable";
+}
+
+export function isDynamicApiRouteMissing(error: unknown): boolean {
+  return (
+    isDynamicApiUnavailable(error) &&
+    typeof error.payload.details === "object" &&
+    error.payload.details !== null &&
+    error.payload.details.reason === "missing_route"
+  );
+}
+
 async function readBrowserArtifact<T>(path: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -114,26 +131,36 @@ async function readDynamicJson<T>(path: string, init: RequestInit = {}): Promise
         ...(init.headers || {})
       }
     });
-    const payload = await readResponseJson(response);
+    const payload = await readResponsePayload(response);
     if (!response.ok) {
+      const unavailable = isMissingDynamicRoute(response, payload);
       const errorPayload = {
-        code: payloadCode(payload),
-        message: payloadMessage(payload, response.statusText),
-        details: typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : null
+        code: unavailable ? "dynamic_api_unavailable" : payloadCode(payload.value),
+        message: unavailable
+          ? "Dynamic API routes are not configured for this deployment."
+          : payloadMessage(payload.value, response.statusText),
+        details: dynamicErrorDetails(path, source, response, payload.value, unavailable ? "missing_route" : undefined)
       };
       throw new ApiClientError(errorPayload.message, errorPayload, source || "same-origin");
     }
-    return payload as T;
+    return payload.value as T;
   } catch (error) {
     if (error instanceof ApiClientError) {
       throw error;
     }
     throw new ApiClientError(
-      "Dynamic API is unavailable",
+      "Dynamic API is unavailable from this deployment.",
       {
         code: "dynamic_api_unavailable",
-        message: error instanceof Error ? error.message : "Dynamic API is unavailable",
-        details: { path, source: source || "same-origin" }
+        message:
+          error instanceof DOMException && error.name === "AbortError"
+            ? "Dynamic API request timed out."
+            : "Dynamic API is unavailable from this deployment.",
+        details: {
+          path,
+          source: source || "same-origin",
+          reason: error instanceof DOMException && error.name === "AbortError" ? "timeout" : "request_failed"
+        }
       },
       source || "same-origin"
     );
@@ -142,16 +169,51 @@ async function readDynamicJson<T>(path: string, init: RequestInit = {}): Promise
   }
 }
 
-async function readResponseJson(response: Response): Promise<unknown> {
+type ResponsePayload = {
+  value: unknown;
+  isJson: boolean;
+};
+
+async function readResponsePayload(response: Response): Promise<ResponsePayload> {
   const text = await response.text();
   if (!text) {
-    return {};
+    return { value: {}, isJson: false };
   }
   try {
-    return JSON.parse(text);
+    return { value: JSON.parse(text), isJson: true };
   } catch {
-    return { message: text };
+    return {
+      value: {
+        message: response.statusText || "Dynamic API request failed"
+      },
+      isJson: false
+    };
   }
+}
+
+function isMissingDynamicRoute(response: Response, payload: ResponsePayload): boolean {
+  return response.status === 404 && !payload.isJson;
+}
+
+function dynamicErrorDetails(
+  path: string,
+  source: string,
+  response: Response,
+  payload: unknown,
+  reason?: string
+): Record<string, unknown> | null {
+  const details: Record<string, unknown> = {
+    path,
+    source: source || "same-origin",
+    status: response.status
+  };
+  if (reason) {
+    details.reason = reason;
+  }
+  if (typeof payload === "object" && payload !== null) {
+    details.payload = payload;
+  }
+  return details;
 }
 
 function payloadCode(payload: unknown): string {

@@ -4,7 +4,10 @@ import { LiveDataPanel } from "@/components/live/LiveDataPanel";
 export default async function LivePage() {
   return (
     <div>
-      <PageHeader title="Live" description="OpenF1 live data through the server-side Cloudflare Worker proxy." />
+      <PageHeader
+        title="Live"
+        description="Live timing uses the optional Cloudflare Worker API. Static-only deployments keep historical browsing available from committed JSON artifacts."
+      />
       <LiveDataPanel />
     </div>
   );
