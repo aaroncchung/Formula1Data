@@ -1,0 +1,86 @@
+name: Process ingestion job
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Cloudflare Queue message JSON"
+        required: true
+      force:
+        description: "Force FastF1 reingestion"
+        required: false
+        type: boolean
+        default: false
+  repository_dispatch:
+    types:
+      - ingest_session
+
+permissions:
+  contents: read
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    env:
+      R2_BUCKET: ${{ vars.R2_BUCKET || 'formula-1-data-artifacts' }}
+      WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+      INGESTION_API_TOKEN: ${{ secrets.INGESTION_API_TOKEN }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@latest
+
+      - name: Install ingestion dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+
+      - name: Write queue message
+        env:
+          WORKFLOW_MESSAGE: ${{ inputs.message }}
+          DISPATCH_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            printf '%s' "$DISPATCH_PAYLOAD" > message.json
+          else
+            printf '%s' "$WORKFLOW_MESSAGE" > message.json
+          fi
+          python -m json.tool message.json > /dev/null
+
+      - name: Process ingestion job
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          FORCE_FLAG=""
+          if [ "$FORCE" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+
+          python -m pipeline process-queue \
+            --message-file message.json \
+            --artifact-destination r2 \
+            --r2-bucket "$R2_BUCKET" \
+            --callback-url "$WORKER_BASE_URL" \
+            --callback-token "$INGESTION_API_TOKEN" \
+            $FORCE_FLAG
+
+      - name: Upload generated data snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-data
+          path: frontend/public/data
