@@ -363,7 +363,7 @@ function liveDisabled(): LiveDisabledResponse {
     reason: "Live mode is not part of the static historical deployment.",
     setup: [
       "Historical browsing reads committed JSON artifacts from /data.",
-      "Add a separate serverless live adapter later if OpenF1 live timing is needed."
+      "Enable the optional Cloudflare Worker API when dynamic live timing is needed."
     ]
   };
 }

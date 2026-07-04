@@ -71,7 +71,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="border-t border-line/70 px-5 py-4 text-xs text-slate-500">
-        Data artifacts are served by the FastAPI backend.
+        Historical data reads committed static JSON artifacts; dynamic actions use the optional Cloudflare Worker API.
       </div>
     </aside>
   );
