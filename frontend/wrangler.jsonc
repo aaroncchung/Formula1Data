@@ -1,6 +1,5 @@
 {
   "name": "formula-1-data",
-  "account_id": "71df6a82dcf39c26ae737d9743120aac",
   "pages_build_output_dir": "./out",
   "compatibility_date": "2026-07-01",
   "vars": {
@@ -8,4 +7,3 @@
     "NEXT_PUBLIC_DYNAMIC_API_BASE_URL": ""
   }
 }
-
