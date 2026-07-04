@@ -45,16 +45,41 @@ def main(argv: list[str] | None = None) -> None:
     )
     ingest_session.set_defaults(func=ingest_one_session)
 
-    ingest_season = subparsers.add_parser("ingest-season", help="Ingest race sessions for one FastF1 season.")
+    ingest_season = subparsers.add_parser("ingest-season", help="Ingest FastF1 sessions for one season.")
     add_artifact_args(ingest_season)
     ingest_season.add_argument("--year", type=int, required=True)
     ingest_season.add_argument("--force", action="store_true")
+    ingest_season.add_argument(
+        "--sessions",
+        nargs="+",
+        help="Optional session codes or names to ingest, such as FP1 Q R.",
+    )
+    ingest_season.add_argument(
+        "--races-only",
+        action="store_true",
+        help="Ingest only race sessions, matching the original workflow.",
+    )
     ingest_season.add_argument(
         "--no-build-artifacts",
         action="store_true",
         help="Only update backend/data; skip frontend/public/data generation.",
     )
     ingest_season.set_defaults(func=ingest_one_season)
+
+    process_queue = subparsers.add_parser(
+        "process-queue",
+        help="Process simulated Cloudflare Queue ingestion messages locally.",
+    )
+    add_artifact_args(process_queue)
+    process_queue.add_argument("--message-file", type=Path, help="Single queue message JSON file.")
+    process_queue.add_argument("--queue-file", type=Path, help="JSONL file containing queue messages.")
+    process_queue.add_argument("--artifact-destination", choices=["local", "r2"], default="local")
+    process_queue.add_argument("--r2-bucket", help="R2 bucket name for artifact-destination=r2.")
+    process_queue.add_argument("--r2-prefix", default="", help="Optional object key prefix for R2 uploads.")
+    process_queue.add_argument("--callback-url", help="Worker base URL or full job status callback URL.")
+    process_queue.add_argument("--callback-token", help="Bearer token for the Worker callback.")
+    process_queue.add_argument("--force", action="store_true", help="Force FastF1 reingestion.")
+    process_queue.set_defaults(func=process_queue_messages)
 
     args = parser.parse_args(argv)
     args.func(args)
@@ -92,11 +117,38 @@ def ingest_one_session(args: argparse.Namespace) -> None:
 def ingest_one_season(args: argparse.Namespace) -> None:
     configure_backend_data_dir(args.data_dir)
     FastF1Ingestor = load_fastf1_ingestor()
-    count = FastF1Ingestor().ingest_season(year=args.year, force=args.force)
-    print(f"Ingested {count} race sessions for {args.year}.")
+    count = FastF1Ingestor().ingest_season(
+        year=args.year,
+        force=args.force,
+        sessions=args.sessions,
+        races_only=args.races_only,
+    )
+    scope = "race sessions" if args.races_only else "sessions"
+    print(f"Ingested {count} {scope} for {args.year}.")
     if not args.no_build_artifacts:
         summary = build_static_artifacts(data_dir=args.data_dir, output_dir=args.output_dir)
         print_summary(summary)
+
+
+def process_queue_messages(args: argparse.Namespace) -> None:
+    from pipeline.local_queue_worker import load_messages, process_message
+
+    messages = list(load_messages(args.message_file, args.queue_file))
+    if not messages:
+        raise SystemExit("Provide --message-file or --queue-file with at least one message.")
+    for message in messages:
+        result = process_message(
+            message=message,
+            data_dir=args.data_dir,
+            output_dir=args.output_dir,
+            artifact_destination=args.artifact_destination,
+            r2_bucket=args.r2_bucket,
+            r2_prefix=args.r2_prefix,
+            callback_url=args.callback_url,
+            callback_token=args.callback_token,
+            force=args.force,
+        )
+        print(f"Processed {result['job_id']} for {result['session_id']} ({result['artifacts']} artifacts).")
 
 
 def configure_backend_data_dir(data_dir: Path) -> None:

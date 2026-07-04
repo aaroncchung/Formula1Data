@@ -1,6 +1,10 @@
 {
   "name": "formula-1-data",
   "pages_build_output_dir": "./out",
-  "compatibility_date": "2026-07-01"
+  "compatibility_date": "2026-07-01",
+  "vars": {
+    "NEXT_PUBLIC_STATIC_DATA_BASE_PATH": "/data",
+    "NEXT_PUBLIC_DYNAMIC_API_BASE_URL": ""
+  }
 }
 

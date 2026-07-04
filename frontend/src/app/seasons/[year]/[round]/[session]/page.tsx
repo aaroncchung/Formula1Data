@@ -1,6 +1,6 @@
-import { ChartPanel } from "@/components/charts/ChartPanel";
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { SessionIngestionPanel } from "@/components/session/SessionIngestionPanel";
 import { SessionTabs } from "@/components/session/SessionTabs";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
 
@@ -64,14 +64,25 @@ export default async function SessionPage({
   ];
   const failed = all.find(isApiFailure);
   if (failed) {
+    const year = Number(routeParams.year);
+    const round = Number(routeParams.round);
+    const meetings = await safeApi(() => api.meetings(year));
+    const meeting = meetings.ok ? meetings.data.find((item) => item.round === round) : null;
+    const command = `python -m pipeline ingest-session --year ${routeParams.year} --event "${
+      meeting?.name || "Grand Prix"
+    }" --session ${routeParams.session}`;
     return (
       <div className="space-y-5">
         <ErrorState title="Session is not available" detail={`${failed.error.message}: ${failed.apiBaseUrl}`} />
-        <ChartPanel title="Ingest session">
-          <pre className="overflow-auto text-sm text-slate-300">
-            {`python -m pipeline ingest-session --year ${routeParams.year} --event "Monaco Grand Prix" --session ${routeParams.session}`}
-          </pre>
-        </ChartPanel>
+        <SessionIngestionPanel
+          year={year}
+          round={round}
+          session={routeParams.session}
+          meetingId={meeting?.meeting_id}
+          meetingName={meeting?.name}
+          scheduledStart={meeting?.start_date}
+          staticCommand={command}
+        />
       </div>
     );
   }
@@ -122,9 +133,22 @@ export default async function SessionPage({
 
 export async function generateStaticParams() {
   const catalog = await api.catalog();
-  return catalog.sessions.map((session) => ({
-    year: String(session.year),
-    round: String(session.round),
-    session: session.type
-  }));
+  const params = new Map<string, { year: string; round: string; session: string }>();
+  for (const session of catalog.sessions) {
+    params.set(`${session.year}-${session.round}-${session.type}`, {
+      year: String(session.year),
+      round: String(session.round),
+      session: session.type
+    });
+  }
+  for (const meeting of catalog.meetings) {
+    for (const code of meeting.sessions_available) {
+      params.set(`${meeting.year}-${meeting.round}-${code}`, {
+        year: String(meeting.year),
+        round: String(meeting.round),
+        session: code
+      });
+    }
+  }
+  return Array.from(params.values());
 }

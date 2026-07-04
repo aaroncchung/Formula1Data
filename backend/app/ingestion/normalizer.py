@@ -1,7 +1,10 @@
 from datetime import date
 from typing import Any
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # Allows metadata helpers to run without backend ingestion deps installed.
+    pd = None
 
 
 SESSION_CODE_BY_NAME = {
@@ -14,6 +17,57 @@ SESSION_CODE_BY_NAME = {
     "Sprint Shootout": "SQ",
     "Race": "R",
 }
+SESSION_CODE_BY_NORMALIZED_NAME = {name.lower(): code for name, code in SESSION_CODE_BY_NAME.items()}
+
+
+def session_code_for_name(name: Any) -> str:
+    raw = str(name or "").strip()
+    if not raw:
+        return ""
+    return SESSION_CODE_BY_NAME.get(raw) or SESSION_CODE_BY_NORMALIZED_NAME.get(raw.lower()) or raw.upper()
+
+
+def sessions_available_from_event(event: Any) -> list[str]:
+    sessions = []
+    for index in range(1, 6):
+        name = _get(event, f"Session{index}")
+        if _is_missing(name):
+            continue
+        code = session_code_for_name(name)
+        if code and code not in sessions:
+            sessions.append(code)
+    return sessions or ["R"]
+
+
+def selected_session_codes(
+    event: Any,
+    sessions: list[str] | None = None,
+    races_only: bool = False,
+) -> list[str]:
+    available = sessions_available_from_event(event)
+    requested = {"R"} if races_only else requested_session_codes(sessions)
+    if requested is None:
+        return available
+    return [code for code in available if code in requested]
+
+
+def requested_session_codes(sessions: list[str] | None) -> set[str] | None:
+    if not sessions:
+        return None
+    return {session_code_for_name(session) for session in sessions if session_code_for_name(session)}
+
+
+def session_start_time_from_event(event: Any, session_code: str) -> str | None:
+    code = session_code_for_name(session_code)
+    for index in range(1, 6):
+        name = _get(event, f"Session{index}")
+        if _is_missing(name) or session_code_for_name(name) != code:
+            continue
+        value = _get(event, f"Session{index}DateUtc")
+        if _is_missing(value):
+            value = _get(event, f"Session{index}Date")
+        return _iso_or_none(value)
+    return None
 
 
 def normalize_fastf1_schedule(year: int, schedule: Any) -> dict[str, Any]:
@@ -43,7 +97,7 @@ def normalize_fastf1_schedule(year: int, schedule: Any) -> dict[str, Any]:
                 },
                 "start_date": _event_date(row),
                 "country": country,
-                "sessions_available": _sessions_available(row),
+                "sessions_available": sessions_available_from_event(row),
                 "is_ingested": False,
                 "is_sample": False,
             }
@@ -72,7 +126,9 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
     meeting_name = str(_get(event, "EventName", event_name) or event_name)
     circuit_name = str(_get(event, "CircuitName", location or meeting_name) or meeting_name)
     session_type = str(getattr(session, "name", session_name) or session_name)
-    code = session_name.upper()
+    code = session_code_for_name(session_name)
+    if code not in sessions_available_from_event(event):
+        code = session_code_for_name(session_type)
     session_id = f"{year}-{round_number:02d}-{code.lower()}"
     meeting_id = f"{year}-{round_number:02d}-{_slug(meeting_name)}"
 
@@ -109,7 +165,7 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
                 },
                 "start_date": _event_date(event),
                 "country": country,
-                "sessions_available": ["FP1", "FP2", "FP3", "Q", "R"],
+                "sessions_available": sessions_available_from_event(event),
                 "is_ingested": True,
                 "is_sample": False,
             }
@@ -122,7 +178,7 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
                 "meeting_id": meeting_id,
                 "name": session_type,
                 "type": code,
-                "start_time": _iso_or_none(_get(event, "Session5DateUtc")),
+                "start_time": session_start_time_from_event(event, code),
                 "end_time": None,
                 "status": "available",
                 "is_sample": False,
@@ -397,18 +453,6 @@ def _event_date(event: Any) -> str | None:
     return str(value)[:10]
 
 
-def _sessions_available(event: Any) -> list[str]:
-    sessions = []
-    for index in range(1, 6):
-        name = _get(event, f"Session{index}")
-        if _is_missing(name):
-            continue
-        code = SESSION_CODE_BY_NAME.get(str(name), str(name).upper())
-        if code and code not in sessions:
-            sessions.append(code)
-    return sessions or ["R"]
-
-
 def _get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(key, default)
@@ -463,6 +507,8 @@ def _none_if_missing(value: Any) -> Any:
 def _is_missing(value: Any) -> bool:
     if value is None:
         return True
+    if pd is None:
+        return False
     try:
         return bool(pd.isna(value))
     except (TypeError, ValueError):

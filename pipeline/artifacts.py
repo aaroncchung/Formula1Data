@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import shutil
 from datetime import datetime, timezone
@@ -276,7 +277,16 @@ def artifact_entry(output_dir: Path, path: Path, kind: str, size_bytes: int) -> 
         "kind": kind,
         "path": path.relative_to(output_dir).as_posix(),
         "size_bytes": size_bytes,
+        "checksum": checksum_file(path),
     }
+
+
+def checksum_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
 
 
 def reset_directory(path: Path) -> None:

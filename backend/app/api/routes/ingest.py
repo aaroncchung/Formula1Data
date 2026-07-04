@@ -16,6 +16,8 @@ class IngestSessionRequest(BaseModel):
 class IngestSeasonRequest(BaseModel):
     year: int = Field(..., ge=2018, le=2100)
     force: bool = False
+    sessions: list[str] | None = None
+    races_only: bool = False
 
 
 @router.post("/ingest/session")
@@ -31,6 +33,11 @@ async def ingest_session(request: IngestSessionRequest) -> dict[str, str]:
 
 @router.post("/ingest/season")
 async def ingest_season(request: IngestSeasonRequest) -> dict[str, str | int]:
-    count = FastF1Ingestor().ingest_season(year=request.year, force=request.force)
+    count = FastF1Ingestor().ingest_season(
+        year=request.year,
+        force=request.force,
+        sessions=request.sessions,
+        races_only=request.races_only,
+    )
     return {"status": "ok", "year": request.year, "sessions_ingested": count}
 

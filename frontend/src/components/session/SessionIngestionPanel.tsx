@@ -1,0 +1,332 @@
+"use client";
+
+import { AlertTriangle, CheckCircle2, Clock3, Play, RefreshCw, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ChartPanel } from "@/components/charts/ChartPanel";
+import { EmptyState } from "@/components/dashboard/EmptyState";
+import { ErrorState } from "@/components/dashboard/ErrorState";
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
+import { api, dynamicApi, isApiFailure, safeApi } from "@/lib/api";
+import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
+
+type LoadState =
+  | { state: "idle" | "loading" }
+  | { state: "error"; error: ApiErrorPayload }
+  | { state: "ready"; status: SessionStatusResponse };
+
+type DashboardState =
+  | { state: "idle" | "loading" }
+  | { state: "error"; detail: string }
+  | { state: "ready"; data: SessionTabsProps };
+
+type Props = {
+  year: number;
+  round: number;
+  session: string;
+  meetingId?: string | null;
+  meetingName?: string | null;
+  scheduledStart?: string | null;
+  staticCommand: string;
+};
+
+export function SessionIngestionPanel({
+  year,
+  round,
+  session,
+  meetingId,
+  meetingName,
+  scheduledStart,
+  staticCommand
+}: Props) {
+  const [statusState, setStatusState] = useState<LoadState>({ state: "idle" });
+  const [dashboardState, setDashboardState] = useState<DashboardState>({ state: "idle" });
+  const [isQueueing, setIsQueueing] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    setStatusState({ state: "loading" });
+    try {
+      const status = await dynamicApi.sessionStatus({ year, round, session });
+      setStatusState({ state: "ready", status });
+      return status;
+    } catch (error) {
+      setStatusState({ state: "error", error: apiError(error) });
+      return null;
+    }
+  }, [round, session, year]);
+
+  const loadDashboard = useCallback(async (sessionId: string) => {
+    setDashboardState({ state: "loading" });
+    const [
+      summary,
+      drivers,
+      laps,
+      lapTimes,
+      racePace,
+      tyreDegradation,
+      stints,
+      pitStops,
+      weather,
+      raceControl,
+      results,
+      telemetryComparison,
+      positionReplay
+    ] = await Promise.all([
+      safeApi(() => api.summary(sessionId)),
+      safeApi(() => api.drivers(sessionId)),
+      safeApi(() => api.laps(sessionId)),
+      safeApi(() => api.lapTimes(sessionId)),
+      safeApi(() => api.racePace(sessionId)),
+      safeApi(() => api.tyreDegradation(sessionId)),
+      safeApi(() => api.stints(sessionId)),
+      safeApi(() => api.pitStops(sessionId)),
+      safeApi(() => api.weather(sessionId)),
+      safeApi(() => api.raceControl(sessionId)),
+      safeApi(() => api.results(sessionId)),
+      safeApi(() => api.telemetryCompare(sessionId, "VER", 6, "LEC", 7)),
+      safeApi(() => api.positionReplay(sessionId))
+    ]);
+    const all = [
+      summary,
+      drivers,
+      laps,
+      lapTimes,
+      racePace,
+      tyreDegradation,
+      stints,
+      pitStops,
+      weather,
+      raceControl,
+      results,
+      telemetryComparison,
+      positionReplay
+    ];
+    const failed = all.find(isApiFailure);
+    if (failed) {
+      setDashboardState({ state: "error", detail: failed.error.message });
+      return;
+    }
+    if (
+      summary.ok &&
+      drivers.ok &&
+      laps.ok &&
+      lapTimes.ok &&
+      racePace.ok &&
+      tyreDegradation.ok &&
+      stints.ok &&
+      pitStops.ok &&
+      weather.ok &&
+      raceControl.ok &&
+      results.ok &&
+      telemetryComparison.ok &&
+      positionReplay.ok
+    ) {
+      setDashboardState({
+        state: "ready",
+        data: {
+          summary: summary.data,
+          drivers: drivers.data,
+          laps: laps.data,
+          lapTimes: lapTimes.data,
+          racePace: racePace.data,
+          tyreDegradation: tyreDegradation.data,
+          stints: stints.data,
+          pitStops: pitStops.data,
+          weather: weather.data,
+          raceControl: raceControl.data,
+          results: results.data,
+          telemetryComparison: telemetryComparison.data,
+          positionReplay: positionReplay.data
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadStatus]);
+
+  const status = statusState.state === "ready" ? statusState.status : null;
+  useEffect(() => {
+    if (!status || !["queued", "ingesting"].includes(status.status)) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadStatus();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [loadStatus, status]);
+
+  useEffect(() => {
+    if (status?.status === "ready" && dashboardState.state === "idle") {
+      const timer = window.setTimeout(() => {
+        void loadDashboard(status.session_id);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [dashboardState.state, loadDashboard, status]);
+
+  const queueLabel = useMemo(() => {
+    if (status?.status === "failed") {
+      return "Retry ingestion";
+    }
+    if (status?.status === "queued" || status?.status === "ingesting") {
+      return "Refresh status";
+    }
+    return "Queue ingestion";
+  }, [status?.status]);
+
+  async function queueIngestion(force = false) {
+    if (status?.status === "queued" || status?.status === "ingesting") {
+      await loadStatus();
+      return;
+    }
+    setIsQueueing(true);
+    try {
+      const response = await dynamicApi.queueSessionIngestion({
+        year,
+        round,
+        session,
+        meeting_id: meetingId,
+        meeting_name: meetingName,
+        scheduled_start: scheduledStart,
+        force
+      });
+      setStatusState({ state: "ready", status: response.status });
+    } catch (error) {
+      setStatusState({ state: "error", error: apiError(error) });
+    } finally {
+      setIsQueueing(false);
+    }
+  }
+
+  if (dashboardState.state === "ready") {
+    const summary = dashboardState.data.summary;
+    return (
+      <div>
+        <PageHeader
+          eyebrow={`${summary.year} Round ${summary.round}`}
+          title={`${summary.meeting} - ${summary.session}`}
+          description={`${summary.circuit}, ${summary.country}. ${summary.weather_summary}.`}
+        />
+        <SessionTabs {...dashboardState.data} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <ChartPanel
+        title={`${year} Round ${round} ${session.toUpperCase()}`}
+        description="This static page can queue on-demand ingestion through the Cloudflare API layer."
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <StatusBadge statusState={statusState} />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded border border-line bg-white/[0.04] px-3 py-2 text-sm font-semibold text-white hover:border-aqua/60 disabled:cursor-wait disabled:opacity-60"
+              onClick={() => void loadStatus()}
+              disabled={statusState.state === "loading"}
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded border border-aqua/40 bg-aqua/10 px-3 py-2 text-sm font-semibold text-white hover:border-aqua disabled:cursor-wait disabled:opacity-60"
+              onClick={() => void queueIngestion(status?.status === "failed")}
+              disabled={isQueueing}
+            >
+              {status?.status === "failed" ? <RotateCcw size={16} /> : <Play size={16} />}
+              {queueLabel}
+            </button>
+          </div>
+        </div>
+        {status?.job ? (
+          <div className="mt-4 rounded border border-line bg-white/[0.03] p-3 text-sm text-slate-300">
+            <div className="font-semibold text-white">{status.job.kind.replace(/_/g, " ")}</div>
+            <div className="mt-1">Job {status.job.job_id}</div>
+            <div className="mt-1">Attempts: {status.job.attempts}</div>
+            {status.job.error_message ? <div className="mt-1 text-amber">{status.job.error_message}</div> : null}
+          </div>
+        ) : null}
+        {statusState.state === "error" ? (
+          <div className="mt-4">
+            <ErrorState title="Dynamic ingestion API unavailable" detail={statusState.error.message} />
+          </div>
+        ) : null}
+        {dashboardState.state === "loading" ? (
+          <div className="mt-4">
+            <EmptyState title="Loading generated artifacts" detail="The session is ready; dashboard data is loading from /data." />
+          </div>
+        ) : null}
+        {dashboardState.state === "error" ? (
+          <div className="mt-4">
+            <ErrorState title="Generated artifacts are not readable yet" detail={dashboardState.detail} />
+          </div>
+        ) : null}
+      </ChartPanel>
+      <ChartPanel title="Local static fallback">
+        <pre className="overflow-auto text-sm text-slate-300">{staticCommand}</pre>
+      </ChartPanel>
+    </div>
+  );
+}
+
+function StatusBadge({ statusState }: { statusState: LoadState }) {
+  if (statusState.state === "loading" || statusState.state === "idle") {
+    return (
+      <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300">
+        <Clock3 size={16} />
+        Checking session status
+      </div>
+    );
+  }
+  if (statusState.state === "error") {
+    return (
+      <div className="inline-flex items-center gap-2 text-sm font-semibold text-amber">
+        <AlertTriangle size={16} />
+        API unavailable
+      </div>
+    );
+  }
+  if (statusState.state !== "ready") {
+    return null;
+  }
+  const status = statusState.status.status;
+  const ready = status === "ready";
+  return (
+    <div className={`inline-flex items-center gap-2 text-sm font-semibold ${ready ? "text-aqua" : "text-amber"}`}>
+      {ready ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
+      {statusLabel(status)}
+    </div>
+  );
+}
+
+function statusLabel(status: SessionStatusResponse["status"]) {
+  const labels: Record<SessionStatusResponse["status"], string> = {
+    missing: "Not generated",
+    queued: "Queued",
+    ingesting: "Ingesting",
+    ready: "Ready",
+    failed: "Failed",
+    stale: "Stale"
+  };
+  return labels[status];
+}
+
+function apiError(error: unknown): ApiErrorPayload {
+  if (error && typeof error === "object" && "payload" in error) {
+    return (error as { payload: ApiErrorPayload }).payload;
+  }
+  return {
+    code: "unknown",
+    message: error instanceof Error ? error.message : "Unknown error"
+  };
+}

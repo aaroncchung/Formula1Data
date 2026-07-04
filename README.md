@@ -1,6 +1,6 @@
 # Formula 1 Data
 
-Formula 1 Data is a static-first Formula 1 analytics dashboard. The production app is a Next.js static export that reads precomputed JSON artifacts from `/data`, so normal historical browsing does not need FastAPI, pandas, pyarrow, FastF1, persistent disks, databases, object storage, or a Python container.
+Formula 1 Data is a static-first Formula 1 analytics dashboard. The production app is a Next.js static export that reads precomputed JSON artifacts from `/data`. The project also includes a Cloudflare-native dynamic data plane for on-demand session ingestion and live-session proxying while keeping FastF1, pandas, and other heavy Python work outside Cloudflare Workers.
 
 This project is unofficial and is not associated with Formula 1, FIA, FastF1, or OpenF1.
 
@@ -11,7 +11,8 @@ This project is unofficial and is not associated with Formula 1, FIA, FastF1, or
 - Static JSON artifacts committed under `frontend/public/data`.
 - Python pipeline for sample generation, FastF1 ingestion, and precomputed analysis.
 - Cloudflare Pages-ready static export from `frontend/out`.
-- Optional FastAPI backend retained for local development and future live experiments, but removed from the production request path.
+- Cloudflare Worker API for R2 artifact reads, D1 status/catalog tables, Queue-backed ingestion requests, and OpenF1 live proxying.
+- Optional FastAPI backend retained for local development experiments, but not required for the Cloudflare production request path.
 
 ## Architecture
 
@@ -31,7 +32,22 @@ frontend/ Next.js static export ------> Cloudflare Pages
 Recharts dashboard                      any device, no backend
 ```
 
-Core rule: deployed historical browsing only serves static HTML, JS, CSS, and JSON. Python, FastF1, pandas, pyarrow, FastAPI, and local disks are build/ingestion concerns only.
+Core rule: deployed historical browsing serves static HTML, JS, CSS, and JSON. Dynamic requests go through the Cloudflare Worker, but Python, FastF1, pandas, pyarrow, and local disks remain ingestion-runner concerns only.
+
+Hybrid production mode adds this path:
+
+```text
+frontend static export ------> Cloudflare Pages
+        |                               |
+        | /data/*, /api/*               v
+        +----------------------> Cloudflare Worker
+                                  | R2: JSON artifacts
+                                  | D1: sessions, jobs, manifests
+                                  | Queues: ingestion requests
+                                  v
+                         external Python ingestion runner
+                         FastF1 + pipeline + optional R2 upload
+```
 
 ## File Tree
 
@@ -47,6 +63,8 @@ Core rule: deployed historical browsing only serves static HTML, JS, CSS, and JS
 ├── backend/                  Optional local FastAPI/FastF1 code path
 │   ├── app/                  Existing routes, ingestion, services, models
 │   └── data/processed/       Source datasets for the pipeline
+├── worker/                   Cloudflare Worker API and focused tests
+├── migrations/               Cloudflare D1 schema migrations
 └── .github/workflows/        CI, artifact generation, Cloudflare deploy
 ```
 
@@ -91,6 +109,25 @@ npm run dev
 
 Open `http://localhost:3000`. The dev server reads the same `/data/...` paths that production uses.
 
+Optional local Worker development does not require real Cloudflare credentials. In one terminal run the frontend, and in another run Wrangler local dev:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+```powershell
+npx wrangler dev
+```
+
+Set `NEXT_PUBLIC_DYNAMIC_API_BASE_URL=http://localhost:8787` if the frontend should call the local Worker directly for live/status/queue APIs. Leave it empty for static-only browsing.
+
+For local Worker artifact fallback, set this in your shell or `.dev.vars`:
+
+```text
+STATIC_DATA_BASE_URL=http://localhost:3000/data
+```
+
 Static export:
 
 ```powershell
@@ -122,19 +159,31 @@ Ingest one FastF1 session and rebuild static artifacts:
 python -m pipeline ingest-session --year 2025 --event "Monaco Grand Prix" --session R
 ```
 
-Ingest race sessions for a season:
+Ingest all available FastF1 sessions for a season:
 
 ```powershell
 python -m pipeline ingest-season --year 2025
 ```
 
-For the current 2026 season, this writes the full FastF1 schedule and ingests every race session FastF1 can load:
+Preserve the original race-only workflow:
+
+```powershell
+python -m pipeline ingest-season --year 2025 --races-only
+```
+
+Limit ingestion to selected session codes:
+
+```powershell
+python -m pipeline ingest-season --year 2025 --sessions FP1 Q R
+```
+
+For the current 2026 season, this writes the full FastF1 schedule and ingests every available session FastF1 can load:
 
 ```powershell
 python -m pipeline ingest-season --year 2026
 ```
 
-Unavailable future races are skipped during ingestion but remain visible as scheduled meetings in the season catalog.
+Unavailable future sessions are skipped during ingestion but remain visible as scheduled meetings in the season catalog.
 
 FastF1 ingestion needs backend dependencies:
 
@@ -160,6 +209,107 @@ Sample generation does not require network access or backend dependencies.
 
 Use `--force` if you need to replace an existing processed session.
 
+## Cloudflare Hybrid Mode
+
+The root `wrangler.jsonc` defines the API Worker. `frontend/wrangler.jsonc` remains the Cloudflare Pages static export config.
+
+Bindings:
+
+- R2 bucket binding: `ARTIFACTS_BUCKET`
+- D1 database binding: `F1_DB`
+- Queue producer binding: `INGESTION_QUEUE`
+- Queue consumer: `f1-ingestion-jobs`
+
+Create resources, then replace the placeholder D1 `database_id` in `wrangler.jsonc`:
+
+```powershell
+npx wrangler r2 bucket create formula-1-data-artifacts
+npx wrangler r2 bucket create formula-1-data-artifacts-dev
+npx wrangler d1 create formula-1-data
+npx wrangler queues create f1-ingestion-jobs
+npx wrangler d1 migrations apply formula-1-data --local
+npx wrangler d1 migrations apply formula-1-data --remote
+```
+
+Worker variables and secrets:
+
+```text
+ENABLE_LIVE_MODE=false
+OPENF1_BASE_URL=https://api.openf1.org/v1
+STATIC_DATA_BASE_URL=
+CORS_ALLOW_ORIGIN=https://your-pages-site.pages.dev
+INGESTION_WEBHOOK_URL=https://your-python-runner.example.com/jobs
+```
+
+Set secrets instead of committing them:
+
+```powershell
+npx wrangler secret put OPENF1_API_KEY
+npx wrangler secret put INGESTION_WEBHOOK_TOKEN
+npx wrangler secret put INGESTION_API_TOKEN
+```
+
+`OPENF1_API_KEY`, `INGESTION_WEBHOOK_TOKEN`, and `INGESTION_API_TOKEN` must never be exposed through `NEXT_PUBLIC_*` variables.
+
+## On-Demand Ingestion Flow
+
+The Worker exposes:
+
+- `GET /api/session-status?year=&round=&session=`
+- `POST /api/ingestion/session`
+- `GET /api/ingestion/jobs/:jobId`
+- `POST /api/ingestion/jobs/:jobId/status`
+- `GET /data/*`
+
+Status checks look for `sessions/{session_id}/manifest.json` or `summary.json` in R2, then D1 active jobs. Missing sessions can be queued from the frontend. The Worker creates or reuses an active `ingest_session` job, writes D1 state, and sends the Cloudflare Queue message.
+
+Queue message shape:
+
+```json
+{
+  "version": 1,
+  "job_id": "ingest_session:2026-08-r:...",
+  "kind": "ingest_session",
+  "session_id": "2026-08-r",
+  "year": 2026,
+  "round": 8,
+  "session": "R",
+  "meeting_id": "2026-08-monaco-grand-prix",
+  "meeting_name": "Monaco Grand Prix",
+  "artifact_base_path": "sessions/2026-08-r",
+  "force": false,
+  "requested_at": "2026-07-04T12:00:00.000Z"
+}
+```
+
+For local simulation, save a message as JSON or JSONL and run:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json
+```
+
+To report status back to a local Worker:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json --callback-url http://localhost:8787 --callback-token <token>
+```
+
+Set `INGESTION_API_TOKEN=<token>` for the Worker, or set `ALLOW_UNAUTHENTICATED_INGESTION_CALLBACKS=true` only for local throwaway testing.
+
+To upload generated artifacts to R2 from an external runner with Wrangler credentials:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json --artifact-destination r2 --r2-bucket formula-1-data-artifacts
+```
+
+Production queue consumption is intentionally a boundary: the Worker consumer can dispatch messages to `INGESTION_WEBHOOK_URL`, and the external Python runner performs FastF1 ingestion, artifact generation, optional R2 upload, then calls the protected job-status callback.
+
+## Live Data
+
+The live page now polls Worker routes under `/api/live/*`. The Worker proxies OpenF1 server-side and caches responses for about 3 seconds. Live mode degrades to a disabled payload unless `ENABLE_LIVE_MODE=true`. Upstream OpenF1 failures return a graceful disabled/error-shaped payload and the browser retries on the next poll.
+
+The browser never calls OpenF1 directly and never receives `OPENF1_API_KEY`.
+
 ## Backend Endpoint Roles
 
 Historical read endpoints are now static artifacts:
@@ -170,8 +320,8 @@ Historical read endpoints are now static artifacts:
 Runtime behavior remains outside the production path:
 
 - Ingestion endpoints and scripts perform network/build-time work.
-- OpenF1 live endpoints are optional future work and currently resolve to a disabled static message in the frontend.
-- FastAPI can still be useful for local experimentation, but Cloudflare Pages does not need it.
+- OpenF1 live endpoints are proxied by the Worker when live mode is enabled, and resolve to a disabled payload otherwise.
+- FastAPI can still be useful for local experimentation, but the Cloudflare production path does not require it.
 
 ## Cloudflare Pages
 
@@ -186,6 +336,8 @@ Node version: 22
 
 No frontend secret is required for historical mode. `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` defaults to `/data`; only set it if static JSON is served from a different path.
 
+For hybrid mode, configure `/api/*` and `/data/*` to reach the Worker, or set `NEXT_PUBLIC_DYNAMIC_API_BASE_URL` and `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` to the Worker origin. Static-only deployments can continue serving committed `frontend/public/data` directly from Pages.
+
 Deployment options:
 
 - Cloudflare Pages Git integration: connect the repo, use the settings above, and let Pages build from `frontend`.
@@ -196,7 +348,7 @@ Deployment options:
 ## GitHub Actions
 
 - `frontend-ci.yml`: generates sample artifacts, runs frontend lint, builds the static export, and uploads `frontend/out`.
-- `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests race sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
+- `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
 - `cloudflare-pages.yml`: manual static export deployment to Cloudflare Pages via Wrangler.
 
 ## Artifact Size Strategy
@@ -214,8 +366,9 @@ Docker Compose is no longer the production deployment model. Keep Docker only fo
 ## Known Limitations
 
 - The committed sample data is synthetic and intentionally small.
-- FastF1 ingestion depends on network access and upstream availability. In-progress seasons may only have completed race sessions available.
+- FastF1 ingestion depends on network access and upstream availability. In-progress seasons may only have completed sessions available.
 - Telemetry artifacts are downsampled for browser performance.
 - Pit loss and undercut/overcut values are simple estimates.
-- Live OpenF1 support is not required for historical browsing and is left as future serverless work.
+- Live OpenF1 support requires Worker live mode and upstream OpenF1 availability.
+- Local Worker development can mock Queue/R2/D1 behavior, but production R2 uploads and remote D1 migrations require Cloudflare credentials.
 

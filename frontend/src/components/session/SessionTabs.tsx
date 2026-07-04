@@ -47,7 +47,7 @@ const tabs = [
   "Results"
 ];
 
-type SessionTabsProps = {
+export type SessionTabsProps = {
   summary: SessionSummary;
   drivers: Driver[];
   laps: Lap[];

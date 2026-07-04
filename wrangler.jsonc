@@ -1,5 +1,41 @@
 {
-  "name": "formula-1-data",
-  "pages_build_output_dir": "./frontend/out",
-  "compatibility_date": "2026-07-01"
+  "name": "formula-1-data-api",
+  "main": "worker/src/index.mjs",
+  "compatibility_date": "2026-07-01",
+  "vars": {
+    "ENABLE_LIVE_MODE": "false",
+    "OPENF1_BASE_URL": "https://api.openf1.org/v1",
+    "STATIC_DATA_BASE_URL": "",
+    "CORS_ALLOW_ORIGIN": "*"
+  },
+  "r2_buckets": [
+    {
+      "binding": "ARTIFACTS_BUCKET",
+      "bucket_name": "formula-1-data-artifacts",
+      "preview_bucket_name": "formula-1-data-artifacts-dev"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "F1_DB",
+      "database_name": "formula-1-data",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "INGESTION_QUEUE",
+        "queue": "f1-ingestion-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "f1-ingestion-jobs",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30
+      }
+    ]
+  }
 }

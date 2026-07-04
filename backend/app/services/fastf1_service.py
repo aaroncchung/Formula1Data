@@ -26,7 +26,7 @@ class FastF1Service:
     def get_schedule(self, year: int) -> Any:
         return self.fastf1.get_event_schedule(year)
 
-    def load_session(self, year: int, event: str, session_name: str) -> Any:
+    def load_session(self, year: int, event: str | int, session_name: str) -> Any:
         session = self.fastf1.get_session(year, event, session_name)
         session.load(
             laps=True,
