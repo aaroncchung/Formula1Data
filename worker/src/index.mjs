@@ -1,7 +1,7 @@
 import { createArtifactStore } from "./artifact-store.mjs";
 import { createRepository } from "./repository.mjs";
 import { enqueueIngestionJob, resolveSessionStatus } from "./session-status.mjs";
-import { sanitizeArtifactPath } from "./session-utils.mjs";
+import { artifactBasePath, sanitizeArtifactPath } from "./session-utils.mjs";
 
 const LIVE_TTL_SECONDS = 3;
 const DISABLED_LIVE_RESPONSE = {
@@ -270,17 +270,14 @@ async function openF1Get(env, endpoint, params) {
   };
 }
 
-async function dispatchQueueMessage(body, env, repository) {
+export async function dispatchQueueMessage(body, env, repository) {
   const jobId = body?.job_id;
   if (!jobId) {
     throw new Error("Queue message is missing job_id");
   }
 
   if (!env.INGESTION_WEBHOOK_URL) {
-    await repository.incrementJobAttempts(
-      jobId,
-      "No INGESTION_WEBHOOK_URL configured; an external Python ingestion runner must process this job."
-    );
+    await failQueueDispatchWithoutRunner(body, repository);
     return;
   }
 
@@ -310,6 +307,41 @@ async function dispatchQueueMessage(body, env, repository) {
     });
     throw new Error(`Ingestion webhook returned ${response.status}`);
   }
+}
+
+async function failQueueDispatchWithoutRunner(body, repository) {
+  const jobId = body.job_id;
+  const current = await repository.getJob(jobId);
+  const now = new Date().toISOString();
+  const errorMessage =
+    "No INGESTION_WEBHOOK_URL is configured, so the Worker cannot dispatch this job to an external Python ingestion runner.";
+  const job = await repository.updateJob(jobId, {
+    status: "failed",
+    attempts: Number(current?.attempts || 0) + 1,
+    error_message: errorMessage,
+    started_at: current?.started_at || null,
+    finished_at: now
+  });
+
+  const sessionId = job?.session_id || current?.session_id || body.session_id;
+  if (!sessionId) {
+    return;
+  }
+
+  const existingSession = await repository.getSession(sessionId);
+  await repository.upsertSession({
+    session_id: sessionId,
+    year: Number(existingSession?.year || body.year),
+    round: Number(existingSession?.round || body.round),
+    meeting_id: existingSession?.meeting_id || body.meeting_id || null,
+    meeting_name: existingSession?.meeting_name || body.meeting_name || null,
+    session_type: existingSession?.session_type || body.session || null,
+    scheduled_start: existingSession?.scheduled_start || null,
+    status: "failed",
+    artifact_base_path: existingSession?.artifact_base_path || body.artifact_base_path || artifactBasePath(sessionId),
+    generated_at: existingSession?.generated_at || null,
+    source: existingSession?.source || "dynamic"
+  });
 }
 
 function createQueue(env) {

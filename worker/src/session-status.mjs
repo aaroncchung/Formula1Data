@@ -63,8 +63,14 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
   }
 
   if (sessionRow) {
-    return statusResponse(sessionRow, sessionRow.status || "missing", {
-      artifact_exists: false
+    const sessionStatus = sessionRow.status || "missing";
+    const latestJob =
+      sessionStatus === "failed" && typeof repository.getLatestJob === "function"
+        ? await repository.getLatestJob(sessionId, INGEST_SESSION)
+        : null;
+    return statusResponse(sessionRow, sessionStatus, {
+      artifact_exists: false,
+      job: latestJob
     });
   }
 

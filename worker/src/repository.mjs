@@ -82,6 +82,19 @@ export function createD1Repository(db) {
         .first();
     },
 
+    async getLatestJob(sessionId, kind) {
+      return db
+        .prepare(
+          `select * from ingestion_jobs
+          where session_id = ?
+            and kind = ?
+          order by created_at desc
+          limit 1`
+        )
+        .bind(sessionId, kind)
+        .first();
+    },
+
     async createJob(job) {
       await db
         .prepare(
@@ -230,6 +243,14 @@ export function createMemoryRepository(state = memoryState) {
               job.kind === kind &&
               ACTIVE_JOB_STATUSES.includes(job.status)
           )
+          .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))[0] || null
+      );
+    },
+
+    async getLatestJob(sessionId, kind) {
+      return (
+        Array.from(state.jobs.values())
+          .filter((job) => job.session_id === sessionId && job.kind === kind)
           .sort((left, right) => String(right.created_at).localeCompare(String(left.created_at)))[0] || null
       );
     },
