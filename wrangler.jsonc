@@ -1,5 +1,6 @@
 {
   "name": "formula-1-data-api",
+  "account_id": "71df6a82dcf39c26ae737d9743120aac",
   "main": "worker/src/index.mjs",
   "compatibility_date": "2026-07-01",
   "vars": {
