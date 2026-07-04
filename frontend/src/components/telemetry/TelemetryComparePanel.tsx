@@ -9,16 +9,24 @@ import { api, isEmptyState } from "@/lib/api";
 import type { TelemetryComparison } from "@/types/domain";
 
 export function TelemetryComparePanel({
+  initialDriverA = "VER",
+  initialDriverB = "LEC",
+  initialLapA = 6,
+  initialLapB = 7,
   initialComparison,
   sessionId
 }: {
+  initialDriverA?: string;
+  initialDriverB?: string;
+  initialLapA?: number;
+  initialLapB?: number;
   initialComparison?: TelemetryComparison | null;
   sessionId: string;
 }) {
-  const [driverA, setDriverA] = useState("VER");
-  const [driverB, setDriverB] = useState("LEC");
-  const [lapA, setLapA] = useState(6);
-  const [lapB, setLapB] = useState(7);
+  const [driverA, setDriverA] = useState(initialDriverA);
+  const [driverB, setDriverB] = useState(initialDriverB);
+  const [lapA, setLapA] = useState(initialLapA);
+  const [lapB, setLapB] = useState(initialLapB);
   const [comparison, setComparison] = useState<TelemetryComparison | null>(initialComparison || null);
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();

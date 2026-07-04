@@ -12,6 +12,7 @@ dist/
 coverage/
 backend/data/cache/
 backend/data/raw/
+backend/data/processed/seasons/
 backend/data/processed/sessions/
 backend/data/processed/live-cache/
 backend/data/**/*.parquet

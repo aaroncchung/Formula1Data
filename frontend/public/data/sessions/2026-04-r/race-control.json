@@ -1,0 +1,1586 @@
+[
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:20:01",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:30:01",
+    "category": "Other",
+    "message": "PIT EXIT CLOSED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:34:52",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 18",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:34:57",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 18",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:37:28",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 18",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:37:50",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 18",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:37:50",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 18",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:37:53",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 18",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:37:54",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 18",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:39:29",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 17",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:39:48",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 17",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:43:12",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 18",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:45:12",
+    "category": "Other",
+    "message": "RISK OF RAIN FOR THE F1 RACE IS 40%",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 16:57:05",
+    "category": "Other",
+    "message": "OVERTAKE DISABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 17:04:03",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 1,
+    "timestamp": "2026-05-03 17:05:27",
+    "category": "Other",
+    "message": "OVERTAKE ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 3,
+    "timestamp": "2026-05-03 17:07:40",
+    "category": "Other",
+    "message": "TURN 11 INCIDENT INVOLVING CARS 43 (COL) AND 44 (HAM) NOTED - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 4,
+    "timestamp": "2026-05-03 17:09:18",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 11 INCIDENT INVOLVING CARS 43 (COL) AND 44 (HAM) REVIEWED NO FURTHER INVESTIGATION - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 5,
+    "timestamp": "2026-05-03 17:11:46",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:02",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 19",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:03",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 14",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:04",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 13",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:15",
+    "category": "SafetyCar",
+    "message": "SAFETY CAR DEPLOYED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:15",
+    "category": "Other",
+    "message": "OVERTAKE DISABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:12:43",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 19",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 6,
+    "timestamp": "2026-05-03 17:13:34",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 18",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 7,
+    "timestamp": "2026-05-03 17:15:00",
+    "category": "Other",
+    "message": "MARSHALS ON TRACK AT TURN 14",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 7,
+    "timestamp": "2026-05-03 17:15:45",
+    "category": "Other",
+    "message": "MARSHALS ON TRACK AT TURN 17",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 7,
+    "timestamp": "2026-05-03 17:16:06",
+    "category": "Other",
+    "message": "RECOVERY VEHICLE ON TRACK AT TURN 17",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:16:39",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 16",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:16:41",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:16:41",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 16",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:16:42",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:16:49",
+    "category": "Other",
+    "message": "RECOVERY VEHICLE ON TRACK AT TURN 14",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:17:00",
+    "category": "Other",
+    "message": "TURN 17 INCIDENT INVOLVING CAR 10 (GAS) NOTED - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 8,
+    "timestamp": "2026-05-03 17:17:08",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CAR 10 (GAS) UNDER INVESTIGATION - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 9,
+    "timestamp": "2026-05-03 17:19:18",
+    "category": "Other",
+    "message": "FIA STEWARDS: UPDATE: TURN 17 INCIDENT INVOLVING CARS 30 (LAW) AND 10 (GAS) UNDER INVESTIGATION - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 9,
+    "timestamp": "2026-05-03 17:19:35",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 16",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 9,
+    "timestamp": "2026-05-03 17:19:45",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CARS 30 (LAW) AND 10 (GAS) WILL BE INVESTIGATED AFTER THE RACE - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 9,
+    "timestamp": "2026-05-03 17:20:37",
+    "category": "Other",
+    "message": "CAR 81 (PIA) TIME 2:11.907 DELETED - TRACK LIMITS AT TURN 15 LAP 6 13:13:19",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 9,
+    "timestamp": "2026-05-03 17:20:38",
+    "category": "Other",
+    "message": "CAR 30 (LAW) LAP DELETED - TRACK LIMITS AT TURN 15 LAP 6 13:14:05 (PIT)",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:21:40",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 18",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:21:41",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 19",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:20",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 13",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:21",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 13",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:23",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 14",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:23",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 13",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:44",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:44",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 16",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:22:44",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 10,
+    "timestamp": "2026-05-03 17:23:29",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 16",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:23:47",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:23:47",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 16",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:23:48",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:24:00",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:24:01",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:24:04",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:24:07",
+    "category": "SafetyCar",
+    "message": "SAFETY CAR IN THIS LAP",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 11,
+    "timestamp": "2026-05-03 17:25:33",
+    "category": "Flag",
+    "message": "TRACK CLEAR",
+    "flag": "CLEAR",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 12,
+    "timestamp": "2026-05-03 17:26:21",
+    "category": "Other",
+    "message": "OVERTAKE ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 12,
+    "timestamp": "2026-05-03 17:27:32",
+    "category": "Other",
+    "message": "TRACK SURFACE SLIPPERY IN TRACK SECTOR 14",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 13,
+    "timestamp": "2026-05-03 17:28:47",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 14",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 14,
+    "timestamp": "2026-05-03 17:29:51",
+    "category": "Other",
+    "message": "TURN 11 INCIDENT INVOLVING CARS 41 (LIN) AND 11 (PER) NOTED - FORCING ANOTHER DRIVER OFF THE TRACK",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 14,
+    "timestamp": "2026-05-03 17:29:59",
+    "category": "Other",
+    "message": "CAR 11 (PER) TIME 1:36.951 DELETED - TRACK LIMITS AT TURN 11 LAP 12 13:27:01",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 16,
+    "timestamp": "2026-05-03 17:32:23",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 11 INCIDENT INVOLVING CARS 41 (LIN) AND 11 (PER) REVIEWED NO FURTHER INVESTIGATION - FORCING ANOTHER DRIVER OFF THE TRACK",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 16,
+    "timestamp": "2026-05-03 17:32:29",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 19",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 16,
+    "timestamp": "2026-05-03 17:32:33",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 19",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 16,
+    "timestamp": "2026-05-03 17:33:10",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 3 (VER) NOTED - FAILING TO FOLLOW RACE DIRECTORS INSTRUCTIONS – CROSSING THE LINE AT PIT EXIT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 17,
+    "timestamp": "2026-05-03 17:34:04",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 31 (OCO) NOTED - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 17,
+    "timestamp": "2026-05-03 17:34:12",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 23 (ALB) NOTED - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 17,
+    "timestamp": "2026-05-03 17:34:23",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 14 (ALO) NOTED - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 17,
+    "timestamp": "2026-05-03 17:35:19",
+    "category": "Other",
+    "message": "CAR 18 (STR) TIME 1:40.953 DELETED - TRACK LIMITS AT TURN 17 LAP 15 13:32:27",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 19,
+    "timestamp": "2026-05-03 17:37:01",
+    "category": "Other",
+    "message": "CAR 18 (STR) TIME 1:36.371 DELETED - TRACK LIMITS AT TURN 5 LAP 17 13:34:39",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 20,
+    "timestamp": "2026-05-03 17:38:32",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 3 (VER) WILL BE INVESTIGATED AFTER THE RACE - FAILING TO FOLLOW RACE DIRECTORS INSTRUCTIONS – CROSSING THE LINE AT PIT EXIT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 21,
+    "timestamp": "2026-05-03 17:40:21",
+    "category": "Other",
+    "message": "TURN 18 INCIDENT INVOLVING CARS 23 (ALB) AND 3 (VER) NOTED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 21,
+    "timestamp": "2026-05-03 17:41:01",
+    "category": "Other",
+    "message": "CAR 12 (ANT) TIME 1:33.345 DELETED - TRACK LIMITS AT TURN 5 LAP 19 13:37:17",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 22,
+    "timestamp": "2026-05-03 17:42:48",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 18 INCIDENT INVOLVING CARS 23 (ALB) AND 3 (VER) REVIEWED NO FURTHER INVESTIGATION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 25,
+    "timestamp": "2026-05-03 17:46:48",
+    "category": "Other",
+    "message": "CAR 14 (ALO) TIME 1:36.386 DELETED - TRACK LIMITS AT TURN 5 LAP 23 13:44:15",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 26,
+    "timestamp": "2026-05-03 17:48:37",
+    "category": "Other",
+    "message": "TRACK SURFACE SLIPPERY IN TRACK SECTOR 15",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 26,
+    "timestamp": "2026-05-03 17:48:41",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 15",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 26,
+    "timestamp": "2026-05-03 17:49:08",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 77 (BOT) NOTED - SPEEDING IN THE PIT LANE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 28,
+    "timestamp": "2026-05-03 17:51:07",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 77 (BOT) UNDER INVESTIGATION - SPEEDING IN THE PIT LANE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 28,
+    "timestamp": "2026-05-03 17:52:30",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 31 (OCO) WILL BE INVESTIGATED AFTER THE RACE - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 28,
+    "timestamp": "2026-05-03 17:52:38",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 23 (ALB) WILL BE INVESTIGATED AFTER THE RACE - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 29,
+    "timestamp": "2026-05-03 17:52:53",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 14 (ALO) WILL BE INVESTIGATED AFTER THE RACE - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 30,
+    "timestamp": "2026-05-03 17:55:11",
+    "category": "Other",
+    "message": "FIA STEWARDS: DRIVE THROUGH PENALTY FOR CAR 77 (BOT) - SPEEDING IN THE PIT LANE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 32,
+    "timestamp": "2026-05-03 17:57:34",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 13:57:34",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 33,
+    "timestamp": "2026-05-03 17:59:29",
+    "category": "Other",
+    "message": "CAR 14 (ALO) TIME 1:36.080 DELETED - TRACK LIMITS AT TURN 5 LAP 29 13:53:53",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 33,
+    "timestamp": "2026-05-03 17:59:39",
+    "category": "Other",
+    "message": "FIA STEWARDS: PENALTY SERVED - DRIVE THROUGH PENALTY FOR CAR 77 (BOT) - SPEEDING IN THE PIT LANE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 33,
+    "timestamp": "2026-05-03 17:59:51",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 13:59:50",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 33,
+    "timestamp": "2026-05-03 18:00:10",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:00:09",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 35,
+    "timestamp": "2026-05-03 18:02:09",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:02:09",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 36,
+    "timestamp": "2026-05-03 18:03:58",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 31 (OCO) NO FURTHER ACTION - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 36,
+    "timestamp": "2026-05-03 18:04:03",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 23 (ALB) NO FURTHER ACTION - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 36,
+    "timestamp": "2026-05-03 18:04:10",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 14 (ALO) NO FURTHER ACTION - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 36,
+    "timestamp": "2026-05-03 18:04:13",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:04:12",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 37,
+    "timestamp": "2026-05-03 18:05:58",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:05:58",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 37,
+    "timestamp": "2026-05-03 18:06:14",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:06:13",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 37,
+    "timestamp": "2026-05-03 18:06:17",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:06:16",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 39,
+    "timestamp": "2026-05-03 18:08:45",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:08:45",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 40,
+    "timestamp": "2026-05-03 18:09:59",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:09:58",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 40,
+    "timestamp": "2026-05-03 18:10:53",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 14 (ALO) TIMED AT 14:10:53",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 41,
+    "timestamp": "2026-05-03 18:12:03",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:12:02",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 41,
+    "timestamp": "2026-05-03 18:12:10",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:12:09",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 41,
+    "timestamp": "2026-05-03 18:12:10",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:12:09",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 41,
+    "timestamp": "2026-05-03 18:12:29",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:12:29",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 42,
+    "timestamp": "2026-05-03 18:13:56",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:13:55",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 43,
+    "timestamp": "2026-05-03 18:14:45",
+    "category": "Other",
+    "message": "CAR 1 (NOR) TIME 1:32.662 DELETED - TRACK LIMITS AT TURN 5 LAP 42 14:13:06",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 43,
+    "timestamp": "2026-05-03 18:15:00",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:14:59",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 43,
+    "timestamp": "2026-05-03 18:15:29",
+    "category": "Flag",
+    "message": "BLACK AND WHITE FLAG FOR CAR 77 (BOT) - IGNORING BLUE FLAGS",
+    "flag": "BLACK AND WHITE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 44,
+    "timestamp": "2026-05-03 18:16:09",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:16:09",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 44,
+    "timestamp": "2026-05-03 18:16:57",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:16:57",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 44,
+    "timestamp": "2026-05-03 18:17:09",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:17:08",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 44,
+    "timestamp": "2026-05-03 18:17:10",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 14 (ALO) TIMED AT 14:17:10",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 45,
+    "timestamp": "2026-05-03 18:17:32",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:17:31",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 45,
+    "timestamp": "2026-05-03 18:17:54",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:17:54",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 45,
+    "timestamp": "2026-05-03 18:18:11",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:18:10",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 46,
+    "timestamp": "2026-05-03 18:19:27",
+    "category": "Other",
+    "message": "CAR 12 (ANT) TIME 1:32.399 DELETED - TRACK LIMITS AT TURN 11 LAP 45 14:18:11",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 46,
+    "timestamp": "2026-05-03 18:19:41",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:19:41",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 47,
+    "timestamp": "2026-05-03 18:20:49",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:20:48",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 47,
+    "timestamp": "2026-05-03 18:21:51",
+    "category": "Other",
+    "message": "CAR 14 (ALO) TIME 1:33.512 DELETED - TRACK LIMITS AT TURN 5 LAP 44 14:18:17",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 48,
+    "timestamp": "2026-05-03 18:22:10",
+    "category": "Flag",
+    "message": "BLACK AND WHITE FLAG FOR CAR 14 (ALO) - TRACK LIMITS",
+    "flag": "BLACK AND WHITE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 48,
+    "timestamp": "2026-05-03 18:22:29",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 19",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 48,
+    "timestamp": "2026-05-03 18:22:32",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 19",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 48,
+    "timestamp": "2026-05-03 18:23:10",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:23:10",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 48,
+    "timestamp": "2026-05-03 18:23:29",
+    "category": "Other",
+    "message": "CAR 87 (BEA) TIME 1:37.535 DELETED - TRACK LIMITS AT TURN 7 LAP 47 14:22:07",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 49,
+    "timestamp": "2026-05-03 18:24:32",
+    "category": "Other",
+    "message": "CAR 14 (ALO) TIME 1:36.389 DELETED - TRACK LIMITS AT TURN 17 LAP 46 14:22:30",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:26:44",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 14 (ALO) TIMED AT 14:26:44",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:26:52",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:26:51",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:27:13",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 31 (OCO) TIMED AT 14:27:12",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:27:14",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:27:14",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:27:16",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 11 (PER) TIMED AT 14:27:15",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:27:43",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 31 (OCO) TIMED AT 14:27:43",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 51,
+    "timestamp": "2026-05-03 18:27:49",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:27:48",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 52,
+    "timestamp": "2026-05-03 18:28:12",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 5 (BOR) TIMED AT 14:28:12",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 52,
+    "timestamp": "2026-05-03 18:28:27",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:28:27",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 52,
+    "timestamp": "2026-05-03 18:28:34",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:28:34",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 52,
+    "timestamp": "2026-05-03 18:29:20",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 5 (BOR) TIMED AT 14:29:20",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:31:25",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:31:24",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:31:41",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:31:41",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:31:57",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:31:57",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:32:02",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:32:02",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:32:11",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:32:11",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 54,
+    "timestamp": "2026-05-03 18:32:13",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:32:12",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 55,
+    "timestamp": "2026-05-03 18:33:01",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 87 (BEA) TIMED AT 14:33:01",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 55,
+    "timestamp": "2026-05-03 18:34:12",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 87 (BEA) TIMED AT 14:34:11",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 56,
+    "timestamp": "2026-05-03 18:35:24",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:35:23",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:20",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:36:20",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:32",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 4",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:33",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 4",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:37",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 4",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:39",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 77 (BOT) TIMED AT 14:36:38",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:47",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 14:36:47",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:36:51",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:36:51",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:37:21",
+    "category": "Flag",
+    "message": "CHEQUERED FLAG",
+    "flag": "CHEQUERED",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:37:28",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:37:27",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:37:51",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 41 (LIN) TIMED AT 14:37:51",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:38:18",
+    "category": "Other",
+    "message": "CAR 16 (LEC) TIME 1:49.834 DELETED - TRACK LIMITS AT TURN 8 LAP 57 14:36:53",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:38:55",
+    "category": "Other",
+    "message": "ALL PASS HOLDERS MAY ACCESS THE PIT LANE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:38:58",
+    "category": "Other",
+    "message": "CAR 16 (LEC) TIME 1:49.834 DELETED - TRACK LIMITS AT TURN 6 LAP 57 14:36:46",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:41:25",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 15",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:41:25",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 16",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:44:04",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:44:04",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 16",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:44:15",
+    "category": "Other",
+    "message": "TURN 17 INCIDENT INVOLVING CAR 63 (RUS) NOTED - MOVING UNDER BRAKING",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:47:41",
+    "category": "Other",
+    "message": "TURN 1 INCIDENT INVOLVING CARS 3 (VER) AND 63 (RUS) NOTED - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:49:32",
+    "category": "Other",
+    "message": "TURN 17 INCIDENT INVOLVING CARS 16 (LEC) AND 63 (RUS) NOTED - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:49:37",
+    "category": "Other",
+    "message": "CAR 16 (LEC) TIME 1:49.834 DELETED - TRACK LIMITS AT TURN 15 LAP 57 14:37:31",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:49:38",
+    "category": "Other",
+    "message": "CAR 16 (LEC) TIME 1:49.834 DELETED - TRACK LIMITS AT TURN 7 LAP 57 14:36:54",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:51:10",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 16 (LEC) NOTED - LEAVING THE TRACK MULTIPLE TIMES AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:51:34",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 16 (LEC) WILL BE INVESTIGATED AFTER THE RACE - LEAVING THE TRACK MULTIPLE TIMES AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:53:21",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CAR 63 (RUS) REVIEWED NO FURTHER INVESTIGATION - MOVING UNDER BRAKING",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:53:31",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 1 INCIDENT INVOLVING CARS 3 (VER) AND 63 (RUS) WILL BE INVESTIGATED AFTER THE RACE - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:53:36",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CARS 16 (LEC) AND 63 (RUS) WILL BE INVESTIGATED AFTER THE RACE - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:55:19",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CAR 16 (LEC) NOTED - UNSAFE CONDITION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2026-04-r",
+    "lap_number": 57,
+    "timestamp": "2026-05-03 18:55:35",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 16 (LEC) WILL BE INVESTIGATED AFTER THE RACE - UNSAFE CONDITION",
+    "flag": null,
+    "scope": null
+  }
+]

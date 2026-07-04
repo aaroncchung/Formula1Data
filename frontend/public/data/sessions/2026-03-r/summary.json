@@ -1,0 +1,23 @@
+{
+  "session_id": "2026-03-r",
+  "meeting": "Japanese Grand Prix",
+  "session": "Race",
+  "year": 2026,
+  "round": 3,
+  "circuit": "Suzuka",
+  "country": "Japan",
+  "driver_count": 22,
+  "lap_count": 1107,
+  "weather_summary": "air 17.4-19.4C, track 29.9-37.8C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

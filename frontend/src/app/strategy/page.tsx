@@ -4,13 +4,16 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { PitStopTimeline } from "@/components/session/PitStopTimeline";
 import { StintTimeline } from "@/components/session/StintTimeline";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
-import { DEFAULT_SESSION_ID } from "@/lib/constants";
 
 export default async function StrategyPage() {
+  const primarySession = await safeApi(() => api.primarySession());
+  if (!primarySession.ok) {
+    return <ErrorState title="Could not load strategy" detail={`${primarySession.error.message}: ${primarySession.apiBaseUrl}`} />;
+  }
   const [stints, pitStops, strategy] = await Promise.all([
-    safeApi(() => api.stints(DEFAULT_SESSION_ID)),
-    safeApi(() => api.pitStops(DEFAULT_SESSION_ID)),
-    safeApi(() => api.strategy(DEFAULT_SESSION_ID))
+    safeApi(() => api.stints(primarySession.data.session_id)),
+    safeApi(() => api.pitStops(primarySession.data.session_id)),
+    safeApi(() => api.strategy(primarySession.data.session_id))
   ]);
   const failed = [stints, pitStops, strategy].find(isApiFailure);
   if (failed) {

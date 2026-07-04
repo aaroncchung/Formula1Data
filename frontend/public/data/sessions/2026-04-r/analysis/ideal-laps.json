@@ -1,0 +1,203 @@
+{
+  "session_id": "2026-04-r",
+  "rows": [
+    {
+      "driver_code": "ANT",
+      "best_sector_1_ms": 31959,
+      "best_sector_2_ms": 33975,
+      "best_sector_3_ms": 25225,
+      "ideal_lap_ms": 91159,
+      "best_lap_ms": 91968,
+      "delta_to_ideal_ms": 809
+    },
+    {
+      "driver_code": "NOR",
+      "best_sector_1_ms": 31893,
+      "best_sector_2_ms": 34432,
+      "best_sector_3_ms": 25176,
+      "ideal_lap_ms": 91501,
+      "best_lap_ms": 91869,
+      "delta_to_ideal_ms": 368
+    },
+    {
+      "driver_code": "LEC",
+      "best_sector_1_ms": 32061,
+      "best_sector_2_ms": 34271,
+      "best_sector_3_ms": 25201,
+      "ideal_lap_ms": 91533,
+      "best_lap_ms": 92515,
+      "delta_to_ideal_ms": 982
+    },
+    {
+      "driver_code": "PIA",
+      "best_sector_1_ms": 31898,
+      "best_sector_2_ms": 34434,
+      "best_sector_3_ms": 25333,
+      "ideal_lap_ms": 91665,
+      "best_lap_ms": 91949,
+      "delta_to_ideal_ms": 284
+    },
+    {
+      "driver_code": "RUS",
+      "best_sector_1_ms": 32127,
+      "best_sector_2_ms": 34405,
+      "best_sector_3_ms": 25429,
+      "ideal_lap_ms": 91961,
+      "best_lap_ms": 92446,
+      "delta_to_ideal_ms": 485
+    },
+    {
+      "driver_code": "HAM",
+      "best_sector_1_ms": 32276,
+      "best_sector_2_ms": 34578,
+      "best_sector_3_ms": 25379,
+      "ideal_lap_ms": 92233,
+      "best_lap_ms": 92676,
+      "delta_to_ideal_ms": 443
+    },
+    {
+      "driver_code": "VER",
+      "best_sector_1_ms": 32275,
+      "best_sector_2_ms": 34738,
+      "best_sector_3_ms": 25460,
+      "ideal_lap_ms": 92473,
+      "best_lap_ms": 93110,
+      "delta_to_ideal_ms": 637
+    },
+    {
+      "driver_code": "BOR",
+      "best_sector_1_ms": 32445,
+      "best_sector_2_ms": 34416,
+      "best_sector_3_ms": 25677,
+      "ideal_lap_ms": 92538,
+      "best_lap_ms": 93500,
+      "delta_to_ideal_ms": 962
+    },
+    {
+      "driver_code": "COL",
+      "best_sector_1_ms": 32271,
+      "best_sector_2_ms": 34849,
+      "best_sector_3_ms": 25446,
+      "ideal_lap_ms": 92566,
+      "best_lap_ms": 93035,
+      "delta_to_ideal_ms": 469
+    },
+    {
+      "driver_code": "SAI",
+      "best_sector_1_ms": 32706,
+      "best_sector_2_ms": 34474,
+      "best_sector_3_ms": 25607,
+      "ideal_lap_ms": 92787,
+      "best_lap_ms": 93026,
+      "delta_to_ideal_ms": 239
+    },
+    {
+      "driver_code": "OCO",
+      "best_sector_1_ms": 32710,
+      "best_sector_2_ms": 34877,
+      "best_sector_3_ms": 25688,
+      "ideal_lap_ms": 93275,
+      "best_lap_ms": 93712,
+      "delta_to_ideal_ms": 437
+    },
+    {
+      "driver_code": "ALB",
+      "best_sector_1_ms": 33002,
+      "best_sector_2_ms": 34621,
+      "best_sector_3_ms": 25693,
+      "ideal_lap_ms": 93316,
+      "best_lap_ms": 93784,
+      "delta_to_ideal_ms": 468
+    },
+    {
+      "driver_code": "BEA",
+      "best_sector_1_ms": 32943,
+      "best_sector_2_ms": 34724,
+      "best_sector_3_ms": 25691,
+      "ideal_lap_ms": 93358,
+      "best_lap_ms": 93744,
+      "delta_to_ideal_ms": 386
+    },
+    {
+      "driver_code": "LIN",
+      "best_sector_1_ms": 32711,
+      "best_sector_2_ms": 35117,
+      "best_sector_3_ms": 25763,
+      "ideal_lap_ms": 93591,
+      "best_lap_ms": 94058,
+      "delta_to_ideal_ms": 467
+    },
+    {
+      "driver_code": "ALO",
+      "best_sector_1_ms": 32731,
+      "best_sector_2_ms": 35177,
+      "best_sector_3_ms": 25774,
+      "ideal_lap_ms": 93682,
+      "best_lap_ms": 94594,
+      "delta_to_ideal_ms": 912
+    },
+    {
+      "driver_code": "STR",
+      "best_sector_1_ms": 32821,
+      "best_sector_2_ms": 35444,
+      "best_sector_3_ms": 25649,
+      "ideal_lap_ms": 93914,
+      "best_lap_ms": 94716,
+      "delta_to_ideal_ms": 802
+    },
+    {
+      "driver_code": "PER",
+      "best_sector_1_ms": 32995,
+      "best_sector_2_ms": 35174,
+      "best_sector_3_ms": 25918,
+      "ideal_lap_ms": 94087,
+      "best_lap_ms": 94895,
+      "delta_to_ideal_ms": 808
+    },
+    {
+      "driver_code": "HUL",
+      "best_sector_1_ms": 33228,
+      "best_sector_2_ms": 34897,
+      "best_sector_3_ms": 26235,
+      "ideal_lap_ms": 94360,
+      "best_lap_ms": 94523,
+      "delta_to_ideal_ms": 163
+    },
+    {
+      "driver_code": "LAW",
+      "best_sector_1_ms": 33415,
+      "best_sector_2_ms": 35147,
+      "best_sector_3_ms": 25913,
+      "ideal_lap_ms": 94475,
+      "best_lap_ms": 94814,
+      "delta_to_ideal_ms": 339
+    },
+    {
+      "driver_code": "HAD",
+      "best_sector_1_ms": 33538,
+      "best_sector_2_ms": 35375,
+      "best_sector_3_ms": 25775,
+      "ideal_lap_ms": 94688,
+      "best_lap_ms": 94833,
+      "delta_to_ideal_ms": 145
+    },
+    {
+      "driver_code": "GAS",
+      "best_sector_1_ms": 33854,
+      "best_sector_2_ms": 35021,
+      "best_sector_3_ms": 25901,
+      "ideal_lap_ms": 94776,
+      "best_lap_ms": 94856,
+      "delta_to_ideal_ms": 80
+    },
+    {
+      "driver_code": "BOT",
+      "best_sector_1_ms": 33355,
+      "best_sector_2_ms": 35662,
+      "best_sector_3_ms": 25890,
+      "ideal_lap_ms": 94907,
+      "best_lap_ms": 96080,
+      "delta_to_ideal_ms": 1173
+    }
+  ]
+}

@@ -1,13 +1,20 @@
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DriverBadge, TeamColorPill } from "@/components/session/Badges";
-import { api, safeApi } from "@/lib/api-server";
-import { DEFAULT_SESSION_ID } from "@/lib/constants";
+import { api, isApiFailure, safeApi } from "@/lib/api-server";
 
 export default async function DriversPage() {
-  const drivers = await safeApi(() => api.drivers(DEFAULT_SESSION_ID));
+  const primarySession = await safeApi(() => api.primarySession());
+  if (!primarySession.ok) {
+    return <ErrorState title="Could not load drivers" detail={`${primarySession.error.message}: ${primarySession.apiBaseUrl}`} />;
+  }
+  const drivers = await safeApi(() => api.drivers(primarySession.data.session_id));
+  const failed = [drivers].find(isApiFailure);
+  if (failed) {
+    return <ErrorState title="Could not load drivers" detail={`${failed.error.message}: ${failed.apiBaseUrl}`} />;
+  }
   if (!drivers.ok) {
-    return <ErrorState title="Could not load drivers" detail={`${drivers.error.message}: ${drivers.apiBaseUrl}`} />;
+    return null;
   }
   return (
     <div>

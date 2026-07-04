@@ -72,6 +72,7 @@ export function createStaticApi(readArtifact: ArtifactReader) {
   const api = {
     catalog: () => readArtifact<CatalogArtifact>("catalog.json"),
     seasons: async () => (await api.catalog()).seasons,
+    primarySession: async () => primarySession(await api.catalog()),
     meetings: async (year: number) => (await readSeason(year)).meetings,
     sessions: async (year: number, round: number) =>
       (await readSeason(year)).sessions.filter((session) => session.round === round),
@@ -98,6 +99,7 @@ export function createStaticApi(readArtifact: ArtifactReader) {
       readSessionArtifact<Record<string, unknown>>(sessionId, "analysis/team-mate-comparison.json"),
     strategy: (sessionId: string) =>
       readSessionArtifact<Record<string, unknown>>(sessionId, "analysis/strategy.json"),
+    telemetryIndex: (sessionId: string) => readTelemetryIndex(sessionId),
     telemetryLap: (sessionId: string, driver: string, lap: number) =>
       readTelemetryLap(sessionId, driver, lap),
     telemetryCompare: (sessionId: string, driverA: string, lapA: number, driverB: string, lapB: number) =>
@@ -251,6 +253,33 @@ export function createStaticApi(readArtifact: ArtifactReader) {
   }
 
   return api;
+}
+
+function primarySession(catalog: CatalogArtifact): Session {
+  const available = catalog.sessions.filter((session) => session.status !== "missing");
+  const sessions = available.length ? available : catalog.sessions;
+  const selected = [...sessions].sort((left, right) => {
+    const leftRank = sessionSortRank(left);
+    const rightRank = sessionSortRank(right);
+    return leftRank - rightRank;
+  }).at(-1);
+  if (!selected) {
+    throw new ApiClientError(
+      "No session artifacts are available",
+      {
+        code: "artifact_not_found",
+        message: "No session artifacts are available",
+        details: { path: "catalog.json" }
+      },
+      STATIC_DATA_SOURCE
+    );
+  }
+  return selected;
+}
+
+function sessionSortRank(session: Session): number {
+  const sessionOrder: Record<string, number> = { FP1: 1, FP2: 2, FP3: 3, SQ: 4, S: 5, Q: 6, R: 7 };
+  return session.year * 10000 + session.round * 10 + (sessionOrder[session.type.toUpperCase()] || 0);
 }
 
 export async function safeApi<T>(loader: () => Promise<T>): Promise<ApiResult<T>> {

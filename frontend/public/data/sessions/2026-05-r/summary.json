@@ -1,0 +1,23 @@
+{
+  "session_id": "2026-05-r",
+  "meeting": "Canadian Grand Prix",
+  "session": "Race",
+  "year": 2026,
+  "round": 5,
+  "circuit": "Montréal",
+  "country": "Canada",
+  "driver_count": 22,
+  "lap_count": 1212,
+  "weather_summary": "air 12.3-13.6C, track 16.7-19.0C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

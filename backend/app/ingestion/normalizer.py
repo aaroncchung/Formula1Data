@@ -4,6 +4,66 @@ from typing import Any
 import pandas as pd
 
 
+SESSION_CODE_BY_NAME = {
+    "Practice 1": "FP1",
+    "Practice 2": "FP2",
+    "Practice 3": "FP3",
+    "Qualifying": "Q",
+    "Sprint": "S",
+    "Sprint Qualifying": "SQ",
+    "Sprint Shootout": "SQ",
+    "Race": "R",
+}
+
+
+def normalize_fastf1_schedule(year: int, schedule: Any) -> dict[str, Any]:
+    meetings = []
+    for _, row in schedule.iterrows():
+        round_number = _safe_int(_get(row, "RoundNumber"), default=0) or 0
+        if round_number <= 0:
+            continue
+        event_name = str(_get(row, "EventName", "") or "")
+        if not event_name:
+            continue
+        country = str(_get(row, "Country", "") or "")
+        location = str(_get(row, "Location", "") or "")
+        circuit_name = str(_get(row, "CircuitName", location or event_name) or event_name)
+        meetings.append(
+            {
+                "meeting_id": f"{year}-{round_number:02d}-{_slug(event_name)}",
+                "year": year,
+                "round": round_number,
+                "name": event_name,
+                "official_name": _none_if_missing(_get(row, "OfficialEventName", event_name)),
+                "circuit": {
+                    "circuit_id": _slug(circuit_name),
+                    "name": circuit_name,
+                    "country": country,
+                    "location": location,
+                },
+                "start_date": _event_date(row),
+                "country": country,
+                "sessions_available": _sessions_available(row),
+                "is_ingested": False,
+                "is_sample": False,
+            }
+        )
+
+    return {
+        "seasons": [
+            {
+                "year": year,
+                "meeting_count": len(meetings),
+                "ingested_meeting_count": 0,
+                "is_sample": False,
+            }
+        ],
+        "meetings": meetings,
+        "sessions": [],
+        "session_data": {},
+    }
+
+
 def normalize_fastf1_session(year: int, event_name: str, session_name: str, session: Any) -> dict[str, Any]:
     event = getattr(session, "event", {})
     round_number = _safe_int(_get(event, "RoundNumber"), default=0)
@@ -325,14 +385,28 @@ def _weather_summary(weather: list[dict[str, Any]]) -> str:
 
 
 def _event_date(event: Any) -> str | None:
-    value = _get(event, "EventDate") or _get(event, "Session5Date")
-    if value is None:
+    value = _get(event, "EventDate")
+    if _is_missing(value):
+        value = _get(event, "Session5Date")
+    if _is_missing(value):
         return None
     if isinstance(value, date):
         return value.isoformat()
     if hasattr(value, "date"):
         return value.date().isoformat()
     return str(value)[:10]
+
+
+def _sessions_available(event: Any) -> list[str]:
+    sessions = []
+    for index in range(1, 6):
+        name = _get(event, f"Session{index}")
+        if _is_missing(name):
+            continue
+        code = SESSION_CODE_BY_NAME.get(str(name), str(name).upper())
+        if code and code not in sessions:
+            sessions.append(code)
+    return sessions or ["R"]
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
@@ -362,7 +436,7 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _safe_int(value: Any, default: int | None) -> int | None:
-    if value is None or pd.isna(value):
+    if _is_missing(value):
         return default
     try:
         return int(value)
@@ -371,7 +445,7 @@ def _safe_int(value: Any, default: int | None) -> int | None:
 
 
 def _iso_or_none(value: Any) -> str | None:
-    if value is None or pd.isna(value):
+    if _is_missing(value):
         return None
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -380,4 +454,17 @@ def _iso_or_none(value: Any) -> str | None:
 
 def _slug(value: str) -> str:
     return "".join(char.lower() if char.isalnum() else "-" for char in value).strip("-")
+
+
+def _none_if_missing(value: Any) -> Any:
+    return None if _is_missing(value) else value
+
+
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
 

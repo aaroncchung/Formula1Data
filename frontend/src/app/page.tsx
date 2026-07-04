@@ -6,13 +6,22 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
-import { DEFAULT_SESSION_ID } from "@/lib/constants";
 
 export default async function DashboardPage() {
+  const primarySessionResult = await safeApi(() => api.primarySession());
+  if (!primarySessionResult.ok) {
+    return (
+      <ErrorState
+        title="Static data unavailable"
+        detail={`${primarySessionResult.error.message}. Static data source: ${primarySessionResult.apiBaseUrl}`}
+      />
+    );
+  }
+  const primarySession = primarySessionResult.data;
   const [summaryResult, seasonsResult, racePaceResult] = await Promise.all([
-    safeApi(() => api.summary(DEFAULT_SESSION_ID)),
+    safeApi(() => api.summary(primarySession.session_id)),
     safeApi(() => api.seasons()),
-    safeApi(() => api.racePace(DEFAULT_SESSION_ID))
+    safeApi(() => api.racePace(primarySession.session_id))
   ]);
 
   const failed = [summaryResult, seasonsResult, racePaceResult].find(isApiFailure);
@@ -40,8 +49,11 @@ export default async function DashboardPage() {
         description="A dense, dark analytics workspace for historical race analysis, telemetry comparison, strategy review, and optional future live data."
         actions={
           <>
-            <Link className="rounded bg-redline px-4 py-2 text-sm font-bold text-white" href="/seasons/2025/8/R">
-              Open sample session
+            <Link
+              className="rounded bg-redline px-4 py-2 text-sm font-bold text-white"
+              href={`/seasons/${primarySession.year}/${primarySession.round}/${primarySession.type}`}
+            >
+              Open latest session
             </Link>
             <Link className="rounded border border-line px-4 py-2 text-sm font-bold text-slate-200" href="/telemetry">
               Compare telemetry

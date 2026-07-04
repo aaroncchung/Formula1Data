@@ -70,16 +70,26 @@ def load_merged_dataset(data_dir: Path, sample_only: bool = False) -> tuple[dict
     sources: list[Path] = []
 
     sample_dataset = data_dir / "processed" / "sample" / "dataset.json"
-    if sample_dataset.exists():
+    if sample_only and sample_dataset.exists():
         dataset = merge_datasets(dataset, read_json(sample_dataset))
         sources.append(sample_dataset)
 
     if not sample_only:
+        seasons_dir = data_dir / "processed" / "seasons"
+        if seasons_dir.exists():
+            for artifact in sorted(seasons_dir.glob("*/dataset.json")):
+                dataset = merge_datasets(dataset, read_json(artifact))
+                sources.append(artifact)
+
         sessions_dir = data_dir / "processed" / "sessions"
         if sessions_dir.exists():
             for artifact in sorted(sessions_dir.glob("*/dataset.json")):
                 dataset = merge_datasets(dataset, read_json(artifact))
                 sources.append(artifact)
+
+        if not sources and sample_dataset.exists():
+            dataset = merge_datasets(dataset, read_json(sample_dataset))
+            sources.append(sample_dataset)
 
     return dataset, sources
 
@@ -280,12 +290,40 @@ def empty_dataset() -> dict[str, Any]:
 
 
 def merge_datasets(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    meetings = dedupe(left.get("meetings", []) + right.get("meetings", []), "meeting_id")
     return {
-        "seasons": dedupe(left.get("seasons", []) + right.get("seasons", []), "year"),
-        "meetings": dedupe(left.get("meetings", []) + right.get("meetings", []), "meeting_id"),
+        "seasons": merge_seasons(left.get("seasons", []) + right.get("seasons", []), meetings),
+        "meetings": meetings,
         "sessions": dedupe(left.get("sessions", []) + right.get("sessions", []), "session_id"),
         "session_data": {**left.get("session_data", {}), **right.get("session_data", {})},
     }
+
+
+def merge_seasons(seasons: list[dict[str, Any]], meetings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_year: dict[int, dict[str, Any]] = {}
+    for season in seasons:
+        year = int(season["year"])
+        current = by_year.setdefault(
+            year,
+            {"year": year, "meeting_count": 0, "ingested_meeting_count": 0, "is_sample": True},
+        )
+        current["meeting_count"] = max(
+            int(current.get("meeting_count") or 0),
+            int(season.get("meeting_count") or 0),
+        )
+        current["ingested_meeting_count"] = max(
+            int(current.get("ingested_meeting_count") or 0),
+            int(season.get("ingested_meeting_count") or 0),
+        )
+        current["is_sample"] = bool(current.get("is_sample")) and bool(season.get("is_sample"))
+
+    for year, season in by_year.items():
+        year_meetings = [meeting for meeting in meetings if meeting["year"] == year]
+        ingested_count = sum(1 for meeting in year_meetings if meeting.get("is_ingested"))
+        if year_meetings:
+            season["meeting_count"] = max(season["meeting_count"], len(year_meetings))
+            season["ingested_meeting_count"] = max(season["ingested_meeting_count"], ingested_count)
+    return list(by_year.values())
 
 
 def dedupe(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:

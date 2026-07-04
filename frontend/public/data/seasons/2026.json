@@ -1,0 +1,638 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-04T05:56:46.021133+00:00",
+  "season": {
+    "year": 2026,
+    "meeting_count": 22,
+    "ingested_meeting_count": 8,
+    "is_sample": false
+  },
+  "meetings": [
+    {
+      "meeting_id": "2026-01-australian-grand-prix",
+      "year": 2026,
+      "round": 1,
+      "name": "Australian Grand Prix",
+      "official_name": "FORMULA 1 QATAR AIRWAYS AUSTRALIAN GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "melbourne",
+        "name": "Melbourne",
+        "country": "Australia",
+        "location": "Melbourne"
+      },
+      "start_date": "2026-03-08T00:00:00",
+      "country": "Australia",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-02-chinese-grand-prix",
+      "year": 2026,
+      "round": 2,
+      "name": "Chinese Grand Prix",
+      "official_name": "FORMULA 1 HEINEKEN CHINESE GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "shanghai",
+        "name": "Shanghai",
+        "country": "China",
+        "location": "Shanghai"
+      },
+      "start_date": "2026-03-15T00:00:00",
+      "country": "China",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-03-japanese-grand-prix",
+      "year": 2026,
+      "round": 3,
+      "name": "Japanese Grand Prix",
+      "official_name": "FORMULA 1 ARAMCO JAPANESE GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "suzuka",
+        "name": "Suzuka",
+        "country": "Japan",
+        "location": "Suzuka"
+      },
+      "start_date": "2026-03-29T00:00:00",
+      "country": "Japan",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-04-miami-grand-prix",
+      "year": 2026,
+      "round": 4,
+      "name": "Miami Grand Prix",
+      "official_name": "FORMULA 1 CRYPTO.COM MIAMI GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "miami-gardens",
+        "name": "Miami Gardens",
+        "country": "United States",
+        "location": "Miami Gardens"
+      },
+      "start_date": "2026-05-03T00:00:00",
+      "country": "United States",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-05-canadian-grand-prix",
+      "year": 2026,
+      "round": 5,
+      "name": "Canadian Grand Prix",
+      "official_name": "FORMULA 1 LENOVO GRAND PRIX DU CANADA 2026",
+      "circuit": {
+        "circuit_id": "montréal",
+        "name": "Montréal",
+        "country": "Canada",
+        "location": "Montréal"
+      },
+      "start_date": "2026-05-24T00:00:00",
+      "country": "Canada",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-06-monaco-grand-prix",
+      "year": 2026,
+      "round": 6,
+      "name": "Monaco Grand Prix",
+      "official_name": "FORMULA 1 LOUIS VUITTON GRAND PRIX DE MONACO 2026",
+      "circuit": {
+        "circuit_id": "monte-carlo",
+        "name": "Monte Carlo",
+        "country": "Monaco",
+        "location": "Monte Carlo"
+      },
+      "start_date": "2026-06-07T00:00:00",
+      "country": "Monaco",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-07-barcelona-grand-prix",
+      "year": 2026,
+      "round": 7,
+      "name": "Barcelona Grand Prix",
+      "official_name": "FORMULA 1 MSC CRUISES GRAN PREMIO DE BARCELONA-CATALUNYA 2026",
+      "circuit": {
+        "circuit_id": "barcelona",
+        "name": "Barcelona",
+        "country": "Spain",
+        "location": "Barcelona"
+      },
+      "start_date": "2026-06-14T00:00:00",
+      "country": "Spain",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-08-austrian-grand-prix",
+      "year": 2026,
+      "round": 8,
+      "name": "Austrian Grand Prix",
+      "official_name": "FORMULA 1 LENOVO AUSTRIAN GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "spielberg",
+        "name": "Spielberg",
+        "country": "Austria",
+        "location": "Spielberg"
+      },
+      "start_date": "2026-06-28T00:00:00",
+      "country": "Austria",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": true,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-09-british-grand-prix",
+      "year": 2026,
+      "round": 9,
+      "name": "British Grand Prix",
+      "official_name": "FORMULA 1 PIRELLI BRITISH GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "silverstone",
+        "name": "Silverstone",
+        "country": "United Kingdom",
+        "location": "Silverstone"
+      },
+      "start_date": "2026-07-05T00:00:00",
+      "country": "United Kingdom",
+      "sessions_available": [
+        "FP1",
+        "SQ",
+        "S",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-10-belgian-grand-prix",
+      "year": 2026,
+      "round": 10,
+      "name": "Belgian Grand Prix",
+      "official_name": "FORMULA 1 MOËT & CHANDON BELGIAN GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "spa-francorchamps",
+        "name": "Spa-Francorchamps",
+        "country": "Belgium",
+        "location": "Spa-Francorchamps"
+      },
+      "start_date": "2026-07-19T00:00:00",
+      "country": "Belgium",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-11-hungarian-grand-prix",
+      "year": 2026,
+      "round": 11,
+      "name": "Hungarian Grand Prix",
+      "official_name": "FORMULA 1 AWS HUNGARIAN GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "budapest",
+        "name": "Budapest",
+        "country": "Hungary",
+        "location": "Budapest"
+      },
+      "start_date": "2026-07-26T00:00:00",
+      "country": "Hungary",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-12-dutch-grand-prix",
+      "year": 2026,
+      "round": 12,
+      "name": "Dutch Grand Prix",
+      "official_name": "FORMULA 1 HEINEKEN DUTCH GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "zandvoort",
+        "name": "Zandvoort",
+        "country": "Netherlands",
+        "location": "Zandvoort"
+      },
+      "start_date": "2026-08-23T00:00:00",
+      "country": "Netherlands",
+      "sessions_available": [
+        "FP1",
+        "SQ",
+        "S",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-13-italian-grand-prix",
+      "year": 2026,
+      "round": 13,
+      "name": "Italian Grand Prix",
+      "official_name": "FORMULA 1 PIRELLI GRAN PREMIO D’ITALIA 2026",
+      "circuit": {
+        "circuit_id": "monza",
+        "name": "Monza",
+        "country": "Italy",
+        "location": "Monza"
+      },
+      "start_date": "2026-09-06T00:00:00",
+      "country": "Italy",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-14-spanish-grand-prix",
+      "year": 2026,
+      "round": 14,
+      "name": "Spanish Grand Prix",
+      "official_name": "FORMULA 1 TAG HEUER GRAN PREMIO DE ESPAÑA 2026",
+      "circuit": {
+        "circuit_id": "madrid",
+        "name": "Madrid",
+        "country": "Spain",
+        "location": "Madrid"
+      },
+      "start_date": "2026-09-13T00:00:00",
+      "country": "Spain",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-15-azerbaijan-grand-prix",
+      "year": 2026,
+      "round": 15,
+      "name": "Azerbaijan Grand Prix",
+      "official_name": "FORMULA 1 QATAR AIRWAYS AZERBAIJAN GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "baku",
+        "name": "Baku",
+        "country": "Azerbaijan",
+        "location": "Baku"
+      },
+      "start_date": "2026-09-26T00:00:00",
+      "country": "Azerbaijan",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-16-singapore-grand-prix",
+      "year": 2026,
+      "round": 16,
+      "name": "Singapore Grand Prix",
+      "official_name": "FORMULA 1 SINGAPORE AIRLINES SINGAPORE GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "marina-bay",
+        "name": "Marina Bay",
+        "country": "Singapore",
+        "location": "Marina Bay"
+      },
+      "start_date": "2026-10-11T00:00:00",
+      "country": "Singapore",
+      "sessions_available": [
+        "FP1",
+        "SQ",
+        "S",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-17-united-states-grand-prix",
+      "year": 2026,
+      "round": 17,
+      "name": "United States Grand Prix",
+      "official_name": "FORMULA 1 MSC CRUISES UNITED STATES GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "austin",
+        "name": "Austin",
+        "country": "United States",
+        "location": "Austin"
+      },
+      "start_date": "2026-10-25T00:00:00",
+      "country": "United States",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-18-mexico-city-grand-prix",
+      "year": 2026,
+      "round": 18,
+      "name": "Mexico City Grand Prix",
+      "official_name": "FORMULA 1 GRAN PREMIO DE LA CIUDAD DE MÉXICO 2026",
+      "circuit": {
+        "circuit_id": "mexico-city",
+        "name": "Mexico City",
+        "country": "Mexico",
+        "location": "Mexico City"
+      },
+      "start_date": "2026-11-01T00:00:00",
+      "country": "Mexico",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-19-são-paulo-grand-prix",
+      "year": 2026,
+      "round": 19,
+      "name": "São Paulo Grand Prix",
+      "official_name": "FORMULA 1 MSC CRUISES GRANDE PRÊMIO DE SÃO PAULO 2026",
+      "circuit": {
+        "circuit_id": "são-paulo",
+        "name": "São Paulo",
+        "country": "Brazil",
+        "location": "São Paulo"
+      },
+      "start_date": "2026-11-08T00:00:00",
+      "country": "Brazil",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-20-las-vegas-grand-prix",
+      "year": 2026,
+      "round": 20,
+      "name": "Las Vegas Grand Prix",
+      "official_name": "FORMULA 1 HEINEKEN LAS VEGAS GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "las-vegas",
+        "name": "Las Vegas",
+        "country": "United States",
+        "location": "Las Vegas"
+      },
+      "start_date": "2026-11-21T00:00:00",
+      "country": "United States",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-21-qatar-grand-prix",
+      "year": 2026,
+      "round": 21,
+      "name": "Qatar Grand Prix",
+      "official_name": "FORMULA 1 QATAR AIRWAYS QATAR GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "lusail",
+        "name": "Lusail",
+        "country": "Qatar",
+        "location": "Lusail"
+      },
+      "start_date": "2026-11-29T00:00:00",
+      "country": "Qatar",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    },
+    {
+      "meeting_id": "2026-22-abu-dhabi-grand-prix",
+      "year": 2026,
+      "round": 22,
+      "name": "Abu Dhabi Grand Prix",
+      "official_name": "FORMULA 1 ETIHAD AIRWAYS ABU DHABI GRAND PRIX 2026",
+      "circuit": {
+        "circuit_id": "yas-marina",
+        "name": "Yas Marina",
+        "country": "United Arab Emirates",
+        "location": "Yas Marina"
+      },
+      "start_date": "2026-12-06T00:00:00",
+      "country": "United Arab Emirates",
+      "sessions_available": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "R"
+      ],
+      "is_ingested": false,
+      "is_sample": false
+    }
+  ],
+  "sessions": [
+    {
+      "session_id": "2026-01-r",
+      "year": 2026,
+      "round": 1,
+      "meeting_id": "2026-01-australian-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-03-08T04:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-02-r",
+      "year": 2026,
+      "round": 2,
+      "meeting_id": "2026-02-chinese-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-03-15T07:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-03-r",
+      "year": 2026,
+      "round": 3,
+      "meeting_id": "2026-03-japanese-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-03-29T05:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-04-r",
+      "year": 2026,
+      "round": 4,
+      "meeting_id": "2026-04-miami-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-05-03T17:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-05-r",
+      "year": 2026,
+      "round": 5,
+      "meeting_id": "2026-05-canadian-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-05-24T20:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-06-r",
+      "year": 2026,
+      "round": 6,
+      "meeting_id": "2026-06-monaco-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-06-07T13:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-07-r",
+      "year": 2026,
+      "round": 7,
+      "meeting_id": "2026-07-barcelona-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-06-14T13:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-08-r",
+      "year": 2026,
+      "round": 8,
+      "meeting_id": "2026-08-austrian-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-06-28T13:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    }
+  ]
+}

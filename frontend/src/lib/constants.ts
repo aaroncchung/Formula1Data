@@ -1,5 +1,4 @@
 export const APP_NAME = "Formula 1 Data";
-export const DEFAULT_SESSION_ID = "2025-08-r";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },

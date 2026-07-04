@@ -3,12 +3,15 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DriverBadge } from "@/components/session/Badges";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
-import { DEFAULT_SESSION_ID } from "@/lib/constants";
 
 export default async function StandingsPage() {
+  const primarySession = await safeApi(() => api.primarySession());
+  if (!primarySession.ok) {
+    return <ErrorState title="Could not load standings" detail={`${primarySession.error.message}: ${primarySession.apiBaseUrl}`} />;
+  }
   const [results, drivers] = await Promise.all([
-    safeApi(() => api.results(DEFAULT_SESSION_ID)),
-    safeApi(() => api.drivers(DEFAULT_SESSION_ID))
+    safeApi(() => api.results(primarySession.data.session_id)),
+    safeApi(() => api.drivers(primarySession.data.session_id))
   ]);
   const failed = [results, drivers].find(isApiFailure);
   if (failed) {

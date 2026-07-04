@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.ingestion.normalizer import normalize_fastf1_session
+from app.ingestion.normalizer import normalize_fastf1_schedule, normalize_fastf1_session
 from app.services.dataset_service import DatasetService
 from app.services.fastf1_service import FastF1Service
 from app.services.storage_service import StorageService
@@ -29,13 +29,23 @@ class FastF1Ingestor:
 
     def ingest_season(self, year: int, force: bool = False) -> int:
         schedule = self.fastf1.get_schedule(year)
+        schedule_dataset = normalize_fastf1_schedule(year, schedule)
+        self.datasets.write_season_dataset(year, schedule_dataset)
         count = 0
         for _, row in schedule.iterrows():
+            round_number = int(row.get("RoundNumber") or 0)
+            if round_number <= 0:
+                continue
             event_name = str(row.get("EventName") or "")
             if not event_name:
                 continue
-            self.ingest_session(year, event_name, "R", force=force)
-            count += 1
+            try:
+                self.ingest_session(year, event_name, "R", force=force)
+            except Exception as exc:
+                print(f"Skipped {year} round {round_number} ({event_name}): {exc}")
+                continue
+            else:
+                count += 1
         return count
 
     def _guess_session_id(self, year: int, event: str, session_name: str) -> str:

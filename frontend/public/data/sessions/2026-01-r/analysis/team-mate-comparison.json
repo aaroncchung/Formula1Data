@@ -1,0 +1,152 @@
+{
+  "session_id": "2026-01-r",
+  "rows": [
+    {
+      "team": "Alpine",
+      "drivers": [
+        {
+          "driver_code": "GAS",
+          "average_lap_ms": 85387.2,
+          "lap_count": 48
+        },
+        {
+          "driver_code": "COL",
+          "average_lap_ms": 85760.8,
+          "lap_count": 45
+        }
+      ],
+      "gap_ms": 373.6
+    },
+    {
+      "team": "Cadillac",
+      "drivers": [
+        {
+          "driver_code": "PER",
+          "average_lap_ms": 87807.0,
+          "lap_count": 45
+        },
+        {
+          "driver_code": "BOT",
+          "average_lap_ms": 88713.6,
+          "lap_count": 11
+        }
+      ],
+      "gap_ms": 906.6
+    },
+    {
+      "team": "Mercedes",
+      "drivers": [
+        {
+          "driver_code": "ANT",
+          "average_lap_ms": 83299.7,
+          "lap_count": 49
+        },
+        {
+          "driver_code": "RUS",
+          "average_lap_ms": 83413,
+          "lap_count": 50
+        }
+      ],
+      "gap_ms": 113.3
+    },
+    {
+      "team": "Aston Martin",
+      "drivers": [
+        {
+          "driver_code": "STR",
+          "average_lap_ms": 87213.2,
+          "lap_count": 29
+        },
+        {
+          "driver_code": "ALO",
+          "average_lap_ms": 87301.8,
+          "lap_count": 16
+        }
+      ],
+      "gap_ms": 88.6
+    },
+    {
+      "team": "Ferrari",
+      "drivers": [
+        {
+          "driver_code": "HAM",
+          "average_lap_ms": 83431.7,
+          "lap_count": 48
+        },
+        {
+          "driver_code": "LEC",
+          "average_lap_ms": 83512.7,
+          "lap_count": 48
+        }
+      ],
+      "gap_ms": 81.0
+    },
+    {
+      "team": "Williams",
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "average_lap_ms": 85598.1,
+          "lap_count": 48
+        },
+        {
+          "driver_code": "SAI",
+          "average_lap_ms": 86001.1,
+          "lap_count": 45
+        }
+      ],
+      "gap_ms": 403.0
+    },
+    {
+      "team": "Red Bull Racing",
+      "drivers": [
+        {
+          "driver_code": "VER",
+          "average_lap_ms": 83830.9,
+          "lap_count": 48
+        },
+        {
+          "driver_code": "HAD",
+          "average_lap_ms": 85497.7,
+          "lap_count": 9
+        }
+      ],
+      "gap_ms": 1666.8
+    },
+    {
+      "team": "Racing Bulls",
+      "drivers": [
+        {
+          "driver_code": "LIN",
+          "average_lap_ms": 85136.9,
+          "lap_count": 48
+        },
+        {
+          "driver_code": "LAW",
+          "average_lap_ms": 85337.5,
+          "lap_count": 48
+        }
+      ],
+      "gap_ms": 200.6
+    },
+    {
+      "team": "Haas F1 Team",
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "average_lap_ms": 84983.0,
+          "lap_count": 49
+        },
+        {
+          "driver_code": "OCO",
+          "average_lap_ms": 85448.3,
+          "lap_count": 49
+        }
+      ],
+      "gap_ms": 465.3
+    }
+  ],
+  "caveats": [
+    "Sample data may include one driver per team, so this view can be empty."
+  ]
+}

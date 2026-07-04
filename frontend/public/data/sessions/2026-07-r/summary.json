@@ -1,0 +1,23 @@
+{
+  "session_id": "2026-07-r",
+  "meeting": "Barcelona Grand Prix",
+  "session": "Race",
+  "year": 2026,
+  "round": 7,
+  "circuit": "Barcelona",
+  "country": "Spain",
+  "driver_count": 22,
+  "lap_count": 1236,
+  "weather_summary": "air 29.9-31.0C, track 48.4-51.9C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

@@ -1,0 +1,507 @@
+{
+  "session_id": "2026-04-r",
+  "rows": [
+    {
+      "driver_code": "NOR",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -9.7,
+      "r_squared": 0.053,
+      "sample_count": 19,
+      "stint_length": 19,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "NOR",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 11.44,
+      "r_squared": 0.073,
+      "sample_count": 28,
+      "stint_length": 28,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "GAS",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -360.0,
+      "r_squared": 0.931,
+      "sample_count": 3,
+      "stint_length": 3,
+      "caveats": []
+    },
+    {
+      "driver_code": "PER",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -6.61,
+      "r_squared": 0.055,
+      "sample_count": 19,
+      "stint_length": 19,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "PER",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 6.91,
+      "r_squared": 0.004,
+      "sample_count": 26,
+      "stint_length": 26,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ANT",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -27.2,
+      "r_squared": 0.234,
+      "sample_count": 17,
+      "stint_length": 17,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ANT",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 4.91,
+      "r_squared": 0.027,
+      "sample_count": 29,
+      "stint_length": 29,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ALO",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -1.23,
+      "r_squared": 0.001,
+      "sample_count": 30,
+      "stint_length": 30,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ALO",
+      "compound": "SOFT",
+      "stint": 2,
+      "degradation_ms_per_lap": -67.14,
+      "r_squared": 0.089,
+      "sample_count": 12,
+      "stint_length": 12,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "LEC",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 17.16,
+      "r_squared": 0.025,
+      "sample_count": 13,
+      "stint_length": 13,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "LEC",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": -11.28,
+      "r_squared": 0.07,
+      "sample_count": 34,
+      "stint_length": 34,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "STR",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 8.16,
+      "r_squared": 0.021,
+      "sample_count": 10,
+      "stint_length": 10,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "STR",
+      "compound": "SOFT",
+      "stint": 2,
+      "degradation_ms_per_lap": 30.72,
+      "r_squared": 0.023,
+      "sample_count": 14,
+      "stint_length": 14,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "STR",
+      "compound": "SOFT",
+      "stint": 3,
+      "degradation_ms_per_lap": -19.59,
+      "r_squared": 0.028,
+      "sample_count": 18,
+      "stint_length": 18,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ALB",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -0.57,
+      "r_squared": 0.0,
+      "sample_count": 19,
+      "stint_length": 19,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "ALB",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 7.07,
+      "r_squared": 0.109,
+      "sample_count": 29,
+      "stint_length": 29,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "HUL",
+      "compound": "MEDIUM",
+      "stint": 2,
+      "degradation_ms_per_lap": null,
+      "r_squared": null,
+      "sample_count": 2,
+      "stint_length": 2,
+      "caveats": [
+        "At least three clean laps are required for a degradation fit."
+      ]
+    },
+    {
+      "driver_code": "VER",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 217.5,
+      "r_squared": 0.604,
+      "sample_count": 4,
+      "stint_length": 4,
+      "caveats": []
+    },
+    {
+      "driver_code": "VER",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 14.78,
+      "r_squared": 0.093,
+      "sample_count": 46,
+      "stint_length": 46,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "LAW",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -947.5,
+      "r_squared": 0.608,
+      "sample_count": 3,
+      "stint_length": 3,
+      "caveats": []
+    },
+    {
+      "driver_code": "OCO",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -16.94,
+      "r_squared": 0.073,
+      "sample_count": 23,
+      "stint_length": 23,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "OCO",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 26.79,
+      "r_squared": 0.105,
+      "sample_count": 24,
+      "stint_length": 24,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "LIN",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -10.01,
+      "r_squared": 0.034,
+      "sample_count": 19,
+      "stint_length": 19,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "LIN",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 102.16,
+      "r_squared": 0.144,
+      "sample_count": 27,
+      "stint_length": 27,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "COL",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -6.76,
+      "r_squared": 0.037,
+      "sample_count": 23,
+      "stint_length": 23,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "COL",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 1.38,
+      "r_squared": 0.001,
+      "sample_count": 25,
+      "stint_length": 25,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "HAM",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 20.63,
+      "r_squared": 0.19,
+      "sample_count": 19,
+      "stint_length": 19,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "HAM",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 53.85,
+      "r_squared": 0.497,
+      "sample_count": 29,
+      "stint_length": 29,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BOR",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -65.07,
+      "r_squared": 0.699,
+      "sample_count": 23,
+      "stint_length": 23,
+      "caveats": []
+    },
+    {
+      "driver_code": "BOR",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 23.09,
+      "r_squared": 0.089,
+      "sample_count": 23,
+      "stint_length": 23,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "SAI",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -23.22,
+      "r_squared": 0.082,
+      "sample_count": 20,
+      "stint_length": 20,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "SAI",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 20.56,
+      "r_squared": 0.288,
+      "sample_count": 28,
+      "stint_length": 28,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "HAD",
+      "compound": "HARD",
+      "stint": 1,
+      "degradation_ms_per_lap": -617.5,
+      "r_squared": 0.943,
+      "sample_count": 3,
+      "stint_length": 3,
+      "caveats": []
+    },
+    {
+      "driver_code": "RUS",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 19.33,
+      "r_squared": 0.079,
+      "sample_count": 12,
+      "stint_length": 12,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "RUS",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 6.58,
+      "r_squared": 0.009,
+      "sample_count": 36,
+      "stint_length": 36,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BOT",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -85.5,
+      "r_squared": 0.706,
+      "sample_count": 3,
+      "stint_length": 3,
+      "caveats": []
+    },
+    {
+      "driver_code": "BOT",
+      "compound": "SOFT",
+      "stint": 2,
+      "degradation_ms_per_lap": 133.55,
+      "r_squared": 0.482,
+      "sample_count": 9,
+      "stint_length": 9,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BOT",
+      "compound": "MEDIUM",
+      "stint": 3,
+      "degradation_ms_per_lap": -41.36,
+      "r_squared": 0.052,
+      "sample_count": 7,
+      "stint_length": 7,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BOT",
+      "compound": "MEDIUM",
+      "stint": 4,
+      "degradation_ms_per_lap": 17.9,
+      "r_squared": 0.01,
+      "sample_count": 24,
+      "stint_length": 24,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "PIA",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": 7.62,
+      "r_squared": 0.025,
+      "sample_count": 20,
+      "stint_length": 20,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "PIA",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": -12.02,
+      "r_squared": 0.031,
+      "sample_count": 28,
+      "stint_length": 28,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BEA",
+      "compound": "MEDIUM",
+      "stint": 1,
+      "degradation_ms_per_lap": -18.49,
+      "r_squared": 0.055,
+      "sample_count": 18,
+      "stint_length": 18,
+      "caveats": [
+        "Low fit quality; treat the slope as directional only."
+      ]
+    },
+    {
+      "driver_code": "BEA",
+      "compound": "HARD",
+      "stint": 2,
+      "degradation_ms_per_lap": 36.78,
+      "r_squared": 0.52,
+      "sample_count": 28,
+      "stint_length": 28,
+      "caveats": []
+    }
+  ]
+}

@@ -2,10 +2,13 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DriverBadge } from "@/components/session/Badges";
 import { api, safeApi } from "@/lib/api-server";
-import { DEFAULT_SESSION_ID } from "@/lib/constants";
 
 export default async function TeamsPage() {
-  const drivers = await safeApi(() => api.drivers(DEFAULT_SESSION_ID));
+  const primarySession = await safeApi(() => api.primarySession());
+  if (!primarySession.ok) {
+    return <ErrorState title="Could not load teams" detail={`${primarySession.error.message}: ${primarySession.apiBaseUrl}`} />;
+  }
+  const drivers = await safeApi(() => api.drivers(primarySession.data.session_id));
   if (!drivers.ok) {
     return <ErrorState title="Could not load teams" detail={`${drivers.error.message}: ${drivers.apiBaseUrl}`} />;
   }

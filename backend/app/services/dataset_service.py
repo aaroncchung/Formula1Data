@@ -11,13 +11,18 @@ class DatasetService:
 
     def load_all(self) -> dict[str, Any]:
         merged = self._empty_dataset()
-        if self.storage.exists("processed/sample/dataset.json"):
-            merged = self._merge(merged, self.storage.read_json("processed/sample/dataset.json"))
+
+        for season_dir in self.storage.list("processed/seasons"):
+            artifact = f"processed/seasons/{season_dir}/dataset.json"
+            if self.storage.exists(artifact):
+                merged = self._merge(merged, self.storage.read_json(artifact))
 
         for session_dir in self.storage.list("processed/sessions"):
             artifact = f"processed/sessions/{session_dir}/dataset.json"
             if self.storage.exists(artifact):
                 merged = self._merge(merged, self.storage.read_json(artifact))
+        if not merged["seasons"] and self.storage.exists("processed/sample/dataset.json"):
+            merged = self._merge(merged, self.storage.read_json("processed/sample/dataset.json"))
         return merged
 
     def list_seasons(self) -> list[dict[str, Any]]:
@@ -57,16 +62,52 @@ class DatasetService:
     def write_session_dataset(self, session_id: str, dataset: dict[str, Any]) -> None:
         self.storage.write_json(f"processed/sessions/{session_id}/dataset.json", dataset)
 
+    def write_season_dataset(self, year: int, dataset: dict[str, Any]) -> None:
+        self.storage.write_json(f"processed/seasons/{year}/dataset.json", dataset)
+
     def _empty_dataset(self) -> dict[str, Any]:
         return {"seasons": [], "meetings": [], "sessions": [], "session_data": {}}
 
     def _merge(self, left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
         output = deepcopy(left)
-        output["seasons"] = self._dedupe(left["seasons"] + right.get("seasons", []), "year")
         output["meetings"] = self._dedupe(left["meetings"] + right.get("meetings", []), "meeting_id")
         output["sessions"] = self._dedupe(left["sessions"] + right.get("sessions", []), "session_id")
+        output["seasons"] = self._merge_seasons(left["seasons"] + right.get("seasons", []), output["meetings"])
         output["session_data"] = {**left["session_data"], **right.get("session_data", {})}
         return output
+
+    def _merge_seasons(
+        self, seasons: list[dict[str, Any]], meetings: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        by_year: dict[int, dict[str, Any]] = {}
+        for season in seasons:
+            year = int(season["year"])
+            current = by_year.setdefault(
+                year,
+                {
+                    "year": year,
+                    "meeting_count": 0,
+                    "ingested_meeting_count": 0,
+                    "is_sample": True,
+                },
+            )
+            current["meeting_count"] = max(
+                int(current.get("meeting_count") or 0),
+                int(season.get("meeting_count") or 0),
+            )
+            current["ingested_meeting_count"] = max(
+                int(current.get("ingested_meeting_count") or 0),
+                int(season.get("ingested_meeting_count") or 0),
+            )
+            current["is_sample"] = bool(current.get("is_sample")) and bool(season.get("is_sample"))
+
+        for year, season in by_year.items():
+            year_meetings = [meeting for meeting in meetings if meeting["year"] == year]
+            ingested_count = sum(1 for meeting in year_meetings if meeting.get("is_ingested"))
+            if year_meetings:
+                season["meeting_count"] = max(season["meeting_count"], len(year_meetings))
+                season["ingested_meeting_count"] = max(season["ingested_meeting_count"], ingested_count)
+        return list(by_year.values())
 
     def _dedupe(self, rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
         values: dict[Any, dict[str, Any]] = {}

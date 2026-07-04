@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-04T05:56:46.021133+00:00",
+  "session_id": "2026-02-r",
+  "source": {
+    "files": [
+      "backend/data/processed/seasons/2026/dataset.json",
+      "backend/data/processed/sessions/2026-01-r/dataset.json",
+      "backend/data/processed/sessions/2026-02-r/dataset.json",
+      "backend/data/processed/sessions/2026-03-r/dataset.json",
+      "backend/data/processed/sessions/2026-04-r/dataset.json",
+      "backend/data/processed/sessions/2026-05-r/dataset.json",
+      "backend/data/processed/sessions/2026-06-r/dataset.json",
+      "backend/data/processed/sessions/2026-07-r/dataset.json",
+      "backend/data/processed/sessions/2026-08-r/dataset.json"
+    ]
+  },
+  "sections": [
+    {
+      "kind": "summary",
+      "path": "sessions/2026-02-r/summary.json",
+      "size_bytes": 469
+    },
+    {
+      "kind": "drivers",
+      "path": "sessions/2026-02-r/drivers.json",
+      "size_bytes": 5229
+    },
+    {
+      "kind": "laps",
+      "path": "sessions/2026-02-r/laps.json",
+      "size_bytes": 388694
+    },
+    {
+      "kind": "results",
+      "path": "sessions/2026-02-r/results.json",
+      "size_bytes": 4867
+    },
+    {
+      "kind": "stints",
+      "path": "sessions/2026-02-r/stints.json",
+      "size_bytes": 7170
+    },
+    {
+      "kind": "pit_stops",
+      "path": "sessions/2026-02-r/pit-stops.json",
+      "size_bytes": 3004
+    },
+    {
+      "kind": "weather",
+      "path": "sessions/2026-02-r/weather.json",
+      "size_bytes": 6297
+    },
+    {
+      "kind": "race_control",
+      "path": "sessions/2026-02-r/race-control.json",
+      "size_bytes": 20785
+    },
+    {
+      "kind": "analysis:lap-times",
+      "path": "sessions/2026-02-r/analysis/lap-times.json",
+      "size_bytes": 24226
+    },
+    {
+      "kind": "analysis:race-pace",
+      "path": "sessions/2026-02-r/analysis/race-pace.json",
+      "size_bytes": 16170
+    },
+    {
+      "kind": "analysis:tyre-degradation",
+      "path": "sessions/2026-02-r/analysis/tyre-degradation.json",
+      "size_bytes": 10026
+    },
+    {
+      "kind": "analysis:strategy",
+      "path": "sessions/2026-02-r/analysis/strategy.json",
+      "size_bytes": 37358
+    },
+    {
+      "kind": "analysis:ideal-laps",
+      "path": "sessions/2026-02-r/analysis/ideal-laps.json",
+      "size_bytes": 5248
+    },
+    {
+      "kind": "analysis:team-mate-comparison",
+      "path": "sessions/2026-02-r/analysis/team-mate-comparison.json",
+      "size_bytes": 2857
+    },
+    {
+      "kind": "position-replay",
+      "path": "sessions/2026-02-r/position-replay.json",
+      "size_bytes": 4
+    },
+    {
+      "kind": "telemetry-index",
+      "path": "sessions/2026-02-r/telemetry/index.json",
+      "size_bytes": 160
+    }
+  ],
+  "telemetry": {
+    "lap_count": 0,
+    "sample_count": 0,
+    "max_samples_per_lap": 300
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "session_id": "2026-04-r",
+  "meeting": "Miami Grand Prix",
+  "session": "Race",
+  "year": 2026,
+  "round": 4,
+  "circuit": "Miami Gardens",
+  "country": "United States",
+  "driver_count": 22,
+  "lap_count": 1040,
+  "weather_summary": "air 25.7-28.0C, track 33.8-42.2C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

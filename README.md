@@ -128,6 +128,14 @@ Ingest race sessions for a season:
 python -m pipeline ingest-season --year 2025
 ```
 
+For the current 2026 season, this writes the full FastF1 schedule and ingests every race session FastF1 can load:
+
+```powershell
+python -m pipeline ingest-season --year 2026
+```
+
+Unavailable future races are skipped during ingestion but remain visible as scheduled meetings in the season catalog.
+
 FastF1 ingestion needs backend dependencies:
 
 ```powershell
@@ -188,7 +196,7 @@ Deployment options:
 ## GitHub Actions
 
 - `frontend-ci.yml`: generates sample artifacts, runs frontend lint, builds the static export, and uploads `frontend/out`.
-- `generate-artifacts.yml`: manually generates sample artifacts or ingests one FastF1 session; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
+- `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests race sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
 - `cloudflare-pages.yml`: manual static export deployment to Cloudflare Pages via Wrangler.
 
 ## Artifact Size Strategy
@@ -206,7 +214,7 @@ Docker Compose is no longer the production deployment model. Keep Docker only fo
 ## Known Limitations
 
 - The committed sample data is synthetic and intentionally small.
-- FastF1 ingestion depends on network access and upstream availability.
+- FastF1 ingestion depends on network access and upstream availability. In-progress seasons may only have completed race sessions available.
 - Telemetry artifacts are downsampled for browser performance.
 - Pit loss and undercut/overcut values are simple estimates.
 - Live OpenF1 support is not required for historical browsing and is left as future serverless work.
