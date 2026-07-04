@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionIngestionPanel } from "@/components/session/SessionIngestionPanel";
 import { SessionTabs } from "@/components/session/SessionTabs";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
+import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
 
 export const dynamicParams = false;
 
@@ -29,7 +30,7 @@ export default async function SessionPage({
     weather,
     raceControl,
     results,
-    telemetryComparison,
+    telemetryIndex,
     positionReplay
   ] = await Promise.all([
     safeApi(() => api.summary(sessionId)),
@@ -43,7 +44,7 @@ export default async function SessionPage({
     safeApi(() => api.weather(sessionId)),
     safeApi(() => api.raceControl(sessionId)),
     safeApi(() => api.results(sessionId)),
-    safeApi(() => api.telemetryCompare(sessionId, "VER", 6, "LEC", 7)),
+    safeApi(() => api.telemetryIndex(sessionId)),
     safeApi(() => api.positionReplay(sessionId))
   ]);
 
@@ -59,7 +60,7 @@ export default async function SessionPage({
     weather,
     raceControl,
     results,
-    telemetryComparison,
+    telemetryIndex,
     positionReplay
   ];
   const failed = all.find(isApiFailure);
@@ -99,10 +100,15 @@ export default async function SessionPage({
     !weather.ok ||
     !raceControl.ok ||
     !results.ok ||
-    !telemetryComparison.ok ||
+    !telemetryIndex.ok ||
     !positionReplay.ok
   ) {
     return null;
+  }
+
+  const telemetryComparison = await initialTelemetryComparison(sessionId, telemetryIndex.data);
+  if (!telemetryComparison.ok) {
+    return <ErrorState title="Could not load telemetry" detail={`${telemetryComparison.error.message}: ${telemetryComparison.apiBaseUrl}`} />;
   }
 
   return (
@@ -151,4 +157,51 @@ export async function generateStaticParams() {
     }
   }
   return Array.from(params.values());
+}
+
+async function initialTelemetryComparison(
+  sessionId: string,
+  telemetryIndex: Awaited<ReturnType<typeof api.telemetryIndex>>
+) {
+  if (!telemetryIndex?.laps.length) {
+    return {
+      ok: true as const,
+      data: telemetryUnavailableState()
+    };
+  }
+
+  const firstLap = telemetryIndex.laps[0];
+  const secondLap =
+    telemetryIndex.laps.find((lap) => lap.driver_code !== firstLap.driver_code) ||
+    telemetryIndex.laps[1] ||
+    null;
+
+  if (!secondLap) {
+    return {
+      ok: true as const,
+      data: {
+        reason: "Only one telemetry lap artifact is available for this session.",
+        action: "Generate at least two telemetry lap artifacts to enable comparison.",
+        details: {}
+      } satisfies EmptyStateResponse
+    };
+  }
+
+  return safeApi<TelemetryComparison | EmptyStateResponse>(() =>
+    api.telemetryCompare(
+      sessionId,
+      firstLap.driver_code,
+      firstLap.lap_number,
+      secondLap.driver_code,
+      secondLap.lap_number
+    )
+  );
+}
+
+function telemetryUnavailableState(): EmptyStateResponse {
+  return {
+    reason: "No telemetry lap artifacts are available for this session.",
+    action: "Generate telemetry artifacts to enable driver and lap comparisons.",
+    details: {}
+  };
 }

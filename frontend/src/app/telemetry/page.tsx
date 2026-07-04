@@ -1,4 +1,5 @@
 import { ErrorState } from "@/components/dashboard/ErrorState";
+import { EmptyState } from "@/components/dashboard/EmptyState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { TelemetryComparePanel } from "@/components/telemetry/TelemetryComparePanel";
 import { api, isEmptyState, safeApi } from "@/lib/api-server";
@@ -11,6 +12,20 @@ export default async function TelemetryPage() {
   const telemetryIndex = await safeApi(() => api.telemetryIndex(primarySession.data.session_id));
   if (!telemetryIndex.ok) {
     return <ErrorState title="Could not load telemetry" detail={`${telemetryIndex.error.message}: ${telemetryIndex.apiBaseUrl}`} />;
+  }
+  if (!telemetryIndex.data?.laps.length) {
+    return (
+      <div>
+        <PageHeader
+          title="Telemetry"
+          description="Compare any two drivers and laps. Static telemetry artifacts are aligned by distance and kept browser-sized."
+        />
+        <EmptyState
+          title="Telemetry unavailable"
+          detail="No telemetry lap artifacts are available for this session. Generate telemetry artifacts to enable driver and lap comparisons."
+        />
+      </div>
+    );
   }
   const firstLap = telemetryIndex.data?.laps[0] || null;
   const secondLap =

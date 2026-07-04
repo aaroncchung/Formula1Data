@@ -41,7 +41,7 @@ type SeasonArtifact = {
   sessions: Session[];
 };
 
-type TelemetryIndex = {
+export type TelemetryIndex = {
   schema_version: number;
   generated_at: string;
   session_id: string;
@@ -162,9 +162,14 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     driverB: string,
     lapB: number
   ): Promise<TelemetryComparison | EmptyStateResponse> {
+    const index = await readTelemetryIndex(sessionId);
+    if (!index || !index.laps.length) {
+      return telemetryUnavailableState();
+    }
+
     const [samplesA, samplesB, laps, drivers] = await Promise.all([
-      readTelemetryLap(sessionId, driverA, lapA),
-      readTelemetryLap(sessionId, driverB, lapB),
+      readTelemetryLapFromIndex(index, sessionId, driverA, lapA),
+      readTelemetryLapFromIndex(index, sessionId, driverB, lapB),
       api.laps(sessionId),
       api.drivers(sessionId)
     ]);
@@ -205,6 +210,21 @@ export function createStaticApi(readArtifact: ArtifactReader) {
       }),
       caveats: ["Telemetry is aligned by nearest distance sample and downsampled for UI performance."]
     };
+  }
+
+  async function readTelemetryLapFromIndex(
+    index: TelemetryIndex,
+    sessionId: string,
+    driver: string,
+    lap: number
+  ): Promise<TelemetrySample[]> {
+    const entry = index.laps.find(
+      (item) => item.driver_code === driver.toUpperCase() && item.lap_number === lap
+    );
+    if (!entry) {
+      return [];
+    }
+    return readSessionArtifact<TelemetrySample[]>(sessionId, entry.path);
   }
 
   async function qualifyingDelta(
@@ -274,6 +294,7 @@ function primarySession(catalog: CatalogArtifact): Session {
       STATIC_DATA_SOURCE
     );
   }
+
   return selected;
 }
 
@@ -327,6 +348,13 @@ export function artifactError(path: string, source: string, cause?: unknown): Ap
 
 function emptyState(reason: string, action: string): EmptyStateResponse {
   return { reason, action, details: {} };
+}
+
+function telemetryUnavailableState(): EmptyStateResponse {
+  return emptyState(
+    "No telemetry lap artifacts are available for this session.",
+    "Generate telemetry artifacts to enable driver and lap comparisons."
+  );
 }
 
 function liveDisabled(): LiveDisabledResponse {

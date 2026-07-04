@@ -190,9 +190,9 @@ function StrategyView({ stints, pitStops }: SessionTabsProps) {
 function TelemetryView({ telemetryComparison, summary }: SessionTabsProps) {
   if (isEmptyState(telemetryComparison)) {
     return (
-      <TelemetryComparePanel
-        sessionId={summary.session_id}
-        initialComparison={null}
+      <EmptyState
+        title="Telemetry unavailable"
+        detail={[telemetryComparison.reason, telemetryComparison.action].filter(Boolean).join(" ")}
       />
     );
   }

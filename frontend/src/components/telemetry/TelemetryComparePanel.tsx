@@ -6,14 +6,15 @@ import { ChartPanel } from "@/components/charts/ChartPanel";
 import { TelemetryCharts } from "@/components/charts/TelemetryCharts";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { api, isEmptyState } from "@/lib/api";
-import type { TelemetryComparison } from "@/types/domain";
+import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
 
 export function TelemetryComparePanel({
-  initialDriverA = "VER",
-  initialDriverB = "LEC",
-  initialLapA = 6,
-  initialLapB = 7,
+  initialDriverA,
+  initialDriverB,
+  initialLapA,
+  initialLapB,
   initialComparison,
+  initialEmptyState,
   sessionId
 }: {
   initialDriverA?: string;
@@ -21,24 +22,34 @@ export function TelemetryComparePanel({
   initialLapA?: number;
   initialLapB?: number;
   initialComparison?: TelemetryComparison | null;
+  initialEmptyState?: EmptyStateResponse | null;
   sessionId: string;
 }) {
-  const [driverA, setDriverA] = useState(initialDriverA);
-  const [driverB, setDriverB] = useState(initialDriverB);
-  const [lapA, setLapA] = useState(initialLapA);
-  const [lapB, setLapB] = useState(initialLapB);
+  const [driverA, setDriverA] = useState(initialDriverA || initialComparison?.driver_a.driver_code || "");
+  const [driverB, setDriverB] = useState(initialDriverB || initialComparison?.driver_b.driver_code || "");
+  const [lapA, setLapA] = useState<number | "">(initialLapA || initialComparison?.driver_a.lap_number || "");
+  const [lapB, setLapB] = useState<number | "">(initialLapB || initialComparison?.driver_b.lap_number || "");
   const [comparison, setComparison] = useState<TelemetryComparison | null>(initialComparison || null);
-  const [emptyReason, setEmptyReason] = useState<string | null>(null);
+  const [emptyState, setEmptyState] = useState<EmptyStateResponse | null>(initialEmptyState || null);
   const [isPending, startTransition] = useTransition();
+  const canCompare = Boolean(driverA && driverB && lapA && lapB);
 
   function submit() {
+    if (!canCompare) {
+      setEmptyState({
+        reason: "Choose two telemetry lap artifacts before comparing.",
+        action: "Telemetry comparisons require a driver and lap for both sides."
+      });
+      setComparison(null);
+      return;
+    }
     startTransition(async () => {
-      const result = await api.telemetryCompare(sessionId, driverA, lapA, driverB, lapB);
+      const result = await api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB));
       if (isEmptyState(result)) {
-        setEmptyReason(result.reason);
+        setEmptyState(result);
         setComparison(null);
       } else {
-        setEmptyReason(null);
+        setEmptyState(null);
         setComparison(result);
       }
     });
@@ -62,7 +73,7 @@ export function TelemetryComparePanel({
             type="number"
             min={1}
             value={lapA}
-            onChange={(event) => setLapA(Number(event.target.value))}
+            onChange={(event) => setLapA(event.target.value ? Number(event.target.value) : "")}
           />
         </label>
         <label className="text-sm text-slate-400">
@@ -80,19 +91,24 @@ export function TelemetryComparePanel({
             type="number"
             min={1}
             value={lapB}
-            onChange={(event) => setLapB(Number(event.target.value))}
+            onChange={(event) => setLapB(event.target.value ? Number(event.target.value) : "")}
           />
         </label>
         <button
           className="self-end rounded bg-redline px-4 py-2 font-bold text-white disabled:opacity-60"
           onClick={submit}
-          disabled={isPending}
+          disabled={isPending || !canCompare}
           type="button"
         >
           Compare
         </button>
       </div>
-      {emptyReason ? <EmptyState title="Telemetry unavailable" detail={emptyReason} /> : null}
+      {emptyState ? (
+        <EmptyState
+          title="Telemetry unavailable"
+          detail={[emptyState.reason, emptyState.action].filter(Boolean).join(" ")}
+        />
+      ) : null}
       {comparison ? (
         <ChartPanel
           title={`${comparison.driver_a.driver_code} lap ${comparison.driver_a.lap_number} vs ${comparison.driver_b.driver_code} lap ${comparison.driver_b.lap_number}`}
