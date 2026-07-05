@@ -136,7 +136,7 @@ def sync_artifacts_to_r2(output_dir: Path, bucket: str, prefix: str = "") -> Non
         if normalized_prefix:
             key = f"{normalized_prefix}/{key}"
         subprocess.run(
-            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path)],
+            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
             check=True,
         )
 

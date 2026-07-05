@@ -78,6 +78,15 @@ jobs:
             --callback-token "$INGESTION_API_TOKEN" \
             $FORCE_FLAG
 
+      - name: Verify remote R2 manifest
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          SESSION_ID="$(python -c "import json; print(json.load(open('message.json'))['session_id'])")"
+          wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/manifest.json" --remote --file manifest-check.json
+          python -m json.tool manifest-check.json > /dev/null
+
       - name: Upload generated data snapshot
         if: always()
         uses: actions/upload-artifact@v4
