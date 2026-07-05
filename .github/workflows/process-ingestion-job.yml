@@ -18,6 +18,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ingestion
+  cancel-in-progress: false
+
 jobs:
   process:
     runs-on: ubuntu-latest
@@ -48,6 +52,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
 
+      - name: Restore FastF1 cache
+        uses: actions/cache@v4
+        with:
+          path: backend/data/cache/fastf1
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-fastf1-
+
       - name: Write queue message
         env:
           WORKFLOW_MESSAGE: ${{ inputs.message }}
@@ -60,6 +72,47 @@ jobs:
           fi
           python -m json.tool message.json > /dev/null
 
+      - name: Validate queue message
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+
+          required = [
+              "job_id",
+              "session_id",
+              "year",
+              "round",
+              "session",
+              "artifact_base_path",
+          ]
+
+          with open("message.json", encoding="utf-8") as handle:
+              message = json.load(handle)
+
+          if not isinstance(message, dict):
+              print("::error::message.json must contain a JSON object queue message.")
+              sys.exit(1)
+
+          missing = [
+              field
+              for field in required
+              if field not in message or message[field] in (None, "")
+          ]
+
+          if missing:
+              print(
+                  "::error::message.json is missing required queue message fields: "
+                  + ", ".join(missing)
+              )
+              print(
+                  "::error::Expected the ingestion queue message, not a Worker status response or callback payload."
+              )
+              sys.exit(1)
+
+          print("Validated queue message for session_id=" + str(message["session_id"]))
+          PY
+
       - name: Process ingestion job
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -70,13 +123,29 @@ jobs:
             FORCE_FLAG="--force"
           fi
 
-          python -m pipeline process-queue \
-            --message-file message.json \
-            --artifact-destination r2 \
-            --r2-bucket "$R2_BUCKET" \
-            --callback-url "$WORKER_BASE_URL" \
-            --callback-token "$INGESTION_API_TOKEN" \
-            $FORCE_FLAG
+          for attempt in 1 2 3; do
+            echo "Starting ingestion attempt $attempt of 3"
+
+            if python -m pipeline process-queue \
+              --message-file message.json \
+              --artifact-destination r2 \
+              --r2-bucket "$R2_BUCKET" \
+              --callback-url "$WORKER_BASE_URL" \
+              --callback-token "$INGESTION_API_TOKEN" \
+              $FORCE_FLAG; then
+              echo "Ingestion attempt $attempt succeeded"
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 60))
+              echo "Ingestion attempt $attempt failed; retrying in ${delay}s"
+              sleep "$delay"
+            else
+              echo "::error::Ingestion failed after 3 attempts"
+              exit 1
+            fi
+          done
 
       - name: Verify remote R2 manifest
         env:
