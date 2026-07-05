@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     fastf1_cache_dir: Path = Field(
         default=Path("./data/cache/fastf1"), validation_alias="FASTF1_CACHE_DIR"
     )
+    fastf1_load_attempts: int = Field(default=3, validation_alias="FASTF1_LOAD_ATTEMPTS")
+    fastf1_retry_base_delay_seconds: float = Field(
+        default=5.0, validation_alias="FASTF1_RETRY_BASE_DELAY_SECONDS"
+    )
+    fastf1_optional_load_delay_seconds: float = Field(
+        default=1.0, validation_alias="FASTF1_OPTIONAL_LOAD_DELAY_SECONDS"
+    )
     openf1_base_url: str = Field(
         default="https://api.openf1.org/v1", validation_alias="OPENF1_BASE_URL"
     )

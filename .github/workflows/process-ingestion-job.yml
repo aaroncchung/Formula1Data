@@ -30,6 +30,9 @@ jobs:
       WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
       INGESTION_API_TOKEN: ${{ secrets.INGESTION_API_TOKEN }}
       FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+      FASTF1_LOAD_ATTEMPTS: ${{ vars.FASTF1_LOAD_ATTEMPTS || '3' }}
+      FASTF1_RETRY_BASE_DELAY_SECONDS: ${{ vars.FASTF1_RETRY_BASE_DELAY_SECONDS || '5' }}
+      FASTF1_OPTIONAL_LOAD_DELAY_SECONDS: ${{ vars.FASTF1_OPTIONAL_LOAD_DELAY_SECONDS || '1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +59,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
           restore-keys: |
+            ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-
             ${{ runner.os }}-fastf1-
+
+      - name: Show FastF1 cache state
+        run: |
+          if [ -d backend/data/cache/fastf1 ]; then
+            CACHE_FILES="$(find backend/data/cache/fastf1 -type f | wc -l)"
+            CACHE_BYTES="$(du -sh backend/data/cache/fastf1 | cut -f1)"
+            echo "FastF1 cache contains ${CACHE_FILES} files (${CACHE_BYTES})."
+          else
+            echo "FastF1 cache directory does not exist yet."
+          fi
 
       - name: Write queue message
         env:

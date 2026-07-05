@@ -102,9 +102,10 @@ def generate_artifacts(args: argparse.Namespace) -> None:
 def ingest_one_session(args: argparse.Namespace) -> None:
     configure_backend_data_dir(args.data_dir)
     FastF1Ingestor = load_fastf1_ingestor()
+    event = int(args.event) if str(args.event).isdigit() else args.event
     session_id = FastF1Ingestor().ingest_session(
         year=args.year,
-        event=args.event,
+        event=event,
         session_name=args.session,
         force=args.force,
     )
