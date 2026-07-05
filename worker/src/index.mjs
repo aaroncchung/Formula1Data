@@ -276,11 +276,6 @@ export async function dispatchQueueMessage(body, env, repository) {
     throw new Error("Queue message is missing job_id");
   }
 
-  if (!env.INGESTION_WEBHOOK_URL) {
-    await failQueueDispatchWithoutRunner(body, repository);
-    return;
-  }
-
   const now = new Date().toISOString();
   const current = await repository.getJob(jobId);
   await repository.updateJob(jobId, {
@@ -289,6 +284,16 @@ export async function dispatchQueueMessage(body, env, repository) {
     started_at: current?.started_at || now,
     error_message: null
   });
+
+  if (hasGitHubDispatchConfig(env)) {
+    await dispatchGitHubWorkflow(body, env, repository);
+    return;
+  }
+
+  if (!env.INGESTION_WEBHOOK_URL) {
+    await failQueueDispatchWithoutRunner(body, repository);
+    return;
+  }
 
   const headers = new Headers({ "content-type": "application/json" });
   if (env.INGESTION_WEBHOOK_TOKEN) {
@@ -309,15 +314,51 @@ export async function dispatchQueueMessage(body, env, repository) {
   }
 }
 
+function hasGitHubDispatchConfig(env) {
+  return Boolean(env.GITHUB_DISPATCH_TOKEN && env.GITHUB_REPO_OWNER && env.GITHUB_REPO_NAME);
+}
+
+async function dispatchGitHubWorkflow(body, env, repository) {
+  const owner = String(env.GITHUB_REPO_OWNER).trim();
+  const repo = String(env.GITHUB_REPO_NAME).trim();
+  const eventType = String(env.GITHUB_DISPATCH_EVENT || "ingest_session").trim();
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dispatches`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+      "content-type": "application/json",
+      "user-agent": "formula-1-data-worker",
+      "x-github-api-version": "2022-11-28"
+    },
+    body: JSON.stringify({
+      event_type: eventType,
+      client_payload: {
+        message: body
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorMessage = `GitHub repository_dispatch returned ${response.status}`;
+    await repository.updateJob(body.job_id, {
+      status: "queued",
+      error_message: errorMessage
+    });
+    throw new Error(errorMessage);
+  }
+}
+
 async function failQueueDispatchWithoutRunner(body, repository) {
   const jobId = body.job_id;
   const current = await repository.getJob(jobId);
   const now = new Date().toISOString();
   const errorMessage =
-    "No INGESTION_WEBHOOK_URL is configured, so the Worker cannot dispatch this job to an external Python ingestion runner.";
+    "No GitHub dispatch configuration or INGESTION_WEBHOOK_URL is configured, so the Worker cannot dispatch this job to an external Python ingestion runner.";
   const job = await repository.updateJob(jobId, {
     status: "failed",
-    attempts: Number(current?.attempts || 0) + 1,
+    attempts: Number(current?.attempts || 0),
     error_message: errorMessage,
     started_at: current?.started_at || null,
     finished_at: now

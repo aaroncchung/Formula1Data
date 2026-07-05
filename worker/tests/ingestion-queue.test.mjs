@@ -35,7 +35,7 @@ test("queue dispatch fails the job and session when no ingestion webhook is conf
   const job = await repository.getJob(result.job.job_id);
   assert.equal(job.status, "failed");
   assert.equal(job.attempts, 1);
-  assert.match(job.error_message, /INGESTION_WEBHOOK_URL/);
+  assert.match(job.error_message, /GitHub dispatch configuration/);
   assert.match(job.error_message, /external Python ingestion runner/);
   assert.ok(job.finished_at);
 
@@ -56,6 +56,60 @@ test("queue dispatch fails the job and session when no ingestion webhook is conf
   assert.equal(retry.action, "queued");
   assert.notEqual(retry.job.job_id, job.job_id);
   assert.equal(messages.length, 2);
+});
+
+test("queue dispatch triggers GitHub repository dispatch when configured", async () => {
+  const repository = freshRepository();
+  const artifacts = { head: async () => null };
+  const messages = [];
+  const queue = { send: async (message) => messages.push(message) };
+  const previousFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, init });
+    return new Response(null, { status: 204 });
+  };
+
+  try {
+    const result = await enqueueIngestionJob({
+      repository,
+      artifacts,
+      queue,
+      year: 2026,
+      round: 8,
+      session: "R",
+      now: new Date("2026-07-04T12:00:00Z")
+    });
+
+    await dispatchQueueMessage(
+      messages[0],
+      {
+        GITHUB_DISPATCH_TOKEN: "github-token",
+        GITHUB_REPO_OWNER: "Ntrxi",
+        GITHUB_REPO_NAME: "Formula1Data",
+        GITHUB_DISPATCH_EVENT: "ingest_session"
+      },
+      repository
+    );
+
+    const job = await repository.getJob(result.job.job_id);
+    assert.equal(job.status, "running");
+    assert.equal(job.attempts, 1);
+    assert.equal(job.error_message, null);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.github.com/repos/Ntrxi/Formula1Data/dispatches");
+    assert.equal(requests[0].init.method, "POST");
+    assert.equal(requests[0].init.headers.authorization, "Bearer github-token");
+    assert.equal(requests[0].init.headers["user-agent"], "formula-1-data-worker");
+    assert.deepEqual(JSON.parse(requests[0].init.body), {
+      event_type: "ingest_session",
+      client_payload: {
+        message: messages[0]
+      }
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test("queue dispatch posts to a configured ingestion webhook and leaves callback completion unchanged", async () => {
