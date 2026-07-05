@@ -7,6 +7,6 @@ pandas==2.2.3
 pyarrow==18.1.0
 numpy==2.2.1
 httpx==0.28.1
-fastf1==3.4.4
+fastf1==3.8.3
 python-multipart==0.0.20
 

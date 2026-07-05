@@ -20,6 +20,10 @@ SESSION_CODE_BY_NAME = {
 SESSION_CODE_BY_NORMALIZED_NAME = {name.lower(): code for name, code in SESSION_CODE_BY_NAME.items()}
 
 
+class IncompleteFastF1SessionError(RuntimeError):
+    """Raised when FastF1 returns a session shell without the required timing data."""
+
+
 def session_code_for_name(name: Any) -> str:
     raw = str(name or "").strip()
     if not raw:
@@ -224,7 +228,7 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
 
 
 def _drivers(session: Any) -> list[dict[str, Any]]:
-    results = getattr(session, "results", pd.DataFrame())
+    results = _session_frame(session, "results")
     if results is None or results.empty:
         return []
     drivers = []
@@ -252,9 +256,12 @@ def _drivers(session: Any) -> list[dict[str, Any]]:
 
 
 def _laps(session: Any, session_id: str) -> list[dict[str, Any]]:
-    laps_df = getattr(session, "laps", pd.DataFrame())
+    laps_df = _session_frame(session, "laps", required=True)
     if laps_df is None or laps_df.empty:
-        return []
+        raise IncompleteFastF1SessionError(
+            f"FastF1 did not load lap data for {session_id}. "
+            "The upstream session data may be unavailable or blocked from this runner."
+        )
     rows = []
     for _, row in laps_df.iterrows():
         rows.append(
@@ -323,7 +330,7 @@ def _pit_stops(laps: list[dict[str, Any]], session_id: str) -> list[dict[str, An
 
 
 def _weather(session: Any, session_id: str) -> list[dict[str, Any]]:
-    weather_df = getattr(session, "weather_data", pd.DataFrame())
+    weather_df = _session_frame(session, "weather_data")
     if weather_df is None or weather_df.empty:
         return []
     rows = []
@@ -344,7 +351,7 @@ def _weather(session: Any, session_id: str) -> list[dict[str, Any]]:
 
 
 def _race_control(session: Any, session_id: str) -> list[dict[str, Any]]:
-    messages = getattr(session, "race_control_messages", pd.DataFrame())
+    messages = _session_frame(session, "race_control_messages")
     if messages is None or messages.empty:
         return []
     rows = []
@@ -364,7 +371,7 @@ def _race_control(session: Any, session_id: str) -> list[dict[str, Any]]:
 
 
 def _results(session: Any, session_id: str) -> list[dict[str, Any]]:
-    results = getattr(session, "results", pd.DataFrame())
+    results = _session_frame(session, "results")
     if results is None or results.empty:
         return []
     rows = []
@@ -386,13 +393,19 @@ def _results(session: Any, session_id: str) -> list[dict[str, Any]]:
 
 
 def _telemetry(session: Any, session_id: str) -> list[dict[str, Any]]:
-    laps_df = getattr(session, "laps", pd.DataFrame())
+    laps_df = _session_frame(session, "laps")
     if laps_df is None or laps_df.empty:
         return []
     telemetry_rows = []
-    fastest = laps_df.pick_fastest()
+    try:
+        fastest = laps_df.pick_fastest()
+        driver_laps = laps_df.pick_drivers(laps_df["Driver"].dropna().unique()[:2])
+    except Exception:
+        return []
+    if fastest is None:
+        return []
     selected = [fastest]
-    for _, lap in laps_df.pick_drivers(laps_df["Driver"].dropna().unique()[:2]).iterrows():
+    for _, lap in driver_laps.iterrows():
         if lap.get("LapTime") == fastest.get("LapTime"):
             continue
         selected.append(lap)
@@ -423,6 +436,24 @@ def _telemetry(session: Any, session_id: str) -> list[dict[str, Any]]:
                 }
             )
     return telemetry_rows
+
+
+def _session_frame(session: Any, attr: str, required: bool = False) -> Any:
+    try:
+        return getattr(session, attr)
+    except Exception as exc:
+        if required:
+            raise IncompleteFastF1SessionError(
+                f"FastF1 did not load {attr} for this session. "
+                "The upstream session data may be unavailable or blocked from this runner."
+            ) from exc
+        return _empty_frame()
+
+
+def _empty_frame() -> Any:
+    if pd is None:
+        return None
+    return pd.DataFrame()
 
 
 def _weather_summary(weather: list[dict[str, Any]]) -> str:

@@ -8,6 +8,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.ingestion.normalizer import (
+    IncompleteFastF1SessionError,
+    normalize_fastf1_session,
+    pd,
     selected_session_codes,
     session_code_for_name,
     session_start_time_from_event,
@@ -56,6 +59,102 @@ class SessionMetadataTests(unittest.TestCase):
             "Session3": "Race",
         }
         self.assertEqual(selected_session_codes(row, races_only=True), ["R"])
+
+    @unittest.skipIf(pd is None, "pandas is required for FastF1 normalization tests")
+    def test_unloaded_required_lap_data_fails_clearly(self):
+        session = FakeFastF1Session(laps_error=RuntimeError("The data has not been loaded yet."))
+
+        with self.assertRaisesRegex(IncompleteFastF1SessionError, "FastF1 did not load laps"):
+            normalize_fastf1_session(2024, 8, "R", session)
+
+    @unittest.skipIf(pd is None, "pandas is required for FastF1 normalization tests")
+    def test_unloaded_optional_session_frames_degrade_to_empty_sections(self):
+        laps = pd.DataFrame(
+            [
+                {
+                    "Driver": "VER",
+                    "LapNumber": 1,
+                    "LapTime": None,
+                    "Sector1Time": None,
+                    "Sector2Time": None,
+                    "Sector3Time": None,
+                    "Compound": "MEDIUM",
+                    "TyreLife": 1,
+                    "Stint": 1,
+                    "Position": 1,
+                    "PitInTime": None,
+                    "PitOutTime": None,
+                    "Deleted": False,
+                    "IsAccurate": True,
+                    "TrackStatus": "1",
+                }
+            ]
+        )
+        session = FakeFastF1Session(
+            laps=laps,
+            results_error=RuntimeError("results unavailable"),
+            weather_error=RuntimeError("weather unavailable"),
+            race_control_error=RuntimeError("messages unavailable"),
+        )
+
+        dataset = normalize_fastf1_session(2024, 8, "R", session)
+        session_data = dataset["session_data"]["2024-08-r"]
+
+        self.assertEqual(len(session_data["laps"]), 1)
+        self.assertEqual(session_data["drivers"], [])
+        self.assertEqual(session_data["results"], [])
+        self.assertEqual(session_data["weather"], [])
+        self.assertEqual(session_data["race_control"], [])
+
+
+class FakeFastF1Session:
+    event = {
+        "RoundNumber": 8,
+        "EventName": "Monaco Grand Prix",
+        "Country": "Monaco",
+        "Location": "Monte Carlo",
+        "CircuitName": "Circuit de Monaco",
+        "Session5": "Race",
+    }
+    name = "Race"
+
+    def __init__(
+        self,
+        laps=None,
+        laps_error=None,
+        results_error=None,
+        weather_error=None,
+        race_control_error=None,
+    ):
+        self._laps = laps
+        self._laps_error = laps_error
+        self._results_error = results_error
+        self._weather_error = weather_error
+        self._race_control_error = race_control_error
+
+    @property
+    def laps(self):
+        if self._laps_error:
+            raise self._laps_error
+        return self._laps if self._laps is not None else pd.DataFrame()
+
+    @property
+    def results(self):
+        if self._results_error:
+            raise self._results_error
+        return pd.DataFrame()
+
+    @property
+    def weather_data(self):
+        if self._weather_error:
+            raise self._weather_error
+        return pd.DataFrame()
+
+    @property
+    def race_control_messages(self):
+        if self._race_control_error:
+            raise self._race_control_error
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":
