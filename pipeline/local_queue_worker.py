@@ -150,7 +150,11 @@ def callback_job_status(
     if not callback_url:
         return
     endpoint = callback_endpoint(callback_url, job_id)
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Formula1Data-IngestionRunner/1.0",
+    }
     if callback_token:
         headers["Authorization"] = f"Bearer {callback_token}"
     request = urllib.request.Request(
