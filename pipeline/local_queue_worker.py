@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Iterable
@@ -163,15 +164,17 @@ def callback_job_status(
             if response.status >= 400:
                 raise RuntimeError(f"Callback returned {response.status}")
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"Callback returned {exc.code}") from exc
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Callback returned {exc.code}: {detail}") from exc
 
 
 def callback_endpoint(callback_url: str, job_id: str) -> str:
     if "{job_id}" in callback_url:
-        return callback_url.format(job_id=job_id)
+        return callback_url.format(job_id=urllib.parse.quote(job_id, safe=""))
     if callback_url.rstrip("/").endswith("/status"):
         return callback_url
-    return f"{callback_url.rstrip('/')}/api/ingestion/jobs/{job_id}/status"
+    encoded_job_id = urllib.parse.quote(job_id, safe="")
+    return f"{callback_url.rstrip('/')}/api/ingestion/jobs/{encoded_job_id}/status"
 
 
 def configure_backend_data_dir(data_dir: Path) -> None:
