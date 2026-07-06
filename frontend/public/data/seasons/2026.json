@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-04T05:56:46.021133+00:00",
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
   "season": {
     "year": 2026,
     "meeting_count": 22,
-    "ingested_meeting_count": 8,
+    "ingested_meeting_count": 9,
     "is_sample": false
   },
   "meetings": [
@@ -221,7 +221,7 @@
         "Q",
         "R"
       ],
-      "is_ingested": false,
+      "is_ingested": true,
       "is_sample": false
     },
     {
@@ -630,6 +630,18 @@
       "name": "Race",
       "type": "R",
       "start_time": "2026-06-28T13:00:00",
+      "end_time": null,
+      "status": "available",
+      "is_sample": false
+    },
+    {
+      "session_id": "2026-09-r",
+      "year": 2026,
+      "round": 9,
+      "meeting_id": "2026-09-british-grand-prix",
+      "name": "Race",
+      "type": "R",
+      "start_time": "2026-07-05T14:00:00",
       "end_time": null,
       "status": "available",
       "is_sample": false

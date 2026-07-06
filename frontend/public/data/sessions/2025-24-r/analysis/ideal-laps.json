@@ -1,0 +1,185 @@
+{
+  "session_id": "2025-24-r",
+  "rows": [
+    {
+      "driver_code": "PIA",
+      "best_sector_1_ms": 17286,
+      "best_sector_2_ms": 37820,
+      "best_sector_3_ms": 31433,
+      "ideal_lap_ms": 86539,
+      "best_lap_ms": 86765,
+      "delta_to_ideal_ms": 226
+    },
+    {
+      "driver_code": "NOR",
+      "best_sector_1_ms": 17272,
+      "best_sector_2_ms": 37739,
+      "best_sector_3_ms": 31597,
+      "ideal_lap_ms": 86608,
+      "best_lap_ms": 86818,
+      "delta_to_ideal_ms": 210
+    },
+    {
+      "driver_code": "LEC",
+      "best_sector_1_ms": 17467,
+      "best_sector_2_ms": 37608,
+      "best_sector_3_ms": 31592,
+      "ideal_lap_ms": 86667,
+      "best_lap_ms": 86725,
+      "delta_to_ideal_ms": 58
+    },
+    {
+      "driver_code": "HUL",
+      "best_sector_1_ms": 17594,
+      "best_sector_2_ms": 37457,
+      "best_sector_3_ms": 31781,
+      "ideal_lap_ms": 86832,
+      "best_lap_ms": 87050,
+      "delta_to_ideal_ms": 218
+    },
+    {
+      "driver_code": "STR",
+      "best_sector_1_ms": 17457,
+      "best_sector_2_ms": 37549,
+      "best_sector_3_ms": 32162,
+      "ideal_lap_ms": 87168,
+      "best_lap_ms": 87626,
+      "delta_to_ideal_ms": 458
+    },
+    {
+      "driver_code": "VER",
+      "best_sector_1_ms": 17412,
+      "best_sector_2_ms": 38035,
+      "best_sector_3_ms": 32028,
+      "ideal_lap_ms": 87475,
+      "best_lap_ms": 87625,
+      "delta_to_ideal_ms": 150
+    },
+    {
+      "driver_code": "HAM",
+      "best_sector_1_ms": 17719,
+      "best_sector_2_ms": 37564,
+      "best_sector_3_ms": 32247,
+      "ideal_lap_ms": 87530,
+      "best_lap_ms": 88094,
+      "delta_to_ideal_ms": 564
+    },
+    {
+      "driver_code": "ALO",
+      "best_sector_1_ms": 17524,
+      "best_sector_2_ms": 37816,
+      "best_sector_3_ms": 32249,
+      "ideal_lap_ms": 87589,
+      "best_lap_ms": 88279,
+      "delta_to_ideal_ms": 690
+    },
+    {
+      "driver_code": "ANT",
+      "best_sector_1_ms": 17601,
+      "best_sector_2_ms": 37744,
+      "best_sector_3_ms": 32313,
+      "ideal_lap_ms": 87658,
+      "best_lap_ms": 88029,
+      "delta_to_ideal_ms": 371
+    },
+    {
+      "driver_code": "COL",
+      "best_sector_1_ms": 17669,
+      "best_sector_2_ms": 37973,
+      "best_sector_3_ms": 32040,
+      "ideal_lap_ms": 87682,
+      "best_lap_ms": 87710,
+      "delta_to_ideal_ms": 28
+    },
+    {
+      "driver_code": "GAS",
+      "best_sector_1_ms": 17666,
+      "best_sector_2_ms": 37997,
+      "best_sector_3_ms": 32088,
+      "ideal_lap_ms": 87751,
+      "best_lap_ms": 87767,
+      "delta_to_ideal_ms": 16
+    },
+    {
+      "driver_code": "OCO",
+      "best_sector_1_ms": 17580,
+      "best_sector_2_ms": 37887,
+      "best_sector_3_ms": 32584,
+      "ideal_lap_ms": 88051,
+      "best_lap_ms": 88655,
+      "delta_to_ideal_ms": 604
+    },
+    {
+      "driver_code": "ALB",
+      "best_sector_1_ms": 17581,
+      "best_sector_2_ms": 37825,
+      "best_sector_3_ms": 32659,
+      "ideal_lap_ms": 88065,
+      "best_lap_ms": 88367,
+      "delta_to_ideal_ms": 302
+    },
+    {
+      "driver_code": "RUS",
+      "best_sector_1_ms": 17603,
+      "best_sector_2_ms": 37849,
+      "best_sector_3_ms": 32673,
+      "ideal_lap_ms": 88125,
+      "best_lap_ms": 88599,
+      "delta_to_ideal_ms": 474
+    },
+    {
+      "driver_code": "SAI",
+      "best_sector_1_ms": 17728,
+      "best_sector_2_ms": 37760,
+      "best_sector_3_ms": 32647,
+      "ideal_lap_ms": 88135,
+      "best_lap_ms": 89052,
+      "delta_to_ideal_ms": 917
+    },
+    {
+      "driver_code": "TSU",
+      "best_sector_1_ms": 17571,
+      "best_sector_2_ms": 37856,
+      "best_sector_3_ms": 32731,
+      "ideal_lap_ms": 88158,
+      "best_lap_ms": 88557,
+      "delta_to_ideal_ms": 399
+    },
+    {
+      "driver_code": "BOR",
+      "best_sector_1_ms": 17808,
+      "best_sector_2_ms": 37950,
+      "best_sector_3_ms": 32438,
+      "ideal_lap_ms": 88196,
+      "best_lap_ms": 89114,
+      "delta_to_ideal_ms": 918
+    },
+    {
+      "driver_code": "LAW",
+      "best_sector_1_ms": 17647,
+      "best_sector_2_ms": 38073,
+      "best_sector_3_ms": 32625,
+      "ideal_lap_ms": 88345,
+      "best_lap_ms": 88886,
+      "delta_to_ideal_ms": 541
+    },
+    {
+      "driver_code": "BEA",
+      "best_sector_1_ms": 17616,
+      "best_sector_2_ms": 37998,
+      "best_sector_3_ms": 32755,
+      "ideal_lap_ms": 88369,
+      "best_lap_ms": 88976,
+      "delta_to_ideal_ms": 607
+    },
+    {
+      "driver_code": "HAD",
+      "best_sector_1_ms": 17742,
+      "best_sector_2_ms": 38034,
+      "best_sector_3_ms": 32833,
+      "ideal_lap_ms": 88609,
+      "best_lap_ms": 89375,
+      "delta_to_ideal_ms": 766
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-06-r",
+  "meeting": "Miami Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 6,
+  "circuit": "Miami Gardens",
+  "country": "United States",
+  "driver_count": 20,
+  "lap_count": 1005,
+  "weather_summary": "air 26.0-27.8C, track 34.9-44.1C, rain",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

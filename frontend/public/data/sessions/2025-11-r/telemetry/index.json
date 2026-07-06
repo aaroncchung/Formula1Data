@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "session_id": "2025-11-r",
+  "max_samples_per_lap": 300,
+  "laps": [
+    {
+      "driver_code": "NOR",
+      "lap_number": 1,
+      "path": "telemetry/nor-lap-1.json",
+      "sample_count": 165,
+      "raw_sample_count": 330,
+      "size_bytes": 55630
+    },
+    {
+      "driver_code": "PIA",
+      "lap_number": 59,
+      "path": "telemetry/pia-lap-59.json",
+      "sample_count": 255,
+      "raw_sample_count": 255,
+      "size_bytes": 86380
+    }
+  ]
+}

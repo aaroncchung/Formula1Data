@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "session_id": "2025-08-r",
+  "max_samples_per_lap": 300,
+  "laps": [
+    {
+      "driver_code": "NOR",
+      "lap_number": 78,
+      "path": "telemetry/nor-lap-78.json",
+      "sample_count": 273,
+      "raw_sample_count": 273,
+      "size_bytes": 92435
+    },
+    {
+      "driver_code": "VER",
+      "lap_number": 1,
+      "path": "telemetry/ver-lap-1.json",
+      "sample_count": 164,
+      "raw_sample_count": 327,
+      "size_bytes": 55447
+    }
+  ]
+}

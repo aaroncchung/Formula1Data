@@ -1,0 +1,1411 @@
+{
+  "session_id": "2025-21-r",
+  "stints": [
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 7,
+      "lap_count": 7
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 8,
+      "end_lap": 34,
+      "lap_count": 27
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 35,
+      "end_lap": 54,
+      "lap_count": 20
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "stint": 4,
+      "compound": "SOFT",
+      "start_lap": 55,
+      "end_lap": 71,
+      "lap_count": 17
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "GAS",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 18,
+      "lap_count": 18
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "GAS",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 19,
+      "end_lap": 39,
+      "lap_count": 21
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "GAS",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 40,
+      "end_lap": 71,
+      "lap_count": 32
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ANT",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 21,
+      "lap_count": 21
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ANT",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 22,
+      "end_lap": 47,
+      "lap_count": 26
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ANT",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 48,
+      "end_lap": 71,
+      "lap_count": 24
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALO",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 28,
+      "lap_count": 28
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALO",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 29,
+      "end_lap": 46,
+      "lap_count": 18
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALO",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 47,
+      "end_lap": 71,
+      "lap_count": 25
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "LEC",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 6,
+      "lap_count": 6
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "STR",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 29,
+      "lap_count": 29
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "STR",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 30,
+      "end_lap": 54,
+      "lap_count": 25
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "STR",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 55,
+      "end_lap": 71,
+      "lap_count": 17
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 2,
+      "lap_count": 2
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 3,
+      "end_lap": 24,
+      "lap_count": 22
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 25,
+      "end_lap": 47,
+      "lap_count": 23
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "stint": 4,
+      "compound": "MEDIUM",
+      "start_lap": 48,
+      "end_lap": 71,
+      "lap_count": 24
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALB",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 35,
+      "lap_count": 35
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALB",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 36,
+      "end_lap": 55,
+      "lap_count": 20
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALB",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 56,
+      "end_lap": 71,
+      "lap_count": 16
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HUL",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 36,
+      "lap_count": 36
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HUL",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 37,
+      "end_lap": 71,
+      "lap_count": 35
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "LAW",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 19,
+      "lap_count": 19
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "LAW",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 20,
+      "end_lap": 71,
+      "lap_count": 52
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "OCO",
+      "stint": 1,
+      "compound": "HARD",
+      "start_lap": 1,
+      "end_lap": 8,
+      "lap_count": 8
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "OCO",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 9,
+      "end_lap": 47,
+      "lap_count": 39
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "OCO",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 48,
+      "end_lap": 71,
+      "lap_count": 24
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "NOR",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 30,
+      "lap_count": 30
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "NOR",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 31,
+      "end_lap": 50,
+      "lap_count": 20
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "NOR",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 51,
+      "end_lap": 71,
+      "lap_count": 21
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "COL",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 29,
+      "lap_count": 29
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "COL",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 30,
+      "end_lap": 43,
+      "lap_count": 14
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "COL",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 44,
+      "end_lap": 71,
+      "lap_count": 28
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 2,
+      "lap_count": 2
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "stint": 2,
+      "compound": "HARD",
+      "start_lap": 3,
+      "end_lap": 14,
+      "lap_count": 12
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 15,
+      "end_lap": 32,
+      "lap_count": 18
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "stint": 4,
+      "compound": "MEDIUM",
+      "start_lap": 33,
+      "end_lap": 37,
+      "lap_count": 5
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BOR",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 1,
+      "lap_count": 1
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "SAI",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 17,
+      "lap_count": 17
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "SAI",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 18,
+      "end_lap": 38,
+      "lap_count": 21
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "SAI",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 39,
+      "end_lap": 71,
+      "lap_count": 33
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAD",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 18,
+      "lap_count": 18
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAD",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 19,
+      "end_lap": 37,
+      "lap_count": 19
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAD",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 38,
+      "end_lap": 71,
+      "lap_count": 34
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "RUS",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 34,
+      "lap_count": 34
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "RUS",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 35,
+      "end_lap": 48,
+      "lap_count": 14
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "RUS",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 49,
+      "end_lap": 71,
+      "lap_count": 23
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "PIA",
+      "stint": 1,
+      "compound": "MEDIUM",
+      "start_lap": 1,
+      "end_lap": 38,
+      "lap_count": 38
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "PIA",
+      "stint": 2,
+      "compound": "SOFT",
+      "start_lap": 39,
+      "end_lap": 51,
+      "lap_count": 13
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "PIA",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 52,
+      "end_lap": 71,
+      "lap_count": 20
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BEA",
+      "stint": 1,
+      "compound": "SOFT",
+      "start_lap": 1,
+      "end_lap": 17,
+      "lap_count": 17
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BEA",
+      "stint": 2,
+      "compound": "MEDIUM",
+      "start_lap": 18,
+      "end_lap": 42,
+      "lap_count": 25
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BEA",
+      "stint": 3,
+      "compound": "MEDIUM",
+      "start_lap": 43,
+      "end_lap": 71,
+      "lap_count": 29
+    }
+  ],
+  "compound_usage": {
+    "HARD": 6,
+    "MEDIUM": 36,
+    "SOFT": 15
+  },
+  "pit_stops": [
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "lap_number": 7,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "lap_number": 34,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "VER",
+      "lap_number": 54,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "GAS",
+      "lap_number": 18,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "GAS",
+      "lap_number": 39,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ANT",
+      "lap_number": 21,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ANT",
+      "lap_number": 47,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALO",
+      "lap_number": 28,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALO",
+      "lap_number": 46,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "STR",
+      "lap_number": 29,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "STR",
+      "lap_number": 54,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "lap_number": 2,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "lap_number": 24,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "TSU",
+      "lap_number": 47,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALB",
+      "lap_number": 35,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "ALB",
+      "lap_number": 55,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HUL",
+      "lap_number": 36,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "LAW",
+      "lap_number": 19,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "OCO",
+      "lap_number": 8,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "OCO",
+      "lap_number": 47,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "NOR",
+      "lap_number": 30,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "NOR",
+      "lap_number": 50,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "COL",
+      "lap_number": 29,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "COL",
+      "lap_number": 43,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "lap_number": 2,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "lap_number": 14,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "lap_number": 32,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAM",
+      "lap_number": 37,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "SAI",
+      "lap_number": 17,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "SAI",
+      "lap_number": 38,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAD",
+      "lap_number": 18,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "HAD",
+      "lap_number": 37,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "RUS",
+      "lap_number": 34,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "RUS",
+      "lap_number": 48,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "PIA",
+      "lap_number": 38,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "PIA",
+      "lap_number": 51,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BEA",
+      "lap_number": 17,
+      "duration_ms": null,
+      "local_time": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "driver_code": "BEA",
+      "lap_number": 42,
+      "duration_ms": null,
+      "local_time": null
+    }
+  ],
+  "pit_loss_estimate_ms": null,
+  "undercut_overcut": [
+    {
+      "driver_code": "VER",
+      "stop_lap": 7,
+      "first_clean_lap_gain_ms": -25853,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "GAS",
+      "stop_lap": 18,
+      "first_clean_lap_gain_ms": -15999,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "ANT",
+      "stop_lap": 21,
+      "first_clean_lap_gain_ms": -17249,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "ALO",
+      "stop_lap": 28,
+      "first_clean_lap_gain_ms": -17581,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "STR",
+      "stop_lap": 29,
+      "first_clean_lap_gain_ms": -17439,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "TSU",
+      "stop_lap": 2,
+      "first_clean_lap_gain_ms": -29231,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "ALB",
+      "stop_lap": 35,
+      "first_clean_lap_gain_ms": -14575,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "HUL",
+      "stop_lap": 36,
+      "first_clean_lap_gain_ms": -16436,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "LAW",
+      "stop_lap": 19,
+      "first_clean_lap_gain_ms": -16464,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "OCO",
+      "stop_lap": 8,
+      "first_clean_lap_gain_ms": 11795,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "NOR",
+      "stop_lap": 30,
+      "first_clean_lap_gain_ms": -18191,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "COL",
+      "stop_lap": 29,
+      "first_clean_lap_gain_ms": -16620,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "HAM",
+      "stop_lap": 2,
+      "first_clean_lap_gain_ms": -33628,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "SAI",
+      "stop_lap": 17,
+      "first_clean_lap_gain_ms": -18300,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "HAD",
+      "stop_lap": 18,
+      "first_clean_lap_gain_ms": -18212,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "RUS",
+      "stop_lap": 34,
+      "first_clean_lap_gain_ms": -16082,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "PIA",
+      "stop_lap": 38,
+      "first_clean_lap_gain_ms": -28200,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    },
+    {
+      "driver_code": "BEA",
+      "stop_lap": 17,
+      "first_clean_lap_gain_ms": -15799,
+      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+    }
+  ],
+  "race_control_overlays": [
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:16:20",
+      "category": "Other",
+      "message": "AWNINGS MAY BE USED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:20:01",
+      "category": "Flag",
+      "message": "GREEN LIGHT - PIT EXIT OPEN",
+      "flag": "GREEN",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:30:01",
+      "category": "Other",
+      "message": "PIT EXIT CLOSED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:45:06",
+      "category": "Other",
+      "message": "RISK OF RAIN FOR F1 RACE IS 40%",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:51",
+      "category": "Flag",
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 14",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:51",
+      "category": "Flag",
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 15",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:53",
+      "category": "Other",
+      "message": "DRS DISABLED IN ZONE 2",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:55",
+      "category": "Other",
+      "message": "DRS ENABLED IN ZONE 2",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:55",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 14",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:52:55",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 15",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 16:57:08",
+      "category": "Drs",
+      "message": "DRS DISABLED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 17:03:14",
+      "category": "Flag",
+      "message": "GREEN LIGHT - PIT EXIT OPEN",
+      "flag": "GREEN",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 1,
+      "timestamp": "2025-11-09 17:04:16",
+      "category": "Flag",
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 11",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 2,
+      "timestamp": "2025-11-09 17:04:58",
+      "category": "SafetyCar",
+      "message": "SAFETY CAR DEPLOYED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 3,
+      "timestamp": "2025-11-09 17:06:18",
+      "category": "Other",
+      "message": "RECOVERY VEHICLE ON TRACK AT TURN 10",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 3,
+      "timestamp": "2025-11-09 17:07:08",
+      "category": "Flag",
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 10",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 4,
+      "timestamp": "2025-11-09 17:09:12",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 11",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 4,
+      "timestamp": "2025-11-09 17:09:53",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 10",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 5,
+      "timestamp": "2025-11-09 17:11:15",
+      "category": "SafetyCar",
+      "message": "SAFETY CAR IN THIS LAP",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 5,
+      "timestamp": "2025-11-09 17:11:42",
+      "category": "Flag",
+      "message": "TRACK CLEAR",
+      "flag": "CLEAR",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:12:39",
+      "category": "Flag",
+      "message": "YELLOW IN TRACK SECTOR 5",
+      "flag": "YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:12:49",
+      "category": "Flag",
+      "message": "DOUBLE YELLOW IN TRACK SECTOR 9",
+      "flag": "DOUBLE YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:12:55",
+      "category": "Flag",
+      "message": "YELLOW IN TRACK SECTOR 9",
+      "flag": "YELLOW",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:13:00",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 9",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:13:05",
+      "category": "Drs",
+      "message": "DRS ENABLED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 6,
+      "timestamp": "2025-11-09 17:13:07",
+      "category": "Other",
+      "message": "DRS DISABLED IN ZONE 1",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 7,
+      "timestamp": "2025-11-09 17:13:31",
+      "category": "SafetyCar",
+      "message": "VIRTUAL SAFETY CAR DEPLOYED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 8,
+      "timestamp": "2025-11-09 17:16:26",
+      "category": "SafetyCar",
+      "message": "VIRTUAL SAFETY CAR ENDING",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 8,
+      "timestamp": "2025-11-09 17:16:31",
+      "category": "Flag",
+      "message": "CLEAR IN TRACK SECTOR 5",
+      "flag": "CLEAR",
+      "scope": "Sector"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 8,
+      "timestamp": "2025-11-09 17:16:38",
+      "category": "Flag",
+      "message": "TRACK CLEAR",
+      "flag": "CLEAR",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 8,
+      "timestamp": "2025-11-09 17:16:39",
+      "category": "Drs",
+      "message": "DRS ENABLED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 10,
+      "timestamp": "2025-11-09 17:17:56",
+      "category": "Other",
+      "message": "TURN 8 INCIDENT INVOLVING CARS 22 (TSU) AND 18 (STR) NOTED - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 10,
+      "timestamp": "2025-11-09 17:18:44",
+      "category": "Other",
+      "message": "FIA STEWARDS: TURN 8 INCIDENT INVOLVING CARS 22 (TSU) AND 18 (STR) UNDER INVESTIGATION - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 11,
+      "timestamp": "2025-11-09 17:19:50",
+      "category": "Other",
+      "message": "TURN 1 INCIDENT INVOLVING CARS 81 (PIA) AND 12 (ANT) NOTED - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 12,
+      "timestamp": "2025-11-09 17:21:01",
+      "category": "Other",
+      "message": "FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 22 (TSU) - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 14,
+      "timestamp": "2025-11-09 17:23:20",
+      "category": "Other",
+      "message": "LAP 1 TURN 1 INCIDENT INVOLVING CARS 55 (SAI) AND 44 (HAM) NOTED - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 16,
+      "timestamp": "2025-11-09 17:25:21",
+      "category": "Other",
+      "message": "TURN 15 INCIDENT INVOLVING CARS 44 (HAM) AND 43 (COL) NOTED - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 16,
+      "timestamp": "2025-11-09 17:25:37",
+      "category": "Other",
+      "message": "FIA STEWARDS: TURN 1 INCIDENT INVOLVING CARS 81 (PIA) AND 12 (ANT) UNDER INVESTIGATION - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 16,
+      "timestamp": "2025-11-09 17:26:07",
+      "category": "Other",
+      "message": "FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 81 (PIA) - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 17,
+      "timestamp": "2025-11-09 17:26:46",
+      "category": "Other",
+      "message": "CAR 12 (ANT) TIME 1:16.547 DELETED - TRACK LIMITS AT TURN 2 LAP 6 14:12:11",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 17,
+      "timestamp": "2025-11-09 17:27:19",
+      "category": "Other",
+      "message": "FIA STEWARDS: LAP 1 TURN 1 INCIDENT INVOLVING CARS 55 (SAI) AND 44 (HAM) REVIEWED NO FURTHER INVESTIGATION - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 18,
+      "timestamp": "2025-11-09 17:28:16",
+      "category": "Other",
+      "message": "FIA STEWARDS: TURN 15 INCIDENT INVOLVING CARS 44 (HAM) AND 43 (COL) UNDER INVESTIGATION - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 18,
+      "timestamp": "2025-11-09 17:28:58",
+      "category": "Other",
+      "message": "CAR 14 (ALO) LAP DELETED - TRACK LIMITS AT TURN 8 LAP 1 14:03:59",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 26,
+      "timestamp": "2025-11-09 17:38:51",
+      "category": "Other",
+      "message": "INCIDENT INVOLVING CAR 22 (TSU) NOTED - FAILING TO SERVE TIME PENALTY CORRECTLY",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 28,
+      "timestamp": "2025-11-09 17:40:50",
+      "category": "Other",
+      "message": "FIA STEWARDS: INCIDENT INVOLVING CAR 22 (TSU) UNDER INVESTIGATION - FAILING TO SERVE TIME PENALTY CORRECTLY",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 28,
+      "timestamp": "2025-11-09 17:41:27",
+      "category": "Other",
+      "message": "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 44 (HAM) - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 33,
+      "timestamp": "2025-11-09 17:47:45",
+      "category": "Other",
+      "message": "FIA STEWARDS: 10 SECOND TIME PENALTY FOR CAR 22 (TSU) - FAILING TO SERVE TIME PENALTY CORRECTLY",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 35,
+      "timestamp": "2025-11-09 17:50:24",
+      "category": "Flag",
+      "message": "WAVED BLUE FLAG FOR CAR 44 (HAM) TIMED AT 14:50:23",
+      "flag": "BLUE",
+      "scope": "Driver"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 36,
+      "timestamp": "2025-11-09 17:50:38",
+      "category": "Other",
+      "message": "FIA STEWARDS: PENALTY SERVED - 5 SECOND TIME PENALTY FOR CAR 44 (HAM) - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 38,
+      "timestamp": "2025-11-09 17:54:07",
+      "category": "Flag",
+      "message": "WAVED BLUE FLAG FOR CAR 44 (HAM) TIMED AT 14:54:07",
+      "flag": "BLUE",
+      "scope": "Driver"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 40,
+      "timestamp": "2025-11-09 17:56:23",
+      "category": "Other",
+      "message": "FIA STEWARDS: PENALTY SERVED - 10 SECOND TIME PENALTY FOR CAR 81 (PIA) - CAUSING A COLLISION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 50,
+      "timestamp": "2025-11-09 18:08:36",
+      "category": "Other",
+      "message": "FIA STEWARDS: PENALTY SERVED - 10 SECOND TIME PENALTY FOR CAR 22 (TSU) - FAILING TO SERVE TIME PENALTY CORRECTLY",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 71,
+      "timestamp": "2025-11-09 18:35:14",
+      "category": "Flag",
+      "message": "CHEQUERED FLAG",
+      "flag": "CHEQUERED",
+      "scope": "Track"
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 71,
+      "timestamp": "2025-11-09 18:36:20",
+      "category": "Other",
+      "message": "TURN 1 INCIDENT INVOLVING CARS 6 (HAD) AND 30 (LAW) NOTED",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 71,
+      "timestamp": "2025-11-09 18:38:09",
+      "category": "Other",
+      "message": "FIA STEWARDS: TURN 1 INCIDENT INVOLVING CARS 6 (HAD) AND 30 (LAW) REVIEWED NO FURTHER INVESTIGATION",
+      "flag": null,
+      "scope": null
+    },
+    {
+      "session_id": "2025-21-r",
+      "lap_number": 71,
+      "timestamp": "2025-11-09 18:38:28",
+      "category": "Other",
+      "message": "ALL PASS HOLDERS MAY ACCESS THE PIT LANE",
+      "flag": null,
+      "scope": null
+    }
+  ],
+  "caveats": [
+    "Pit loss and undercut/overcut values are simple estimates until full race pace context is available."
+  ]
+}

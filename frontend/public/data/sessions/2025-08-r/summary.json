@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-08-r",
+  "meeting": "Monaco Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 8,
+  "circuit": "Monaco",
+  "country": "Monaco",
+  "driver_count": 20,
+  "lap_count": 1425,
+  "weather_summary": "air 21.5-22.8C, track 41.7-45.2C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

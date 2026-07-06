@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-01-r",
+  "meeting": "Australian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 1,
+  "circuit": "Melbourne",
+  "country": "Australia",
+  "driver_count": 20,
+  "lap_count": 927,
+  "weather_summary": "air 15.1-16.6C, track 18.3-19.4C, rain",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

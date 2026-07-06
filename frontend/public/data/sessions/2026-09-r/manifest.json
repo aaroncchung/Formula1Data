@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "session_id": "2026-09-r",
+  "source": {
+    "files": [
+      "backend/data/processed/seasons/2025/dataset.json",
+      "backend/data/processed/seasons/2026/dataset.json",
+      "backend/data/processed/sessions/2025-01-r/dataset.json",
+      "backend/data/processed/sessions/2025-02-r/dataset.json",
+      "backend/data/processed/sessions/2025-03-r/dataset.json",
+      "backend/data/processed/sessions/2025-04-r/dataset.json",
+      "backend/data/processed/sessions/2025-05-r/dataset.json",
+      "backend/data/processed/sessions/2025-06-r/dataset.json",
+      "backend/data/processed/sessions/2025-07-r/dataset.json",
+      "backend/data/processed/sessions/2025-08-r/dataset.json",
+      "backend/data/processed/sessions/2025-09-r/dataset.json",
+      "backend/data/processed/sessions/2025-10-r/dataset.json",
+      "backend/data/processed/sessions/2025-11-r/dataset.json",
+      "backend/data/processed/sessions/2025-12-r/dataset.json",
+      "backend/data/processed/sessions/2025-13-r/dataset.json",
+      "backend/data/processed/sessions/2025-14-r/dataset.json",
+      "backend/data/processed/sessions/2025-15-r/dataset.json",
+      "backend/data/processed/sessions/2025-16-r/dataset.json",
+      "backend/data/processed/sessions/2025-17-r/dataset.json",
+      "backend/data/processed/sessions/2025-18-r/dataset.json",
+      "backend/data/processed/sessions/2025-19-r/dataset.json",
+      "backend/data/processed/sessions/2025-20-r/dataset.json",
+      "backend/data/processed/sessions/2025-21-r/dataset.json",
+      "backend/data/processed/sessions/2025-22-r/dataset.json",
+      "backend/data/processed/sessions/2025-23-r/dataset.json",
+      "backend/data/processed/sessions/2025-24-r/dataset.json",
+      "backend/data/processed/sessions/2026-01-r/dataset.json",
+      "backend/data/processed/sessions/2026-02-r/dataset.json",
+      "backend/data/processed/sessions/2026-03-r/dataset.json",
+      "backend/data/processed/sessions/2026-04-r/dataset.json",
+      "backend/data/processed/sessions/2026-05-r/dataset.json",
+      "backend/data/processed/sessions/2026-06-r/dataset.json",
+      "backend/data/processed/sessions/2026-07-r/dataset.json",
+      "backend/data/processed/sessions/2026-08-r/dataset.json",
+      "backend/data/processed/sessions/2026-09-r/dataset.json"
+    ]
+  },
+  "sections": [
+    {
+      "kind": "summary",
+      "path": "sessions/2026-09-r/summary.json",
+      "size_bytes": 482,
+      "checksum": "sha256:a691aff32169ef02bb173b77500e2de6331100e939d7ff345bbd419442276f9f"
+    },
+    {
+      "kind": "drivers",
+      "path": "sessions/2026-09-r/drivers.json",
+      "size_bytes": 5229,
+      "checksum": "sha256:8e2a1ff15deeeb09e5ba5d49d7e7a9a6038b095b29f2351a8f1141fa58a85ce0"
+    },
+    {
+      "kind": "laps",
+      "path": "sessions/2026-09-r/laps.json",
+      "size_bytes": 468997,
+      "checksum": "sha256:9160b364b8bf23fcee85b586228defb0efa625a6e9d2c1153185944d8225a146"
+    },
+    {
+      "kind": "results",
+      "path": "sessions/2026-09-r/results.json",
+      "size_bytes": 5261,
+      "checksum": "sha256:33413b75de352f3ca27994b2195809c64d689cd8c2b822c3f8c3fc3281f7d80c"
+    },
+    {
+      "kind": "stints",
+      "path": "sessions/2026-09-r/stints.json",
+      "size_bytes": 12786,
+      "checksum": "sha256:dab268415af279a7c9e80ee8f5bdcf578305a240b553d3a3f2d11bb91131e856"
+    },
+    {
+      "kind": "pit_stops",
+      "path": "sessions/2026-09-r/pit-stops.json",
+      "size_bytes": 7439,
+      "checksum": "sha256:8d663a68c983223f77ff9d7edcf3e36c5a1ceec2c0cead7baf3ccfb7ef537450"
+    },
+    {
+      "kind": "weather",
+      "path": "sessions/2026-09-r/weather.json",
+      "size_bytes": 6297,
+      "checksum": "sha256:e1979596c9e9ed92d7f981b92963221fa44dd35abc9ae7307294f88cd138b8b7"
+    },
+    {
+      "kind": "race_control",
+      "path": "sessions/2026-09-r/race-control.json",
+      "size_bytes": 60309,
+      "checksum": "sha256:5a6f5ee18c8f245d1d8c9efb1af36dfe1484b7a007e6298017b89f2bcff7672b"
+    },
+    {
+      "kind": "analysis:lap-times",
+      "path": "sessions/2026-09-r/analysis/lap-times.json",
+      "size_bytes": 29801,
+      "checksum": "sha256:399ccefe9fd11309063f9e2bb3057364189128762e49b9f4f62c385c939e9589"
+    },
+    {
+      "kind": "analysis:race-pace",
+      "path": "sessions/2026-09-r/analysis/race-pace.json",
+      "size_bytes": 22951,
+      "checksum": "sha256:c764c8f738f4d4170ee81440ec4276b0f72559df6a94d181c9a2d464c44c40b7"
+    },
+    {
+      "kind": "analysis:tyre-degradation",
+      "path": "sessions/2026-09-r/analysis/tyre-degradation.json",
+      "size_bytes": 15912,
+      "checksum": "sha256:ba1452ec69427de1550344a89c3980f7a394987e6687a6ef79ccd7c07348eb41"
+    },
+    {
+      "kind": "analysis:strategy",
+      "path": "sessions/2026-09-r/analysis/strategy.json",
+      "size_bytes": 91895,
+      "checksum": "sha256:86ad4993c8a903b6c58212519eef8ba23637be802a3289330e5ccc479f14f8b9"
+    },
+    {
+      "kind": "analysis:ideal-laps",
+      "path": "sessions/2026-09-r/analysis/ideal-laps.json",
+      "size_bytes": 5265,
+      "checksum": "sha256:8c858cae31eb12168a74265e013a98ae881fe3981b2734a403cff04f523a3689"
+    },
+    {
+      "kind": "analysis:team-mate-comparison",
+      "path": "sessions/2026-09-r/analysis/team-mate-comparison.json",
+      "size_bytes": 3858,
+      "checksum": "sha256:a7a2b08e21e9c70f5966a481f76d5aba349667c6eff60510ab35db2291fcc6b6"
+    },
+    {
+      "kind": "position-replay",
+      "path": "sessions/2026-09-r/position-replay.json",
+      "size_bytes": 110229,
+      "checksum": "sha256:d7d1165337e5e2c2b519794afd2f82ef0bef2233fa9e48fce7d101fb0c8fd023"
+    },
+    {
+      "kind": "telemetry-lap",
+      "path": "sessions/2026-09-r/telemetry/ant-lap-37.json",
+      "size_bytes": 57846,
+      "checksum": "sha256:7212fd018b7ea031d50fef08d69a5b70ce5afa8e529977a9aa7e3d7249cbd33f"
+    },
+    {
+      "kind": "telemetry-lap",
+      "path": "sessions/2026-09-r/telemetry/nor-lap-1.json",
+      "size_bytes": 85709,
+      "checksum": "sha256:60283ef8fab7912e99fcf2dc1cb79ba8a8ec8f6573c307288d3191ce0ce928e4"
+    },
+    {
+      "kind": "telemetry-index",
+      "path": "sessions/2026-09-r/telemetry/index.json",
+      "size_bytes": 561,
+      "checksum": "sha256:80d4f150364a9ebed3e5196bf6231a2e7fa9c07d5dbf776ab06ebb1b5b7ee188"
+    }
+  ],
+  "telemetry": {
+    "lap_count": 2,
+    "sample_count": 425,
+    "max_samples_per_lap": 300
+  }
+}

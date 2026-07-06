@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-14-r",
+  "meeting": "Hungarian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 14,
+  "circuit": "Budapest",
+  "country": "Hungary",
+  "driver_count": 20,
+  "lap_count": 1368,
+  "weather_summary": "air 21.7-22.5C, track 30.8-37.6C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

@@ -1,0 +1,371 @@
+[
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "VER",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 21,
+    "lap_count": 21
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "VER",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 22,
+    "end_lap": 53,
+    "lap_count": 32
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "NOR",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 21,
+    "lap_count": 21
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "NOR",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 22,
+    "end_lap": 53,
+    "lap_count": 32
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "PIA",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 20,
+    "lap_count": 20
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "PIA",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 21,
+    "end_lap": 53,
+    "lap_count": 33
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "LEC",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 21,
+    "lap_count": 21
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "LEC",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 22,
+    "end_lap": 53,
+    "lap_count": 32
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "RUS",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 19,
+    "lap_count": 19
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "RUS",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 20,
+    "end_lap": 53,
+    "lap_count": 34
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ANT",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 31,
+    "lap_count": 31
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ANT",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 32,
+    "end_lap": 53,
+    "lap_count": 22
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HAM",
+    "stint": 1,
+    "compound": "HARD",
+    "start_lap": 1,
+    "end_lap": 30,
+    "lap_count": 30
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HAM",
+    "stint": 2,
+    "compound": "MEDIUM",
+    "start_lap": 31,
+    "end_lap": 53,
+    "lap_count": 23
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HAD",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 25,
+    "lap_count": 25
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HAD",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 26,
+    "end_lap": 53,
+    "lap_count": 28
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ALB",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 24,
+    "lap_count": 24
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ALB",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 25,
+    "end_lap": 53,
+    "lap_count": 29
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "BEA",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 23,
+    "lap_count": 23
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "BEA",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 24,
+    "end_lap": 53,
+    "lap_count": 30
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ALO",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 24,
+    "lap_count": 24
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "ALO",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 25,
+    "end_lap": 53,
+    "lap_count": 29
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "TSU",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 23,
+    "lap_count": 23
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "TSU",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 24,
+    "end_lap": 53,
+    "lap_count": 30
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "GAS",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 24,
+    "lap_count": 24
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "GAS",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 25,
+    "end_lap": 53,
+    "lap_count": 29
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "SAI",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 33,
+    "lap_count": 33
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "SAI",
+    "stint": 2,
+    "compound": "SOFT",
+    "start_lap": 34,
+    "end_lap": 53,
+    "lap_count": 20
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "DOO",
+    "stint": 1,
+    "compound": "SOFT",
+    "start_lap": 1,
+    "end_lap": 15,
+    "lap_count": 15
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "DOO",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 16,
+    "end_lap": 53,
+    "lap_count": 38
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HUL",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 22,
+    "lap_count": 22
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "HUL",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 23,
+    "end_lap": 53,
+    "lap_count": 31
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "LAW",
+    "stint": 1,
+    "compound": "MEDIUM",
+    "start_lap": 1,
+    "end_lap": 33,
+    "lap_count": 33
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "LAW",
+    "stint": 2,
+    "compound": "SOFT",
+    "start_lap": 34,
+    "end_lap": 53,
+    "lap_count": 20
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "OCO",
+    "stint": 1,
+    "compound": "HARD",
+    "start_lap": 1,
+    "end_lap": 32,
+    "lap_count": 32
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "OCO",
+    "stint": 2,
+    "compound": "MEDIUM",
+    "start_lap": 33,
+    "end_lap": 53,
+    "lap_count": 21
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "BOR",
+    "stint": 1,
+    "compound": "HARD",
+    "start_lap": 1,
+    "end_lap": 31,
+    "lap_count": 31
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "BOR",
+    "stint": 2,
+    "compound": "MEDIUM",
+    "start_lap": 32,
+    "end_lap": 53,
+    "lap_count": 22
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "STR",
+    "stint": 1,
+    "compound": "SOFT",
+    "start_lap": 1,
+    "end_lap": 9,
+    "lap_count": 9
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "STR",
+    "stint": 2,
+    "compound": "HARD",
+    "start_lap": 10,
+    "end_lap": 30,
+    "lap_count": 21
+  },
+  {
+    "session_id": "2025-03-r",
+    "driver_code": "STR",
+    "stint": 3,
+    "compound": "MEDIUM",
+    "start_lap": 31,
+    "end_lap": 52,
+    "lap_count": 22
+  }
+]

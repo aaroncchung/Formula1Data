@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-21-r",
+  "meeting": "São Paulo Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 21,
+  "circuit": "São Paulo",
+  "country": "Brazil",
+  "driver_count": 20,
+  "lap_count": 1251,
+  "weather_summary": "air 16.6-17.9C, track 29.4-32.7C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

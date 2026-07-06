@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-11-r",
+  "meeting": "Austrian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 11,
+  "circuit": "Spielberg",
+  "country": "Austria",
+  "driver_count": 20,
+  "lap_count": 1126,
+  "weather_summary": "air 29.3-31.1C, track 47.5-51.3C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

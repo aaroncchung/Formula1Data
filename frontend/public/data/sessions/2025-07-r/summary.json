@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-07-r",
+  "meeting": "Emilia Romagna Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 7,
+  "circuit": "Imola",
+  "country": "Italy",
+  "driver_count": 20,
+  "lap_count": 1207,
+  "weather_summary": "air 23.6-24.3C, track 38.7-45.8C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-13-r",
+  "meeting": "Belgian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 13,
+  "circuit": "Spa-Francorchamps",
+  "country": "Belgium",
+  "driver_count": 20,
+  "lap_count": 879,
+  "weather_summary": "air 14.6-18.8C, track 20.8-26.8C, rain",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

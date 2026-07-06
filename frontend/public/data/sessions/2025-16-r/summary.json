@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-16-r",
+  "meeting": "Italian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 16,
+  "circuit": "Monza",
+  "country": "Italy",
+  "driver_count": 20,
+  "lap_count": 974,
+  "weather_summary": "air 26.0-27.4C, track 39.8-45.9C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

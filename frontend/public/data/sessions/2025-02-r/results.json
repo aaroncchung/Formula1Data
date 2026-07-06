@@ -1,0 +1,222 @@
+[
+  {
+    "session_id": "2025-02-r",
+    "position": 1,
+    "driver_code": "PIA",
+    "classified_position": "1",
+    "status": "Finished",
+    "points": 25.0,
+    "grid": 1,
+    "gap": "0 days 01:30:55.026000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 2,
+    "driver_code": "NOR",
+    "classified_position": "2",
+    "status": "Finished",
+    "points": 18.0,
+    "grid": 3,
+    "gap": "0 days 00:00:09.748000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 3,
+    "driver_code": "RUS",
+    "classified_position": "3",
+    "status": "Finished",
+    "points": 15.0,
+    "grid": 2,
+    "gap": "0 days 00:00:11.097000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 4,
+    "driver_code": "VER",
+    "classified_position": "4",
+    "status": "Finished",
+    "points": 12.0,
+    "grid": 4,
+    "gap": "0 days 00:00:16.656000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 5,
+    "driver_code": "OCO",
+    "classified_position": "5",
+    "status": "Finished",
+    "points": 10.0,
+    "grid": 11,
+    "gap": "0 days 00:00:49.969000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 6,
+    "driver_code": "ANT",
+    "classified_position": "6",
+    "status": "Finished",
+    "points": 8.0,
+    "grid": 8,
+    "gap": "0 days 00:00:53.748000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 7,
+    "driver_code": "ALB",
+    "classified_position": "7",
+    "status": "Finished",
+    "points": 6.0,
+    "grid": 10,
+    "gap": "0 days 00:00:56.321000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 8,
+    "driver_code": "BEA",
+    "classified_position": "8",
+    "status": "Finished",
+    "points": 4.0,
+    "grid": 17,
+    "gap": "0 days 00:01:01.303000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 9,
+    "driver_code": "STR",
+    "classified_position": "9",
+    "status": "Finished",
+    "points": 2.0,
+    "grid": 14,
+    "gap": "0 days 00:01:10.204000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 10,
+    "driver_code": "SAI",
+    "classified_position": "10",
+    "status": "Finished",
+    "points": 1.0,
+    "grid": 15,
+    "gap": "0 days 00:01:16.387000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 11,
+    "driver_code": "HAD",
+    "classified_position": "11",
+    "status": "Finished",
+    "points": 0.0,
+    "grid": 7,
+    "gap": "0 days 00:01:18.875000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 12,
+    "driver_code": "LAW",
+    "classified_position": "12",
+    "status": "Finished",
+    "points": 0.0,
+    "grid": 20,
+    "gap": "0 days 00:01:21.147000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 13,
+    "driver_code": "DOO",
+    "classified_position": "13",
+    "status": "Finished",
+    "points": 0.0,
+    "grid": 18,
+    "gap": "0 days 00:01:28.401000",
+    "laps": 56
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 14,
+    "driver_code": "BOR",
+    "classified_position": "14",
+    "status": "Lapped",
+    "points": 0.0,
+    "grid": 19,
+    "gap": "0 days 00:00:10.756000",
+    "laps": 55
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 15,
+    "driver_code": "HUL",
+    "classified_position": "15",
+    "status": "Lapped",
+    "points": 0.0,
+    "grid": 12,
+    "gap": "0 days 00:00:20.226000",
+    "laps": 55
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 16,
+    "driver_code": "TSU",
+    "classified_position": "16",
+    "status": "Lapped",
+    "points": 0.0,
+    "grid": 9,
+    "gap": "0 days 00:00:23.511000",
+    "laps": 55
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 17,
+    "driver_code": "ALO",
+    "classified_position": "R",
+    "status": "Retired",
+    "points": 0.0,
+    "grid": 13,
+    "gap": "NaT",
+    "laps": 4
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 18,
+    "driver_code": "LEC",
+    "classified_position": "D",
+    "status": "Disqualified",
+    "points": 0.0,
+    "grid": 6,
+    "gap": "NaT",
+    "laps": 0
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 19,
+    "driver_code": "HAM",
+    "classified_position": "D",
+    "status": "Disqualified",
+    "points": 0.0,
+    "grid": 5,
+    "gap": "NaT",
+    "laps": 0
+  },
+  {
+    "session_id": "2025-02-r",
+    "position": 20,
+    "driver_code": "GAS",
+    "classified_position": "D",
+    "status": "Disqualified",
+    "points": 0.0,
+    "grid": 16,
+    "gap": "NaT",
+    "laps": 0
+  }
+]

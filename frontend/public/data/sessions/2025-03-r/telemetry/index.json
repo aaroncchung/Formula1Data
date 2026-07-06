@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "session_id": "2025-03-r",
+  "max_samples_per_lap": 300,
+  "laps": [
+    {
+      "driver_code": "ANT",
+      "lap_number": 50,
+      "path": "telemetry/ant-lap-50.json",
+      "sample_count": 175,
+      "raw_sample_count": 350,
+      "size_bytes": 59515
+    },
+    {
+      "driver_code": "VER",
+      "lap_number": 1,
+      "path": "telemetry/ver-lap-1.json",
+      "sample_count": 183,
+      "raw_sample_count": 365,
+      "size_bytes": 61906
+    }
+  ]
+}

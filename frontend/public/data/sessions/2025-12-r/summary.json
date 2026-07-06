@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-12-r",
+  "meeting": "British Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 12,
+  "circuit": "Silverstone",
+  "country": "United Kingdom",
+  "driver_count": 20,
+  "lap_count": 825,
+  "weather_summary": "air 16.1-19.3C, track 20.0-29.6C, rain",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

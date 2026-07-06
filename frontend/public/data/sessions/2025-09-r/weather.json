@@ -1,0 +1,262 @@
+[
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:00:17.775000",
+    "air_temp_c": 29.9,
+    "track_temp_c": 48.2,
+    "humidity_pct": 49.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.3
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:06:17.802000",
+    "air_temp_c": 30.0,
+    "track_temp_c": 49.2,
+    "humidity_pct": 50.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.1
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:12:17.821000",
+    "air_temp_c": 29.6,
+    "track_temp_c": 49.1,
+    "humidity_pct": 49.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.8
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:18:17.897000",
+    "air_temp_c": 29.5,
+    "track_temp_c": 48.3,
+    "humidity_pct": 48.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.6
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:24:17.891000",
+    "air_temp_c": 29.3,
+    "track_temp_c": 48.9,
+    "humidity_pct": 48.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.5
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:30:17.897000",
+    "air_temp_c": 29.6,
+    "track_temp_c": 49.3,
+    "humidity_pct": 49.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.5
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:36:17.898000",
+    "air_temp_c": 29.3,
+    "track_temp_c": 50.3,
+    "humidity_pct": 51.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.1
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:42:17.920000",
+    "air_temp_c": 29.1,
+    "track_temp_c": 49.6,
+    "humidity_pct": 51.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.4
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:48:17.921000",
+    "air_temp_c": 29.5,
+    "track_temp_c": 49.7,
+    "humidity_pct": 50.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.3
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 00:54:17.943000",
+    "air_temp_c": 29.6,
+    "track_temp_c": 50.4,
+    "humidity_pct": 50.0,
+    "rainfall": false,
+    "wind_speed_kph": 0.9
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:00:18.048000",
+    "air_temp_c": 29.5,
+    "track_temp_c": 49.4,
+    "humidity_pct": 51.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.0
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:06:18.049000",
+    "air_temp_c": 29.3,
+    "track_temp_c": 48.9,
+    "humidity_pct": 52.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.8
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:12:18.042000",
+    "air_temp_c": 28.9,
+    "track_temp_c": 49.1,
+    "humidity_pct": 56.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.0
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:18:18.060000",
+    "air_temp_c": 29.2,
+    "track_temp_c": 49.0,
+    "humidity_pct": 56.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.9
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:24:18.079000",
+    "air_temp_c": 29.3,
+    "track_temp_c": 48.4,
+    "humidity_pct": 55.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.5
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:30:18.137000",
+    "air_temp_c": 28.7,
+    "track_temp_c": 47.9,
+    "humidity_pct": 56.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.2
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:36:18.199000",
+    "air_temp_c": 29.1,
+    "track_temp_c": 48.7,
+    "humidity_pct": 57.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.7
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:42:18.202000",
+    "air_temp_c": 28.9,
+    "track_temp_c": 47.7,
+    "humidity_pct": 59.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.6
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:48:18.260000",
+    "air_temp_c": 28.6,
+    "track_temp_c": 47.6,
+    "humidity_pct": 59.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.4
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 01:54:18.228000",
+    "air_temp_c": 28.3,
+    "track_temp_c": 47.5,
+    "humidity_pct": 60.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.3
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:00:18.234000",
+    "air_temp_c": 28.4,
+    "track_temp_c": 47.4,
+    "humidity_pct": 61.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.0
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:06:18.264000",
+    "air_temp_c": 28.3,
+    "track_temp_c": 48.0,
+    "humidity_pct": 60.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.5
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:12:18.274000",
+    "air_temp_c": 28.6,
+    "track_temp_c": 47.7,
+    "humidity_pct": 60.0,
+    "rainfall": false,
+    "wind_speed_kph": 2.1
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:18:18.285000",
+    "air_temp_c": 28.7,
+    "track_temp_c": 47.5,
+    "humidity_pct": 60.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.8
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:24:18.355000",
+    "air_temp_c": 28.9,
+    "track_temp_c": 47.5,
+    "humidity_pct": 59.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.3
+  },
+  {
+    "session_id": "2025-09-r",
+    "lap_number": null,
+    "timestamp": "0 days 02:30:18.400000",
+    "air_temp_c": 29.2,
+    "track_temp_c": 47.4,
+    "humidity_pct": 60.0,
+    "rainfall": false,
+    "wind_speed_kph": 1.3
+  }
+]

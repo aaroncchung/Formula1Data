@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-05-r",
+  "meeting": "Saudi Arabian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 5,
+  "circuit": "Jeddah",
+  "country": "Saudi Arabia",
+  "driver_count": 20,
+  "lap_count": 898,
+  "weather_summary": "air 28.4-31.7C, track 36.2-39.4C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

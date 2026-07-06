@@ -1,0 +1,23 @@
+{
+  "session_id": "2025-10-r",
+  "meeting": "Canadian Grand Prix",
+  "session": "Race",
+  "year": 2025,
+  "round": 10,
+  "circuit": "Montréal",
+  "country": "Canada",
+  "driver_count": 20,
+  "lap_count": 1349,
+  "weather_summary": "air 22.8-25.4C, track 47.1-50.2C, dry",
+  "is_sample": false,
+  "available_sections": [
+    "drivers",
+    "laps",
+    "results",
+    "stints",
+    "pit_stops",
+    "weather",
+    "race_control",
+    "telemetry"
+  ]
+}

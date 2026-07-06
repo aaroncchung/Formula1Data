@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "session_id": "2025-04-r",
+  "max_samples_per_lap": 300,
+  "laps": [
+    {
+      "driver_code": "PIA",
+      "lap_number": 1,
+      "path": "telemetry/pia-lap-1.json",
+      "sample_count": 254,
+      "raw_sample_count": 254,
+      "size_bytes": 85552
+    },
+    {
+      "driver_code": "PIA",
+      "lap_number": 36,
+      "path": "telemetry/pia-lap-36.json",
+      "sample_count": 178,
+      "raw_sample_count": 355,
+      "size_bytes": 59927
+    }
+  ]
+}

@@ -1,0 +1,398 @@
+[
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 1,
+    "timestamp": "2025-05-18 12:20:00",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 1,
+    "timestamp": "2025-05-18 12:30:00",
+    "category": "Other",
+    "message": "PIT EXIT CLOSED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 1,
+    "timestamp": "2025-05-18 12:45:13",
+    "category": "Other",
+    "message": "RISK OF RAIN FOR F1 RACE IS 20%",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 1,
+    "timestamp": "2025-05-18 12:57:02",
+    "category": "Drs",
+    "message": "DRS DISABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 1,
+    "timestamp": "2025-05-18 13:03:33",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 2,
+    "timestamp": "2025-05-18 13:05:08",
+    "category": "Drs",
+    "message": "DRS ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 4,
+    "timestamp": "2025-05-18 13:08:32",
+    "category": "Other",
+    "message": "CAR 10 (GAS) TIME 1:25.766 DELETED - TRACK LIMITS AT TURN 10 LAP 3 15:07:09",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 8,
+    "timestamp": "2025-05-18 13:13:47",
+    "category": "Other",
+    "message": "CAR 10 (GAS) TIME 1:22.462 DELETED - TRACK LIMITS AT TURN 17 LAP 7 15:13:08",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 29,
+    "timestamp": "2025-05-18 13:42:11",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 8",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 29,
+    "timestamp": "2025-05-18 13:42:34",
+    "category": "SafetyCar",
+    "message": "VIRTUAL SAFETY CAR DEPLOYED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 29,
+    "timestamp": "2025-05-18 13:42:37",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 8",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 29,
+    "timestamp": "2025-05-18 13:42:44",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 7",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 31,
+    "timestamp": "2025-05-18 13:45:59",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 8",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 31,
+    "timestamp": "2025-05-18 13:46:01",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 7",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 31,
+    "timestamp": "2025-05-18 13:46:03",
+    "category": "SafetyCar",
+    "message": "VIRTUAL SAFETY CAR ENDING",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 31,
+    "timestamp": "2025-05-18 13:46:14",
+    "category": "Flag",
+    "message": "TRACK CLEAR",
+    "flag": "CLEAR",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 31,
+    "timestamp": "2025-05-18 13:46:15",
+    "category": "Drs",
+    "message": "DRS ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 34,
+    "timestamp": "2025-05-18 13:50:08",
+    "category": "Other",
+    "message": "TURN 2 INCIDENT INVOLVING CARS 22 (TSU) AND 55 (SAI) NOTED - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 35,
+    "timestamp": "2025-05-18 13:51:21",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 2 INCIDENT INVOLVING CARS 22 (TSU) AND 55 (SAI) REVIEWED NO FURTHER INVESTIGATION - CAUSING A COLLISION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 39,
+    "timestamp": "2025-05-18 13:57:03",
+    "category": "Other",
+    "message": "TURN 7 INCIDENT INVOLVING CAR 23 (ALB) NOTED -YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 40,
+    "timestamp": "2025-05-18 13:58:03",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 7 INCIDENT INVOLVING CAR 23 (ALB) REVIEWED NO FURTHER INVESTIGATION - YELLOW FLAG INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 43,
+    "timestamp": "2025-05-18 14:01:56",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 5 (BOR) TIMED AT 16:01:55",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 45,
+    "timestamp": "2025-05-18 14:04:26",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 30 (LAW) TIMED AT 16:04:26",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 45,
+    "timestamp": "2025-05-18 14:04:53",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 43 (COL) TIMED AT 16:04:53",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 46,
+    "timestamp": "2025-05-18 14:06:02",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 10 (GAS) TIMED AT 16:06:01",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 46,
+    "timestamp": "2025-05-18 14:06:07",
+    "category": "Flag",
+    "message": "YELLOW IN TRACK SECTOR 8",
+    "flag": "YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 46,
+    "timestamp": "2025-05-18 14:06:21",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 10 (GAS) TIMED AT 16:06:20",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 46,
+    "timestamp": "2025-05-18 14:06:27",
+    "category": "SafetyCar",
+    "message": "SAFETY CAR DEPLOYED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 47,
+    "timestamp": "2025-05-18 14:07:06",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 8",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 48,
+    "timestamp": "2025-05-18 14:09:30",
+    "category": "Other",
+    "message": "RECOVERY VEHICLE ON TRACK AT TURN 7",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 50,
+    "timestamp": "2025-05-18 14:14:18",
+    "category": "Flag",
+    "message": "DOUBLE YELLOW IN TRACK SECTOR 9",
+    "flag": "DOUBLE YELLOW",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 51,
+    "timestamp": "2025-05-18 14:16:20",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 8",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 51,
+    "timestamp": "2025-05-18 14:17:21",
+    "category": "Flag",
+    "message": "CLEAR IN TRACK SECTOR 9",
+    "flag": "CLEAR",
+    "scope": "Sector"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 52,
+    "timestamp": "2025-05-18 14:18:03",
+    "category": "Other",
+    "message": "LAPPED CAR MAY NOW OVERTAKE THE SAFETY CAR: 87",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 53,
+    "timestamp": "2025-05-18 14:20:09",
+    "category": "SafetyCar",
+    "message": "SAFETY CAR IN THIS LAP",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 53,
+    "timestamp": "2025-05-18 14:21:42",
+    "category": "Flag",
+    "message": "TRACK CLEAR",
+    "flag": "CLEAR",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 55,
+    "timestamp": "2025-05-18 14:23:24",
+    "category": "Other",
+    "message": "INCIDENT INVOLVING CARS 4 (NOR) AND 23 (ALB) NOTED - SAFETY CAR INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 55,
+    "timestamp": "2025-05-18 14:23:33",
+    "category": "Drs",
+    "message": "DRS ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 55,
+    "timestamp": "2025-05-18 14:24:31",
+    "category": "Other",
+    "message": "FIA STEWARDS: INCIDENT INVOLVING CARS 4 (NOR) AND 23 (ALB) REVIEWED NO FURTHER INVESTIGATION - SAFETY CAR INFRINGEMENT",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 61,
+    "timestamp": "2025-05-18 14:31:22",
+    "category": "Other",
+    "message": "TURN 2 INCIDENT INVOLVING CARS 16 (LEC) AND 23 (ALB) NOTED - FORCING ANOTHER DRIVER OFF THE TRACK",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 61,
+    "timestamp": "2025-05-18 14:31:43",
+    "category": "Other",
+    "message": "CAR 23 (ALB) TIME 1:21.386 DELETED - TRACK LIMITS AT TURN 3 LAP 60 16:30:16",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 62,
+    "timestamp": "2025-05-18 14:33:47",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 2 INCIDENT INVOLVING CARS 16 (LEC) AND 23 (ALB) UNDER INVESTIGATION - FORCING ANOTHER DRIVER OFF THE TRACK",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 63,
+    "timestamp": "2025-05-18 14:35:06",
+    "category": "Flag",
+    "message": "CHEQUERED FLAG",
+    "flag": "CHEQUERED",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-07-r",
+    "lap_number": 63,
+    "timestamp": "2025-05-18 14:36:51",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 2 INCIDENT INVOLVING CARS 16 (LEC) AND 23 (ALB) NO FURTHER ACTION - FORCING ANOTHER DRIVER OFF THE TRACK",
+    "flag": null,
+    "scope": null
+  }
+]

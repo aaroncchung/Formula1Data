@@ -1,0 +1,209 @@
+[
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 1,
+    "timestamp": "2025-04-06 04:20:00",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 1,
+    "timestamp": "2025-04-06 04:30:00",
+    "category": "Other",
+    "message": "PIT EXIT CLOSED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 1,
+    "timestamp": "2025-04-06 04:45:14",
+    "category": "Other",
+    "message": "RISK OF RAIN FOR F1 RACE IS 20%",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 1,
+    "timestamp": "2025-04-06 04:57:06",
+    "category": "Drs",
+    "message": "DRS DISABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 1,
+    "timestamp": "2025-04-06 05:03:47",
+    "category": "Flag",
+    "message": "GREEN LIGHT - PIT EXIT OPEN",
+    "flag": "GREEN",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 2,
+    "timestamp": "2025-04-06 05:05:35",
+    "category": "Drs",
+    "message": "DRS ENABLED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 3,
+    "timestamp": "2025-04-06 05:08:16",
+    "category": "Other",
+    "message": "CAR 12 (ANT) TIME 1:34.531 DELETED - TRACK LIMITS AT TURN 17 LAP 2 14:06:57",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 17,
+    "timestamp": "2025-04-06 05:29:55",
+    "category": "Other",
+    "message": "CAR 55 (SAI) TIME 1:34.451 DELETED - TRACK LIMITS AT TURN 17 LAP 15 14:27:34",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 18,
+    "timestamp": "2025-04-06 05:31:49",
+    "category": "Other",
+    "message": "TURN 17 INCIDENT INVOLVING CARS 55 (SAI) NOTED - LEAVING THE TRACK AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 21,
+    "timestamp": "2025-04-06 05:35:26",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CAR 55 (SAI) REVIEWED NO FURTHER INVESTIGATION - LEAVING THE TRACK AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 25,
+    "timestamp": "2025-04-06 05:42:02",
+    "category": "Other",
+    "message": "PIT EXIT INCIDENT INVOLVING CARS 1 (VER) AND 4 (NOR) NOTED",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 26,
+    "timestamp": "2025-04-06 05:43:05",
+    "category": "Other",
+    "message": "FIA STEWARDS: PIT EXIT INCIDENT INVOLVING CARS 1 (VER) AND 4 (NOR) REVIEWED NO FURTHER INVESTIGATION",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 27,
+    "timestamp": "2025-04-06 05:45:15",
+    "category": "Other",
+    "message": "CAR 55 (SAI) TIME 1:33.932 DELETED - TRACK LIMITS AT TURN 17 LAP 25 14:43:19",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 27,
+    "timestamp": "2025-04-06 05:45:28",
+    "category": "Other",
+    "message": "TURN 17 INCIDENT INVOLVING CAR 55 (SAI) NOTED - LEAVING THE TRACK AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 29,
+    "timestamp": "2025-04-06 05:47:54",
+    "category": "Other",
+    "message": "FIA STEWARDS: TURN 17 INCIDENT INVOLVING CAR 55 (SAI) REVIEWED NO FURTHER INVESTIGATION - LEAVING THE TRACK AND GAINING AN ADVANTAGE",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 29,
+    "timestamp": "2025-04-06 05:48:23",
+    "category": "Other",
+    "message": "CAR 22 (TSU) TIME 1:33.745 DELETED - TRACK LIMITS AT TURN 17 LAP 26 14:45:10",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 35,
+    "timestamp": "2025-04-06 05:57:07",
+    "category": "Other",
+    "message": "CAR 63 (RUS) TIME 1:32.080 DELETED - TRACK LIMITS AT TURN 17 LAP 33 14:55:29",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 45,
+    "timestamp": "2025-04-06 06:13:43",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 15:13:43",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 46,
+    "timestamp": "2025-04-06 06:13:51",
+    "category": "Flag",
+    "message": "WAVED BLUE FLAG FOR CAR 18 (STR) TIMED AT 15:13:50",
+    "flag": "BLUE",
+    "scope": "Driver"
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 48,
+    "timestamp": "2025-04-06 06:18:15",
+    "category": "Other",
+    "message": "CAR 12 (ANT) TIME 1:31.238 DELETED - TRACK LIMITS AT TURN 17 LAP 47 15:16:58",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 53,
+    "timestamp": "2025-04-06 06:25:53",
+    "category": "Flag",
+    "message": "CHEQUERED FLAG",
+    "flag": "CHEQUERED",
+    "scope": "Track"
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 53,
+    "timestamp": "2025-04-06 06:26:13",
+    "category": "Other",
+    "message": "CAR 4 (NOR) TIME 1:31.423 DELETED - TRACK LIMITS AT TURN 17 LAP 53 15:25:48",
+    "flag": null,
+    "scope": null
+  },
+  {
+    "session_id": "2025-03-r",
+    "lap_number": 53,
+    "timestamp": "2025-04-06 06:29:16",
+    "category": "Other",
+    "message": "CAR 10 (GAS) TIME 1:33.169 DELETED - TRACK LIMITS AT TURN 17 LAP 53 15:26:48",
+    "flag": null,
+    "scope": null
+  }
+]
