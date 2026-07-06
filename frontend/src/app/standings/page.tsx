@@ -9,29 +9,65 @@ export default async function StandingsPage() {
   if (!primarySession.ok) {
     return <ErrorState title="Could not load standings" detail={`${primarySession.error.message}: ${primarySession.apiBaseUrl}`} />;
   }
-  const [results, drivers] = await Promise.all([
-    safeApi(() => api.results(primarySession.data.session_id)),
-    safeApi(() => api.drivers(primarySession.data.session_id))
-  ]);
-  const failed = [results, drivers].find(isApiFailure);
-  if (failed) {
-    return <ErrorState title="Could not load standings" detail={`${failed.error.message}: ${failed.apiBaseUrl}`} />;
+
+  const catalog = await safeApi(() => api.catalog());
+  if (!catalog.ok) {
+    return <ErrorState title="Could not load standings" detail={`${catalog.error.message}: ${catalog.apiBaseUrl}`} />;
   }
-  if (!results.ok || !drivers.ok) {
-    return null;
+
+  const year = primarySession.data.year;
+  const pointSessions = catalog.data.sessions.filter(
+    (s) => s.year === year && s.status === "available" && ["R", "S"].includes(s.type.toUpperCase())
+  );
+
+  const resultsResponses = await Promise.all(pointSessions.map((s) => safeApi(() => api.results(s.session_id))));
+  const driversResponses = await Promise.all(pointSessions.map((s) => safeApi(() => api.drivers(s.session_id))));
+
+  // aggregate drivers
+  const driverMap = new Map<string, any>();
+  for (const resp of driversResponses) {
+    if (resp.ok) {
+      for (const d of resp.data) {
+        if (!driverMap.has(d.code)) {
+          driverMap.set(d.code, d);
+        }
+      }
+    }
   }
-  const colors = Object.fromEntries(drivers.data.map((driver) => [driver.code, driver.team.color]));
+
+  // aggregate points
+  const pointsMap = new Map<string, number>();
+  for (const resp of resultsResponses) {
+    if (resp.ok) {
+      for (const r of resp.data) {
+        if (r.points) {
+          pointsMap.set(r.driver_code, (pointsMap.get(r.driver_code) || 0) + r.points);
+        }
+      }
+    }
+  }
+
+  // sort drivers by points
+  const standings = Array.from(driverMap.values())
+    .map((d) => ({
+      driver_code: d.code,
+      points: pointsMap.get(d.code) || 0,
+      team: d.team
+    }))
+    .sort((a, b) => b.points - a.points)
+    .map((row, index) => ({ ...row, position: index + 1 }));
+
+  const colors = Object.fromEntries(Array.from(driverMap.values()).map((d) => [d.code, d.team.color]));
+
   return (
     <div>
-      <PageHeader title="Standings" description="Session result table from processed timing artifacts." />
+      <PageHeader title={`${year} Season Standings`} description={`Cumulative points across all available sessions for ${year}.`} />
       <DataTable
-        rows={results.data}
+        rows={standings}
         columns={[
           { key: "pos", header: "Pos", align: "right", render: (row) => row.position },
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
-          { key: "grid", header: "Grid", align: "right", render: (row) => row.grid ?? "--" },
-          { key: "gap", header: "Gap", align: "right", render: (row) => row.gap || "--" },
-          { key: "points", header: "Pts", align: "right", render: (row) => row.points ?? 0 }
+          { key: "points", header: "Pts", align: "right", render: (row) => row.points }
         ]}
       />
     </div>
