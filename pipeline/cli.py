@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.artifacts import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR, build_static_artifacts
+from pipeline.backfill import print_backfill_summary, run_backfill
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
@@ -65,6 +66,27 @@ def main(argv: list[str] | None = None) -> None:
         help="Only update backend/data; skip frontend/public/data generation.",
     )
     ingest_season.set_defaults(func=ingest_one_season)
+
+    backfill = subparsers.add_parser(
+        "backfill",
+        help="Backfill processed datasets for historical seasons and rebuild static artifacts.",
+    )
+    add_artifact_args(backfill)
+    backfill.add_argument("--years", nargs="+", type=int, required=True)
+    backfill.add_argument("--sessions", nargs="+", help="Optional session codes or names, such as Q R.")
+    backfill.add_argument("--races-only", action="store_true")
+    backfill.add_argument("--force", action="store_true")
+    backfill.add_argument("--dry-run", action="store_true")
+    backfill.add_argument(
+        "--include-future",
+        action="store_true",
+        help="Attempt sessions after --through-date if they appear in the FastF1 schedule.",
+    )
+    backfill.add_argument(
+        "--through-date",
+        help="Latest session date to ingest in YYYY-MM-DD format. Defaults to today.",
+    )
+    backfill.set_defaults(func=backfill_sessions)
 
     process_queue = subparsers.add_parser(
         "process-queue",
@@ -129,6 +151,26 @@ def ingest_one_season(args: argparse.Namespace) -> None:
     if not args.no_build_artifacts:
         summary = build_static_artifacts(data_dir=args.data_dir, output_dir=args.output_dir)
         print_summary(summary)
+
+
+def backfill_sessions(args: argparse.Namespace) -> None:
+    from datetime import date
+
+    through_date = date.fromisoformat(args.through_date) if args.through_date else None
+    summary = run_backfill(
+        years=args.years,
+        data_dir=args.data_dir,
+        output_dir=args.output_dir,
+        sessions=args.sessions,
+        races_only=args.races_only,
+        force=args.force,
+        dry_run=args.dry_run,
+        include_future=args.include_future,
+        through_date=through_date,
+    )
+    print_backfill_summary(summary)
+    if summary.failed:
+        raise SystemExit(1)
 
 
 def process_queue_messages(args: argparse.Namespace) -> None:

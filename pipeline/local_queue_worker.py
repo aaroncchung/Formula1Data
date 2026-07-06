@@ -72,14 +72,21 @@ def process_message(
     configure_backend_data_dir(data_dir)
 
     try:
-        FastF1Ingestor = load_fastf1_ingestor()
-        session_id = FastF1Ingestor().ingest_session(
-            year=int(required(message, "year")),
-            event=int(required(message, "round")),
-            session_name=str(required(message, "session")),
-            force=force or bool(message.get("force")),
-        )
-        summary = build_static_artifacts(data_dir=data_dir, output_dir=output_dir)
+        session_id = expected_session_id(message)
+        should_force = force or bool(message.get("force"))
+        if not should_force and session_artifacts_exist(output_dir, session_id):
+            summary = summarize_existing_artifacts(output_dir)
+            print(f"Using existing static artifacts for {session_id}.")
+        else:
+            FastF1Ingestor = load_fastf1_ingestor()
+            session_id = FastF1Ingestor().ingest_session(
+                year=int(required(message, "year")),
+                event=int(required(message, "round")),
+                session_name=str(required(message, "session")),
+                force=should_force,
+            )
+            summary = build_static_artifacts(data_dir=data_dir, output_dir=output_dir)
+
         if artifact_destination == "r2":
             sync_artifacts_to_r2(output_dir, required_value(r2_bucket, "--r2-bucket"), r2_prefix)
 
@@ -109,6 +116,33 @@ def load_messages(message_file: Path | None, queue_file: Path | None) -> Iterabl
             for line in handle:
                 if line.strip():
                     yield json.loads(line)
+
+
+def expected_session_id(message: dict[str, Any]) -> str:
+    session_id = str(message.get("session_id") or "").strip()
+    if session_id:
+        return session_id
+    year = int(required(message, "year"))
+    round_number = int(required(message, "round"))
+    session = str(required(message, "session")).strip().lower()
+    return f"{year}-{round_number:02d}-{session}"
+
+
+def session_artifacts_exist(output_dir: Path, session_id: str) -> bool:
+    return (output_dir / "sessions" / session_id / "manifest.json").exists()
+
+
+def summarize_existing_artifacts(output_dir: Path) -> dict[str, Any]:
+    artifacts = list(output_dir.rglob("*.json")) if output_dir.exists() else []
+    catalog_path = output_dir / "catalog.json"
+    generated_at = None
+    if catalog_path.exists():
+        generated_at = read_json(catalog_path).get("generated_at")
+    return {
+        "generated_at": generated_at,
+        "artifact_count": len(artifacts),
+        "total_size_bytes": sum(path.stat().st_size for path in artifacts),
+    }
 
 
 def collect_session_artifacts(output_dir: Path, session_id: str) -> list[dict[str, Any]]:

@@ -1,0 +1,119 @@
+name: Backfill F1 data
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Space-separated years to backfill"
+        required: true
+        default: "2025 2026"
+      sessions:
+        description: "Optional space-separated session codes. Leave blank for all available sessions."
+        required: false
+        default: ""
+      races_only:
+        description: "Only ingest race sessions"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "List planned work without writing data"
+        required: false
+        type: boolean
+        default: true
+      force:
+        description: "Reingest sessions even when processed data already exists"
+        required: false
+        type: boolean
+        default: false
+      through_date:
+        description: "Latest session date to ingest, YYYY-MM-DD. Leave blank for runner today."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      FASTF1_LOAD_ATTEMPTS: ${{ vars.FASTF1_LOAD_ATTEMPTS || '3' }}
+      FASTF1_RETRY_BASE_DELAY_SECONDS: ${{ vars.FASTF1_RETRY_BASE_DELAY_SECONDS || '5' }}
+      FASTF1_OPTIONAL_LOAD_DELAY_SECONDS: ${{ vars.FASTF1_OPTIONAL_LOAD_DELAY_SECONDS || '1' }}
+      BACKFILL_YEARS: ${{ inputs.years }}
+      BACKFILL_SESSIONS: ${{ inputs.sessions }}
+      BACKFILL_RACES_ONLY: ${{ inputs.races_only }}
+      BACKFILL_DRY_RUN: ${{ inputs.dry_run }}
+      BACKFILL_FORCE: ${{ inputs.force }}
+      BACKFILL_THROUGH_DATE: ${{ inputs.through_date }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ingestion dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+
+      - name: Restore FastF1 cache
+        uses: actions/cache@v4
+        with:
+          path: backend/data/cache/fastf1
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-
+            ${{ runner.os }}-fastf1-
+
+      - name: Backfill data
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "$BACKFILL_DRY_RUN" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+
+          FORCE_FLAG=""
+          if [ "$BACKFILL_FORCE" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+
+          RACES_ONLY_FLAG=""
+          if [ "$BACKFILL_RACES_ONLY" = "true" ]; then
+            RACES_ONLY_FLAG="--races-only"
+          fi
+
+          SESSIONS_FLAG=""
+          if [ -n "$BACKFILL_SESSIONS" ]; then
+            SESSIONS_FLAG="--sessions $BACKFILL_SESSIONS"
+          fi
+
+          THROUGH_DATE_FLAG=""
+          if [ -n "$BACKFILL_THROUGH_DATE" ]; then
+            THROUGH_DATE_FLAG="--through-date $BACKFILL_THROUGH_DATE"
+          fi
+
+          python -m pipeline backfill \
+            --years $BACKFILL_YEARS \
+            $SESSIONS_FLAG \
+            $RACES_ONLY_FLAG \
+            $DRY_RUN_FLAG \
+            $FORCE_FLAG \
+            $THROUGH_DATE_FLAG
+
+      - name: Upload generated data snapshot
+        if: ${{ inputs.dry_run == false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfilled-data
+          path: |
+            backend/data/processed
+            frontend/public/data

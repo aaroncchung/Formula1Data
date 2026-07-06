@@ -177,6 +177,26 @@ Limit ingestion to selected session codes:
 python -m pipeline ingest-season --year 2025 --sessions FP1 Q R
 ```
 
+Plan a historical backfill without writing data:
+
+```powershell
+python -m pipeline backfill --years 2025 2026 --dry-run
+```
+
+Backfill completed race sessions for 2025 and 2026, skipping future sessions and already processed sessions:
+
+```powershell
+python -m pipeline backfill --years 2025 2026 --races-only
+```
+
+Backfill all completed sessions FastF1 can load:
+
+```powershell
+python -m pipeline backfill --years 2025 2026
+```
+
+Use `--through-date YYYY-MM-DD` to pin the latest session date, `--sessions FP1 Q R` to limit session types, and `--force` to replace existing processed sessions. Review generated files under `backend/data/processed` and `frontend/public/data`; `backend/data/processed/seasons` and `backend/data/processed/sessions` are ignored by default, while committed `frontend/public/data` artifacts can be reused by the ingestion workflow without calling FastF1 again.
+
 For the current 2026 season, this writes the full FastF1 schedule and ingests every available session FastF1 can load:
 
 ```powershell
