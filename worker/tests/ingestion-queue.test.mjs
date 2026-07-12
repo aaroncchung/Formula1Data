@@ -217,3 +217,32 @@ test("queue messages cannot dispatch a missing job", async () => {
     /unknown job/
   );
 });
+
+test("stale active jobs and sessions are failed for later retry", async () => {
+  const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-08-r",
+    year: 2026,
+    round: 8,
+    session_type: "R",
+    status: "ingesting"
+  });
+  await repository.createJob({
+    job_id: "stale-job",
+    session_id: "2026-08-r",
+    kind: "ingest_session",
+    status: "running",
+    attempts: 1,
+    created_at: "2026-07-04T10:00:00.000Z",
+    started_at: "2026-07-04T10:01:00.000Z"
+  });
+
+  const count = await repository.failStaleJobs(
+    "2026-07-04T12:00:00.000Z",
+    "Ingestion timed out"
+  );
+
+  assert.equal(count, 1);
+  assert.equal((await repository.getJob("stale-job")).status, "failed");
+  assert.equal((await repository.getSession("2026-08-r")).status, "failed");
+});

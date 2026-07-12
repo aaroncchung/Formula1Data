@@ -25,10 +25,13 @@ concurrency:
 jobs:
   process:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       R2_BUCKET: ${{ vars.R2_BUCKET || 'formula-1-data-artifacts' }}
       WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
       INGESTION_API_TOKEN: ${{ secrets.INGESTION_API_TOKEN }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
       FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
       FASTF1_LOAD_ATTEMPTS: ${{ vars.FASTF1_LOAD_ATTEMPTS || '3' }}
       FASTF1_RETRY_BASE_DELAY_SECONDS: ${{ vars.FASTF1_RETRY_BASE_DELAY_SECONDS || '5' }}
@@ -75,6 +78,7 @@ jobs:
           fi
 
       - name: Write queue message
+        id: message
         env:
           WORKFLOW_MESSAGE: ${{ inputs.message }}
           DISPATCH_PAYLOAD: ${{ toJson(github.event.client_payload) }}
@@ -85,6 +89,7 @@ jobs:
             printf '%s' "$WORKFLOW_MESSAGE" > message.json
           fi
           python -m json.tool message.json > /dev/null
+          echo "job_id=$(python -c \"import json; print(json.load(open('message.json'))['job_id'])\")" >> "$GITHUB_OUTPUT"
 
       - name: Validate queue message
         run: |
@@ -182,3 +187,13 @@ jobs:
             manifest-check.json
           if-no-files-found: ignore
           retention-days: 1
+
+      - name: Report workflow failure
+        if: failure() && steps.message.outputs.job_id != '' && env.WORKER_BASE_URL != ''
+        env:
+          JOB_ID: ${{ steps.message.outputs.job_id }}
+        run: >-
+          python -c "import os; from pipeline.local_queue_worker import callback_job_status;
+          callback_job_status(os.environ['WORKER_BASE_URL'], os.environ.get('INGESTION_API_TOKEN'),
+          os.environ['JOB_ID'], {'status': 'failed', 'error_message':
+          'GitHub Actions ingestion workflow failed before completion'})"

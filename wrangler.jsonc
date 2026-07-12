@@ -6,13 +6,17 @@
 		"ENABLE_LIVE_MODE": "false",
 		"OPENF1_BASE_URL": "https://api.openf1.org/v1",
 		"STATIC_DATA_BASE_URL": "https://formula1data.pages.dev/",
-		"CORS_ALLOW_ORIGIN": "*",
+		"CORS_ALLOW_ORIGIN": "https://formula1data.pages.dev",
 		// Keep false for the browser flow only when the Worker route is protected by Cloudflare Access.
 		// Set true for token-authenticated non-browser deployments.
 		"REQUIRE_INGESTION_REQUEST_AUTH": "false",
 		"GITHUB_DISPATCH_EVENT": "ingest_session",
 		"GITHUB_REPO_NAME": "Formula1Data",
-		"GITHUB_REPO_OWNER": "Ntrxi"
+		"GITHUB_REPO_OWNER": "Ntrxi",
+		"STALE_JOB_TIMEOUT_MINUTES": "120"
+	},
+	"triggers": {
+		"crons": ["17,47 * * * *"]
 	},
 	"observability": {
 		"enabled": true,
@@ -52,7 +56,9 @@
 				"max_batch_size": 10,
 				"max_batch_timeout": 5,
 				"max_retries": 3,
-				"retry_delay": 60
+				"retry_delay": 60,
+				"dead_letter_queue": "f1-ingestion-jobs-dlq",
+				"max_concurrency": 1
 			}
 		]
 	}

@@ -198,6 +198,11 @@ Backfill completed race sessions for 2025 and 2026, skipping future sessions and
 python -m pipeline backfill --years 2025 2026 --races-only
 ```
 
+The local `backfill` command remains useful for offline artifact generation. The production
+`Backfill F1 data` GitHub workflow instead submits each candidate through the Worker API so D1,
+Queues, job callbacks, R2 publication, and retry behavior remain consistent with browser-triggered
+ingestion.
+
 Backfill all completed sessions FastF1 can load:
 
 ```powershell
@@ -239,6 +244,9 @@ Sample generation does not require network access or backend dependencies.
 Use `--force` if you need to replace an existing processed session.
 
 ## Cloudflare Hybrid Mode
+
+For a complete production checklist, see
+[`docs/production-ingestion-setup.md`](docs/production-ingestion-setup.md).
 
 The root `wrangler.jsonc` defines the API Worker. `frontend/wrangler.jsonc` remains the Cloudflare Pages static export config.
 
@@ -337,6 +345,34 @@ python -m pipeline process-queue --message-file .\message.json --artifact-destin
 ```
 
 Production queue consumption is intentionally a boundary: the Worker consumer can dispatch messages to `INGESTION_WEBHOOK_URL`, and the external Python runner performs FastF1 ingestion, artifact generation, optional R2 upload, then calls the protected job-status callback.
+
+R2 publication is incremental. The runner first downloads the current R2 catalog and affected
+season index, builds in a temporary directory, merges the new session, uploads the normalized
+source dataset under `source/sessions/{session_id}/dataset.json`, and publishes session files,
+manifest, season index, then catalog in that order. The Worker only exposes `catalog.json`,
+`seasons/*`, and `sessions/*` through `/data`, so normalized source datasets remain private.
+Keep direct R2 public access disabled; the Worker allowlist is the intended read boundary.
+
+The current R2 `catalog.json` must exist before queue-driven ingestion begins. Seed the initial
+catalog and season files from `frontend/public/data` during first deployment. Requiring the current
+catalog prevents a transient R2 or credential failure from replacing production indexes with a
+partial local view.
+
+### Scheduling and recovery
+
+`schedule-ingestion.yml` runs hourly and submits recently completed sessions through the same
+Worker endpoint. `backfill-data.yml` uses the same scheduler for explicit historical years. Configure
+these GitHub values:
+
+```text
+Variable: WORKER_BASE_URL
+Secret: INGESTION_API_TOKEN
+Optional Access secrets: CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
+```
+
+The Worker checks every 30 minutes for jobs that have remained queued or running for more than
+`STALE_JOB_TIMEOUT_MINUTES` and marks them failed so they can be retried. Exhausted Queue messages
+are retained in `f1-ingestion-jobs-dlq`.
 
 ## Live Data
 

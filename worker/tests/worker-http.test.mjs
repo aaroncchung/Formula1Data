@@ -85,6 +85,16 @@ test("invalid artifact paths return 400 instead of leaking a Worker exception", 
   assert.equal((await response.json()).code, "invalid_artifact_path");
 });
 
+test("private source datasets are not exposed through the public data route", async () => {
+  const response = await worker.fetch(
+    new Request("https://worker.example/data/source/sessions/2026-09-r/dataset.json"),
+    {},
+    context
+  );
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).code, "artifact_not_found");
+});
+
 test("explicit ingestion request auth rejects missing credentials", async () => {
   const response = await worker.fetch(
     new Request("https://worker.example/api/ingestion/session", { method: "POST" }),

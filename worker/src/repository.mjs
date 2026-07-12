@@ -178,6 +178,43 @@ export function createD1Repository(db) {
       }
     },
 
+    async failStaleJobs(cutoff, errorMessage) {
+      const result = await db
+        .prepare(
+          `select job_id, session_id from ingestion_jobs
+          where status in ('queued', 'running')
+            and coalesce(started_at, created_at) < ?`
+        )
+        .bind(cutoff)
+        .all();
+      const jobs = result.results || [];
+      if (!jobs.length) {
+        return 0;
+      }
+      const finishedAt = new Date().toISOString();
+      const statements = [];
+      for (const job of jobs) {
+        statements.push(
+          db
+            .prepare(
+              `update ingestion_jobs
+              set status = 'failed', error_message = ?, finished_at = ?
+              where job_id = ? and status in ('queued', 'running')`
+            )
+            .bind(errorMessage, finishedAt, job.job_id),
+          db
+            .prepare(
+              `update sessions
+              set status = 'failed', updated_at = datetime('now')
+              where session_id = ? and status in ('queued', 'ingesting')`
+            )
+            .bind(job.session_id)
+        );
+      }
+      await db.batch(statements);
+      return jobs.length;
+    },
+
     async storeLiveSnapshot(kind, payload, generatedAt) {
       await db
         .prepare(
@@ -287,6 +324,28 @@ export function createMemoryRepository(state = memoryState) {
       for (const artifact of artifacts || []) {
         state.artifacts.set(`${sessionId}:${artifact.kind}:${artifact.path}`, { session_id: sessionId, ...artifact });
       }
+    },
+
+    async failStaleJobs(cutoff, errorMessage) {
+      const finishedAt = new Date().toISOString();
+      const staleJobs = Array.from(state.jobs.values()).filter(
+        (job) =>
+          ACTIVE_JOB_STATUSES.includes(job.status) &&
+          String(job.started_at || job.created_at) < String(cutoff)
+      );
+      for (const job of staleJobs) {
+        state.jobs.set(job.job_id, {
+          ...job,
+          status: "failed",
+          error_message: errorMessage,
+          finished_at: finishedAt
+        });
+        const session = state.sessions.get(job.session_id);
+        if (session && ["queued", "ingesting"].includes(session.status)) {
+          state.sessions.set(job.session_id, { ...session, status: "failed", updated_at: finishedAt });
+        }
+      }
+      return staleJobs.length;
     },
 
     async storeLiveSnapshot(kind, payload, generatedAt) {

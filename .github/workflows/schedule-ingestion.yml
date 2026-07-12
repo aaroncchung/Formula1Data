@@ -1,0 +1,37 @@
+name: Schedule completed session ingestion
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Refresh sessions even when artifacts already exist"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "37 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingestion-scheduler
+  cancel-in-progress: false
+
+jobs:
+  enqueue:
+    runs-on: ubuntu-latest
+    env:
+      WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+      INGESTION_API_TOKEN: ${{ secrets.INGESTION_API_TOKEN }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Queue recently completed sessions
+        run: >-
+          python -m pipeline.schedule_ingestion
+          --sessions FP1 FP2 FP3 SQ S Q R
+          ${{ inputs.force && '--force' || '' }}

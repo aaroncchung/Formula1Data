@@ -1,19 +1,56 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pipeline.local_queue_worker import expected_session_id, session_artifacts_exist, sync_artifacts_to_r2
+from pipeline.local_queue_worker import (
+    callback_job_status,
+    expected_session_id,
+    hydrate_r2_indexes,
+    merge_catalog,
+    merge_season,
+    session_artifacts_exist,
+    sync_artifacts_to_r2,
+)
 
 
 class LocalQueueWorkerTests(unittest.TestCase):
+    def test_callback_includes_access_service_token_headers(self):
+        response = MagicMock()
+        response.status = 200
+        response.__enter__.return_value = response
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "CF_ACCESS_CLIENT_ID": "access-id",
+                    "CF_ACCESS_CLIENT_SECRET": "access-secret",
+                },
+            ),
+            patch(
+                "pipeline.local_queue_worker.urllib.request.urlopen", return_value=response
+            ) as open_url,
+        ):
+            callback_job_status(
+                "https://worker.example",
+                "callback-token",
+                "job-id",
+                {"status": "running"},
+            )
+
+        headers = dict(open_url.call_args.args[0].header_items())
+        self.assertEqual(headers["Authorization"], "Bearer callback-token")
+        self.assertEqual(headers["Cf-access-client-id"], "access-id")
+        self.assertEqual(headers["Cf-access-client-secret"], "access-secret")
+
     def test_expected_session_id_prefers_message_value(self):
         self.assertEqual(
             expected_session_id({"session_id": "2025-01-r", "year": 2025, "round": 1, "session": "R"}),
@@ -70,6 +107,79 @@ class LocalQueueWorkerTests(unittest.TestCase):
                     "test-bucket/prod/data/sessions/2025-09-r/manifest.json",
                 },
             )
+
+            ordered_keys = [call.args[0][4] for call in run.call_args_list]
+            self.assertEqual(ordered_keys[-2:], ["test-bucket/prod/data/seasons/2025.json", "test-bucket/prod/data/catalog.json"])
+
+    def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
+        existing = {
+            "schema_version": 1,
+            "generated_at": "old",
+            "source": {"mode": "processed", "files": ["old.json"]},
+            "seasons": [{"year": 2025, "meeting_count": 2, "ingested_meeting_count": 1}],
+            "meetings": [
+                {"meeting_id": "2025-01-a", "year": 2025, "round": 1, "is_ingested": True},
+                {"meeting_id": "2025-02-b", "year": 2025, "round": 2, "is_ingested": False},
+            ],
+            "sessions": [{"session_id": "2025-01-r", "year": 2025, "round": 1, "type": "R"}],
+        }
+        incoming = {
+            "schema_version": 1,
+            "generated_at": "new",
+            "source": {"mode": "processed", "files": ["new.json"]},
+            "seasons": [{"year": 2025, "meeting_count": 1, "ingested_meeting_count": 1}],
+            "meetings": [
+                {"meeting_id": "2025-02-b", "year": 2025, "round": 2, "is_ingested": True}
+            ],
+            "sessions": [{"session_id": "2025-02-r", "year": 2025, "round": 2, "type": "R"}],
+        }
+
+        merged = merge_catalog(existing, incoming)
+
+        self.assertEqual([row["session_id"] for row in merged["sessions"]], ["2025-01-r", "2025-02-r"])
+        self.assertEqual(merged["totals"], {"seasons": 1, "meetings": 2, "sessions": 2})
+        self.assertEqual(merged["seasons"][0]["meeting_count"], 2)
+        self.assertEqual(merged["seasons"][0]["ingested_meeting_count"], 2)
+        self.assertEqual(merged["source"]["files"], ["old.json", "new.json"])
+
+    def test_season_merge_keeps_schedule_and_adds_new_session(self):
+        existing = {
+            "schema_version": 1,
+            "generated_at": "old",
+            "season": {"year": 2026, "meeting_count": 2, "ingested_meeting_count": 1},
+            "meetings": [
+                {"meeting_id": "2026-01-a", "year": 2026, "round": 1, "is_ingested": True},
+                {"meeting_id": "2026-02-b", "year": 2026, "round": 2, "is_ingested": False},
+            ],
+            "sessions": [{"session_id": "2026-01-r", "year": 2026, "round": 1, "type": "R"}],
+        }
+        incoming = {
+            "schema_version": 1,
+            "generated_at": "new",
+            "season": {"year": 2026, "meeting_count": 1, "ingested_meeting_count": 1},
+            "meetings": [
+                {"meeting_id": "2026-02-b", "year": 2026, "round": 2, "is_ingested": True}
+            ],
+            "sessions": [{"session_id": "2026-02-r", "year": 2026, "round": 2, "type": "R"}],
+        }
+
+        merged = merge_season(existing, incoming)
+
+        self.assertEqual(len(merged["meetings"]), 2)
+        self.assertEqual(len(merged["sessions"]), 2)
+        self.assertEqual(merged["season"]["meeting_count"], 2)
+        self.assertEqual(merged["season"]["ingested_meeting_count"], 2)
+
+    def test_r2_hydration_requires_the_current_catalog(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory)
+            with patch("pipeline.local_queue_worker.subprocess.run") as run:
+                run.return_value.returncode = 1
+                run.return_value.stderr = "object not found"
+                run.return_value.stdout = ""
+
+                with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
+                    hydrate_r2_indexes(destination, "test-bucket", "", 2026)
 
 
 if __name__ == "__main__":

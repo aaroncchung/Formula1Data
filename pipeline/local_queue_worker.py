@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Iterable
 
-from pipeline.artifacts import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR, build_static_artifacts, read_json
+from pipeline.artifacts import (
+    DEFAULT_DATA_DIR,
+    DEFAULT_OUTPUT_DIR,
+    build_static_artifacts,
+    read_json,
+    write_json,
+)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
@@ -76,6 +85,7 @@ def process_message(
         should_force = force or bool(message.get("force"))
         if not should_force and session_artifacts_exist(output_dir, session_id):
             summary = summarize_existing_artifacts(output_dir)
+            publication_dir = output_dir
             print(f"Using existing static artifacts for {session_id}.")
         else:
             FastF1Ingestor = load_fastf1_ingestor()
@@ -85,18 +95,53 @@ def process_message(
                 session_name=str(required(message, "session")),
                 force=should_force,
             )
-            summary = build_static_artifacts(data_dir=data_dir, output_dir=output_dir)
+            with tempfile.TemporaryDirectory(prefix="f1-ingestion-") as temporary_directory:
+                publication_dir = Path(temporary_directory) / "data"
+                existing_indexes_dir = output_dir
+                if artifact_destination == "r2":
+                    existing_indexes_dir = Path(temporary_directory) / "existing"
+                    hydrate_r2_indexes(
+                        existing_indexes_dir,
+                        required_value(r2_bucket, "--r2-bucket"),
+                        r2_prefix,
+                        int(required(message, "year")),
+                    )
+                summary = build_static_artifacts(data_dir=data_dir, output_dir=publication_dir)
+                merge_incremental_indexes(
+                    existing_indexes_dir, publication_dir, int(required(message, "year"))
+                )
+                publish_artifacts(
+                    publication_dir,
+                    output_dir,
+                    artifact_destination=artifact_destination,
+                    r2_bucket=r2_bucket,
+                    r2_prefix=r2_prefix,
+                    session_id=session_id,
+                    year=int(required(message, "year")),
+                    source_dataset=(
+                        data_dir / "processed" / "sessions" / session_id / "dataset.json"
+                    ),
+                )
+                artifacts = collect_session_artifacts(publication_dir, session_id)
+                payload = {
+                    "status": "succeeded",
+                    "generated_at": summary["generated_at"],
+                    "artifacts": artifacts,
+                }
+                callback_job_status(callback_url, callback_token, job_id, payload)
+                return {"job_id": job_id, "session_id": session_id, "artifacts": len(artifacts)}
 
         if artifact_destination == "r2":
             sync_artifacts_to_r2(
-                output_dir,
+                publication_dir,
                 required_value(r2_bucket, "--r2-bucket"),
                 r2_prefix,
                 session_id=session_id,
                 year=int(required(message, "year")),
+                include_indexes=False,
             )
 
-        artifacts = collect_session_artifacts(output_dir, session_id)
+        artifacts = collect_session_artifacts(publication_dir, session_id)
         payload = {
             "status": "succeeded",
             "generated_at": summary["generated_at"],
@@ -176,13 +221,18 @@ def sync_artifacts_to_r2(
     *,
     session_id: str,
     year: int,
+    include_indexes: bool = True,
 ) -> None:
-    """Upload only the catalog entries affected by a single-session ingestion job."""
+    """Upload a session first and publish its indexes last."""
     normalized_prefix = prefix.strip("/")
-    candidates = [output_dir / "catalog.json", output_dir / "seasons" / f"{year}.json"]
     session_dir = output_dir / "sessions" / session_id
-    if session_dir.exists():
-        candidates.extend(sorted(session_dir.rglob("*.json")))
+    session_files = sorted(session_dir.rglob("*.json")) if session_dir.exists() else []
+    manifest = session_dir / "manifest.json"
+    candidates = [path for path in session_files if path != manifest]
+    if manifest.is_file():
+        candidates.append(manifest)
+    if include_indexes:
+        candidates.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
     for path in candidates:
         if not path.is_file():
             continue
@@ -193,6 +243,242 @@ def sync_artifacts_to_r2(
             ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
             check=True,
         )
+
+
+def publish_artifacts(
+    publication_dir: Path,
+    output_dir: Path,
+    *,
+    artifact_destination: str,
+    r2_bucket: str | None,
+    r2_prefix: str,
+    session_id: str,
+    year: int,
+    source_dataset: Path,
+) -> None:
+    if artifact_destination == "r2":
+        bucket = required_value(r2_bucket, "--r2-bucket")
+        if source_dataset.is_file():
+            upload_r2_object(
+                source_dataset,
+                bucket,
+                object_key(r2_prefix, f"source/sessions/{session_id}/dataset.json"),
+            )
+        sync_artifacts_to_r2(
+            publication_dir,
+            bucket,
+            r2_prefix,
+            session_id=session_id,
+            year=year,
+        )
+        return
+    publish_artifacts_locally(publication_dir, output_dir, session_id=session_id, year=year)
+
+
+def publish_artifacts_locally(
+    publication_dir: Path,
+    output_dir: Path,
+    *,
+    session_id: str,
+    year: int,
+) -> None:
+    session_dir = publication_dir / "sessions" / session_id
+    manifest = session_dir / "manifest.json"
+    for path in sorted(session_dir.rglob("*.json")):
+        if path != manifest:
+            copy_file_atomic(path, output_dir / path.relative_to(publication_dir))
+    if manifest.is_file():
+        copy_file_atomic(manifest, output_dir / manifest.relative_to(publication_dir))
+    for path in [publication_dir / "seasons" / f"{year}.json", publication_dir / "catalog.json"]:
+        if path.is_file():
+            copy_file_atomic(path, output_dir / path.relative_to(publication_dir))
+
+
+def copy_file_atomic(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    shutil.copy2(source, temporary)
+    os.replace(temporary, destination)
+
+
+def upload_r2_object(path: Path, bucket: str, key: str) -> None:
+    subprocess.run(
+        ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
+        check=True,
+    )
+
+
+def hydrate_r2_indexes(destination: Path, bucket: str, prefix: str, year: int) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    download_r2_object(
+        bucket,
+        object_key(prefix, "catalog.json"),
+        destination / "catalog.json",
+        required=True,
+    )
+    catalog = read_json(destination / "catalog.json")
+    season_exists = any(int(row.get("year") or 0) == year for row in catalog.get("seasons", []))
+    download_r2_object(
+        bucket,
+        object_key(prefix, f"seasons/{year}.json"),
+        destination / "seasons" / f"{year}.json",
+        required=season_exists,
+    )
+
+
+def download_r2_object(
+    bucket: str,
+    key: str,
+    destination: Path,
+    *,
+    required: bool,
+) -> bool:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [
+            "wrangler",
+            "r2",
+            "object",
+            "get",
+            f"{bucket}/{key}",
+            "--file",
+            str(destination),
+            "--remote",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True
+    if destination.exists():
+        destination.unlink()
+    if required:
+        detail = (result.stderr or result.stdout or "unknown Wrangler error").strip()
+        raise RuntimeError(f"Could not hydrate required R2 index {key}: {detail}")
+    return False
+
+
+def object_key(prefix: str, path: str) -> str:
+    normalized_prefix = prefix.strip("/")
+    return f"{normalized_prefix}/{path}" if normalized_prefix else path
+
+
+def merge_incremental_indexes(existing_dir: Path, publication_dir: Path, year: int) -> None:
+    catalog_path = publication_dir / "catalog.json"
+    existing_catalog_path = existing_dir / "catalog.json"
+    if existing_catalog_path.is_file() and catalog_path.is_file():
+        write_json(
+            catalog_path,
+            merge_catalog(read_json(existing_catalog_path), read_json(catalog_path)),
+        )
+
+    season_path = publication_dir / "seasons" / f"{year}.json"
+    existing_season_path = existing_dir / "seasons" / f"{year}.json"
+    if existing_season_path.is_file() and season_path.is_file():
+        write_json(
+            season_path,
+            merge_season(read_json(existing_season_path), read_json(season_path)),
+        )
+
+
+def merge_catalog(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(existing)
+    result["schema_version"] = max(
+        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
+    )
+    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
+    result["artifact_strategy"] = incoming.get("artifact_strategy") or existing.get(
+        "artifact_strategy"
+    )
+    result["source"] = merge_source(existing.get("source"), incoming.get("source"))
+    result["meetings"] = merge_rows(
+        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
+    )
+    result["sessions"] = merge_rows(
+        existing.get("sessions"), incoming.get("sessions"), "session_id"
+    )
+    result["seasons"] = merge_season_rows(
+        existing.get("seasons"), incoming.get("seasons"), result["meetings"]
+    )
+    result["meetings"].sort(key=lambda row: (int(row.get("year") or 0), int(row.get("round") or 0)))
+    result["sessions"].sort(key=session_sort_key)
+    result["seasons"].sort(key=lambda row: int(row.get("year") or 0))
+    result["totals"] = {
+        "seasons": len(result["seasons"]),
+        "meetings": len(result["meetings"]),
+        "sessions": len(result["sessions"]),
+    }
+    return result
+
+
+def merge_season(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(existing)
+    result["schema_version"] = max(
+        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
+    )
+    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
+    result["meetings"] = merge_rows(
+        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
+    )
+    result["sessions"] = merge_rows(
+        existing.get("sessions"), incoming.get("sessions"), "session_id"
+    )
+    result["meetings"].sort(key=lambda row: int(row.get("round") or 0))
+    result["sessions"].sort(key=session_sort_key)
+    season_rows = merge_season_rows(
+        [existing.get("season")], [incoming.get("season")], result["meetings"]
+    )
+    result["season"] = (
+        season_rows[0] if season_rows else incoming.get("season") or existing.get("season")
+    )
+    return result
+
+
+def merge_rows(existing: Any, incoming: Any, key: str) -> list[dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in list(existing or []) + list(incoming or []):
+        if isinstance(row, dict) and row.get(key) is not None:
+            rows[str(row[key])] = copy.deepcopy(row)
+    return list(rows.values())
+
+
+def merge_season_rows(
+    existing: Any, incoming: Any, meetings: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    rows = merge_rows(existing, incoming, "year")
+    for row in rows:
+        season_meetings = [
+            meeting
+            for meeting in meetings
+            if int(meeting.get("year") or 0) == int(row["year"])
+        ]
+        row["meeting_count"] = len(season_meetings)
+        row["ingested_meeting_count"] = sum(
+            bool(meeting.get("is_ingested")) for meeting in season_meetings
+        )
+        row["is_sample"] = bool(season_meetings) and all(
+            bool(meeting.get("is_sample")) for meeting in season_meetings
+        )
+    return rows
+
+
+def merge_source(existing: Any, incoming: Any) -> Any:
+    if not isinstance(existing, dict) or not isinstance(incoming, dict):
+        return copy.deepcopy(incoming or existing)
+    result = {**existing, **incoming}
+    files = list(existing.get("files") or []) + list(incoming.get("files") or [])
+    result["files"] = list(dict.fromkeys(files))
+    return result
+
+
+def session_sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
+    session_order = {"FP1": 1, "FP2": 2, "FP3": 3, "SQ": 4, "S": 5, "Q": 6, "R": 7}
+    return (
+        int(row.get("year") or 0),
+        int(row.get("round") or 0),
+        session_order.get(str(row.get("type") or "").upper(), 0),
+    )
 
 
 def callback_job_status(
@@ -211,6 +497,11 @@ def callback_job_status(
     }
     if callback_token:
         headers["Authorization"] = f"Bearer {callback_token}"
+    access_client_id = os.getenv("CF_ACCESS_CLIENT_ID")
+    access_client_secret = os.getenv("CF_ACCESS_CLIENT_SECRET")
+    if access_client_id and access_client_secret:
+        headers["CF-Access-Client-Id"] = access_client_id
+        headers["CF-Access-Client-Secret"] = access_client_secret
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),

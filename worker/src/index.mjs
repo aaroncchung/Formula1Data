@@ -13,6 +13,7 @@ const MAX_JSON_BODY_BYTES = 256 * 1024;
 const MAX_UPSTREAM_JSON_BYTES = 8 * 1024 * 1024;
 const MAX_ARTIFACT_RECORDS = 250;
 const MAX_QUEUE_ATTEMPTS = 3;
+const DEFAULT_STALE_JOB_MINUTES = 120;
 const DISABLED_LIVE_RESPONSE = {
   enabled: false,
   reason: "Live mode is disabled for this deployment.",
@@ -105,6 +106,10 @@ export default {
         }
       }
     }
+  },
+
+  async scheduled(controller, env) {
+    await reconcileStaleIngestionJobs(env, new Date(controller.scheduledTime));
   }
 };
 
@@ -152,6 +157,9 @@ async function getArtifact(request, env) {
   } catch (error) {
     throw new HttpError(400, "invalid_artifact_path", error instanceof Error ? error.message : "Invalid path");
   }
+  if (!isPublicArtifactPath(artifactPath)) {
+    return json({ code: "artifact_not_found", message: "Artifact was not found" }, 404);
+  }
   const artifact = await createArtifactStore(env).get(artifactPath, request);
   if (!artifact) {
     return json(
@@ -164,6 +172,22 @@ async function getArtifact(request, env) {
     );
   }
   return artifact;
+}
+
+export async function reconcileStaleIngestionJobs(env, now = new Date()) {
+  const configured = Number(env.STALE_JOB_TIMEOUT_MINUTES || DEFAULT_STALE_JOB_MINUTES);
+  const timeoutMinutes = Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_STALE_JOB_MINUTES;
+  const cutoff = new Date(now.getTime() - timeoutMinutes * 60 * 1000).toISOString();
+  return createRepository(env).failStaleJobs(
+    cutoff,
+    `Ingestion did not complete within ${timeoutMinutes} minutes`
+  );
+}
+
+function isPublicArtifactPath(path) {
+  return path === "catalog.json" || path.startsWith("seasons/") || path.startsWith("sessions/");
 }
 
 async function getSessionStatus(url, env) {

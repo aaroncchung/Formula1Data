@@ -42,15 +42,16 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     env:
-      FASTF1_LOAD_ATTEMPTS: ${{ vars.FASTF1_LOAD_ATTEMPTS || '3' }}
-      FASTF1_RETRY_BASE_DELAY_SECONDS: ${{ vars.FASTF1_RETRY_BASE_DELAY_SECONDS || '5' }}
-      FASTF1_OPTIONAL_LOAD_DELAY_SECONDS: ${{ vars.FASTF1_OPTIONAL_LOAD_DELAY_SECONDS || '1' }}
       BACKFILL_YEARS: ${{ inputs.years }}
       BACKFILL_SESSIONS: ${{ inputs.sessions }}
       BACKFILL_RACES_ONLY: ${{ inputs.races_only }}
       BACKFILL_DRY_RUN: ${{ inputs.dry_run }}
       BACKFILL_FORCE: ${{ inputs.force }}
       BACKFILL_THROUGH_DATE: ${{ inputs.through_date }}
+      WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+      INGESTION_API_TOKEN: ${{ secrets.INGESTION_API_TOKEN }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,21 +61,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install ingestion dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
-
-      - name: Restore FastF1 cache
-        uses: actions/cache@v4
-        with:
-          path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-
-            ${{ runner.os }}-fastf1-
-
-      - name: Backfill data
+      - name: Queue backfill sessions
         run: |
           DRY_RUN_FLAG=""
           if [ "$BACKFILL_DRY_RUN" = "true" ]; then
@@ -101,20 +88,10 @@ jobs:
             THROUGH_DATE_FLAG="--through-date $BACKFILL_THROUGH_DATE"
           fi
 
-          python -m pipeline backfill \
+          python -m pipeline.schedule_ingestion \
             --years $BACKFILL_YEARS \
             $SESSIONS_FLAG \
             $RACES_ONLY_FLAG \
             $DRY_RUN_FLAG \
             $FORCE_FLAG \
             $THROUGH_DATE_FLAG
-
-      - name: Upload generated data snapshot
-        if: ${{ inputs.dry_run == false }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: backfilled-data
-          path: |
-            backend/data/processed
-            frontend/public/data
-          retention-days: 1
