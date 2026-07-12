@@ -8,6 +8,11 @@ This project is unofficial and is not associated with Formula 1, FIA, FastF1, or
 
 - Dark, dense motorsport analytics UI with sidebar navigation and session tabs.
 - Historical session dashboard for overview, lap times, race pace, strategy, telemetry, position replay, weather, race control, and results.
+- Global season/event/session navigation with artifact-backed driver and lap selectors.
+- Every usable FastF1 telemetry lap retained at a browser-safe maximum of 300 samples per lap.
+- Track-dominance minisectors, inferred corner and braking analysis, car/team performance profiles, and practice long-run pace predictions.
+- Fuel-adjusted tyre degradation with robust outlier filtering and explicit model assumptions.
+- Driver and constructor standings, ideal-lap potential, team-mate comparison, and pit-lane transit analysis.
 - Static JSON artifacts committed under `frontend/public/data`.
 - Python pipeline for sample generation, FastF1 ingestion, and precomputed analysis.
 - Cloudflare Pages-ready static export from `frontend/out`.
@@ -89,6 +94,10 @@ frontend/public/data/sessions/{session_id}/analysis/tyre-degradation.json
 frontend/public/data/sessions/{session_id}/analysis/strategy.json
 frontend/public/data/sessions/{session_id}/analysis/ideal-laps.json
 frontend/public/data/sessions/{session_id}/analysis/team-mate-comparison.json
+frontend/public/data/sessions/{session_id}/analysis/track-dominance.json
+frontend/public/data/sessions/{session_id}/analysis/corner-analysis.json
+frontend/public/data/sessions/{session_id}/analysis/car-performance.json
+frontend/public/data/sessions/{session_id}/analysis/pace-prediction.json
 frontend/public/data/sessions/{session_id}/telemetry/index.json
 frontend/public/data/sessions/{session_id}/telemetry/{driver_code}-lap-{lap_number}.json
 frontend/public/data/sessions/{session_id}/position-replay.json
@@ -259,6 +268,7 @@ OPENF1_BASE_URL=https://api.openf1.org/v1
 STATIC_DATA_BASE_URL=
 CORS_ALLOW_ORIGIN=https://your-pages-site.pages.dev
 INGESTION_WEBHOOK_URL=https://your-python-runner.example.com/jobs
+REQUIRE_INGESTION_REQUEST_AUTH=false
 ```
 
 Set secrets instead of committing them:
@@ -270,6 +280,10 @@ npx wrangler secret put INGESTION_API_TOKEN
 ```
 
 `OPENF1_API_KEY`, `INGESTION_WEBHOOK_TOKEN`, and `INGESTION_API_TOKEN` must never be exposed through `NEXT_PUBLIC_*` variables.
+
+### Personal access protection
+
+The browser-compatible `POST /api/ingestion/session` route cannot safely embed a secret. Protect the Pages site and Worker custom domain with Cloudflare Access, restricted to your identity, while leaving `REQUIRE_INGESTION_REQUEST_AUTH=false`. If only trusted non-browser clients request ingestion, set the variable to `true` and send `INGESTION_API_TOKEN` as a bearer token. Do not leave the browser-compatible ingestion route exposed on an unprotected `workers.dev` domain.
 
 ## On-Demand Ingestion Flow
 
@@ -335,7 +349,7 @@ The browser never calls OpenF1 directly and never receives `OPENF1_API_KEY`.
 Historical read endpoints are now static artifacts:
 
 - Seasons, meetings, sessions, summary, drivers, laps, results, stints, pit stops, weather, and race control.
-- Race pace, lap times, tyre degradation, strategy, ideal laps, team-mate comparison, telemetry comparison, and position replay.
+- Race pace, lap times, fuel-adjusted tyre degradation, strategy, ideal laps, team-mate comparison, telemetry comparison, position replay, track dominance, corner analysis, car performance, and practice pace prediction.
 
 Runtime behavior remains outside the production path:
 
@@ -377,6 +391,7 @@ Deployment options:
 - Session data is split by section so a page can fetch only what it needs.
 - Analysis artifacts are precomputed once in the pipeline instead of calculated per browser request.
 - Telemetry is split by driver/lap and capped at 300 samples per lap artifact.
+- Queue-driven R2 uploads update only the catalog, affected season, and affected session rather than re-uploading historical data.
 - Heavy raw/cache files stay under `backend/data` and are not part of the static frontend.
 
 ## Docker
@@ -386,9 +401,11 @@ Docker Compose is no longer the production deployment model. Keep Docker only fo
 ## Known Limitations
 
 - The committed sample data is synthetic and intentionally small.
+- Previously generated sessions must be re-ingested to gain every-lap telemetry and the new advanced analysis artifacts; the code does not invent missing historical telemetry.
 - FastF1 ingestion depends on network access and upstream availability. In-progress seasons may only have completed sessions available.
 - Telemetry artifacts are downsampled for browser performance.
-- Pit loss and undercut/overcut values are simple estimates.
+- Pit duration is total pit-lane transit from FastF1 pit-in to pit-out timing, not stationary service time.
+- Pit loss, undercut/overcut, fuel correction, inferred corners, and practice pace predictions are transparent estimates with caveats in each artifact.
 - Live OpenF1 support requires Worker live mode and upstream OpenF1 availability.
 - Local Worker development can mock Queue/R2/D1 behavior, but production R2 uploads and remote D1 migrations require Cloudflare credentials.
 
