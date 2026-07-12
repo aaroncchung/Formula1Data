@@ -88,7 +88,13 @@ def process_message(
             summary = build_static_artifacts(data_dir=data_dir, output_dir=output_dir)
 
         if artifact_destination == "r2":
-            sync_artifacts_to_r2(output_dir, required_value(r2_bucket, "--r2-bucket"), r2_prefix)
+            sync_artifacts_to_r2(
+                output_dir,
+                required_value(r2_bucket, "--r2-bucket"),
+                r2_prefix,
+                session_id=session_id,
+                year=int(required(message, "year")),
+            )
 
         artifacts = collect_session_artifacts(output_dir, session_id)
         payload = {
@@ -163,9 +169,23 @@ def collect_session_artifacts(output_dir: Path, session_id: str) -> list[dict[st
     return artifacts
 
 
-def sync_artifacts_to_r2(output_dir: Path, bucket: str, prefix: str = "") -> None:
+def sync_artifacts_to_r2(
+    output_dir: Path,
+    bucket: str,
+    prefix: str = "",
+    *,
+    session_id: str,
+    year: int,
+) -> None:
+    """Upload only the catalog entries affected by a single-session ingestion job."""
     normalized_prefix = prefix.strip("/")
-    for path in output_dir.rglob("*.json"):
+    candidates = [output_dir / "catalog.json", output_dir / "seasons" / f"{year}.json"]
+    session_dir = output_dir / "sessions" / session_id
+    if session_dir.exists():
+        candidates.extend(sorted(session_dir.rglob("*.json")))
+    for path in candidates:
+        if not path.is_file():
+            continue
         key = path.relative_to(output_dir).as_posix()
         if normalized_prefix:
             key = f"{normalized_prefix}/{key}"

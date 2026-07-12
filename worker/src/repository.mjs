@@ -1,17 +1,10 @@
 import { ACTIVE_JOB_STATUSES } from "./session-utils.mjs";
 
-const memoryState = {
-  sessions: new Map(),
-  jobs: new Map(),
-  artifacts: new Map(),
-  liveSnapshots: new Map()
-};
-
 export function createRepository(env) {
   if (env.F1_DB?.prepare) {
     return createD1Repository(env.F1_DB);
   }
-  return createMemoryRepository(memoryState);
+  throw new Error("Required F1_DB binding is unavailable");
 }
 
 export function createD1Repository(db) {
@@ -98,7 +91,7 @@ export function createD1Repository(db) {
     async createJob(job) {
       await db
         .prepare(
-          `insert into ingestion_jobs (
+          `insert or ignore into ingestion_jobs (
             job_id, session_id, kind, status, attempts, error_message,
             created_at, started_at, finished_at
           ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -160,8 +153,8 @@ export function createD1Repository(db) {
     },
 
     async recordArtifacts(sessionId, artifacts) {
-      for (const artifact of artifacts || []) {
-        await db
+      const statements = (artifacts || []).map((artifact) =>
+        db
           .prepare(
             `insert into artifacts (
               session_id, kind, path, size_bytes, checksum, generated_at
@@ -175,11 +168,13 @@ export function createD1Repository(db) {
             sessionId,
             artifact.kind,
             artifact.path,
-            artifact.size_bytes || null,
+            artifact.size_bytes ?? null,
             artifact.checksum || null,
             artifact.generated_at || null
           )
-          .run();
+      );
+      if (statements.length) {
+        await db.batch(statements);
       }
     },
 

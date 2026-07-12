@@ -1,4 +1,5 @@
 from datetime import date
+import math
 from typing import Any
 
 try:
@@ -18,6 +19,7 @@ SESSION_CODE_BY_NAME = {
     "Race": "R",
 }
 SESSION_CODE_BY_NORMALIZED_NAME = {name.lower(): code for name, code in SESSION_CODE_BY_NAME.items()}
+MAX_INGESTED_TELEMETRY_SAMPLES_PER_LAP = 300
 
 
 class IncompleteFastF1SessionError(RuntimeError):
@@ -139,7 +141,7 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
     drivers = _drivers(session)
     laps = _laps(session, session_id)
     stints = _stints(laps, session_id)
-    pit_stops = _pit_stops(laps, session_id)
+    pit_stops = _pit_stops(_session_frame(session, "laps"), session_id)
     weather = _weather(session, session_id)
     race_control = _race_control(session, session_id)
     results = _results(session, session_id)
@@ -279,8 +281,10 @@ def _laps(session: Any, session_id: str) -> list[dict[str, Any]]:
                 "position": _safe_int(row.get("Position"), default=None),
                 "is_pit_in_lap": pd.notna(row.get("PitInTime")),
                 "is_pit_out_lap": pd.notna(row.get("PitOutTime")),
-                "is_deleted": bool(row.get("Deleted", False)),
-                "is_accurate": bool(row.get("IsAccurate", True)),
+                "is_deleted": _bool_or_none(row.get("Deleted")) or False,
+                "is_accurate": _bool_or_none(row.get("IsAccurate"))
+                if _bool_or_none(row.get("IsAccurate")) is not None
+                else True,
                 "track_status": str(row.get("TrackStatus") or ""),
             }
         )
@@ -315,18 +319,63 @@ def _stints(laps: list[dict[str, Any]], session_id: str) -> list[dict[str, Any]]
     return rows
 
 
-def _pit_stops(laps: list[dict[str, Any]], session_id: str) -> list[dict[str, Any]]:
-    return [
-        {
-            "session_id": session_id,
-            "driver_code": lap["driver_code"],
-            "lap_number": lap["lap_number"],
-            "duration_ms": None,
-            "local_time": None,
-        }
-        for lap in laps
-        if lap.get("is_pit_in_lap")
-    ]
+def _pit_stops(laps_df: Any, session_id: str) -> list[dict[str, Any]]:
+    """Build pit-lane transit records from matching FastF1 pit-in/out timestamps.
+
+    FastF1 exposes the pit-entry timestamp on the in-lap and the pit-exit timestamp on
+    the following lap. Their difference is total pit-lane time, not stationary service
+    time. Keeping the existing ``duration_ms`` field preserves compatibility while
+    finally populating it with the best duration available in the upstream timing data.
+    """
+    if laps_df is None or laps_df.empty:
+        return []
+
+    by_driver: dict[str, list[Any]] = {}
+    for _, lap in laps_df.iterrows():
+        driver = str(lap.get("Driver") or "").upper()
+        if driver:
+            by_driver.setdefault(driver, []).append(lap)
+
+    stops: list[dict[str, Any]] = []
+    for driver, driver_laps in by_driver.items():
+        ordered = sorted(
+            driver_laps,
+            key=lambda lap: _safe_int(lap.get("LapNumber"), default=0) or 0,
+        )
+        for index, lap in enumerate(ordered):
+            pit_in = lap.get("PitInTime")
+            if _is_missing(pit_in):
+                continue
+
+            pit_out = None
+            current_lap_number = _safe_int(lap.get("LapNumber"), default=0) or 0
+            if index + 1 < len(ordered):
+                candidate = ordered[index + 1]
+                candidate_lap_number = _safe_int(candidate.get("LapNumber"), default=0) or 0
+                candidate_out = candidate.get("PitOutTime")
+                if candidate_lap_number == current_lap_number + 1 and not _is_missing(candidate_out):
+                    try:
+                        if candidate_out >= pit_in:
+                            pit_out = candidate_out
+                    except TypeError:
+                        pit_out = None
+
+            duration_ms = None
+            if pit_out is not None:
+                try:
+                    duration_ms = _timedelta_ms(pit_out - pit_in)
+                except TypeError:
+                    duration_ms = None
+            stops.append(
+                {
+                    "session_id": session_id,
+                    "driver_code": driver,
+                    "lap_number": _safe_int(lap.get("LapNumber"), default=0),
+                    "duration_ms": duration_ms,
+                    "local_time": str(pit_in),
+                }
+            )
+    return stops
 
 
 def _weather(session: Any, session_id: str) -> list[dict[str, Any]]:
@@ -343,7 +392,7 @@ def _weather(session: Any, session_id: str) -> list[dict[str, Any]]:
                 "air_temp_c": _float_or_none(row.get("AirTemp")),
                 "track_temp_c": _float_or_none(row.get("TrackTemp")),
                 "humidity_pct": _float_or_none(row.get("Humidity")),
-                "rainfall": bool(row.get("Rainfall", False)),
+                "rainfall": _bool_or_none(row.get("Rainfall")) or False,
                 "wind_speed_kph": _float_or_none(row.get("WindSpeed")),
             }
         )
@@ -397,45 +446,71 @@ def _telemetry(session: Any, session_id: str) -> list[dict[str, Any]]:
     if laps_df is None or laps_df.empty:
         return []
     telemetry_rows = []
+    iterator = getattr(laps_df, "iterlaps", None)
     try:
-        fastest = laps_df.pick_fastest()
-        driver_laps = laps_df.pick_drivers(laps_df["Driver"].dropna().unique()[:2])
+        laps = iterator() if callable(iterator) else laps_df.iterrows()
     except Exception:
-        return []
-    if fastest is None:
-        return []
-    selected = [fastest]
-    for _, lap in driver_laps.iterrows():
-        if lap.get("LapTime") == fastest.get("LapTime"):
+        laps = laps_df.iterrows()
+
+    seen: set[tuple[str, int]] = set()
+    for _, lap in laps:
+        driver = str(lap.get("Driver") or "").upper()
+        lap_number = _safe_int(lap.get("LapNumber"), default=0) or 0
+        if not driver or lap_number <= 0 or (_bool_or_none(lap.get("Deleted")) or False):
             continue
-        selected.append(lap)
-        if len(selected) >= 2:
-            break
-    for lap in selected:
+        key = (driver, lap_number)
+        if key in seen:
+            continue
+        seen.add(key)
         try:
             telemetry = lap.get_telemetry()
         except Exception:
             continue
-        step = max(1, len(telemetry) // 250)
-        for _, row in telemetry.iloc[::step].iterrows():
+        if telemetry is None or telemetry.empty:
+            continue
+        for _, row in _bounded_frame(telemetry, MAX_INGESTED_TELEMETRY_SAMPLES_PER_LAP).iterrows():
             telemetry_rows.append(
                 {
                     "session_id": session_id,
-                    "driver_code": str(lap.get("Driver") or ""),
-                    "lap_number": _safe_int(lap.get("LapNumber"), default=0),
+                    "driver_code": driver,
+                    "lap_number": lap_number,
                     "distance_m": _float_or_none(row.get("Distance")) or 0,
                     "speed_kph": _float_or_none(row.get("Speed")),
                     "throttle_pct": _float_or_none(row.get("Throttle")),
-                    "brake": bool(row.get("Brake")) if row.get("Brake") is not None else None,
+                    "brake": _bool_or_none(row.get("Brake")),
                     "rpm": _safe_int(row.get("RPM"), default=None),
                     "gear": _safe_int(row.get("nGear"), default=None),
                     "drs": _safe_int(row.get("DRS"), default=None),
                     "x": _float_or_none(row.get("X")),
                     "y": _float_or_none(row.get("Y")),
                     "relative_time_ms": _timedelta_ms(row.get("Time")),
+                    "session_time_ms": _timedelta_ms(row.get("SessionTime")),
                 }
             )
     return telemetry_rows
+
+
+def _bounded_frame(frame: Any, limit: int) -> Any:
+    """Evenly sample a frame, retaining both endpoints and never exceeding ``limit``."""
+    if limit <= 0:
+        return frame.iloc[0:0]
+    if limit == 1:
+        return frame.iloc[[0]]
+    if len(frame) <= limit:
+        return frame
+    indexes = sorted(
+        {
+            round(index * (len(frame) - 1) / (limit - 1))
+            for index in range(limit)
+        }
+    )
+    # Floating point rounding can theoretically create a duplicate; fill any gap
+    # with a deterministic stride while respecting the hard cap.
+    if len(indexes) < limit:
+        step = max(1, math.floor(len(frame) / limit))
+        indexes = sorted(set(indexes).union(range(0, len(frame), step)))[:limit]
+        indexes[-1] = len(frame) - 1
+    return frame.iloc[indexes]
 
 
 def _session_frame(session: Any, attr: str, required: bool = False) -> Any:
@@ -517,6 +592,22 @@ def _safe_int(value: Any, default: int | None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    if _is_missing(value):
+        return None
+    if isinstance(value, bool):
+        return value
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        normalized = str(value).strip().lower()
+        if normalized in {"true", "yes", "on"}:
+            return True
+        if normalized in {"false", "no", "off"}:
+            return False
+    return None
 
 
 def _iso_or_none(value: Any) -> str | None:

@@ -39,6 +39,7 @@ export function PositionReplay({ frames }: { frames: PositionReplayFrame[] }) {
         <input
           className="w-full accent-redline"
           type="range"
+          aria-label="Position replay frame"
           min={0}
           max={Math.max(frames.length - 1, 0)}
           value={index}
@@ -47,6 +48,11 @@ export function PositionReplay({ frames }: { frames: PositionReplayFrame[] }) {
         <div className="w-24 text-right font-mono text-sm text-slate-400">
           {index + 1}/{frames.length}
         </div>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+        <span>Lap <strong className="font-mono text-slate-300">{frame.lap_number ?? "--"}</strong></span>
+        <span>Session time <strong className="font-mono text-slate-300">{frame.timestamp_ms != null ? `${(frame.timestamp_ms / 1000).toFixed(1)}s` : "--"}</strong></span>
+        <span>Cars <strong className="font-mono text-slate-300">{data.length}</strong></span>
       </div>
     </div>
   );

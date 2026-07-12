@@ -117,3 +117,4 @@ jobs:
           path: |
             backend/data/processed
             frontend/public/data
+          retention-days: 1

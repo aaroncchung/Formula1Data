@@ -4,7 +4,8 @@
 
 :root {
   color-scheme: dark;
-  background: #06080d;
+  background: #07090e;
+  font-synthesis: none;
 }
 
 * {
@@ -15,9 +16,12 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    radial-gradient(circle at 8% 0%, rgba(243, 61, 61, 0.12), transparent 28%),
-    linear-gradient(135deg, #06080d 0%, #0b111b 48%, #10131b 100%);
+    radial-gradient(circle at 12% -10%, rgba(243, 61, 61, 0.16), transparent 28rem),
+    radial-gradient(circle at 88% 0%, rgba(45, 224, 200, 0.08), transparent 24rem),
+    linear-gradient(145deg, #06080d 0%, #090d15 48%, #0c1018 100%);
   color: #e5edf8;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -31,13 +35,54 @@ select {
   font: inherit;
 }
 
+button,
+select {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #2de0c8;
+  outline-offset: 2px;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+@layer components {
+  .control {
+    @apply rounded-md border border-line bg-carbon/80 px-2.5 text-sm text-slate-100 shadow-inner transition;
+  }
+
+  .control:hover:not(:disabled) {
+    @apply border-slate-500;
+  }
+
+  .icon-button {
+    @apply grid place-items-center rounded-md border border-line bg-panel text-slate-200 transition hover:border-redline/50 hover:bg-redline/10 hover:text-white disabled:opacity-40;
+  }
+
+  .surface {
+    @apply rounded-lg border border-line/80 bg-panel/90 shadow-panel;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2b3548;
+  background: #343e51;
   border-radius: 999px;
 }
 

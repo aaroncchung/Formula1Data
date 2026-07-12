@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { LapTimeChart } from "@/components/charts/LapTimeChart";
@@ -15,13 +15,20 @@ import { PositionReplay } from "@/components/session/PositionReplay";
 import { RaceControlFeed } from "@/components/session/RaceControlFeed";
 import { StintTimeline } from "@/components/session/StintTimeline";
 import { WeatherTimeline } from "@/components/session/WeatherTimeline";
+import { PerformanceAnalysis } from "@/components/session/PerformanceAnalysis";
+import { StrategyAnalysis } from "@/components/session/StrategyAnalysis";
 import { TelemetryComparePanel } from "@/components/telemetry/TelemetryComparePanel";
-import { formatDelta, formatMs } from "@/lib/format";
+import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import { isEmptyState } from "@/lib/api";
+import type { TelemetryIndex } from "@/lib/static-api-core";
 import type {
+  CarPerformanceResult,
   ChartSeries,
+  CornerAnalysisResult,
   Driver,
   Lap,
+  IdealLapsResult,
+  PacePredictionResult,
   PitStop,
   PositionReplayFrame,
   RaceControlMessage,
@@ -29,7 +36,10 @@ import type {
   Result,
   SessionSummary,
   Stint,
+  StrategyResult,
+  TeammateComparisonResult,
   TelemetryComparison,
+  TrackDominanceResult,
   TyreDegradationResult,
   WeatherSample,
   EmptyStateResponse
@@ -39,6 +49,7 @@ const tabs = [
   "Overview",
   "Lap Times",
   "Race Pace",
+  "Performance",
   "Strategy",
   "Telemetry",
   "Position Replay",
@@ -60,23 +71,47 @@ export type SessionTabsProps = {
   raceControl: RaceControlMessage[];
   results: Result[];
   telemetryComparison: TelemetryComparison | EmptyStateResponse;
+  telemetryIndex?: TelemetryIndex | null;
   positionReplay: PositionReplayFrame[] | EmptyStateResponse;
+  idealLaps?: IdealLapsResult | null;
+  teammateComparison?: TeammateComparisonResult | null;
+  strategy?: StrategyResult | null;
+  trackDominance?: TrackDominanceResult | null;
+  cornerAnalysis?: CornerAnalysisResult | null;
+  carPerformance?: CarPerformanceResult | null;
+  pacePrediction?: PacePredictionResult | null;
 };
 
 export function SessionTabs(props: SessionTabsProps) {
   const [active, setActive] = useState(tabs[0]);
+  useEffect(() => {
+    const requested = decodeURIComponent(window.location.hash.slice(1)).replaceAll("-", " ").toLowerCase();
+    const matched = tabs.find((tab) => tab.toLowerCase() === requested);
+    const frame = window.requestAnimationFrame(() => {
+      if (matched) setActive(matched);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  function selectTab(tab: string) {
+    setActive(tab);
+    const hash = tab.toLowerCase().replaceAll(" ", "-");
+    window.history.replaceState(null, "", `${window.location.pathname}#${hash}`);
+  }
   return (
     <div className="space-y-5">
-      <div className="overflow-x-auto rounded border border-line bg-panel p-1">
-        <div className="flex min-w-max gap-1">
+      <div className="surface overflow-x-auto p-1">
+        <div className="flex min-w-max gap-1" role="tablist" aria-label="Session analysis views">
           {tabs.map((tab) => (
             <button
               key={tab}
               className={`rounded px-3 py-2 text-sm font-semibold ${
                 active === tab ? "bg-redline text-white" : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
               }`}
-              onClick={() => setActive(tab)}
+              onClick={() => selectTab(tab)}
               type="button"
+              role="tab"
+              aria-selected={active === tab}
             >
               {tab}
             </button>
@@ -90,6 +125,17 @@ export function SessionTabs(props: SessionTabsProps) {
         </ChartPanel>
       ) : null}
       {active === "Race Pace" ? <RacePaceView {...props} /> : null}
+      {active === "Performance" ? (
+        <PerformanceAnalysis
+          drivers={props.drivers}
+          idealLaps={props.idealLaps || null}
+          teammateComparison={props.teammateComparison || null}
+          trackDominance={props.trackDominance || null}
+          cornerAnalysis={props.cornerAnalysis || null}
+          carPerformance={props.carPerformance || null}
+          pacePrediction={props.pacePrediction || null}
+        />
+      ) : null}
       {active === "Strategy" ? <StrategyView {...props} /> : null}
       {active === "Telemetry" ? <TelemetryView {...props} /> : null}
       {active === "Position Replay" ? <ReplayView {...props} /> : null}
@@ -109,6 +155,11 @@ export function SessionTabs(props: SessionTabsProps) {
 }
 
 function Overview({ summary, drivers, laps, racePace, stints, pitStops }: SessionTabsProps) {
+  const fastestLaps = drivers
+    .map((driver) => laps.filter((lap) => lap.driver_code === driver.code && lap.lap_time_ms != null && !lap.is_deleted)
+      .sort((a, b) => Number(a.lap_time_ms) - Number(b.lap_time_ms))[0])
+    .filter((lap): lap is Lap => Boolean(lap))
+    .sort((a, b) => Number(a.lap_time_ms) - Number(b.lap_time_ms));
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -139,7 +190,7 @@ function Overview({ summary, drivers, laps, racePace, stints, pitStops }: Sessio
         </ChartPanel>
       </div>
       <DataTable
-        rows={laps.slice(0, 12)}
+        rows={fastestLaps}
         columns={[
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
           { key: "lap", header: "Lap", align: "right", render: (row) => row.lap_number },
@@ -170,11 +221,31 @@ function RacePaceView({ racePace, tyreDegradation, laps }: SessionTabsProps) {
           { key: "gap", header: "Gap", align: "right", render: (row) => formatDelta(row.gap_to_best_ms) }
         ]}
       />
+      <div>
+        <div className="mb-3">
+          <h3 className="font-bold text-white">Degradation model</h3>
+          <p className="mt-1 text-sm text-slate-500">Raw fitted slope, fuel correction, and the adjusted tyre trend used by the analysis.</p>
+        </div>
+        <DataTable
+          rows={tyreDegradation.rows}
+          emptyText="No qualifying tyre stints were available."
+          columns={[
+            { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
+            { key: "compound", header: "Compound", render: (row) => <CompoundBadge compound={row.compound} /> },
+            { key: "stint", header: "Stint", align: "right", render: (row) => row.stint },
+            { key: "raw", header: "Raw slope", align: "right", render: (row) => `${formatNumber(row.raw_slope_ms_per_lap, 1)} ms/lap` },
+            { key: "fuel", header: "Fuel correction", align: "right", render: (row) => `${formatNumber(row.fuel_correction_ms_per_lap, 1)} ms/lap` },
+            { key: "adjusted", header: "Adjusted", align: "right", render: (row) => `${formatNumber(row.degradation_ms_per_lap, 1)} ms/lap` },
+            { key: "fit", header: "R²", align: "right", render: (row) => formatNumber(row.r_squared, 2) },
+            { key: "excluded", header: "Outliers", align: "right", render: (row) => row.excluded_outlier_count ?? 0 }
+          ]}
+        />
+      </div>
     </div>
   );
 }
 
-function StrategyView({ stints, pitStops }: SessionTabsProps) {
+function StrategyView({ stints, pitStops, strategy }: SessionTabsProps) {
   return (
     <div className="space-y-5">
       <ChartPanel title="Stint Timeline">
@@ -183,11 +254,14 @@ function StrategyView({ stints, pitStops }: SessionTabsProps) {
       <ChartPanel title="Pit Stop Timeline">
         <PitStopTimeline stops={pitStops} />
       </ChartPanel>
+      <ChartPanel title="Strategy Analysis" description="Compound usage, pit-lane timing, and post-stop pace estimates.">
+        <StrategyAnalysis strategy={strategy || null} pitStops={pitStops} />
+      </ChartPanel>
     </div>
   );
 }
 
-function TelemetryView({ telemetryComparison, summary }: SessionTabsProps) {
+function TelemetryView({ telemetryComparison, telemetryIndex, summary }: SessionTabsProps) {
   if (isEmptyState(telemetryComparison)) {
     return (
       <EmptyState
@@ -196,7 +270,7 @@ function TelemetryView({ telemetryComparison, summary }: SessionTabsProps) {
       />
     );
   }
-  return <TelemetryComparePanel sessionId={summary.session_id} initialComparison={telemetryComparison} />;
+  return <TelemetryComparePanel sessionId={summary.session_id} initialComparison={telemetryComparison} availableLaps={telemetryIndex?.laps || []} />;
 }
 
 function ReplayView({ positionReplay }: SessionTabsProps) {
@@ -219,11 +293,20 @@ function ResultsView({ results, drivers }: { results: Result[]; drivers: Driver[
         { key: "pos", header: "Pos", align: "right", render: (row) => row.position },
         { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
         { key: "grid", header: "Grid", align: "right", render: (row) => row.grid ?? "--" },
-        { key: "gap", header: "Gap", align: "right", render: (row) => row.gap || "--" },
+          { key: "gap", header: "Gap", align: "right", render: (row) => formatResultGap(row) },
         { key: "status", header: "Status", render: (row) => row.status || "--" },
         { key: "points", header: "Pts", align: "right", render: (row) => row.points ?? 0 }
       ]}
     />
   );
+}
+
+function formatResultGap(result: Result) {
+  if (result.position === 1) return "Winner";
+  if (!result.gap || result.gap === "NaT") return "--";
+  const match = result.gap.match(/(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return result.gap;
+  const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+  return `+${seconds.toFixed(3)}s`;
 }
 

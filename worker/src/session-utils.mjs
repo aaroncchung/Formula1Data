@@ -11,23 +11,29 @@ export const SESSION_NAME_TO_CODE = {
 
 export const ACTIVE_JOB_STATUSES = ["queued", "running"];
 
+export const SESSION_CODES = new Set(["FP1", "FP2", "FP3", "Q", "SQ", "S", "R"]);
+
 export function normalizeSessionCode(value) {
   const raw = String(value || "").trim();
   if (!raw) {
     throw new Error("session is required");
   }
-  return SESSION_NAME_TO_CODE[raw.toLowerCase()] || raw.toUpperCase();
+  const code = SESSION_NAME_TO_CODE[raw.toLowerCase()] || raw.toUpperCase();
+  if (!SESSION_CODES.has(code)) {
+    throw new Error("session must be FP1, FP2, FP3, Q, SQ, S, or R");
+  }
+  return code;
 }
 
 export function sessionIdFromParts(year, round, session) {
   const parsedYear = Number.parseInt(String(year), 10);
   const parsedRound = Number.parseInt(String(round), 10);
   const code = normalizeSessionCode(session);
-  if (!Number.isInteger(parsedYear) || parsedYear < 1950) {
+  if (!/^\d{4}$/.test(String(year).trim()) || !Number.isInteger(parsedYear) || parsedYear < 1950 || parsedYear > 2100) {
     throw new Error("year must be a valid F1 season year");
   }
-  if (!Number.isInteger(parsedRound) || parsedRound < 1) {
-    throw new Error("round must be a positive integer");
+  if (!/^\d{1,2}$/.test(String(round).trim()) || !Number.isInteger(parsedRound) || parsedRound < 1 || parsedRound > 30) {
+    throw new Error("round must be an integer from 1 to 30");
   }
   return `${parsedYear}-${String(parsedRound).padStart(2, "0")}-${code.toLowerCase()}`;
 }
@@ -45,16 +51,28 @@ export function sessionSummaryPath(sessionId) {
 }
 
 export function sanitizeArtifactPath(pathname) {
-  let artifactPath = decodeURIComponent(String(pathname || ""));
+  let artifactPath;
+  try {
+    artifactPath = decodeURIComponent(String(pathname || ""));
+  } catch {
+    throw new Error("artifact path contains invalid encoding");
+  }
   artifactPath = artifactPath.replace(/^\/+/, "");
   artifactPath = artifactPath.replace(/^data\/+/, "");
   artifactPath = artifactPath.replace(/\\/g, "/");
 
-  if (!artifactPath || artifactPath.includes("\0")) {
+  if (!artifactPath) {
     throw new Error("artifact path is empty");
   }
-  if (artifactPath.split("/").some((part) => part === "..")) {
+  if (new TextEncoder().encode(artifactPath).byteLength > 1024 || artifactPath.includes("\0")) {
+    throw new Error("artifact path is invalid");
+  }
+  const segments = artifactPath.split("/");
+  if (segments.some((part) => part === "..")) {
     throw new Error("artifact path cannot contain parent directory segments");
+  }
+  if (segments.some((part) => !part || part === ".")) {
+    throw new Error("artifact path contains invalid segments");
   }
   return artifactPath;
 }
@@ -82,8 +100,8 @@ export function queueMessageForJob(job, session) {
 }
 
 function randomSuffix() {
-  if (globalThis.crypto?.randomUUID) {
-    return globalThis.crypto.randomUUID().slice(0, 8);
+  if (!globalThis.crypto?.randomUUID) {
+    throw new Error("secure random UUID generation is unavailable");
   }
-  return Math.random().toString(36).slice(2, 10);
+  return globalThis.crypto.randomUUID().slice(0, 8);
 }

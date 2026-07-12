@@ -44,6 +44,12 @@ def compare_telemetry(
         round(float(a) - float(b), 2) if a is not None and b is not None else None
         for a, b in zip(speed_a, speed_b, strict=True)
     ]
+    elapsed_a = _normalized_elapsed(values(aligned_a, "relative_time_ms"))
+    elapsed_b = _normalized_elapsed(values(aligned_b, "relative_time_ms"))
+    delta_time = [
+        round(float(b) - float(a), 1) if a is not None and b is not None else None
+        for a, b in zip(elapsed_a, elapsed_b, strict=True)
+    ]
 
     return TelemetryComparison(
         session_id=session_id,
@@ -63,8 +69,18 @@ def compare_telemetry(
         drs_a=values(aligned_a, "drs"),
         drs_b=values(aligned_b, "drs"),
         delta_speed_kph=delta_speed,
+        delta_time_ms=delta_time,
+        track_x=values(aligned_a, "x"),
+        track_y=values(aligned_a, "y"),
         caveats=["Telemetry is aligned by nearest distance sample and downsampled for UI performance."],
     )
+
+
+def _normalized_elapsed(values: list[Any]) -> list[float | None]:
+    origin = next((float(value) for value in values if value is not None), None)
+    if origin is None:
+        return [None for _ in values]
+    return [float(value) - origin if value is not None else None for value in values]
 
 
 def _nearest_by_distance(rows: list[dict[str, Any]], distance: float) -> dict[str, Any]:

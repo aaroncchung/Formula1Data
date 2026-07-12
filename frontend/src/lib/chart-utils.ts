@@ -30,7 +30,8 @@ export function telemetryRows(compare: TelemetryComparison) {
     gearB: compare.gear_b[index],
     drsA: compare.drs_a[index],
     drsB: compare.drs_b[index],
-    delta: compare.delta_speed_kph[index]
+    delta: compare.delta_speed_kph[index],
+    deltaTime: compare.delta_time_ms?.[index] ?? null
   }));
 }
 

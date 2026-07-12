@@ -1,9 +1,12 @@
 import type { ApiErrorPayload, ApiResult } from "@/types/api";
 import type {
   ChartSeries,
+  CarPerformanceResult,
+  CornerAnalysisResult,
   Driver,
   EmptyStateResponse,
   Lap,
+  IdealLapsResult,
   LiveDisabledResponse,
   Meeting,
   PitStop,
@@ -16,9 +19,13 @@ import type {
   Session,
   SessionSummary,
   Stint,
+  StrategyResult,
+  TeammateComparisonResult,
   TelemetryComparison,
   TelemetrySample,
+  TrackDominanceResult,
   TyreDegradationResult,
+  PacePredictionResult,
   WeatherSample
 } from "@/types/domain";
 
@@ -94,11 +101,19 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     qualifyingDelta: (sessionId: string, driverA: string, driverB: string) =>
       qualifyingDelta(sessionId, driverA, driverB),
     idealLaps: (sessionId: string) =>
-      readSessionArtifact<Record<string, unknown>>(sessionId, "analysis/ideal-laps.json"),
+      readOptionalSessionArtifact<IdealLapsResult>(sessionId, "analysis/ideal-laps.json"),
     teammateComparison: (sessionId: string) =>
-      readSessionArtifact<Record<string, unknown>>(sessionId, "analysis/team-mate-comparison.json"),
+      readOptionalSessionArtifact<TeammateComparisonResult>(sessionId, "analysis/team-mate-comparison.json"),
     strategy: (sessionId: string) =>
-      readSessionArtifact<Record<string, unknown>>(sessionId, "analysis/strategy.json"),
+      readOptionalSessionArtifact<StrategyResult>(sessionId, "analysis/strategy.json"),
+    trackDominance: (sessionId: string) =>
+      readOptionalSessionArtifact<TrackDominanceResult>(sessionId, "analysis/track-dominance.json"),
+    cornerAnalysis: (sessionId: string) =>
+      readOptionalSessionArtifact<CornerAnalysisResult>(sessionId, "analysis/corner-analysis.json"),
+    carPerformance: (sessionId: string) =>
+      readOptionalSessionArtifact<CarPerformanceResult>(sessionId, "analysis/car-performance.json"),
+    pacePrediction: (sessionId: string) =>
+      readOptionalSessionArtifact<PacePredictionResult>(sessionId, "analysis/pace-prediction.json"),
     telemetryIndex: (sessionId: string) => readTelemetryIndex(sessionId),
     telemetryLap: (sessionId: string, driver: string, lap: number) =>
       readTelemetryLap(sessionId, driver, lap),
@@ -127,6 +142,17 @@ export function createStaticApi(readArtifact: ArtifactReader) {
 
   async function readSessionArtifact<T>(sessionId: string, filePath: string): Promise<T> {
     return readArtifact<T>(`sessions/${sessionId}/${filePath}`);
+  }
+
+  async function readOptionalSessionArtifact<T>(sessionId: string, filePath: string): Promise<T | null> {
+    try {
+      return await readSessionArtifact<T>(sessionId, filePath);
+    } catch (error) {
+      if (isArtifactNotFound(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async function readTelemetryIndex(sessionId: string): Promise<TelemetryIndex | null> {
@@ -186,6 +212,10 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     const alignedB = alignedA.map((sample) => nearestByDistance(samplesB, sample.distance_m));
     const speedA = values(alignedA, "speed_kph");
     const speedB = values(alignedB, "speed_kph");
+    const timeA = values(alignedA, "relative_time_ms");
+    const timeB = values(alignedB, "relative_time_ms");
+    const timeOriginA = timeA.find((value) => value !== null) ?? 0;
+    const timeOriginB = timeB.find((value) => value !== null) ?? 0;
 
     return {
       session_id: sessionId,
@@ -208,6 +238,14 @@ export function createStaticApi(readArtifact: ArtifactReader) {
         const other = speedB[index];
         return speed !== null && other !== null ? Math.round((speed - other) * 100) / 100 : null;
       }),
+      delta_time_ms: timeA.map((time, index) => {
+        const other = timeB[index];
+        return time !== null && other !== null
+          ? Math.round((((other - timeOriginB) - (time - timeOriginA)) * 10)) / 10
+          : null;
+      }),
+      track_x: values(alignedA, "x"),
+      track_y: values(alignedA, "y"),
       caveats: ["Telemetry is aligned by nearest distance sample and downsampled for UI performance."]
     };
   }
@@ -419,7 +457,7 @@ function fastestLap(laps: Lap[], driverCode: string): Lap | null {
 }
 
 function delta(lapA: Lap, lapB: Lap, field: "sector_1_ms" | "sector_2_ms" | "sector_3_ms" | "lap_time_ms") {
-  if (lapA[field] === null || lapB[field] === null) {
+  if (lapA[field] == null || lapB[field] == null) {
     return null;
   }
   return Number(lapB[field]) - Number(lapA[field]);

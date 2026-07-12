@@ -92,10 +92,12 @@ jobs:
         run: git status --short -- frontend/public/data
 
       - name: Upload generated static data
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: static-data
           path: frontend/public/data
+          retention-days: 1
 
       - name: Commit generated artifacts
         if: github.event_name == 'workflow_dispatch' && inputs.commit_artifacts

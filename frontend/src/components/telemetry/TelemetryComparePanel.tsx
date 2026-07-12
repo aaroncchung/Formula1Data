@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { TelemetryCharts } from "@/components/charts/TelemetryCharts";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { api, isEmptyState } from "@/lib/api";
 import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
+import type { TelemetryIndex } from "@/lib/static-api-core";
 
 export function TelemetryComparePanel({
   initialDriverA,
@@ -15,7 +16,8 @@ export function TelemetryComparePanel({
   initialLapB,
   initialComparison,
   initialEmptyState,
-  sessionId
+  sessionId,
+  availableLaps = []
 }: {
   initialDriverA?: string;
   initialDriverB?: string;
@@ -24,6 +26,7 @@ export function TelemetryComparePanel({
   initialComparison?: TelemetryComparison | null;
   initialEmptyState?: EmptyStateResponse | null;
   sessionId: string;
+  availableLaps?: TelemetryIndex["laps"];
 }) {
   const [driverA, setDriverA] = useState(initialDriverA || initialComparison?.driver_a.driver_code || "");
   const [driverB, setDriverB] = useState(initialDriverB || initialComparison?.driver_b.driver_code || "");
@@ -31,8 +34,21 @@ export function TelemetryComparePanel({
   const [lapB, setLapB] = useState<number | "">(initialLapB || initialComparison?.driver_b.lap_number || "");
   const [comparison, setComparison] = useState<TelemetryComparison | null>(initialComparison || null);
   const [emptyState, setEmptyState] = useState<EmptyStateResponse | null>(initialEmptyState || null);
-  const [isPending, startTransition] = useTransition();
+  const [isLoading, setIsLoading] = useState(false);
   const canCompare = Boolean(driverA && driverB && lapA && lapB);
+  const drivers = [...new Set(availableLaps.map((item) => item.driver_code))];
+  const lapsA = availableLaps.filter((item) => item.driver_code === driverA);
+  const lapsB = availableLaps.filter((item) => item.driver_code === driverB);
+
+  function changeDriverA(value: string) {
+    setDriverA(value);
+    setLapA(availableLaps.find((item) => item.driver_code === value)?.lap_number || "");
+  }
+
+  function changeDriverB(value: string) {
+    setDriverB(value);
+    setLapB(availableLaps.find((item) => item.driver_code === value)?.lap_number || "");
+  }
 
   function submit() {
     if (!canCompare) {
@@ -43,8 +59,9 @@ export function TelemetryComparePanel({
       setComparison(null);
       return;
     }
-    startTransition(async () => {
-      const result = await api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB));
+    setIsLoading(true);
+    setEmptyState(null);
+    api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB)).then((result) => {
       if (isEmptyState(result)) {
         setEmptyState(result);
         setComparison(null);
@@ -52,55 +69,65 @@ export function TelemetryComparePanel({
         setEmptyState(null);
         setComparison(result);
       }
-    });
+    }).catch((error: unknown) => {
+      setComparison(null);
+      setEmptyState({
+        reason: "The selected telemetry comparison could not be loaded.",
+        action: error instanceof Error ? error.message : "Try another pair of laps."
+      });
+    }).finally(() => setIsLoading(false));
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 rounded border border-line bg-panel p-4 md:grid-cols-[1fr_100px_1fr_100px_auto]">
+      <div className="surface grid gap-3 p-4 md:grid-cols-[1fr_120px_1fr_120px_auto]">
         <label className="text-sm text-slate-400">
           Driver A
-          <input
-            className="mt-1 w-full rounded border border-line bg-carbon px-3 py-2 font-mono text-white"
+          <select
+            className="control mt-1 h-10 w-full font-mono"
             value={driverA}
-            onChange={(event) => setDriverA(event.target.value.toUpperCase())}
-          />
+            onChange={(event) => changeDriverA(event.target.value)}
+          >
+            {drivers.map((driver) => <option key={driver} value={driver}>{driver}</option>)}
+          </select>
         </label>
         <label className="text-sm text-slate-400">
           Lap A
-          <input
-            className="mt-1 w-full rounded border border-line bg-carbon px-3 py-2 text-white"
-            type="number"
-            min={1}
+          <select
+            className="control mt-1 h-10 w-full"
             value={lapA}
             onChange={(event) => setLapA(event.target.value ? Number(event.target.value) : "")}
-          />
+          >
+            {lapsA.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>Lap {lap.lap_number}</option>)}
+          </select>
         </label>
         <label className="text-sm text-slate-400">
           Driver B
-          <input
-            className="mt-1 w-full rounded border border-line bg-carbon px-3 py-2 font-mono text-white"
+          <select
+            className="control mt-1 h-10 w-full font-mono"
             value={driverB}
-            onChange={(event) => setDriverB(event.target.value.toUpperCase())}
-          />
+            onChange={(event) => changeDriverB(event.target.value)}
+          >
+            {drivers.map((driver) => <option key={driver} value={driver}>{driver}</option>)}
+          </select>
         </label>
         <label className="text-sm text-slate-400">
           Lap B
-          <input
-            className="mt-1 w-full rounded border border-line bg-carbon px-3 py-2 text-white"
-            type="number"
-            min={1}
+          <select
+            className="control mt-1 h-10 w-full"
             value={lapB}
             onChange={(event) => setLapB(event.target.value ? Number(event.target.value) : "")}
-          />
+          >
+            {lapsB.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>Lap {lap.lap_number}</option>)}
+          </select>
         </label>
         <button
-          className="self-end rounded bg-redline px-4 py-2 font-bold text-white disabled:opacity-60"
+          className="h-10 self-end rounded-md bg-redline px-5 text-sm font-bold text-white shadow-lg shadow-redline/15 transition hover:bg-red-500 disabled:opacity-50"
           onClick={submit}
-          disabled={isPending || !canCompare}
+          disabled={isLoading || !canCompare}
           type="button"
         >
-          Compare
+          {isLoading ? "Loading…" : "Compare"}
         </button>
       </div>
       {emptyState ? (
@@ -111,8 +138,8 @@ export function TelemetryComparePanel({
       ) : null}
       {comparison ? (
         <ChartPanel
-          title={`${comparison.driver_a.driver_code} lap ${comparison.driver_a.lap_number} vs ${comparison.driver_b.driver_code} lap ${comparison.driver_b.lap_number}`}
-          description="Aligned by distance and downsampled for browser performance."
+          title={`${comparison.driver_a.driver_code} · Lap ${comparison.driver_a.lap_number}  vs  ${comparison.driver_b.driver_code} · Lap ${comparison.driver_b.lap_number}`}
+          description="Traces share one distance cursor. Positive time delta means Driver B is behind Driver A."
         >
           <TelemetryCharts comparison={comparison} />
         </ChartPanel>

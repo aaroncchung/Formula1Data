@@ -4,8 +4,28 @@ from collections import Counter, defaultdict
 from statistics import mean, median
 from typing import Any
 
+from backend.app.analysis.advanced import (
+    calculate_car_performance,
+    calculate_corner_analysis,
+    calculate_fuel_adjusted_tyre_degradation,
+    calculate_pace_prediction,
+    calculate_track_dominance,
+)
 
-NEUTRALIZED_STATUSES = {"SC", "VSC", "RED", "RED FLAG", "SAFETY CAR"}
+
+NEUTRALIZED_STATUSES = {
+    "4",
+    "5",
+    "6",
+    "7",
+    "SC",
+    "VSC",
+    "RED",
+    "RED FLAG",
+    "SAFETY CAR",
+}
+REPLAY_INTERVAL_MS = 5000
+MAX_REPLAY_FRAMES = 2000
 
 
 def precompute_session_analysis(session_id: str, bundle: dict[str, Any]) -> dict[str, Any]:
@@ -14,14 +34,22 @@ def precompute_session_analysis(session_id: str, bundle: dict[str, Any]) -> dict
     stints = bundle.get("stints", [])
     pit_stops = bundle.get("pit_stops", [])
     race_control = bundle.get("race_control", [])
+    telemetry = bundle.get("telemetry", [])
+    summary = bundle.get("summary", {})
 
     return {
         "lap-times": lap_time_series(laps, drivers),
         "race-pace": calculate_race_pace(session_id, laps),
-        "tyre-degradation": calculate_tyre_degradation(session_id, laps),
+        "tyre-degradation": calculate_fuel_adjusted_tyre_degradation(
+            session_id, summary, laps
+        ),
         "strategy": calculate_strategy(session_id, stints, pit_stops, laps, race_control),
         "ideal-laps": calculate_ideal_laps(session_id, laps),
         "team-mate-comparison": calculate_teammate_comparison(session_id, laps, drivers),
+        "track-dominance": calculate_track_dominance(session_id, laps, telemetry),
+        "corner-analysis": calculate_corner_analysis(session_id, laps, telemetry),
+        "car-performance": calculate_car_performance(session_id, laps, telemetry, drivers),
+        "pace-prediction": calculate_pace_prediction(session_id, summary, laps, drivers),
     }
 
 
@@ -103,47 +131,7 @@ def pace_rows(lap_groups: dict[tuple[Any, ...], list[dict[str, Any]]]) -> list[d
 
 
 def calculate_tyre_degradation(session_id: str, laps: list[dict[str, Any]]) -> dict[str, Any]:
-    rows = []
-    for (driver_code, stint, compound), group_laps in grouped(
-        clean_laps(laps), ("driver_code", "stint", "compound")
-    ).items():
-        samples = [
-            (lap.get("tyre_age"), lap.get("lap_time_ms"))
-            for lap in group_laps
-            if lap.get("tyre_age") is not None and lap.get("lap_time_ms") is not None
-        ]
-        if len(samples) < 3:
-            rows.append(
-                {
-                    "driver_code": str(driver_code),
-                    "compound": str(compound),
-                    "stint": int(stint or 0),
-                    "degradation_ms_per_lap": None,
-                    "r_squared": None,
-                    "sample_count": len(samples),
-                    "stint_length": len(group_laps),
-                    "caveats": ["At least three clean laps are required for a degradation fit."],
-                }
-            )
-            continue
-
-        slope, r_squared = linear_fit(samples)
-        caveats = []
-        if r_squared is not None and r_squared < 0.5:
-            caveats.append("Low fit quality; treat the slope as directional only.")
-        rows.append(
-            {
-                "driver_code": str(driver_code),
-                "compound": str(compound),
-                "stint": int(stint or 0),
-                "degradation_ms_per_lap": round(slope, 2),
-                "r_squared": round(r_squared, 3) if r_squared is not None else None,
-                "sample_count": len(samples),
-                "stint_length": len(group_laps),
-                "caveats": caveats,
-            }
-        )
-    return {"session_id": session_id, "rows": rows}
+    return calculate_fuel_adjusted_tyre_degradation(session_id, {}, laps)
 
 
 def calculate_strategy(
@@ -163,8 +151,8 @@ def calculate_strategy(
     undercut_overcut = []
     for driver, stops in by_driver.items():
         first_stop = min(stops, key=lambda stop: stop.get("lap_number", 999))
-        before = lap_time(laps, driver, int(first_stop["lap_number"]) - 1)
-        after = lap_time(laps, driver, int(first_stop["lap_number"]) + 1)
+        before = nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), -1)
+        after = nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), 1)
         undercut_overcut.append(
             {
                 "driver_code": driver,
@@ -172,7 +160,10 @@ def calculate_strategy(
                 "first_clean_lap_gain_ms": before - after
                 if before is not None and after is not None
                 else None,
-                "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO.",
+                "caveat": (
+                    "Compares the nearest clean laps before and after the stop; it is not "
+                    "adjusted for traffic, tyre warm-up, fuel, or track evolution."
+                ),
             }
         )
 
@@ -185,7 +176,8 @@ def calculate_strategy(
         "undercut_overcut": undercut_overcut,
         "race_control_overlays": race_control,
         "caveats": [
-            "Pit loss and undercut/overcut values are simple estimates until full race pace context is available."
+            "Pit duration is pit-lane transit time when FastF1 provides adjacent pit-in/out timestamps.",
+            "Undercut/overcut values are descriptive surrounding-lap changes, not causal opponent models.",
         ],
     }
 
@@ -266,37 +258,82 @@ def build_position_replay(session_id: str, telemetry: list[dict[str, Any]]) -> l
     with_position = [
         row
         for row in telemetry
-        if row.get("x") is not None and row.get("y") is not None and row.get("relative_time_ms") is not None
+        if row.get("x") is not None and row.get("y") is not None
+        and (row.get("session_time_ms") is not None or row.get("relative_time_ms") is not None)
     ]
     if not with_position:
         return []
 
-    by_frame: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    for row in with_position:
-        frame_index = int(row["relative_time_ms"] // 5000)
-        by_frame[frame_index].append(
-            {
-                "driver_code": row["driver_code"],
-                "x": row["x"],
-                "y": row["y"],
-                "speed_kph": row.get("speed_kph"),
-                "distance_m": row.get("distance_m"),
-            }
-        )
-
+    session_timed = [row for row in with_position if row.get("session_time_ms") is not None]
+    use_session_time = bool(session_timed)
+    rows = session_timed if use_session_time else with_position
+    by_frame = group_replay_rows(rows, use_session_time)
     frames = []
-    for frame_index, positions in sorted(by_frame.items()):
-        lap_number = min((row.get("lap_number") for row in with_position), default=None)
+    ordered_frames = bounded_replay_frames(sorted(by_frame.items()))
+    for frame_index, (frame_key, positions_by_driver) in enumerate(ordered_frames):
+        positions = [
+            {key: value for key, value in position.items() if not key.startswith("_")}
+            for position in sorted(positions_by_driver.values(), key=lambda row: row["driver_code"])
+        ]
+        lap_numbers = {position.get("_lap_number") for position in positions_by_driver.values()}
+        lap_number = next(iter(lap_numbers)) if len(lap_numbers) == 1 else None
+        if use_session_time:
+            timestamp_ms = int(frame_key) * REPLAY_INTERVAL_MS
+        else:
+            timestamp_ms = frame_index * REPLAY_INTERVAL_MS
+            for position in positions:
+                position["timing_basis"] = "lap-relative approximation"
+                position["timing_caveat"] = (
+                    "SessionTime was unavailable; drivers are aligned by lap number and lap-relative time."
+                )
         frames.append(
             {
                 "session_id": session_id,
                 "frame_index": frame_index,
                 "lap_number": lap_number,
-                "timestamp_ms": frame_index * 5000,
+                "timestamp_ms": timestamp_ms,
                 "positions": positions,
             }
         )
     return frames
+
+
+def group_replay_rows(
+    rows: list[dict[str, Any]], use_session_time: bool
+) -> dict[Any, dict[str, dict[str, Any]]]:
+    by_frame: dict[Any, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for row in rows:
+        lap_number = int(row.get("lap_number") or 0)
+        driver = str(row.get("driver_code") or "").upper()
+        timing = row.get("session_time_ms") if use_session_time else row.get("relative_time_ms")
+        if not driver or timing is None or (not use_session_time and lap_number <= 0):
+            continue
+        timing = int(timing)
+        time_bin = timing // REPLAY_INTERVAL_MS
+        key = time_bin if use_session_time else (lap_number, time_bin)
+        candidate = {
+            "driver_code": driver,
+            "x": row["x"],
+            "y": row["y"],
+            "speed_kph": row.get("speed_kph"),
+            "distance_m": row.get("distance_m"),
+            "_timing_ms": timing,
+            "_lap_number": lap_number or None,
+        }
+        current = by_frame[key].get(driver)
+        target = (time_bin + 0.5) * REPLAY_INTERVAL_MS
+        if current is None or abs(timing - target) < abs(current["_timing_ms"] - target):
+            by_frame[key][driver] = candidate
+    return by_frame
+
+
+def bounded_replay_frames(frames: list[Any]) -> list[Any]:
+    if len(frames) <= MAX_REPLAY_FRAMES:
+        return frames
+    return [
+        frames[round(index * (len(frames) - 1) / (MAX_REPLAY_FRAMES - 1))]
+        for index in range(MAX_REPLAY_FRAMES)
+    ]
 
 
 def clean_laps(laps: list[dict[str, Any]], exclude_first_lap: bool = True) -> list[dict[str, Any]]:
@@ -312,7 +349,8 @@ def clean_laps(laps: list[dict[str, Any]], exclude_first_lap: bool = True) -> li
             continue
         if lap.get("is_accurate") is False:
             continue
-        if str(lap.get("track_status") or "").upper() in NEUTRALIZED_STATUSES:
+        status = str(lap.get("track_status") or "").upper().strip()
+        if status in NEUTRALIZED_STATUSES or any(code in status for code in ("4", "5", "6", "7")):
             continue
         rows.append(lap)
     return rows
@@ -381,10 +419,26 @@ def linear_fit(samples: list[tuple[int | float, int | float]]) -> tuple[float, f
     return float(slope), float(r_squared) if r_squared is not None else None
 
 
-def lap_time(laps: list[dict[str, Any]], driver: str, lap_number: int) -> int | None:
-    for lap in laps:
-        if lap.get("driver_code") == driver and lap.get("lap_number") == lap_number:
-            return lap.get("lap_time_ms")
+def nearest_clean_lap_time(
+    laps: list[dict[str, Any]], driver: str, stop_lap: int, direction: int
+) -> int | None:
+    candidates = [
+        lap
+        for lap in laps
+        if lap.get("driver_code") == driver
+        and lap.get("lap_time_ms") is not None
+        and not lap.get("is_pit_in_lap")
+        and not lap.get("is_pit_out_lap")
+        and not lap.get("is_deleted")
+        and (
+            int(lap.get("lap_number") or 0) < stop_lap
+            if direction < 0
+            else int(lap.get("lap_number") or 0) > stop_lap
+        )
+    ]
+    if candidates:
+        closest = min(candidates, key=lambda lap: abs(int(lap["lap_number"]) - stop_lap))
+        return closest.get("lap_time_ms")
     return None
 
 

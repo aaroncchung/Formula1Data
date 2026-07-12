@@ -69,3 +69,47 @@ test("resolveSessionStatus reports ready when a manifest artifact exists", async
   assert.equal(status.status, "ready");
   assert.equal(status.artifact_path, "sessions/2026-01-r/manifest.json");
 });
+
+test("resolveSessionStatus avoids redundant D1-style writes for an unchanged ready session", async () => {
+  const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-01-r",
+    year: 2026,
+    round: 1,
+    meeting_id: null,
+    meeting_name: null,
+    session_type: "R",
+    scheduled_start: null,
+    status: "ready",
+    artifact_base_path: "sessions/2026-01-r",
+    generated_at: "2026-07-04T12:00:00Z",
+    source: "r2"
+  });
+  let writes = 0;
+  const countingRepository = {
+    ...repository,
+    async upsertSession(session) {
+      writes += 1;
+      return repository.upsertSession(session);
+    }
+  };
+  let headCalls = 0;
+  const artifacts = {
+    async head(path) {
+      headCalls += 1;
+      return { key: path, size: 512, uploaded: "2026-07-04T12:00:00Z" };
+    }
+  };
+
+  const status = await resolveSessionStatus({
+    repository: countingRepository,
+    artifacts,
+    year: 2026,
+    round: 1,
+    session: "R"
+  });
+
+  assert.equal(status.status, "ready");
+  assert.equal(writes, 0);
+  assert.equal(headCalls, 1);
+});

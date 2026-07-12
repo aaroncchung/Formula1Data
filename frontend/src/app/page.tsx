@@ -5,6 +5,7 @@ import { RacePaceChart } from "@/components/charts/RacePaceChart";
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { DriverBadge } from "@/components/session/Badges";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
 
 export default async function DashboardPage() {
@@ -18,13 +19,16 @@ export default async function DashboardPage() {
     );
   }
   const primarySession = primarySessionResult.data;
-  const [summaryResult, seasonsResult, racePaceResult] = await Promise.all([
+  const [summaryResult, catalogResult, racePaceResult, resultsResult, driversResult, idealLapsResult] = await Promise.all([
     safeApi(() => api.summary(primarySession.session_id)),
-    safeApi(() => api.seasons()),
-    safeApi(() => api.racePace(primarySession.session_id))
+    safeApi(() => api.catalog()),
+    safeApi(() => api.racePace(primarySession.session_id)),
+    safeApi(() => api.results(primarySession.session_id)),
+    safeApi(() => api.drivers(primarySession.session_id)),
+    safeApi(() => api.idealLaps(primarySession.session_id))
   ]);
 
-  const failed = [summaryResult, seasonsResult, racePaceResult].find(isApiFailure);
+  const failed = [summaryResult, catalogResult, racePaceResult].find(isApiFailure);
   if (failed) {
     return (
       <ErrorState
@@ -33,20 +37,24 @@ export default async function DashboardPage() {
       />
     );
   }
-  if (!summaryResult.ok || !seasonsResult.ok || !racePaceResult.ok) {
+  if (!summaryResult.ok || !catalogResult.ok || !racePaceResult.ok) {
     return null;
   }
 
   const summary = summaryResult.data;
-  const seasons = seasonsResult.data;
+  const catalog = catalogResult.data;
   const racePace = racePaceResult.data;
+  const colors: Record<string, string | null | undefined> = driversResult.ok
+    ? Object.fromEntries(driversResult.data.map((driver) => [driver.code, driver.team.color]))
+    : {};
+  const bestIdeal = idealLapsResult.ok ? idealLapsResult.data?.rows[0] : null;
 
   return (
     <div>
       <PageHeader
-        eyebrow="Personal motorsport analytics"
-        title="Formula 1 Data"
-        description="A dense, dark analytics workspace for historical race analysis, telemetry comparison, strategy review, and optional future live data."
+        eyebrow="Personal race intelligence"
+        title="Your F1 analysis workspace"
+        description="Explore every processed session through race pace, telemetry, strategy, tyre, ideal-lap, and car-performance analysis—without a paid backend."
         actions={
           <>
             <Link
@@ -62,37 +70,41 @@ export default async function DashboardPage() {
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Available seasons" value={seasons.length} detail="from processed artifacts" tone="aqua" />
+        <MetricCard label="Available seasons" value={catalog.seasons.length} detail={`${catalog.sessions.filter((session) => session.status !== "missing").length} sessions ready`} tone="aqua" />
         <MetricCard label="Latest session" value={summary.session} detail={summary.meeting} tone="red" />
-        <MetricCard label="Drivers" value={summary.driver_count} detail={summary.circuit} />
-        <MetricCard label="Mode" value={summary.is_sample ? "Demo" : "Historical"} detail={summary.weather_summary} tone="amber" />
+        <MetricCard label="Session field" value={summary.driver_count} detail={`${summary.lap_count} timing laps`} />
+        <MetricCard label="Ideal-lap leader" value={bestIdeal?.driver_code || "--"} detail={bestIdeal ? `${(Number(bestIdeal.delta_to_ideal_ms) / 1000).toFixed(3)}s left on track` : summary.weather_summary} tone="amber" />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
         <ChartPanel title="Latest Race Pace">
           <RacePaceChart rows={racePace.drivers} />
         </ChartPanel>
-        <section className="rounded border border-line bg-panel p-4 shadow-panel">
-          <h2 className="font-bold text-white">Data readiness</h2>
-          <div className="mt-4 space-y-3 text-sm text-slate-300">
-            <div className="flex justify-between gap-3 border-b border-line pb-2">
-              <span>Sample artifacts</span>
-              <span className="font-bold text-aqua">Ready</span>
-            </div>
-            <div className="flex justify-between gap-3 border-b border-line pb-2">
-              <span>Pipeline ingest path</span>
-              <span className="font-bold text-aqua">Implemented</span>
-            </div>
-            <div className="flex justify-between gap-3 border-b border-line pb-2">
-              <span>OpenF1 live mode</span>
-              <span className="font-bold text-amber">Future optional</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span>Frontend data</span>
-              <span className="font-bold text-aqua">Static JSON</span>
-            </div>
+        <ChartPanel title="Latest result" description={`${summary.meeting} · ${summary.session}`}>
+          <div className="space-y-2">
+            {(resultsResult.ok ? resultsResult.data.slice(0, 8) : []).map((result) => (
+              <div key={result.driver_code} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-md border border-line/60 bg-carbon/35 px-3 py-2.5">
+                <span className="font-mono text-xs text-slate-500">{result.position}</span>
+                <DriverBadge code={result.driver_code} color={colors[result.driver_code]} />
+                <span className="font-mono text-xs font-bold text-white">{result.points || 0} pts</span>
+              </div>
+            ))}
           </div>
-        </section>
+        </ChartPanel>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <WorkspaceLink href="/telemetry" title="Compare telemetry" detail="Speed, inputs, time delta, and track trace" />
+        <WorkspaceLink href="/strategy" title="Review strategy" detail="Stints, compounds, stops, and post-stop pace" />
+        <WorkspaceLink href="/standings" title="Season standings" detail="Drivers and constructors from available results" />
       </div>
     </div>
+  );
+}
+
+function WorkspaceLink({ href, title, detail }: { href: string; title: string; detail: string }) {
+  return (
+    <Link href={href} className="surface group p-4 transition hover:-translate-y-0.5 hover:border-redline/50">
+      <div className="font-bold text-white transition group-hover:text-redline">{title} →</div>
+      <div className="mt-1 text-sm text-slate-500">{detail}</div>
+    </Link>
   );
 }

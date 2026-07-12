@@ -1,9 +1,5 @@
 import { sanitizeArtifactPath } from "./session-utils.mjs";
 
-const JSON_HEADERS = {
-  "content-type": "application/json; charset=utf-8"
-};
-
 export function createArtifactStore(env) {
   return {
     async head(path) {
@@ -13,7 +9,7 @@ export function createArtifactStore(env) {
         if (object) {
           return {
             key,
-            size: object.size || null,
+            size: object.size ?? null,
             etag: object.httpEtag || null,
             uploaded: object.uploaded ? object.uploaded.toISOString() : null
           };
@@ -21,7 +17,7 @@ export function createArtifactStore(env) {
       }
 
       const fallback = await fetchFallback(env, key, { method: "HEAD" });
-      if (fallback?.ok) {
+      if (fallback && (fallback.ok || fallback.status === 304 || fallback.status === 416)) {
         return {
           key,
           size: numberOrNull(fallback.headers.get("content-length")),
@@ -32,25 +28,33 @@ export function createArtifactStore(env) {
       return null;
     },
 
-    async get(path) {
+    async get(path, request = null) {
       const key = sanitizeArtifactPath(path);
-      if (env.ARTIFACTS_BUCKET?.get) {
-        const object = await env.ARTIFACTS_BUCKET.get(key);
+      const method = request?.method === "HEAD" ? "HEAD" : "GET";
+      if (method === "HEAD" && env.ARTIFACTS_BUCKET?.head) {
+        const object = await env.ARTIFACTS_BUCKET.head(key);
         if (object) {
-          const headers = new Headers(JSON_HEADERS);
-          object.writeHttpMetadata?.(headers);
-          headers.set("etag", object.httpEtag || headers.get("etag") || "");
-          headers.set("cache-control", cacheControlForKey(key));
-          return new Response(object.body, { headers });
+          return r2ObjectResponse(object, key, true, request?.headers);
+        }
+      } else if (env.ARTIFACTS_BUCKET?.get) {
+        const options = r2GetOptions(request?.headers);
+        const object = await env.ARTIFACTS_BUCKET.get(key, options);
+        if (object) {
+          return r2ObjectResponse(object, key, false, request?.headers);
         }
       }
 
-      const fallback = await fetchFallback(env, key, { method: "GET" });
+      const fallback = await fetchFallback(env, key, {
+        method,
+        headers: forwardedRequestHeaders(request?.headers)
+      });
       if (fallback?.ok) {
         const headers = new Headers(fallback.headers);
         headers.set("cache-control", cacheControlForKey(key));
+        headers.set("accept-ranges", "bytes");
         return new Response(fallback.body, {
           status: fallback.status,
+          statusText: fallback.statusText,
           headers
         });
       }
@@ -74,9 +78,146 @@ async function fetchFallback(env, key, init) {
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/${key}`, init);
   if (response.status === 405 && init.method === "HEAD") {
-    return fetch(`${baseUrl.replace(/\/$/, "")}/${key}`, { method: "GET" });
+    const ranged = await fetch(`${baseUrl.replace(/\/$/, "")}/${key}`, {
+      method: "GET",
+      headers: { range: "bytes=0-0" }
+    });
+    await ranged.body?.cancel();
+    const headers = new Headers(ranged.headers);
+    const totalSize = totalSizeFromContentRange(headers.get("content-range"));
+    if (totalSize !== null) {
+      headers.set("content-length", String(totalSize));
+    }
+    headers.delete("content-range");
+    return new Response(null, { status: ranged.ok ? 200 : ranged.status, headers });
   }
   return response;
+}
+
+function r2GetOptions(headers) {
+  if (!headers) {
+    return undefined;
+  }
+  const options = {};
+  if (headers.has("range")) {
+    options.range = headers;
+  }
+  if (
+    headers.has("if-match") ||
+    headers.has("if-none-match") ||
+    headers.has("if-modified-since") ||
+    headers.has("if-unmodified-since")
+  ) {
+    options.onlyIf = headers;
+  }
+  return Object.keys(options).length ? options : undefined;
+}
+
+function r2ObjectResponse(object, key, headOnly, requestHeaders) {
+  const headers = new Headers();
+  object.writeHttpMetadata?.(headers);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", contentTypeForKey(key));
+  }
+  if (object.httpEtag) {
+    headers.set("etag", object.httpEtag);
+  }
+  if (object.uploaded instanceof Date) {
+    headers.set("last-modified", object.uploaded.toUTCString());
+  }
+  headers.set("cache-control", cacheControlForKey(key));
+  headers.set("accept-ranges", "bytes");
+
+  const preconditionStatus = failedPreconditionStatus(object, requestHeaders);
+  if (preconditionStatus !== null) {
+    headers.delete("content-length");
+    return new Response(null, { status: preconditionStatus, headers });
+  }
+
+  if (headOnly) {
+    headers.set("content-length", String(object.size));
+    return new Response(null, { status: 200, headers });
+  }
+
+  if (!object.body) {
+    headers.delete("content-length");
+    const status = requestHeaders?.has("if-match") || requestHeaders?.has("if-unmodified-since") ? 412 : 304;
+    return new Response(null, { status, headers });
+  }
+
+  const range = object.range;
+  if (range && Number.isFinite(range.offset) && Number.isFinite(range.length)) {
+    const end = range.offset + range.length - 1;
+    headers.set("content-range", `bytes ${range.offset}-${end}/${object.size}`);
+    headers.set("content-length", String(range.length));
+    return new Response(object.body, { status: 206, headers });
+  }
+  headers.set("content-length", String(object.size));
+  return new Response(object.body, { status: 200, headers });
+}
+
+function forwardedRequestHeaders(headers) {
+  const forwarded = new Headers();
+  for (const name of ["range", "if-match", "if-none-match", "if-modified-since", "if-unmodified-since"]) {
+    const value = headers?.get(name);
+    if (value) {
+      forwarded.set(name, value);
+    }
+  }
+  return forwarded;
+}
+
+function contentTypeForKey(key) {
+  if (key.endsWith(".json")) {
+    return "application/json; charset=utf-8";
+  }
+  if (key.endsWith(".csv")) {
+    return "text/csv; charset=utf-8";
+  }
+  if (key.endsWith(".gz")) {
+    return "application/gzip";
+  }
+  return "application/octet-stream";
+}
+
+function failedPreconditionStatus(object, headers) {
+  if (!headers) {
+    return null;
+  }
+  const etag = object.httpEtag;
+  const ifMatch = headers.get("if-match");
+  if (ifMatch && etag && !etagListMatches(ifMatch, etag)) {
+    return 412;
+  }
+  const uploadedAt = object.uploaded instanceof Date ? object.uploaded.getTime() : null;
+  const ifUnmodifiedSince = Date.parse(headers.get("if-unmodified-since") || "");
+  if (!ifMatch && uploadedAt !== null && Number.isFinite(ifUnmodifiedSince) && uploadedAt > ifUnmodifiedSince) {
+    return 412;
+  }
+  const ifNoneMatch = headers.get("if-none-match");
+  if (ifNoneMatch && etag) {
+    return etagListMatches(ifNoneMatch, etag) ? 304 : null;
+  }
+  const ifModifiedSince = Date.parse(headers.get("if-modified-since") || "");
+  if (uploadedAt !== null && Number.isFinite(ifModifiedSince) && uploadedAt <= ifModifiedSince) {
+    return 304;
+  }
+  return null;
+}
+
+function etagListMatches(headerValue, etag) {
+  return String(headerValue)
+    .split(",")
+    .map((value) => value.trim())
+    .some((value) => value === "*" || value === etag || value.replace(/^W\//, "") === etag);
+}
+
+function totalSizeFromContentRange(value) {
+  const match = String(value || "").match(/\/([0-9]+)$/);
+  if (!match) {
+    return null;
+  }
+  return numberOrNull(match[1]);
 }
 
 function numberOrNull(value) {

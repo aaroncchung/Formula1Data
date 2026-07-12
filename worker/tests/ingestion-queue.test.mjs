@@ -157,3 +157,63 @@ test("queue dispatch posts to a configured ingestion webhook and leaves callback
     globalThis.fetch = previousFetch;
   }
 });
+
+test("permanent GitHub dispatch failures mark the job and session failed", async () => {
+  const repository = freshRepository();
+  const artifacts = { head: async () => null };
+  const messages = [];
+  const queue = { send: async (message) => messages.push(message) };
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 401 });
+
+  try {
+    const result = await enqueueIngestionJob({
+      repository,
+      artifacts,
+      queue,
+      year: 2026,
+      round: 8,
+      session: "R",
+      now: new Date("2026-07-04T12:00:00Z")
+    });
+
+    await dispatchQueueMessage(
+      messages[0],
+      {
+        GITHUB_DISPATCH_TOKEN: "invalid-token",
+        GITHUB_REPO_OWNER: "Ntrxi",
+        GITHUB_REPO_NAME: "Formula1Data"
+      },
+      repository
+    );
+
+    const job = await repository.getJob(result.job.job_id);
+    assert.equal(job.status, "failed");
+    assert.match(job.error_message, /returned 401/);
+    const status = await resolveSessionStatus({ repository, artifacts, year: 2026, round: 8, session: "R" });
+    assert.equal(status.status, "failed");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("queue messages cannot dispatch a missing job", async () => {
+  const repository = freshRepository();
+  await assert.rejects(
+    dispatchQueueMessage(
+      {
+        version: 1,
+        job_id: "ingest_session:2026-08-r:20260704:missing",
+        kind: "ingest_session",
+        session_id: "2026-08-r",
+        year: 2026,
+        round: 8,
+        session: "R",
+        artifact_base_path: "sessions/2026-08-r"
+      },
+      {},
+      repository
+    ),
+    /unknown job/
+  );
+});

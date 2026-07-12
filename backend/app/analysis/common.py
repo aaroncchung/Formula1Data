@@ -3,7 +3,17 @@ from statistics import mean, median
 from typing import Any
 
 
-NEUTRALIZED_STATUSES = {"SC", "VSC", "RED", "RED FLAG", "SAFETY CAR"}
+NEUTRALIZED_STATUSES = {
+    "4",
+    "5",
+    "6",
+    "7",
+    "SC",
+    "VSC",
+    "RED",
+    "RED FLAG",
+    "SAFETY CAR",
+}
 
 
 def clean_laps(laps: list[dict[str, Any]], exclude_first_lap: bool = True) -> list[dict[str, Any]]:
@@ -19,7 +29,8 @@ def clean_laps(laps: list[dict[str, Any]], exclude_first_lap: bool = True) -> li
             continue
         if lap.get("is_accurate") is False:
             continue
-        if str(lap.get("track_status") or "").upper() in NEUTRALIZED_STATUSES:
+        status = str(lap.get("track_status") or "").upper().strip()
+        if status in NEUTRALIZED_STATUSES or any(code in status for code in ("4", "5", "6", "7")):
             continue
         rows.append(lap)
     return rows

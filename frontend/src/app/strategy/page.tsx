@@ -3,6 +3,7 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { PitStopTimeline } from "@/components/session/PitStopTimeline";
 import { StintTimeline } from "@/components/session/StintTimeline";
+import { StrategyAnalysis } from "@/components/session/StrategyAnalysis";
 import { api, isApiFailure, safeApi } from "@/lib/api-server";
 
 export default async function StrategyPage() {
@@ -24,7 +25,7 @@ export default async function StrategyPage() {
   }
   return (
     <div>
-      <PageHeader title="Strategy" description="Stint structure, compound usage, pit stop timing, and basic undercut/overcut estimates." />
+      <PageHeader title="Strategy" description="Stint structure, compound usage, pit-lane transit timing, and simple post-stop pace estimates." />
       <div className="space-y-5">
         <ChartPanel title="Stint Timeline">
           <StintTimeline stints={stints.data} />
@@ -32,8 +33,8 @@ export default async function StrategyPage() {
         <ChartPanel title="Pit Stop Timing">
           <PitStopTimeline stops={pitStops.data} />
         </ChartPanel>
-        <ChartPanel title="Strategy Payload">
-          <pre className="max-h-[420px] overflow-auto text-xs text-slate-300">{JSON.stringify(strategy.data, null, 2)}</pre>
+        <ChartPanel title="Strategy Analysis" description="Compound usage, stops, and simple post-stop pace estimates.">
+          <StrategyAnalysis strategy={strategy.data} pitStops={pitStops.data} />
         </ChartPanel>
       </div>
     </div>

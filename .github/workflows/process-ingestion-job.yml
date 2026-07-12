@@ -162,17 +162,23 @@ jobs:
           done
 
       - name: Verify remote R2 manifest
+        id: session
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           SESSION_ID="$(python -c "import json; print(json.load(open('message.json'))['session_id'])")"
+          echo "id=$SESSION_ID" >> "$GITHUB_OUTPUT"
           wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/manifest.json" --remote --file manifest-check.json
           python -m json.tool manifest-check.json > /dev/null
 
-      - name: Upload generated data snapshot
+      - name: Upload generated session snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: generated-data
-          path: frontend/public/data
+          path: |
+            frontend/public/data/sessions/${{ steps.session.outputs.id }}
+            manifest-check.json
+          if-no-files-found: ignore
+          retention-days: 1

@@ -9,16 +9,16 @@ type AppShellProps = {
 export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen">
-      <div className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-line/80 bg-carbon/95 lg:block">
+      <div className="fixed inset-y-0 left-0 z-30 hidden w-[232px] border-r border-line/70 bg-carbon/95 shadow-2xl lg:block">
         <Sidebar />
       </div>
-      <div className="lg:pl-64">
+      <div className="lg:pl-[232px]">
         <TopBar />
-        <main className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-5 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-[1680px] px-4 pb-12 pt-6 sm:px-6 lg:px-8">
           {children}
         </main>
-        <footer className="border-t border-line/70 px-4 py-5 text-center text-xs text-slate-500 lg:pl-64">
-          {APP_NAME} - Unofficial personal analytics dashboard.
+        <footer className="border-t border-line/60 px-4 py-5 text-center text-xs text-slate-600">
+          {APP_NAME} · Personal, unofficial Formula 1 analytics.
         </footer>
       </div>
     </div>

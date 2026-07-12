@@ -15,13 +15,14 @@ type DataTableProps<T> = {
 
 export function DataTable<T>({ columns, rows, emptyText = "No rows available." }: DataTableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded border border-line bg-panel">
+    <div className="surface overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead className="bg-white/[0.03] text-xs uppercase tracking-[0.12em] text-slate-500">
-          <tr>
+          <tr className="border-b border-line/80">
             {columns.map((column) => (
               <th
                 key={column.key}
+                scope="col"
                 className={clsx("px-4 py-3 font-semibold", {
                   "text-left": !column.align || column.align === "left",
                   "text-right": column.align === "right",
@@ -42,7 +43,7 @@ export function DataTable<T>({ columns, rows, emptyText = "No rows available." }
             </tr>
           ) : (
             rows.map((row, index) => (
-              <tr key={index} className="border-t border-line/70 text-slate-200">
+              <tr key={index} className="border-t border-line/60 text-slate-200 transition hover:bg-white/[0.025]">
                 {columns.map((column) => (
                   <td
                     key={column.key}

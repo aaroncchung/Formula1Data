@@ -20,15 +20,18 @@ def calculate_strategy(
     undercut_overcut = []
     for driver, stops in by_driver.items():
         first_stop = min(stops, key=lambda stop: stop.get("lap_number", 999))
-        before = _lap_time(laps, driver, int(first_stop["lap_number"]) - 1)
-        after = _lap_time(laps, driver, int(first_stop["lap_number"]) + 1)
+        before = _nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), -1)
+        after = _nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), 1)
         gain = before - after if before is not None and after is not None else None
         undercut_overcut.append(
             {
                 "driver_code": driver,
                 "stop_lap": first_stop["lap_number"],
                 "first_clean_lap_gain_ms": gain,
-                "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO.",
+                "caveat": (
+                    "Compares the nearest clean laps before and after the stop; it is not "
+                    "adjusted for traffic, tyre warm-up, fuel, or track evolution."
+                ),
             }
         )
 
@@ -41,14 +44,31 @@ def calculate_strategy(
         "undercut_overcut": undercut_overcut,
         "race_control_overlays": race_control,
         "caveats": [
-            "Pit loss and undercut/overcut values are simple estimates until full race pace context is available."
+            "Pit duration is pit-lane transit time when FastF1 provides adjacent pit-in/out timestamps.",
+            "Undercut/overcut values are descriptive surrounding-lap changes, not causal opponent models.",
         ],
     }
 
 
-def _lap_time(laps: list[dict[str, Any]], driver: str, lap_number: int) -> int | None:
-    for lap in laps:
-        if lap.get("driver_code") == driver and lap.get("lap_number") == lap_number:
-            return lap.get("lap_time_ms")
+def _nearest_clean_lap_time(
+    laps: list[dict[str, Any]], driver: str, stop_lap: int, direction: int
+) -> int | None:
+    candidates = [
+        lap
+        for lap in laps
+        if lap.get("driver_code") == driver
+        and lap.get("lap_time_ms") is not None
+        and not lap.get("is_pit_in_lap")
+        and not lap.get("is_pit_out_lap")
+        and not lap.get("is_deleted")
+        and (
+            int(lap.get("lap_number") or 0) < stop_lap
+            if direction < 0
+            else int(lap.get("lap_number") or 0) > stop_lap
+        )
+    ]
+    if candidates:
+        closest = min(candidates, key=lambda lap: abs(int(lap["lap_number"]) - stop_lap))
+        return closest.get("lap_time_ms")
     return None
 

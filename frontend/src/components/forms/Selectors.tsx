@@ -16,10 +16,12 @@ function Select<T>({ label, value, items, getValue, getLabel, onChange }: Select
     <label className="block text-sm text-slate-400">
       {label}
       <select
-        className="mt-1 w-full rounded border border-line bg-carbon px-3 py-2 text-white"
+        className="control mt-1 h-10 w-full"
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        disabled={!items.length}
       >
+        {!items.length ? <option value="">No options available</option> : null}
         {items.map((item) => (
           <option key={getValue(item)} value={getValue(item)}>
             {getLabel(item)}

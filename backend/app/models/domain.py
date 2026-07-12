@@ -152,6 +152,7 @@ class TelemetrySample(BaseModel):
     x: float | None = None
     y: float | None = None
     relative_time_ms: int | None = None
+    session_time_ms: int | None = None
 
 
 class ChartSeries(BaseModel):
@@ -189,6 +190,9 @@ class TelemetryComparison(BaseModel):
     drs_a: list[int | None]
     drs_b: list[int | None]
     delta_speed_kph: list[float | None]
+    delta_time_ms: list[float | None] = Field(default_factory=list)
+    track_x: list[float | None] = Field(default_factory=list)
+    track_y: list[float | None] = Field(default_factory=list)
     caveats: list[str] = Field(default_factory=list)
 
 
@@ -216,15 +220,20 @@ class TyreDegradationRow(BaseModel):
     compound: str
     stint: int
     degradation_ms_per_lap: float | None
+    raw_slope_ms_per_lap: float | None = None
+    fuel_correction_ms_per_lap: float | None = None
     r_squared: float | None
     sample_count: int
     stint_length: int
+    excluded_outlier_count: int = 0
     caveats: list[str] = Field(default_factory=list)
 
 
 class TyreDegradationResult(BaseModel):
     session_id: str
     rows: list[TyreDegradationRow]
+    model: dict[str, Any] = Field(default_factory=dict)
+    caveats: list[str] = Field(default_factory=list)
 
 
 class QualifyingDeltaResult(BaseModel):

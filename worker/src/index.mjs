@@ -1,50 +1,108 @@
 import { createArtifactStore } from "./artifact-store.mjs";
 import { createRepository } from "./repository.mjs";
 import { enqueueIngestionJob, resolveSessionStatus } from "./session-status.mjs";
-import { artifactBasePath, sanitizeArtifactPath } from "./session-utils.mjs";
+import {
+  artifactBasePath,
+  normalizeSessionCode,
+  sanitizeArtifactPath,
+  sessionIdFromParts
+} from "./session-utils.mjs";
 
 const LIVE_TTL_SECONDS = 3;
+const MAX_JSON_BODY_BYTES = 256 * 1024;
+const MAX_UPSTREAM_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_ARTIFACT_RECORDS = 250;
+const MAX_QUEUE_ATTEMPTS = 3;
 const DISABLED_LIVE_RESPONSE = {
   enabled: false,
   reason: "Live mode is disabled for this deployment.",
   setup: [
     "Set ENABLE_LIVE_MODE=true on the Cloudflare Worker.",
-    "Set OPENF1_BASE_URL and OPENF1_API_KEY as Worker variables or secrets if needed.",
+    "Set OPENF1_BASE_URL as a Worker variable and OPENF1_API_KEY as a secret if needed.",
     "Keep browser traffic pointed at this Worker instead of OpenF1 directly."
   ]
 };
 
+class HttpError extends Error {
+  constructor(status, code, message, details = undefined) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+class PermanentQueueError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "PermanentQueueError";
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
+    const requestId = globalThis.crypto?.randomUUID?.() || "unavailable";
     try {
       if (request.method === "OPTIONS") {
-        return withCors(new Response(null, { status: 204 }), env);
+        return withCors(preflightResponse(request, env), env, request, requestId);
       }
       const response = await route(request, env, ctx);
-      return withCors(response, env);
+      return withCors(response, env, request, requestId);
     } catch (error) {
-      return withCors(
-        json(
-          {
-            code: "worker_error",
-            message: error instanceof Error ? error.message : "Unexpected Worker error"
-          },
-          500
-        ),
-        env
+      const httpError = error instanceof HttpError ? error : null;
+      console.error(
+        JSON.stringify({
+          message: "worker request failed",
+          request_id: requestId,
+          method: request.method,
+          path: safePathname(request.url),
+          error: error instanceof Error ? error.message : String(error),
+          error_name: error instanceof Error ? error.name : typeof error
+        })
       );
+      const payload = {
+        code: httpError?.code || "worker_error",
+        message: httpError?.message || "Unexpected Worker error"
+      };
+      if (httpError?.details !== undefined) {
+        payload.details = httpError.details;
+      }
+      return withCors(json(payload, httpError?.status || 500), env, request, requestId);
     }
   },
 
-  async queue(batch, env, ctx) {
+  async queue(batch, env) {
     const repository = createRepository(env);
     for (const message of batch.messages) {
       try {
         await dispatchQueueMessage(message.body, env, repository);
-        message.ack?.();
+        message.ack();
       } catch (error) {
-        console.error("Failed to dispatch ingestion queue message", error);
-        message.retry?.();
+        const permanent = error instanceof PermanentQueueError;
+        console.error(
+          JSON.stringify({
+            message: "ingestion queue dispatch failed",
+            queue_message_id: message.id,
+            attempts: message.attempts,
+            permanent,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+        if (permanent) {
+          message.ack();
+        } else if (Number(message.attempts) >= MAX_QUEUE_ATTEMPTS) {
+          await failQueueJob(
+            message.body,
+            repository,
+            `Queue dispatch failed after ${MAX_QUEUE_ATTEMPTS} attempts: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+          message.ack();
+        } else {
+          message.retry({ delaySeconds: queueRetryDelay(message.attempts) });
+        }
       }
     }
   }
@@ -53,11 +111,11 @@ export default {
 async function route(request, env, ctx) {
   const url = new URL(request.url);
 
-  if (url.pathname === "/health") {
+  if (request.method === "GET" && url.pathname === "/health") {
     return json({ status: "ok", service: "formula-1-data-worker" });
   }
 
-  if (request.method === "GET" && url.pathname.startsWith("/data/")) {
+  if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/data/")) {
     return getArtifact(request, env);
   }
 
@@ -71,12 +129,12 @@ async function route(request, env, ctx) {
 
   const jobStatusMatch = url.pathname.match(/^\/api\/ingestion\/jobs\/([^/]+)\/status$/);
   if (request.method === "POST" && jobStatusMatch) {
-    return updateIngestionJob(request, env, decodeURIComponent(jobStatusMatch[1]));
+    return updateIngestionJob(request, env, decodePathSegment(jobStatusMatch[1], "job id"));
   }
 
   const jobMatch = url.pathname.match(/^\/api\/ingestion\/jobs\/([^/]+)$/);
   if (request.method === "GET" && jobMatch) {
-    return getIngestionJob(env, decodeURIComponent(jobMatch[1]));
+    return getIngestionJob(env, decodePathSegment(jobMatch[1], "job id"));
   }
 
   if (request.method === "GET" && url.pathname.startsWith("/api/live/")) {
@@ -88,8 +146,13 @@ async function route(request, env, ctx) {
 
 async function getArtifact(request, env) {
   const url = new URL(request.url);
-  const artifactPath = sanitizeArtifactPath(url.pathname);
-  const artifact = await createArtifactStore(env).get(artifactPath);
+  let artifactPath;
+  try {
+    artifactPath = sanitizeArtifactPath(url.pathname);
+  } catch (error) {
+    throw new HttpError(400, "invalid_artifact_path", error instanceof Error ? error.message : "Invalid path");
+  }
+  const artifact = await createArtifactStore(env).get(artifactPath, request);
   if (!artifact) {
     return json(
       {
@@ -104,9 +167,11 @@ async function getArtifact(request, env) {
 }
 
 async function getSessionStatus(url, env) {
-  const year = requiredSearchParam(url, "year");
-  const round = requiredSearchParam(url, "round");
-  const session = requiredSearchParam(url, "session");
+  const { year, round, session } = validateSessionLookup(
+    requiredSearchParam(url, "year"),
+    requiredSearchParam(url, "round"),
+    requiredSearchParam(url, "session")
+  );
   const status = await resolveSessionStatus({
     repository: createRepository(env),
     artifacts: createArtifactStore(env),
@@ -118,10 +183,14 @@ async function getSessionStatus(url, env) {
 }
 
 async function postIngestionSession(request, env) {
+  if (!(await isAuthorizedIngestionRequest(request, env))) {
+    return json({ code: "unauthorized", message: "Ingestion request is not authorized" }, 401);
+  }
   const payload = await readJsonBody(request);
-  const year = payload.year ?? new URL(request.url).searchParams.get("year");
-  const round = payload.round ?? new URL(request.url).searchParams.get("round");
-  const session = payload.session ?? new URL(request.url).searchParams.get("session");
+  const searchParams = new URL(request.url).searchParams;
+  const year = payload.year ?? searchParams.get("year");
+  const round = payload.round ?? searchParams.get("round");
+  const session = payload.session ?? searchParams.get("session");
   if (!year || !round || !session) {
     return json(
       {
@@ -131,18 +200,17 @@ async function postIngestionSession(request, env) {
       400
     );
   }
+  const lookup = validateSessionLookup(year, round, session);
 
   const result = await enqueueIngestionJob({
     repository: createRepository(env),
     artifacts: createArtifactStore(env),
     queue: createQueue(env),
-    year,
-    round,
-    session,
-    meetingId: payload.meeting_id || null,
-    meetingName: payload.meeting_name || null,
-    scheduledStart: payload.scheduled_start || null,
-    force: Boolean(payload.force)
+    ...lookup,
+    meetingId: optionalString(payload.meeting_id, "meeting_id", 200),
+    meetingName: optionalString(payload.meeting_name, "meeting_name", 300),
+    scheduledStart: optionalIsoDate(payload.scheduled_start, "scheduled_start"),
+    force: optionalBoolean(payload.force, "force")
   });
 
   const status = result.action === "ready" ? 200 : result.action === "reused" ? 200 : 202;
@@ -150,6 +218,7 @@ async function postIngestionSession(request, env) {
 }
 
 async function getIngestionJob(env, jobId) {
+  validateJobId(jobId);
   const job = await createRepository(env).getJob(jobId);
   if (!job) {
     return json({ code: "job_not_found", message: "Ingestion job was not found" }, 404);
@@ -158,7 +227,8 @@ async function getIngestionJob(env, jobId) {
 }
 
 async function updateIngestionJob(request, env, jobId) {
-  if (!isAuthorizedIngestionCallback(request, env)) {
+  validateJobId(jobId);
+  if (!(await isAuthorizedIngestionCallback(request, env))) {
     return json({ code: "unauthorized", message: "Ingestion callback is not authorized" }, 401);
   }
 
@@ -167,17 +237,33 @@ async function updateIngestionJob(request, env, jobId) {
   if (!["running", "succeeded", "failed"].includes(status)) {
     return json({ code: "bad_request", message: "status must be running, succeeded, or failed" }, 400);
   }
+  const errorMessage = optionalString(payload.error_message, "error_message", 2000);
+  const generatedAt = optionalIsoDate(payload.generated_at, "generated_at");
+  let artifacts = null;
+  if (payload.artifacts !== undefined) {
+    if (!Array.isArray(payload.artifacts)) {
+      throw new HttpError(400, "bad_request", "artifacts must be an array");
+    }
+    artifacts = validateArtifactRecords(payload.artifacts);
+  }
 
   const repository = createRepository(env);
   const existing = await repository.getJob(jobId);
   if (!existing) {
     return json({ code: "job_not_found", message: "Ingestion job was not found" }, 404);
   }
+  if (["succeeded", "failed"].includes(existing.status) && status !== existing.status) {
+    const terminalStatus = existing.status === "succeeded" ? "ready" : "failed";
+    return json({ job: existing, status: terminalStatus });
+  }
+  if (artifacts) {
+    validateArtifactOwnership(artifacts, existing.session_id);
+  }
 
   const now = new Date().toISOString();
   const job = await repository.updateJob(jobId, {
     status,
-    error_message: payload.error_message || null,
+    error_message: errorMessage,
     started_at: status === "running" ? existing.started_at || now : existing.started_at,
     finished_at: status === "succeeded" || status === "failed" ? now : existing.finished_at
   });
@@ -188,12 +274,12 @@ async function updateIngestionJob(request, env, jobId) {
     await repository.upsertSession({
       ...session,
       status: sessionStatus,
-      generated_at: payload.generated_at || (status === "succeeded" ? now : session.generated_at)
+      generated_at: generatedAt || (status === "succeeded" ? now : session.generated_at)
     });
   }
 
-  if (status === "succeeded" && Array.isArray(payload.artifacts)) {
-    await repository.recordArtifacts(existing.session_id, payload.artifacts);
+  if (status === "succeeded" && artifacts) {
+    await repository.recordArtifacts(existing.session_id, artifacts);
   }
 
   return json({ job, status: sessionStatus });
@@ -240,13 +326,21 @@ async function getLiveData(request, env, ctx, livePath) {
   });
   ctx.waitUntil(cache.put(cacheKey, response.clone()));
   ctx.waitUntil(
-    createRepository(env).storeLiveSnapshot(livePath, payload, new Date().toISOString()).catch(() => undefined)
+    createRepository(env).storeLiveSnapshot(livePath, payload, new Date().toISOString()).catch((error) => {
+      console.error(
+        JSON.stringify({
+          message: "failed to store live snapshot",
+          live_path: livePath,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      );
+    })
   );
   return response;
 }
 
 async function openF1Get(env, endpoint, params) {
-  const baseUrl = env.OPENF1_BASE_URL || "https://api.openf1.org/v1";
+  const baseUrl = validatedExternalUrl(env.OPENF1_BASE_URL || "https://api.openf1.org/v1", "OPENF1_BASE_URL");
   const url = new URL(`${baseUrl.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params || {})) {
     url.searchParams.set(key, value);
@@ -265,19 +359,26 @@ async function openF1Get(env, endpoint, params) {
   }
   return {
     endpoint,
-    data: await response.json(),
+    data: await readBoundedJsonResponse(response, MAX_UPSTREAM_JSON_BYTES, `OpenF1 ${endpoint}`),
     cached: false
   };
 }
 
 export async function dispatchQueueMessage(body, env, repository) {
-  const jobId = body?.job_id;
-  if (!jobId) {
-    throw new Error("Queue message is missing job_id");
-  }
+  validateQueueMessage(body);
+  const jobId = body.job_id;
 
   const now = new Date().toISOString();
   const current = await repository.getJob(jobId);
+  if (!current) {
+    throw new PermanentQueueError(`Queue message references unknown job ${jobId}`);
+  }
+  if (current.session_id !== body.session_id || current.kind !== body.kind) {
+    throw new PermanentQueueError("Queue message does not match the stored ingestion job");
+  }
+  if (["succeeded", "failed"].includes(current.status)) {
+    return;
+  }
   await repository.updateJob(jobId, {
     status: "running",
     attempts: Number(current?.attempts || 0) + 1,
@@ -295,22 +396,35 @@ export async function dispatchQueueMessage(body, env, repository) {
     return;
   }
 
+  let webhookUrl;
+  try {
+    webhookUrl = validatedExternalUrl(env.INGESTION_WEBHOOK_URL, "INGESTION_WEBHOOK_URL");
+  } catch (error) {
+    await failQueueJob(body, repository, error instanceof Error ? error.message : "Invalid ingestion webhook URL");
+    return;
+  }
+
   const headers = new Headers({ "content-type": "application/json" });
   if (env.INGESTION_WEBHOOK_TOKEN) {
     headers.set("authorization", `Bearer ${env.INGESTION_WEBHOOK_TOKEN}`);
   }
 
-  const response = await fetch(env.INGESTION_WEBHOOK_URL, {
+  const response = await fetch(webhookUrl, {
     method: "POST",
     headers,
     body: JSON.stringify(body)
   });
   if (!response.ok) {
+    const errorMessage = `Ingestion webhook returned ${response.status}`;
+    if (!isRetryableUpstreamStatus(response.status)) {
+      await failQueueJob(body, repository, errorMessage);
+      return;
+    }
     await repository.updateJob(jobId, {
       status: "queued",
-      error_message: `Ingestion webhook returned ${response.status}`
+      error_message: errorMessage
     });
-    throw new Error(`Ingestion webhook returned ${response.status}`);
+    throw new Error(errorMessage);
   }
 }
 
@@ -342,6 +456,10 @@ async function dispatchGitHubWorkflow(body, env, repository) {
 
   if (!response.ok) {
     const errorMessage = `GitHub repository_dispatch returned ${response.status}`;
+    if (!isRetryableUpstreamStatus(response.status)) {
+      await failQueueJob(body, repository, errorMessage);
+      return;
+    }
     await repository.updateJob(body.job_id, {
       status: "queued",
       error_message: errorMessage
@@ -351,11 +469,15 @@ async function dispatchGitHubWorkflow(body, env, repository) {
 }
 
 async function failQueueDispatchWithoutRunner(body, repository) {
+  const errorMessage =
+    "No GitHub dispatch configuration or INGESTION_WEBHOOK_URL is configured, so the Worker cannot dispatch this job to an external Python ingestion runner.";
+  await failQueueJob(body, repository, errorMessage);
+}
+
+async function failQueueJob(body, repository, errorMessage) {
   const jobId = body.job_id;
   const current = await repository.getJob(jobId);
   const now = new Date().toISOString();
-  const errorMessage =
-    "No GitHub dispatch configuration or INGESTION_WEBHOOK_URL is configured, so the Worker cannot dispatch this job to an external Python ingestion runner.";
   const job = await repository.updateJob(jobId, {
     status: "failed",
     attempts: Number(current?.attempts || 0),
@@ -386,40 +508,78 @@ async function failQueueDispatchWithoutRunner(body, repository) {
 }
 
 function createQueue(env) {
-  return {
-    async send(message) {
-      if (env.INGESTION_QUEUE?.send) {
-        await env.INGESTION_QUEUE.send(message);
-        return;
-      }
-      console.log("Mock ingestion queue message", JSON.stringify(message));
-    }
-  };
+  if (!env.INGESTION_QUEUE?.send) {
+    throw new Error("Required INGESTION_QUEUE binding is unavailable");
+  }
+  return env.INGESTION_QUEUE;
 }
 
 function requiredSearchParam(url, name) {
   const value = url.searchParams.get(name);
   if (!value) {
-    throw new Error(`${name} is required`);
+    throw new HttpError(400, "bad_request", `${name} is required`);
   }
   return value;
 }
 
 async function readJsonBody(request) {
-  if (!request.headers.get("content-type")?.includes("application/json")) {
+  if (!request.body) {
     return {};
   }
-  return request.json();
+  const contentType = request.headers.get("content-type") || "";
+  if (!/(^|\s|;)application\/(?:[a-z0-9.+-]*\+)?json(?:\s*;|$)/i.test(contentType)) {
+    throw new HttpError(415, "unsupported_media_type", "Request body must use application/json");
+  }
+  return readBoundedJsonStream(
+    request.body,
+    request.headers.get("content-length"),
+    MAX_JSON_BODY_BYTES,
+    "Request body",
+    true
+  );
 }
 
-function isAuthorizedIngestionCallback(request, env) {
+export async function isAuthorizedIngestionCallback(request, env) {
   if (env.ALLOW_UNAUTHENTICATED_INGESTION_CALLBACKS === "true") {
     return true;
   }
   if (!env.INGESTION_API_TOKEN) {
     return false;
   }
-  return request.headers.get("authorization") === `Bearer ${env.INGESTION_API_TOKEN}`;
+  const provided = bearerToken(request);
+  return provided ? timingSafeSecretEqual(provided, String(env.INGESTION_API_TOKEN)) : false;
+}
+
+export async function isAuthorizedIngestionRequest(request, env) {
+  if (env.REQUIRE_INGESTION_REQUEST_AUTH !== "true") {
+    return true;
+  }
+  if (!env.INGESTION_API_TOKEN) {
+    return false;
+  }
+  const provided = bearerToken(request);
+  return provided ? timingSafeSecretEqual(provided, String(env.INGESTION_API_TOKEN)) : false;
+}
+
+export async function timingSafeSecretEqual(provided, expected) {
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    globalThis.crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+    globalThis.crypto.subtle.digest("SHA-256", encoder.encode(expected))
+  ]);
+  if (typeof globalThis.crypto.subtle.timingSafeEqual === "function") {
+    return globalThis.crypto.subtle.timingSafeEqual(providedHash, expectedHash);
+  }
+
+  // Node's Web Crypto does not yet expose timingSafeEqual. Keep unit tests and
+  // local development constant-time without requiring nodejs_compat in Workers.
+  const left = new Uint8Array(providedHash);
+  const right = new Uint8Array(expectedHash);
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left[index] ^ right[index];
+  }
+  return difference === 0;
 }
 
 function json(payload, status = 200, headers = {}) {
@@ -432,14 +592,286 @@ function json(payload, status = 200, headers = {}) {
   });
 }
 
-function withCors(response, env) {
+function withCors(response, env, request, requestId) {
   const headers = new Headers(response.headers);
-  headers.set("access-control-allow-origin", env.CORS_ALLOW_ORIGIN || "*");
-  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  const allowedOrigin = corsOrigin(request, env);
+  if (allowedOrigin) {
+    headers.set("access-control-allow-origin", allowedOrigin);
+  } else {
+    headers.delete("access-control-allow-origin");
+  }
+  headers.set("access-control-allow-methods", "GET,HEAD,POST,OPTIONS");
   headers.set("access-control-allow-headers", "content-type,authorization");
+  headers.set("access-control-expose-headers", "etag,last-modified,content-length,content-range,x-request-id");
+  headers.set("access-control-max-age", "86400");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("referrer-policy", "no-referrer");
+  headers.set("x-request-id", requestId);
+  if (allowedOrigin && allowedOrigin !== "*") {
+    appendVary(headers, "Origin");
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers
   });
+}
+
+function preflightResponse(request, env) {
+  const requestedMethod = request.headers.get("access-control-request-method");
+  if (requestedMethod && !["GET", "POST", "HEAD"].includes(requestedMethod.toUpperCase())) {
+    return json({ code: "method_not_allowed", message: "CORS method is not allowed" }, 405);
+  }
+  if (request.headers.get("origin") && !corsOrigin(request, env)) {
+    return json({ code: "cors_origin_denied", message: "CORS origin is not allowed" }, 403);
+  }
+  return new Response(null, { status: 204 });
+}
+
+function corsOrigin(request, env) {
+  const configured = String(env.CORS_ALLOW_ORIGIN || "*")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (configured.includes("*")) {
+    return "*";
+  }
+  const origin = request.headers.get("origin");
+  return origin && configured.includes(origin) ? origin : null;
+}
+
+function appendVary(headers, value) {
+  const values = new Set(
+    String(headers.get("vary") || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  values.add(value);
+  headers.set("vary", Array.from(values).join(", "));
+}
+
+function bearerToken(request) {
+  const match = String(request.headers.get("authorization") || "").match(/^Bearer ([^\s]+)$/i);
+  return match?.[1] || null;
+}
+
+function validateSessionLookup(year, round, session) {
+  try {
+    const normalizedSession = normalizeSessionCode(session);
+    sessionIdFromParts(year, round, normalizedSession);
+    return {
+      year: Number(year),
+      round: Number(round),
+      session: normalizedSession
+    };
+  } catch (error) {
+    throw new HttpError(400, "bad_request", error instanceof Error ? error.message : "Invalid session lookup");
+  }
+}
+
+function validateJobId(jobId) {
+  if (!jobId || jobId.length > 300 || !/^[A-Za-z0-9:_-]+$/.test(jobId)) {
+    throw new HttpError(400, "bad_request", "job id is invalid");
+  }
+}
+
+function decodePathSegment(value, label) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new HttpError(400, "bad_request", `${label} contains invalid encoding`);
+  }
+}
+
+function optionalString(value, name, maximumLength) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw new HttpError(400, "bad_request", `${name} must be a string`);
+  }
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maximumLength) {
+    throw new HttpError(400, "bad_request", `${name} must contain 1 to ${maximumLength} characters`);
+  }
+  return normalized;
+}
+
+function optionalBoolean(value, name) {
+  if (value === undefined || value === null || value === "") {
+    return false;
+  }
+  if (value === true || value === "true") {
+    return true;
+  }
+  if (value === false || value === "false") {
+    return false;
+  }
+  throw new HttpError(400, "bad_request", `${name} must be a boolean`);
+}
+
+function optionalIsoDate(value, name) {
+  const normalized = optionalString(value, name, 64);
+  if (normalized === null) {
+    return null;
+  }
+  if (!Number.isFinite(Date.parse(normalized))) {
+    throw new HttpError(400, "bad_request", `${name} must be an ISO-8601 date-time`);
+  }
+  return normalized;
+}
+
+function validateArtifactRecords(artifacts) {
+  if (artifacts.length > MAX_ARTIFACT_RECORDS) {
+    throw new HttpError(400, "bad_request", `artifacts cannot contain more than ${MAX_ARTIFACT_RECORDS} records`);
+  }
+  return artifacts.map((artifact, index) => {
+    if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
+      throw new HttpError(400, "bad_request", `artifacts[${index}] must be an object`);
+    }
+    const kind = optionalString(artifact.kind, `artifacts[${index}].kind`, 64);
+    const rawPath = optionalString(artifact.path, `artifacts[${index}].path`, 1024);
+    if (!kind || !rawPath || !/^[A-Za-z0-9._-]+$/.test(kind)) {
+      throw new HttpError(400, "bad_request", `artifacts[${index}] has an invalid kind or path`);
+    }
+    let path;
+    try {
+      path = sanitizeArtifactPath(rawPath);
+    } catch (error) {
+      throw new HttpError(
+        400,
+        "bad_request",
+        `artifacts[${index}].path is invalid: ${error instanceof Error ? error.message : "invalid path"}`
+      );
+    }
+    const sizeBytes = artifact.size_bytes ?? null;
+    if (sizeBytes !== null && (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0)) {
+      throw new HttpError(400, "bad_request", `artifacts[${index}].size_bytes must be a non-negative integer`);
+    }
+    return {
+      kind,
+      path,
+      size_bytes: sizeBytes,
+      checksum: optionalString(artifact.checksum, `artifacts[${index}].checksum`, 256),
+      generated_at: optionalIsoDate(artifact.generated_at, `artifacts[${index}].generated_at`)
+    };
+  });
+}
+
+function validateArtifactOwnership(artifacts, sessionId) {
+  const expectedPrefix = `${artifactBasePath(sessionId)}/`;
+  for (const artifact of artifacts) {
+    if (!artifact.path.startsWith(expectedPrefix)) {
+      throw new HttpError(400, "bad_request", "artifact paths must belong to the ingestion job session");
+    }
+  }
+}
+
+function validateQueueMessage(body) {
+  try {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("Queue message must be an object");
+    }
+    if (body.version !== 1 || body.kind !== "ingest_session") {
+      throw new Error("Queue message has an unsupported version or kind");
+    }
+    validateJobId(body.job_id);
+    const lookup = validateSessionLookup(body.year, body.round, body.session);
+    const expectedSessionId = sessionIdFromParts(lookup.year, lookup.round, lookup.session);
+    if (body.session_id !== expectedSessionId) {
+      throw new Error("Queue message session_id does not match its session fields");
+    }
+    if (body.artifact_base_path !== artifactBasePath(expectedSessionId)) {
+      throw new Error("Queue message artifact_base_path does not match its session");
+    }
+  } catch (error) {
+    throw new PermanentQueueError(error instanceof Error ? error.message : "Invalid queue message");
+  }
+}
+
+async function readBoundedJsonResponse(response, maximumBytes, label) {
+  if (!response.body) {
+    throw new Error(`${label} returned an empty response`);
+  }
+  return readBoundedJsonStream(response.body, response.headers.get("content-length"), maximumBytes, label, false);
+}
+
+async function readBoundedJsonStream(stream, contentLength, maximumBytes, label, requireObject) {
+  const declaredLength = Number.parseInt(String(contentLength || ""), 10);
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+    throw new HttpError(413, "payload_too_large", `${label} exceeds the ${maximumBytes}-byte limit`);
+  }
+
+  const reader = stream.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel();
+        throw new HttpError(413, "payload_too_large", `${label} exceeds the ${maximumBytes}-byte limit`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new HttpError(400, "invalid_json", `${label} contains invalid JSON`);
+  }
+  if (requireObject && (!payload || typeof payload !== "object" || Array.isArray(payload))) {
+    throw new HttpError(400, "invalid_json", `${label} must contain a JSON object`);
+  }
+  return payload;
+}
+
+function queueRetryDelay(attempts) {
+  const safeAttempts = Math.max(1, Math.min(Number(attempts) || 1, 6));
+  return Math.min(30 * 2 ** (safeAttempts - 1), 900);
+}
+
+function safePathname(url) {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return "<invalid-url>";
+  }
+}
+
+function validatedExternalUrl(value, name) {
+  let url;
+  try {
+    url = new URL(String(value));
+  } catch {
+    throw new Error(`${name} must be a valid URL`);
+  }
+  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocal)) {
+    throw new Error(`${name} must use HTTPS`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${name} cannot contain embedded credentials`);
+  }
+  return url.toString();
+}
+
+function isRetryableUpstreamStatus(status) {
+  return status === 408 || status === 429 || status >= 500;
 }

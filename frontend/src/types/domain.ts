@@ -177,6 +177,9 @@ export type TyreDegradationRow = {
   sample_count: number;
   stint_length: number;
   caveats: string[];
+  raw_slope_ms_per_lap?: number | null;
+  fuel_correction_ms_per_lap?: number | null;
+  excluded_outlier_count?: number | null;
 };
 
 export type TyreDegradationResult = {
@@ -202,6 +205,146 @@ export type TelemetryComparison = {
   drs_a: Array<number | null>;
   drs_b: Array<number | null>;
   delta_speed_kph: Array<number | null>;
+  delta_time_ms?: Array<number | null>;
+  track_x?: Array<number | null>;
+  track_y?: Array<number | null>;
+  caveats: string[];
+};
+
+export type IdealLapRow = {
+  driver_code: string;
+  best_sector_1_ms?: number | null;
+  best_sector_2_ms?: number | null;
+  best_sector_3_ms?: number | null;
+  ideal_lap_ms?: number | null;
+  best_lap_ms?: number | null;
+  delta_to_ideal_ms?: number | null;
+};
+
+export type IdealLapsResult = {
+  session_id: string;
+  rows: IdealLapRow[];
+};
+
+export type TeammateComparisonDriver = {
+  driver_code: string;
+  average_lap_ms?: number | null;
+  lap_count: number;
+};
+
+export type TeammateComparisonRow = {
+  team: string;
+  drivers: TeammateComparisonDriver[];
+  gap_ms?: number | null;
+};
+
+export type TeammateComparisonResult = {
+  session_id: string;
+  rows: TeammateComparisonRow[];
+  caveats: string[];
+};
+
+export type StrategyEstimate = {
+  driver_code: string;
+  stop_lap: number;
+  first_clean_lap_gain_ms?: number | null;
+  caveat?: string | null;
+};
+
+export type StrategyResult = {
+  session_id: string;
+  stints: Stint[];
+  compound_usage: Record<string, number>;
+  pit_stops: PitStop[];
+  pit_loss_estimate_ms?: number | null;
+  undercut_overcut: StrategyEstimate[];
+  race_control_overlays: RaceControlMessage[];
+  caveats: string[];
+};
+
+export type TrackDominanceMinisector = {
+  index: number;
+  start_distance_m: number;
+  end_distance_m: number;
+  midpoint: { x: number | null; y: number | null };
+  winner_driver_code: string | null;
+  segment_time_ms?: number | null;
+  gap_to_next_ms?: number | null;
+  driver_times_ms: Record<string, number | null>;
+};
+
+export type TrackDominanceResult = {
+  session_id: string;
+  representative_laps: Array<{ driver_code: string; lap_number: number; lap_time_ms?: number | null }>;
+  minisector_count: number;
+  minisectors: TrackDominanceMinisector[];
+  caveats: string[];
+};
+
+export type CornerDriverAnalysis = {
+  driver_code: string;
+  brake_start_m?: number | null;
+  braking_distance_m?: number | null;
+  entry_speed_kph?: number | null;
+  apex_speed_kph?: number | null;
+  exit_speed_kph?: number | null;
+  speed_loss_kph?: number | null;
+  brake_duration_ms?: number | null;
+};
+
+export type CornerAnalysisResult = {
+  session_id: string;
+  representative_laps: Array<{ driver_code: string; lap_number: number; lap_time_ms?: number | null }>;
+  corners: Array<{
+    corner_number: number;
+    distance_m: number;
+    x: number | null;
+    y: number | null;
+    drivers: CornerDriverAnalysis[];
+  }>;
+  caveats: string[];
+};
+
+export type CarPerformanceRow = {
+  driver_code?: string;
+  team: string;
+  lap_number?: number | null;
+  max_speed_kph?: number | null;
+  p95_speed_kph?: number | null;
+  low_speed_avg_kph?: number | null;
+  medium_speed_avg_kph?: number | null;
+  high_speed_avg_kph?: number | null;
+  full_throttle_pct?: number | null;
+  braking_pct?: number | null;
+  drivers?: string[];
+};
+
+export type CarPerformanceResult = {
+  session_id: string;
+  drivers: CarPerformanceRow[];
+  teams: CarPerformanceRow[];
+  caveats: string[];
+};
+
+export type PacePredictionRow = {
+  driver_code?: string;
+  team: string;
+  estimated_race_pace_ms?: number | null;
+  gap_to_best_ms?: number | null;
+  sample_count?: number;
+  stint_count?: number;
+  variability_ms?: number | null;
+  confidence?: string | number | null;
+  compounds?: string[];
+  drivers?: string[];
+};
+
+export type PacePredictionResult = {
+  session_id: string;
+  available: boolean;
+  session_type: string;
+  drivers: PacePredictionRow[];
+  teams: PacePredictionRow[];
   caveats: string[];
 };
 
@@ -219,6 +362,7 @@ export type TelemetrySample = {
   x?: number | null;
   y?: number | null;
   relative_time_ms?: number | null;
+  session_time_ms?: number | null;
 };
 
 export type QualifyingDeltaResult = {

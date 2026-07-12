@@ -31,7 +31,14 @@ export default async function SessionPage({
     raceControl,
     results,
     telemetryIndex,
-    positionReplay
+    positionReplay,
+    idealLaps,
+    teammateComparison,
+    strategy,
+    trackDominance,
+    cornerAnalysis,
+    carPerformance,
+    pacePrediction
   ] = await Promise.all([
     safeApi(() => api.summary(sessionId)),
     safeApi(() => api.drivers(sessionId)),
@@ -45,7 +52,14 @@ export default async function SessionPage({
     safeApi(() => api.raceControl(sessionId)),
     safeApi(() => api.results(sessionId)),
     safeApi(() => api.telemetryIndex(sessionId)),
-    safeApi(() => api.positionReplay(sessionId))
+    safeApi(() => api.positionReplay(sessionId)),
+    safeApi(() => api.idealLaps(sessionId)),
+    safeApi(() => api.teammateComparison(sessionId)),
+    safeApi(() => api.strategy(sessionId)),
+    safeApi(() => api.trackDominance(sessionId)),
+    safeApi(() => api.cornerAnalysis(sessionId)),
+    safeApi(() => api.carPerformance(sessionId)),
+    safeApi(() => api.pacePrediction(sessionId))
   ]);
 
   const all = [
@@ -131,7 +145,15 @@ export default async function SessionPage({
         raceControl={raceControl.data}
         results={results.data}
         telemetryComparison={telemetryComparison.data}
+        telemetryIndex={telemetryIndex.data}
         positionReplay={positionReplay.data}
+        idealLaps={idealLaps.ok ? idealLaps.data : null}
+        teammateComparison={teammateComparison.ok ? teammateComparison.data : null}
+        strategy={strategy.ok ? strategy.data : null}
+        trackDominance={trackDominance.ok ? trackDominance.data : null}
+        cornerAnalysis={cornerAnalysis.ok ? cornerAnalysis.data : null}
+        carPerformance={carPerformance.ok ? carPerformance.data : null}
+        pacePrediction={pacePrediction.ok ? pacePrediction.data : null}
       />
     </div>
   );

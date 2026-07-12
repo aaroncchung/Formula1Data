@@ -2,6 +2,12 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from app.analysis.advanced import (
+    calculate_car_performance,
+    calculate_corner_analysis,
+    calculate_pace_prediction,
+    calculate_track_dominance,
+)
 from app.analysis.ideal_laps import calculate_ideal_laps
 from app.analysis.qualifying_delta import calculate_qualifying_delta
 from app.analysis.race_pace import calculate_race_pace
@@ -55,7 +61,7 @@ async def stints(session_id: str = Query(...)) -> dict[str, Any]:
 @router.get("/analysis/tyre-degradation", response_model=TyreDegradationResult)
 async def tyre_degradation(session_id: str = Query(...)) -> TyreDegradationResult:
     bundle = DatasetService().get_session_bundle(session_id)
-    return calculate_tyre_degradation(session_id, bundle["laps"])
+    return calculate_tyre_degradation(session_id, bundle["laps"], bundle.get("summary"))
 
 
 @router.get("/analysis/qualifying-delta", response_model=QualifyingDeltaResult)
@@ -96,5 +102,43 @@ async def strategy(session_id: str = Query(...)) -> dict[str, Any]:
         bundle.get("pit_stops", []),
         bundle.get("laps", []),
         bundle.get("race_control", []),
+    )
+
+
+@router.get("/analysis/track-dominance")
+async def track_dominance(session_id: str = Query(...)) -> dict[str, Any]:
+    bundle = DatasetService().get_session_bundle(session_id)
+    return calculate_track_dominance(
+        session_id, bundle.get("laps", []), bundle.get("telemetry", [])
+    )
+
+
+@router.get("/analysis/corner-analysis")
+async def corner_analysis(session_id: str = Query(...)) -> dict[str, Any]:
+    bundle = DatasetService().get_session_bundle(session_id)
+    return calculate_corner_analysis(
+        session_id, bundle.get("laps", []), bundle.get("telemetry", [])
+    )
+
+
+@router.get("/analysis/car-performance")
+async def car_performance(session_id: str = Query(...)) -> dict[str, Any]:
+    bundle = DatasetService().get_session_bundle(session_id)
+    return calculate_car_performance(
+        session_id,
+        bundle.get("laps", []),
+        bundle.get("telemetry", []),
+        bundle.get("drivers", []),
+    )
+
+
+@router.get("/analysis/pace-prediction")
+async def pace_prediction(session_id: str = Query(...)) -> dict[str, Any]:
+    bundle = DatasetService().get_session_bundle(session_id)
+    return calculate_pace_prediction(
+        session_id,
+        bundle.get("summary", {}),
+        bundle.get("laps", []),
+        bundle.get("drivers", []),
     )
 

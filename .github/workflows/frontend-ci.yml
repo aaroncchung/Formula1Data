@@ -45,4 +45,5 @@ jobs:
         with:
           name: frontend-out
           path: frontend/out
+          retention-days: 1
 

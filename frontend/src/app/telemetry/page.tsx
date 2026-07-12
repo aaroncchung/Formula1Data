@@ -59,6 +59,7 @@ export default async function TelemetryPage() {
         initialLapA={firstLap?.lap_number}
         initialLapB={secondLap?.lap_number}
         initialComparison={comparison && !isEmptyState(comparison.data) ? comparison.data : null}
+        availableLaps={telemetryIndex.data.laps}
       />
     </div>
   );
