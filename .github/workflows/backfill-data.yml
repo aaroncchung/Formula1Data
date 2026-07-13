@@ -63,6 +63,7 @@ jobs:
 
       - name: Queue backfill sessions
         run: |
+          echo "Cloudflare Access credential lengths: id=${#CF_ACCESS_CLIENT_ID}, secret=${#CF_ACCESS_CLIENT_SECRET}"
           DRY_RUN_FLAG=""
           if [ "$BACKFILL_DRY_RUN" = "true" ]; then
             DRY_RUN_FLAG="--dry-run"
