@@ -118,15 +118,20 @@ def select_candidates(
 
 
 def request_headers() -> dict[str, str]:
-    headers = {"accept": "application/json", "content-type": "application/json"}
-    token = os.getenv("INGESTION_API_TOKEN")
-    if token:
-        headers["authorization"] = f"Bearer {token}"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "user-agent": "Formula1DataIngestion/1.0",
+    }
     access_id = os.getenv("CF_ACCESS_CLIENT_ID")
     access_secret = os.getenv("CF_ACCESS_CLIENT_SECRET")
     if access_id and access_secret:
         headers["CF-Access-Client-Id"] = access_id
         headers["CF-Access-Client-Secret"] = access_secret
+    else:
+        token = os.getenv("INGESTION_API_TOKEN")
+        if token:
+            headers["authorization"] = f"Bearer {token}"
     return headers
 
 
@@ -137,10 +142,23 @@ def get_status(
         {key: candidate[key] for key in ("year", "round", "session")}
     )
     request = urllib.request.Request(
-        f"{worker_url.rstrip('/')}/api/session-status?{query}", headers=headers, method="GET"
+        f"{worker_url.rstrip('/')}/api/session-status?{query}",
+        headers={
+            name: value
+            for name, value in headers.items()
+            if name.lower() not in {"cf-access-client-id", "cf-access-client-secret"}
+        },
+        method="GET",
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+        body = response.read()
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError as error:
+            detail = body.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"Ingestion API returned a non-JSON response from {response.url}: {detail[:500]}"
+            ) from error
 
 
 def post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
