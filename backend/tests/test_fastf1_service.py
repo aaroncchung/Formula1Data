@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import sys
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -25,7 +31,7 @@ class FastF1ServiceTests(unittest.TestCase):
         session = FakeSession(required_failures=1)
         service = fake_service(session)
 
-        result = service.load_session(2024, 9, "R")
+        result = service.load_session(2024, 9, "FP1")
 
         self.assertIs(result, session)
         self.assertEqual(session.required_loads, 2)
@@ -39,9 +45,9 @@ class FastF1ServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             FastF1LoadError,
-            "FastF1 could not load required lap data for 2024 event=9 session=R",
+            "FastF1 could not load required lap data for 2024 event=9 session=FP1",
         ):
-            service.load_session(2024, 9, "R")
+            service.load_session(2024, 9, "FP1")
 
         self.assertEqual(session.required_loads, 3)
         self.assertEqual(session.optional_loads, 0)
@@ -50,11 +56,44 @@ class FastF1ServiceTests(unittest.TestCase):
         session = FakeSession(optional_error=RuntimeError("optional unavailable"))
         service = fake_service(session)
 
-        result = service.load_session(2024, 9, "R")
+        result = service.load_session(2024, 9, "FP1")
 
         self.assertIs(result, session)
         self.assertEqual(session.required_loads, 1)
         self.assertEqual(session.optional_loads, 1)
+
+    def test_race_load_requires_fresh_authoritative_results(self):
+        session = FakeSession()
+        service = fake_service(session)
+
+        with self.assertRaisesRegex(
+            FastF1LoadError, "Authoritative final classification is unavailable"
+        ):
+            service.load_session(2024, 9, "R")
+
+    @unittest.skipIf(pd is None, "pandas is required for result refresh tests")
+    def test_authoritative_results_replace_cached_classification(self):
+        session = SimpleNamespace(
+            results=pd.DataFrame(
+                [
+                    {"DriverNumber": "12", "Abbreviation": "ANT", "Position": 1.0},
+                    {"DriverNumber": "1", "Abbreviation": "VER", "Position": 2.0},
+                    {"DriverNumber": "4", "Abbreviation": "NOR", "Position": 3.0},
+                ]
+            )
+        )
+        official = pd.DataFrame(
+            [
+                {"number": 12, "driverCode": "ANT", "position": 1, "positionText": "1"},
+                {"number": 4, "driverCode": "NOR", "position": 2, "positionText": "2"},
+                {"number": 1, "driverCode": "VER", "position": 3, "positionText": "3"},
+            ]
+        )
+
+        FastF1Service._merge_authoritative_results(session, official)
+
+        self.assertEqual(session._results["Abbreviation"].tolist(), ["ANT", "NOR", "VER"])
+        self.assertEqual(session._results["Position"].tolist(), [1, 2, 3])
 
 
 def fake_service(session: "FakeSession") -> FastF1Service:
@@ -71,6 +110,14 @@ def fake_service(session: "FakeSession") -> FastF1Service:
 
 
 class FakeFastF1:
+    Cache = SimpleNamespace(disabled=lambda: nullcontext())
+    ergast = SimpleNamespace(
+        Ergast=lambda **_kwargs: SimpleNamespace(
+            get_race_results=lambda **_query: SimpleNamespace(content=[]),
+            get_sprint_results=lambda **_query: SimpleNamespace(content=[]),
+        )
+    )
+
     def __init__(self, session: "FakeSession") -> None:
         self.session = session
 

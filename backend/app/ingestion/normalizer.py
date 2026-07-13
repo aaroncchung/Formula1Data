@@ -2,6 +2,12 @@ from datetime import date
 import math
 from typing import Any
 
+from app.ingestion.result_validation import (
+    InvalidSessionResultsError,
+    is_final_session,
+    validate_final_results,
+)
+
 try:
     import pandas as pd
 except ImportError:  # Allows metadata helpers to run without backend ingestion deps installed.
@@ -144,7 +150,7 @@ def normalize_fastf1_session(year: int, event_name: str, session_name: str, sess
     pit_stops = _pit_stops(_session_frame(session, "laps"), session_id)
     weather = _weather(session, session_id)
     race_control = _race_control(session, session_id)
-    results = _results(session, session_id)
+    results = _results(session, session_id, required=is_final_session(session_id, code))
     telemetry = _telemetry(session, session_id)
 
     dataset = {
@@ -419,25 +425,39 @@ def _race_control(session: Any, session_id: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _results(session: Any, session_id: str) -> list[dict[str, Any]]:
-    results = _session_frame(session, "results")
+def _results(session: Any, session_id: str, required: bool = False) -> list[dict[str, Any]]:
+    results = _session_frame(session, "results", required=required)
     if results is None or results.empty:
+        if required:
+            raise IncompleteFastF1SessionError(
+                f"FastF1 did not provide a final classification for {session_id}."
+            )
         return []
     rows = []
     for _, row in results.iterrows():
+        classified_position = _string_or_none(
+            row.get("ClassifiedPosition")
+            if not _is_missing(row.get("ClassifiedPosition"))
+            else row.get("Position")
+        )
         rows.append(
             {
                 "session_id": session_id,
-                "position": _safe_int(row.get("Position"), default=0),
+                "position": _safe_int(row.get("Position"), default=None if required else 0),
                 "driver_code": str(row.get("Abbreviation") or ""),
-                "classified_position": str(row.get("ClassifiedPosition") or row.get("Position") or ""),
-                "status": row.get("Status"),
+                "classified_position": classified_position,
+                "status": _string_or_none(row.get("Status")),
                 "points": _float_or_none(row.get("Points")),
                 "grid": _safe_int(row.get("GridPosition"), default=None),
-                "gap": str(row.get("Time") or ""),
+                "gap": _string_or_none(row.get("Time")),
                 "laps": _safe_int(row.get("Laps"), default=None),
             }
         )
+    if required:
+        try:
+            validate_final_results(session_id, rows)
+        except InvalidSessionResultsError as exc:
+            raise IncompleteFastF1SessionError(str(exc)) from exc
     return rows
 
 
@@ -608,6 +628,12 @@ def _bool_or_none(value: Any) -> bool | None:
         if normalized in {"false", "no", "off"}:
             return False
     return None
+
+
+def _string_or_none(value: Any) -> str | None:
+    if _is_missing(value):
+        return None
+    return str(value)
 
 
 def _iso_or_none(value: Any) -> str | None:

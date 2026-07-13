@@ -106,7 +106,11 @@ def process_message(
                         r2_prefix,
                         int(required(message, "year")),
                     )
-                summary = build_static_artifacts(data_dir=data_dir, output_dir=publication_dir)
+                summary = build_static_artifacts(
+                    data_dir=data_dir,
+                    output_dir=publication_dir,
+                    session_ids={session_id},
+                )
                 merge_incremental_indexes(
                     existing_indexes_dir, publication_dir, int(required(message, "year"))
                 )

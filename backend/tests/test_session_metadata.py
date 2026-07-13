@@ -96,15 +96,51 @@ class SessionMetadataTests(unittest.TestCase):
             weather_error=RuntimeError("weather unavailable"),
             race_control_error=RuntimeError("messages unavailable"),
         )
+        session.name = "Practice 1"
+        session.event = {**session.event, "Session1": "Practice 1"}
 
-        dataset = normalize_fastf1_session(2024, 8, "R", session)
-        session_data = dataset["session_data"]["2024-08-r"]
+        dataset = normalize_fastf1_session(2024, 8, "FP1", session)
+        session_data = dataset["session_data"]["2024-08-fp1"]
 
         self.assertEqual(len(session_data["laps"]), 1)
         self.assertEqual(session_data["drivers"], [])
         self.assertEqual(session_data["results"], [])
         self.assertEqual(session_data["weather"], [])
         self.assertEqual(session_data["race_control"], [])
+
+    @unittest.skipIf(pd is None, "pandas is required for FastF1 normalization tests")
+    def test_race_with_placeholder_results_is_rejected(self):
+        laps = pd.DataFrame([{"Driver": "ANT", "LapNumber": 1}])
+        results = pd.DataFrame(
+            [
+                {
+                    "Abbreviation": "ANT",
+                    "Position": float("nan"),
+                    "ClassifiedPosition": float("nan"),
+                    "Status": None,
+                    "Points": float("nan"),
+                    "GridPosition": float("nan"),
+                    "Time": pd.NaT,
+                    "Laps": float("nan"),
+                },
+                {
+                    "Abbreviation": "NOR",
+                    "Position": float("nan"),
+                    "ClassifiedPosition": float("nan"),
+                    "Status": None,
+                    "Points": float("nan"),
+                    "GridPosition": float("nan"),
+                    "Time": pd.NaT,
+                    "Laps": float("nan"),
+                },
+            ]
+        )
+        session = FakeFastF1Session(laps=laps, results=results)
+
+        with self.assertRaisesRegex(
+            IncompleteFastF1SessionError, "must contain unique positions"
+        ):
+            normalize_fastf1_session(2026, 4, "R", session)
 
 
 class FakeFastF1Session:
@@ -123,12 +159,14 @@ class FakeFastF1Session:
         laps=None,
         laps_error=None,
         results_error=None,
+        results=None,
         weather_error=None,
         race_control_error=None,
     ):
         self._laps = laps
         self._laps_error = laps_error
         self._results_error = results_error
+        self._results = results
         self._weather_error = weather_error
         self._race_control_error = race_control_error
 
@@ -142,7 +180,7 @@ class FakeFastF1Session:
     def results(self):
         if self._results_error:
             raise self._results_error
-        return pd.DataFrame()
+        return self._results if self._results is not None else pd.DataFrame()
 
     @property
     def weather_data(self):

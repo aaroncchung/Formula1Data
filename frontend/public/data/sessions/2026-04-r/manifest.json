@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "generated_at": "2026-07-13T01:00:31.022812+00:00",
   "session_id": "2026-04-r",
   "source": {
     "files": [
@@ -63,8 +63,8 @@
     {
       "kind": "results",
       "path": "sessions/2026-04-r/results.json",
-      "size_bytes": 4867,
-      "checksum": "sha256:d7ae8c995380cd1a49a68d0c4ec708154fd34a80c6d1180b002ba1f8ef5c398c"
+      "size_bytes": 5221,
+      "checksum": "sha256:77a957f9b82988120fc7ffa3295c2a72f479e68a063e4464c583a40887844e2f"
     },
     {
       "kind": "stints",

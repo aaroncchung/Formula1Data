@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline.analysis.precompute import precompute_position_replay, precompute_session_analysis
+from backend.app.ingestion.result_validation import is_final_session, validate_final_results
 
 
 SCHEMA_VERSION = 1
@@ -32,9 +33,12 @@ def build_static_artifacts(
     data_dir: Path = DEFAULT_DATA_DIR,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     sample_only: bool = False,
+    session_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     generated_at = datetime.now(timezone.utc).isoformat()
-    dataset, dataset_sources = load_merged_dataset(data_dir, sample_only=sample_only)
+    dataset, dataset_sources = load_merged_dataset(
+        data_dir, sample_only=sample_only, session_ids=session_ids
+    )
 
     reset_directory(output_dir)
     write_catalog(output_dir, dataset, dataset_sources, generated_at, sample_only)
@@ -66,7 +70,11 @@ def build_static_artifacts(
     }
 
 
-def load_merged_dataset(data_dir: Path, sample_only: bool = False) -> tuple[dict[str, Any], list[Path]]:
+def load_merged_dataset(
+    data_dir: Path,
+    sample_only: bool = False,
+    session_ids: set[str] | None = None,
+) -> tuple[dict[str, Any], list[Path]]:
     dataset = empty_dataset()
     sources: list[Path] = []
 
@@ -85,6 +93,8 @@ def load_merged_dataset(data_dir: Path, sample_only: bool = False) -> tuple[dict
         sessions_dir = data_dir / "processed" / "sessions"
         if sessions_dir.exists():
             for artifact in sorted(sessions_dir.glob("*/dataset.json")):
+                if session_ids is not None and artifact.parent.name not in session_ids:
+                    continue
                 dataset = merge_datasets(dataset, read_json(artifact))
                 sources.append(artifact)
 
@@ -168,6 +178,8 @@ def write_session_artifacts(
     generated_at: str,
     source_files: list[Path],
 ) -> dict[str, Any]:
+    if is_final_session(session_id, bundle.get("summary", {}).get("session")):
+        validate_final_results(session_id, bundle.get("results", []))
     session_dir = output_dir / "sessions" / session_id
     artifacts = []
 

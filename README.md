@@ -231,6 +231,10 @@ cd ..
 python -m pipeline ingest-session --year 2025 --event "Monaco Grand Prix" --session R
 ```
 
+Race and sprint ingestion refreshes the final classification from FastF1's Jolpica interface with
+the HTTP cache disabled. Publication fails if the classification is unavailable, has invalid or
+duplicate positions, or is missing status, points, grid, or lap counts.
+
 Sample generation does not require network access or backend dependencies.
 
 ## Adding A Race Or Session

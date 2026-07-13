@@ -59,6 +59,7 @@ class FastF1Service:
                 continue
 
             self._load_optional_session_data(session, label)
+            self._refresh_authoritative_results(session, year, event, session_name, label)
             return session
 
         cache_dir = Path(self.settings.fastf1_cache_dir)
@@ -107,6 +108,92 @@ class FastF1Service:
             ) from exc
         if laps is None or bool(getattr(laps, "empty", False)):
             raise FastF1LoadError(f"FastF1 returned empty lap data for {label}.")
+
+    def _refresh_authoritative_results(
+        self,
+        session: Any,
+        year: int,
+        event: str | int,
+        session_name: str,
+        label: str,
+    ) -> None:
+        normalized_name = str(session_name).strip().upper()
+        if normalized_name not in {"R", "RACE", "S", "SPRINT"}:
+            return
+        round_number = self._round_number(session, event)
+        if round_number <= 0:
+            raise FastF1LoadError(
+                f"Cannot refresh the authoritative final classification for {label} "
+                "without a round number."
+            )
+        try:
+            ergast = self.fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
+            with self.fastf1.Cache.disabled():
+                if normalized_name in {"R", "RACE"}:
+                    response = ergast.get_race_results(season=year, round=round_number)
+                else:
+                    response = ergast.get_sprint_results(season=year, round=round_number)
+            frames = getattr(response, "content", None) or []
+            if not frames or frames[0].empty:
+                raise FastF1LoadError(
+                    f"Authoritative final classification is unavailable for {label}."
+                )
+            self._merge_authoritative_results(session, frames[0])
+        except FastF1LoadError:
+            raise
+        except Exception as exc:
+            raise FastF1LoadError(
+                f"Could not refresh the authoritative final classification for {label}."
+            ) from exc
+
+    @staticmethod
+    def _round_number(session: Any, event: str | int) -> int:
+        if isinstance(event, int) or str(event).isdigit():
+            return int(event)
+        session_event = getattr(session, "event", None)
+        try:
+            return int(session_event["RoundNumber"])
+        except (KeyError, TypeError, ValueError):
+            return int(getattr(session_event, "RoundNumber", 0) or 0)
+
+    @staticmethod
+    def _merge_authoritative_results(session: Any, official: Any) -> None:
+        rename = {
+            "number": "DriverNumber",
+            "driverCode": "Abbreviation",
+            "givenName": "FirstName",
+            "familyName": "LastName",
+            "constructorName": "TeamName",
+            "position": "Position",
+            "positionText": "ClassifiedPosition",
+            "grid": "GridPosition",
+            "status": "Status",
+            "points": "Points",
+            "totalRaceTime": "Time",
+            "laps": "Laps",
+        }
+        official = official.rename(
+            columns={key: value for key, value in rename.items() if key in official.columns}
+        ).copy()
+        if "DriverNumber" not in official or official.empty:
+            return
+        official["DriverNumber"] = official["DriverNumber"].astype(str)
+        if "FirstName" in official and "LastName" in official:
+            official["FullName"] = official["FirstName"] + " " + official["LastName"]
+        official = official.set_index("DriverNumber", drop=False)
+
+        current = session.results.copy()
+        if "DriverNumber" in current:
+            current["DriverNumber"] = current["DriverNumber"].astype(str)
+            current = current.set_index("DriverNumber", drop=False)
+        else:
+            current.index = current.index.astype(str)
+        combined = current.reindex(current.index.union(official.index))
+        for column in official.columns:
+            if column not in combined:
+                combined[column] = None
+            combined.loc[official.index, column] = official[column]
+        session._results = combined.sort_values("Position")
 
     def _retry_delay(self, failed_attempt: int) -> float:
         base_delay = max(0.0, float(self.settings.fastf1_retry_base_delay_seconds))
