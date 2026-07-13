@@ -2,11 +2,32 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import patch
 
-from pipeline.schedule_ingestion import select_candidates
+from pipeline.schedule_ingestion import request_headers, select_candidates
 
 
 class ScheduleIngestionTests(unittest.TestCase):
+    def test_uses_project_user_agent(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(
+                request_headers()["user-agent"], "Formula1DataIngestion/1.0"
+            )
+
+    def test_prefers_access_credentials_over_bearer_token(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "INGESTION_API_TOKEN": "token",
+                "CF_ACCESS_CLIENT_ID": "client-id",
+                "CF_ACCESS_CLIENT_SECRET": "client-secret",
+            },
+            clear=True,
+        ):
+            headers = request_headers()
+        self.assertNotIn("authorization", headers)
+        self.assertEqual(headers["CF-Access-Client-Id"], "client-id")
+
     def test_selects_completed_recent_sessions(self):
         catalog = {
             "meetings": [
