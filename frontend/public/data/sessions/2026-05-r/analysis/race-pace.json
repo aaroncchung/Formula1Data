@@ -776,6 +776,6 @@
   ],
   "caveats": [
     "Lap 1, pit-in, pit-out, deleted, inaccurate, safety car, VSC, and red flag laps are excluded.",
-    "Excluded 200 laps from the pace sample."
+    "Excluded 199 laps from the pace sample."
   ]
 }

@@ -2,7 +2,7 @@
   "session_id": "2026-02-r",
   "rows": [
     {
-      "team": "Alpine",
+      "team": "Alpine F1 Team",
       "drivers": [
         {
           "driver_code": "GAS",
@@ -18,7 +18,7 @@
       "gap_ms": 517.8
     },
     {
-      "team": "Cadillac",
+      "team": "Cadillac F1 Team",
       "drivers": [
         {
           "driver_code": "BOT",
@@ -82,7 +82,7 @@
       "gap_ms": 36.8
     },
     {
-      "team": "Red Bull Racing",
+      "team": "Red Bull",
       "drivers": [
         {
           "driver_code": "VER",
@@ -98,7 +98,7 @@
       "gap_ms": 175.2
     },
     {
-      "team": "Racing Bulls",
+      "team": "RB F1 Team",
       "drivers": [
         {
           "driver_code": "LAW",

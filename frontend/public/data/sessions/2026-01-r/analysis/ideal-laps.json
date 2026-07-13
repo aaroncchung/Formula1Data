@@ -180,15 +180,6 @@
       "ideal_lap_ms": 86967,
       "best_lap_ms": 87364,
       "delta_to_ideal_ms": 397
-    },
-    {
-      "driver_code": "HUL",
-      "best_sector_1_ms": null,
-      "best_sector_2_ms": null,
-      "best_sector_3_ms": null,
-      "ideal_lap_ms": null,
-      "best_lap_ms": null,
-      "delta_to_ideal_ms": null
     }
   ]
 }

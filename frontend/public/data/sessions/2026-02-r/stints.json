@@ -1,15 +1,6 @@
 [
   {
     "session_id": "2026-02-r",
-    "driver_code": "NOR",
-    "stint": 1,
-    "compound": "HARD",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
-  },
-  {
-    "session_id": "2026-02-r",
     "driver_code": "GAS",
     "stint": 1,
     "compound": "MEDIUM",
@@ -106,15 +97,6 @@
     "start_lap": 1,
     "end_lap": 10,
     "lap_count": 10
-  },
-  {
-    "session_id": "2026-02-r",
-    "driver_code": "ALB",
-    "stint": 1,
-    "compound": "HARD",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
   },
   {
     "session_id": "2026-02-r",
@@ -253,15 +235,6 @@
   },
   {
     "session_id": "2026-02-r",
-    "driver_code": "BOR",
-    "stint": 1,
-    "compound": "HARD",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
-  },
-  {
-    "session_id": "2026-02-r",
     "driver_code": "SAI",
     "stint": 1,
     "compound": "MEDIUM",
@@ -340,15 +313,6 @@
     "start_lap": 11,
     "end_lap": 55,
     "lap_count": 45
-  },
-  {
-    "session_id": "2026-02-r",
-    "driver_code": "PIA",
-    "stint": 1,
-    "compound": "MEDIUM",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
   },
   {
     "session_id": "2026-02-r",

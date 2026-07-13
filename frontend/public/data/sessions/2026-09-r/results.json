@@ -216,7 +216,7 @@
     "status": "Retired",
     "points": 0.0,
     "grid": 7,
-    "gap": "NaT",
+    "gap": null,
     "laps": 46
   },
   {
@@ -227,7 +227,7 @@
     "status": "Retired",
     "points": 0.0,
     "grid": 16,
-    "gap": "NaT",
+    "gap": null,
     "laps": 43
   },
   {
@@ -238,7 +238,7 @@
     "status": "Retired",
     "points": 0.0,
     "grid": 12,
-    "gap": "NaT",
+    "gap": null,
     "laps": 36
   }
 ]

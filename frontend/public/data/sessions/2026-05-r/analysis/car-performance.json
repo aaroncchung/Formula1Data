@@ -1,0 +1,418 @@
+{
+  "session_id": "2026-05-r",
+  "drivers": [
+    {
+      "driver_code": "ALB",
+      "team": "Williams",
+      "lap_number": 11,
+      "max_speed_kph": 320.0,
+      "p95_speed_kph": 316.0,
+      "low_speed_avg_kph": 114.5,
+      "medium_speed_avg_kph": 203.6,
+      "high_speed_avg_kph": 286.5,
+      "full_throttle_pct": 52.3,
+      "braking_pct": 21.7
+    },
+    {
+      "driver_code": "ALO",
+      "team": "Aston Martin",
+      "lap_number": 10,
+      "max_speed_kph": 308.0,
+      "p95_speed_kph": 302.5,
+      "low_speed_avg_kph": 112.9,
+      "medium_speed_avg_kph": 205.3,
+      "high_speed_avg_kph": 278.9,
+      "full_throttle_pct": 52.3,
+      "braking_pct": 23.0
+    },
+    {
+      "driver_code": "ANT",
+      "team": "Mercedes",
+      "lap_number": 68,
+      "max_speed_kph": 327.0,
+      "p95_speed_kph": 323.0,
+      "low_speed_avg_kph": 112.9,
+      "medium_speed_avg_kph": 204.0,
+      "high_speed_avg_kph": 290.8,
+      "full_throttle_pct": 60.3,
+      "braking_pct": 19.7
+    },
+    {
+      "driver_code": "BEA",
+      "team": "Haas F1 Team",
+      "lap_number": 64,
+      "max_speed_kph": 313.9,
+      "p95_speed_kph": 305.0,
+      "low_speed_avg_kph": 114.8,
+      "medium_speed_avg_kph": 200.8,
+      "high_speed_avg_kph": 285.1,
+      "full_throttle_pct": 54.3,
+      "braking_pct": 21.0
+    },
+    {
+      "driver_code": "BOR",
+      "team": "Audi",
+      "lap_number": 50,
+      "max_speed_kph": 312.7,
+      "p95_speed_kph": 305.7,
+      "low_speed_avg_kph": 113.8,
+      "medium_speed_avg_kph": 202.4,
+      "high_speed_avg_kph": 281.4,
+      "full_throttle_pct": 55.0,
+      "braking_pct": 20.3
+    },
+    {
+      "driver_code": "BOT",
+      "team": "Cadillac F1 Team",
+      "lap_number": 59,
+      "max_speed_kph": 318.0,
+      "p95_speed_kph": 308.0,
+      "low_speed_avg_kph": 113.8,
+      "medium_speed_avg_kph": 200.5,
+      "high_speed_avg_kph": 282.3,
+      "full_throttle_pct": 53.7,
+      "braking_pct": 21.0
+    },
+    {
+      "driver_code": "COL",
+      "team": "Alpine F1 Team",
+      "lap_number": 67,
+      "max_speed_kph": 329.7,
+      "p95_speed_kph": 322.5,
+      "low_speed_avg_kph": 114.9,
+      "medium_speed_avg_kph": 204.6,
+      "high_speed_avg_kph": 291.2,
+      "full_throttle_pct": 50.0,
+      "braking_pct": 22.0
+    },
+    {
+      "driver_code": "GAS",
+      "team": "Alpine F1 Team",
+      "lap_number": 67,
+      "max_speed_kph": 329.0,
+      "p95_speed_kph": 321.0,
+      "low_speed_avg_kph": 114.3,
+      "medium_speed_avg_kph": 204.0,
+      "high_speed_avg_kph": 290.5,
+      "full_throttle_pct": 53.0,
+      "braking_pct": 21.7
+    },
+    {
+      "driver_code": "HAD",
+      "team": "Red Bull",
+      "lap_number": 67,
+      "max_speed_kph": 321.0,
+      "p95_speed_kph": 314.2,
+      "low_speed_avg_kph": 113.9,
+      "medium_speed_avg_kph": 201.5,
+      "high_speed_avg_kph": 288.6,
+      "full_throttle_pct": 54.3,
+      "braking_pct": 19.7
+    },
+    {
+      "driver_code": "HAM",
+      "team": "Ferrari",
+      "lap_number": 61,
+      "max_speed_kph": 335.9,
+      "p95_speed_kph": 330.0,
+      "low_speed_avg_kph": 113.8,
+      "medium_speed_avg_kph": 202.2,
+      "high_speed_avg_kph": 295.8,
+      "full_throttle_pct": 54.0,
+      "braking_pct": 20.0
+    },
+    {
+      "driver_code": "HUL",
+      "team": "Audi",
+      "lap_number": 57,
+      "max_speed_kph": 314.9,
+      "p95_speed_kph": 306.0,
+      "low_speed_avg_kph": 114.4,
+      "medium_speed_avg_kph": 204.8,
+      "high_speed_avg_kph": 283.9,
+      "full_throttle_pct": 55.3,
+      "braking_pct": 18.7
+    },
+    {
+      "driver_code": "LAW",
+      "team": "RB F1 Team",
+      "lap_number": 59,
+      "max_speed_kph": 325.0,
+      "p95_speed_kph": 315.3,
+      "low_speed_avg_kph": 112.8,
+      "medium_speed_avg_kph": 203.2,
+      "high_speed_avg_kph": 286.8,
+      "full_throttle_pct": 52.0,
+      "braking_pct": 20.0
+    },
+    {
+      "driver_code": "LEC",
+      "team": "Ferrari",
+      "lap_number": 37,
+      "max_speed_kph": 336.0,
+      "p95_speed_kph": 330.0,
+      "low_speed_avg_kph": 114.0,
+      "medium_speed_avg_kph": 200.0,
+      "high_speed_avg_kph": 294.8,
+      "full_throttle_pct": 52.7,
+      "braking_pct": 25.3
+    },
+    {
+      "driver_code": "NOR",
+      "team": "McLaren",
+      "lap_number": 36,
+      "max_speed_kph": 345.0,
+      "p95_speed_kph": 334.1,
+      "low_speed_avg_kph": 116.7,
+      "medium_speed_avg_kph": 201.5,
+      "high_speed_avg_kph": 295.2,
+      "full_throttle_pct": 53.3,
+      "braking_pct": 24.3
+    },
+    {
+      "driver_code": "OCO",
+      "team": "Haas F1 Team",
+      "lap_number": 64,
+      "max_speed_kph": 312.0,
+      "p95_speed_kph": 303.9,
+      "low_speed_avg_kph": 114.9,
+      "medium_speed_avg_kph": 203.2,
+      "high_speed_avg_kph": 282.3,
+      "full_throttle_pct": 55.0,
+      "braking_pct": 22.3
+    },
+    {
+      "driver_code": "PER",
+      "team": "Cadillac F1 Team",
+      "lap_number": 37,
+      "max_speed_kph": 318.0,
+      "p95_speed_kph": 314.0,
+      "low_speed_avg_kph": 113.1,
+      "medium_speed_avg_kph": 202.3,
+      "high_speed_avg_kph": 285.6,
+      "full_throttle_pct": 52.7,
+      "braking_pct": 21.3
+    },
+    {
+      "driver_code": "PIA",
+      "team": "McLaren",
+      "lap_number": 61,
+      "max_speed_kph": 321.7,
+      "p95_speed_kph": 315.1,
+      "low_speed_avg_kph": 114.4,
+      "medium_speed_avg_kph": 202.6,
+      "high_speed_avg_kph": 289.6,
+      "full_throttle_pct": 52.7,
+      "braking_pct": 21.7
+    },
+    {
+      "driver_code": "RUS",
+      "team": "Mercedes",
+      "lap_number": 16,
+      "max_speed_kph": 323.0,
+      "p95_speed_kph": 317.3,
+      "low_speed_avg_kph": 114.3,
+      "medium_speed_avg_kph": 203.3,
+      "high_speed_avg_kph": 286.5,
+      "full_throttle_pct": 59.7,
+      "braking_pct": 21.3
+    },
+    {
+      "driver_code": "SAI",
+      "team": "Williams",
+      "lap_number": 65,
+      "max_speed_kph": 313.0,
+      "p95_speed_kph": 306.0,
+      "low_speed_avg_kph": 114.8,
+      "medium_speed_avg_kph": 206.3,
+      "high_speed_avg_kph": 284.7,
+      "full_throttle_pct": 58.3,
+      "braking_pct": 19.0
+    },
+    {
+      "driver_code": "STR",
+      "team": "Aston Martin",
+      "lap_number": 39,
+      "max_speed_kph": 307.0,
+      "p95_speed_kph": 299.8,
+      "low_speed_avg_kph": 113.1,
+      "medium_speed_avg_kph": 201.3,
+      "high_speed_avg_kph": 278.0,
+      "full_throttle_pct": 55.0,
+      "braking_pct": 20.0
+    },
+    {
+      "driver_code": "VER",
+      "team": "Red Bull",
+      "lap_number": 68,
+      "max_speed_kph": 337.0,
+      "p95_speed_kph": 330.1,
+      "low_speed_avg_kph": 113.3,
+      "medium_speed_avg_kph": 203.1,
+      "high_speed_avg_kph": 292.6,
+      "full_throttle_pct": 54.3,
+      "braking_pct": 20.0
+    }
+  ],
+  "teams": [
+    {
+      "team": "Alpine F1 Team",
+      "drivers": [
+        "COL",
+        "GAS"
+      ],
+      "max_speed_kph": 329.4,
+      "p95_speed_kph": 321.8,
+      "low_speed_avg_kph": 114.6,
+      "medium_speed_avg_kph": 204.3,
+      "high_speed_avg_kph": 290.9,
+      "full_throttle_pct": 51.5,
+      "braking_pct": 21.9
+    },
+    {
+      "team": "Aston Martin",
+      "drivers": [
+        "ALO",
+        "STR"
+      ],
+      "max_speed_kph": 307.5,
+      "p95_speed_kph": 301.1,
+      "low_speed_avg_kph": 113.0,
+      "medium_speed_avg_kph": 203.3,
+      "high_speed_avg_kph": 278.4,
+      "full_throttle_pct": 53.6,
+      "braking_pct": 21.5
+    },
+    {
+      "team": "Audi",
+      "drivers": [
+        "BOR",
+        "HUL"
+      ],
+      "max_speed_kph": 313.8,
+      "p95_speed_kph": 305.9,
+      "low_speed_avg_kph": 114.1,
+      "medium_speed_avg_kph": 203.6,
+      "high_speed_avg_kph": 282.6,
+      "full_throttle_pct": 55.1,
+      "braking_pct": 19.5
+    },
+    {
+      "team": "Cadillac F1 Team",
+      "drivers": [
+        "BOT",
+        "PER"
+      ],
+      "max_speed_kph": 318.0,
+      "p95_speed_kph": 311.0,
+      "low_speed_avg_kph": 113.4,
+      "medium_speed_avg_kph": 201.4,
+      "high_speed_avg_kph": 284.0,
+      "full_throttle_pct": 53.2,
+      "braking_pct": 21.1
+    },
+    {
+      "team": "Ferrari",
+      "drivers": [
+        "HAM",
+        "LEC"
+      ],
+      "max_speed_kph": 335.9,
+      "p95_speed_kph": 330.0,
+      "low_speed_avg_kph": 113.9,
+      "medium_speed_avg_kph": 201.1,
+      "high_speed_avg_kph": 295.3,
+      "full_throttle_pct": 53.4,
+      "braking_pct": 22.6
+    },
+    {
+      "team": "Haas F1 Team",
+      "drivers": [
+        "BEA",
+        "OCO"
+      ],
+      "max_speed_kph": 312.9,
+      "p95_speed_kph": 304.4,
+      "low_speed_avg_kph": 114.8,
+      "medium_speed_avg_kph": 202.0,
+      "high_speed_avg_kph": 283.7,
+      "full_throttle_pct": 54.6,
+      "braking_pct": 21.6
+    },
+    {
+      "team": "McLaren",
+      "drivers": [
+        "NOR",
+        "PIA"
+      ],
+      "max_speed_kph": 333.4,
+      "p95_speed_kph": 324.6,
+      "low_speed_avg_kph": 115.6,
+      "medium_speed_avg_kph": 202.1,
+      "high_speed_avg_kph": 292.4,
+      "full_throttle_pct": 53.0,
+      "braking_pct": 23.0
+    },
+    {
+      "team": "Mercedes",
+      "drivers": [
+        "ANT",
+        "RUS"
+      ],
+      "max_speed_kph": 325.0,
+      "p95_speed_kph": 320.1,
+      "low_speed_avg_kph": 113.6,
+      "medium_speed_avg_kph": 203.7,
+      "high_speed_avg_kph": 288.6,
+      "full_throttle_pct": 60.0,
+      "braking_pct": 20.5
+    },
+    {
+      "team": "RB F1 Team",
+      "drivers": [
+        "LAW"
+      ],
+      "max_speed_kph": 325.0,
+      "p95_speed_kph": 315.3,
+      "low_speed_avg_kph": 112.8,
+      "medium_speed_avg_kph": 203.2,
+      "high_speed_avg_kph": 286.8,
+      "full_throttle_pct": 52.0,
+      "braking_pct": 20.0
+    },
+    {
+      "team": "Red Bull",
+      "drivers": [
+        "HAD",
+        "VER"
+      ],
+      "max_speed_kph": 329.0,
+      "p95_speed_kph": 322.1,
+      "low_speed_avg_kph": 113.6,
+      "medium_speed_avg_kph": 202.3,
+      "high_speed_avg_kph": 290.6,
+      "full_throttle_pct": 54.3,
+      "braking_pct": 19.9
+    },
+    {
+      "team": "Williams",
+      "drivers": [
+        "ALB",
+        "SAI"
+      ],
+      "max_speed_kph": 316.5,
+      "p95_speed_kph": 311.0,
+      "low_speed_avg_kph": 114.7,
+      "medium_speed_avg_kph": 204.9,
+      "high_speed_avg_kph": 285.6,
+      "full_throttle_pct": 55.3,
+      "braking_pct": 20.4
+    }
+  ],
+  "caveats": [
+    "Profiles use each driver's fastest non-deleted lap with telemetry.",
+    "Speed bands are sample averages: low <150, medium 150-250, high >=250 km/h.",
+    "Maximum speed is telemetry-derived and may differ from the official speed trap.",
+    "Throttle and braking percentages exclude samples where that channel is unavailable."
+  ]
+}

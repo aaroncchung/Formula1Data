@@ -168,6 +168,14 @@ class IngestionParityTests(unittest.TestCase):
         self.assertIsNotNone(first_lap[0]["session_time_ms"])
 
     @unittest.skipIf(pd is None, "pandas is required for normalization tests")
+    def test_telemetry_falls_back_to_car_data_when_position_data_is_missing(self):
+        rows = _telemetry(_TelemetrySession([_CarOnlyTelemetryLap("AAA", 6, sample_count=20)]), "2026-01-r")
+
+        self.assertEqual(len(rows), 20)
+        self.assertEqual(rows[-1]["distance_m"], 190)
+        self.assertIsNone(rows[0]["x"])
+
+    @unittest.skipIf(pd is None, "pandas is required for normalization tests")
     def test_pit_duration_uses_only_adjacent_pit_out_lap(self):
         laps = pd.DataFrame(
             [
@@ -318,6 +326,15 @@ class _TelemetryLap(dict):
                 for index in range(self.sample_count)
             ]
         )
+
+
+class _CarOnlyTelemetryLap(_TelemetryLap):
+    def get_telemetry(self):
+        raise KeyError("position telemetry is unavailable")
+
+    def get_car_data(self):
+        frame = super().get_telemetry()
+        return frame.drop(columns=["X", "Y"])
 
 
 class _TelemetryLaps:

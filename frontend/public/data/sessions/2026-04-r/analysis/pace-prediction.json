@@ -1,0 +1,13 @@
+{
+  "session_id": "2026-04-r",
+  "available": false,
+  "session_type": "Race",
+  "drivers": [],
+  "teams": [],
+  "caveats": [
+    "This is a relative long-run estimate, not an absolute race-time forecast.",
+    "Unknown fuel loads, engine modes, setup programmes, traffic, and weather can dominate practice pace.",
+    "Only clean stints with at least five timed laps are included; median pace limits outlier impact.",
+    "Pace prediction is only produced for practice sessions."
+  ]
+}

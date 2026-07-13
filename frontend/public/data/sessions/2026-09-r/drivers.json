@@ -53,8 +53,8 @@
     "full_name": "Isack Hadjar",
     "number": 6,
     "team": {
-      "team_id": "red-bull-racing",
-      "name": "Red Bull Racing",
+      "team_id": "red-bull",
+      "name": "Red Bull",
       "color": "#4781D7"
     },
     "country": ""
@@ -65,8 +65,8 @@
     "full_name": "Liam Lawson",
     "number": 30,
     "team": {
-      "team_id": "racing-bulls",
-      "name": "Racing Bulls",
+      "team_id": "rb-f1-team",
+      "name": "RB F1 Team",
       "color": "#6C98FF"
     },
     "country": ""
@@ -77,8 +77,8 @@
     "full_name": "Arvid Lindblad",
     "number": 41,
     "team": {
-      "team_id": "racing-bulls",
-      "name": "Racing Bulls",
+      "team_id": "rb-f1-team",
+      "name": "RB F1 Team",
       "color": "#6C98FF"
     },
     "country": ""
@@ -101,8 +101,8 @@
     "full_name": "Franco Colapinto",
     "number": 43,
     "team": {
-      "team_id": "alpine",
-      "name": "Alpine",
+      "team_id": "alpine-f1-team",
+      "name": "Alpine F1 Team",
       "color": "#00A1E8"
     },
     "country": ""
@@ -113,8 +113,8 @@
     "full_name": "Pierre Gasly",
     "number": 10,
     "team": {
-      "team_id": "alpine",
-      "name": "Alpine",
+      "team_id": "alpine-f1-team",
+      "name": "Alpine F1 Team",
       "color": "#00A1E8"
     },
     "country": ""
@@ -158,11 +158,11 @@
   {
     "driver_id": "per",
     "code": "PER",
-    "full_name": "Sergio Perez",
+    "full_name": "Sergio Pérez",
     "number": 11,
     "team": {
-      "team_id": "cadillac",
-      "name": "Cadillac",
+      "team_id": "cadillac-f1-team",
+      "name": "Cadillac F1 Team",
       "color": "#909090"
     },
     "country": ""
@@ -170,7 +170,7 @@
   {
     "driver_id": "ant",
     "code": "ANT",
-    "full_name": "Kimi Antonelli",
+    "full_name": "Andrea Kimi Antonelli",
     "number": 12,
     "team": {
       "team_id": "mercedes",
@@ -185,8 +185,8 @@
     "full_name": "Valtteri Bottas",
     "number": 77,
     "team": {
-      "team_id": "cadillac",
-      "name": "Cadillac",
+      "team_id": "cadillac-f1-team",
+      "name": "Cadillac F1 Team",
       "color": "#909090"
     },
     "country": ""
@@ -233,8 +233,8 @@
     "full_name": "Max Verstappen",
     "number": 3,
     "team": {
-      "team_id": "red-bull-racing",
-      "name": "Red Bull Racing",
+      "team_id": "red-bull",
+      "name": "Red Bull",
       "color": "#4781D7"
     },
     "country": ""
@@ -254,7 +254,7 @@
   {
     "driver_id": "hul",
     "code": "HUL",
-    "full_name": "Nico Hulkenberg",
+    "full_name": "Nico Hülkenberg",
     "number": 27,
     "team": {
       "team_id": "audi",

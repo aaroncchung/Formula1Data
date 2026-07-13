@@ -18,7 +18,7 @@
       "gap_ms": 487.0
     },
     {
-      "team": "Alpine",
+      "team": "Alpine F1 Team",
       "drivers": [
         {
           "driver_code": "COL",
@@ -34,7 +34,7 @@
       "gap_ms": 1235.2
     },
     {
-      "team": "Cadillac",
+      "team": "Cadillac F1 Team",
       "drivers": [
         {
           "driver_code": "PER",
@@ -130,7 +130,7 @@
       "gap_ms": 118.8
     },
     {
-      "team": "Red Bull Racing",
+      "team": "Red Bull",
       "drivers": [
         {
           "driver_code": "VER",
@@ -146,7 +146,7 @@
       "gap_ms": 1551.6
     },
     {
-      "team": "Racing Bulls",
+      "team": "RB F1 Team",
       "drivers": [
         {
           "driver_code": "LIN",

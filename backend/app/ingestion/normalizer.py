@@ -482,10 +482,7 @@ def _telemetry(session: Any, session_id: str) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
-        try:
-            telemetry = lap.get_telemetry()
-        except Exception:
-            continue
+        telemetry = _lap_telemetry(lap)
         if telemetry is None or telemetry.empty:
             continue
         for _, row in _bounded_frame(telemetry, MAX_INGESTED_TELEMETRY_SAMPLES_PER_LAP).iterrows():
@@ -508,6 +505,28 @@ def _telemetry(session: Any, session_id: str) -> list[dict[str, Any]]:
                 }
             )
     return telemetry_rows
+
+
+def _lap_telemetry(lap: Any) -> Any:
+    try:
+        telemetry = lap.get_telemetry()
+        if telemetry is not None and not telemetry.empty:
+            return telemetry
+    except Exception:
+        pass
+
+    try:
+        telemetry = lap.get_car_data()
+    except Exception:
+        return None
+    if telemetry is None or telemetry.empty:
+        return telemetry
+    if "Distance" not in telemetry.columns:
+        try:
+            telemetry = telemetry.add_distance()
+        except Exception:
+            return None
+    return telemetry
 
 
 def _bounded_frame(frame: Any, limit: int) -> Any:

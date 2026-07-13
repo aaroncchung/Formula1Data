@@ -262,15 +262,6 @@
   },
   {
     "session_id": "2026-05-r",
-    "driver_code": "LIN",
-    "stint": 1,
-    "compound": "MEDIUM",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
-  },
-  {
-    "session_id": "2026-05-r",
     "driver_code": "COL",
     "stint": 1,
     "compound": "MEDIUM",

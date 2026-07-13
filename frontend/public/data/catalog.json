@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-06T04:00:12.424219+00:00",
+  "generated_at": "2026-07-13T05:01:21.295293+00:00",
   "source": {
     "mode": "processed",
     "files": [
@@ -677,8 +677,8 @@
       "country": "China",
       "sessions_available": [
         "FP1",
-        "FP2",
-        "FP3",
+        "SQ",
+        "S",
         "Q",
         "R"
       ],
@@ -725,8 +725,8 @@
       "country": "United States",
       "sessions_available": [
         "FP1",
-        "FP2",
-        "FP3",
+        "SQ",
+        "S",
         "Q",
         "R"
       ],
@@ -749,8 +749,8 @@
       "country": "Canada",
       "sessions_available": [
         "FP1",
-        "FP2",
-        "FP3",
+        "SQ",
+        "S",
         "Q",
         "R"
       ],

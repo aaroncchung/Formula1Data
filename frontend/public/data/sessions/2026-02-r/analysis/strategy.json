@@ -3,15 +3,6 @@
   "stints": [
     {
       "session_id": "2026-02-r",
-      "driver_code": "NOR",
-      "stint": 1,
-      "compound": "HARD",
-      "start_lap": 1,
-      "end_lap": 1,
-      "lap_count": 1
-    },
-    {
-      "session_id": "2026-02-r",
       "driver_code": "GAS",
       "stint": 1,
       "compound": "MEDIUM",
@@ -108,15 +99,6 @@
       "start_lap": 1,
       "end_lap": 10,
       "lap_count": 10
-    },
-    {
-      "session_id": "2026-02-r",
-      "driver_code": "ALB",
-      "stint": 1,
-      "compound": "HARD",
-      "start_lap": 1,
-      "end_lap": 1,
-      "lap_count": 1
     },
     {
       "session_id": "2026-02-r",
@@ -255,15 +237,6 @@
     },
     {
       "session_id": "2026-02-r",
-      "driver_code": "BOR",
-      "stint": 1,
-      "compound": "HARD",
-      "start_lap": 1,
-      "end_lap": 1,
-      "lap_count": 1
-    },
-    {
-      "session_id": "2026-02-r",
       "driver_code": "SAI",
       "stint": 1,
       "compound": "MEDIUM",
@@ -345,15 +318,6 @@
     },
     {
       "session_id": "2026-02-r",
-      "driver_code": "PIA",
-      "stint": 1,
-      "compound": "MEDIUM",
-      "start_lap": 1,
-      "end_lap": 1,
-      "lap_count": 1
-    },
-    {
-      "session_id": "2026-02-r",
       "driver_code": "BEA",
       "stint": 1,
       "compound": "MEDIUM",
@@ -372,8 +336,8 @@
     }
   ],
   "compound_usage": {
-    "HARD": 22,
-    "MEDIUM": 16,
+    "MEDIUM": 15,
+    "HARD": 19,
     "SOFT": 3
   },
   "pit_stops": [
@@ -381,253 +345,253 @@
       "session_id": "2026-02-r",
       "driver_code": "GAS",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23440,
+      "local_time": "0 days 01:13:07.031000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "PER",
       "lap_number": 11,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 26241,
+      "local_time": "0 days 01:16:06.575000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "ANT",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23057,
+      "local_time": "0 days 01:12:49.922000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "ALO",
       "lap_number": 31,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23312,
+      "local_time": "0 days 01:50:54.634000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "ALO",
       "lap_number": 32,
       "duration_ms": null,
-      "local_time": null
+      "local_time": "0 days 01:53:02.232000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "LEC",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 25518,
+      "local_time": "0 days 01:13:01.547000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "HUL",
       "lap_number": 35,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 37225,
+      "local_time": "0 days 01:56:57.832000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "VER",
       "lap_number": 9,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23716,
+      "local_time": "0 days 01:11:32.287000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "VER",
       "lap_number": 45,
       "duration_ms": null,
-      "local_time": null
+      "local_time": "0 days 02:13:48.930000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "LAW",
       "lap_number": 9,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 22953,
+      "local_time": "0 days 01:11:31.865000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "OCO",
       "lap_number": 29,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 25945,
+      "local_time": "0 days 01:47:06.330000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "OCO",
       "lap_number": 46,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 47110,
+      "local_time": "0 days 02:15:30.912000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "LIN",
       "lap_number": 42,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23274,
+      "local_time": "0 days 02:08:44.608000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "COL",
       "lap_number": 32,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23187,
+      "local_time": "0 days 01:51:59.626000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "HAM",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 22315,
+      "local_time": "0 days 01:12:58.531000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "SAI",
       "lap_number": 9,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23094,
+      "local_time": "0 days 01:11:35.381000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "HAD",
       "lap_number": 1,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 22996,
+      "local_time": "0 days 00:58:26.239000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "HAD",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 25725,
+      "local_time": "0 days 01:14:05.173000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "RUS",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 23377,
+      "local_time": "0 days 01:12:57.297000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "BOT",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 27847,
+      "local_time": "0 days 01:13:45.503000"
     },
     {
       "session_id": "2026-02-r",
       "driver_code": "BEA",
       "lap_number": 10,
-      "duration_ms": null,
-      "local_time": null
+      "duration_ms": 22985,
+      "local_time": "0 days 01:13:24.518000"
     }
   ],
-  "pit_loss_estimate_ms": null,
+  "pit_loss_estimate_ms": 25964.1,
   "undercut_overcut": [
     {
       "driver_code": "GAS",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -46950,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "PER",
       "stop_lap": 11,
-      "first_clean_lap_gain_ms": -16318,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -18049,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "ANT",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -52554,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "ALO",
       "stop_lap": 31,
-      "first_clean_lap_gain_ms": -27166,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": null,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "LEC",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -48356,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "HUL",
       "stop_lap": 35,
-      "first_clean_lap_gain_ms": -33783,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": 1807,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "VER",
       "stop_lap": 9,
-      "first_clean_lap_gain_ms": -43687,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -35603,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "LAW",
       "stop_lap": 9,
-      "first_clean_lap_gain_ms": -42260,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -35291,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "OCO",
       "stop_lap": 29,
-      "first_clean_lap_gain_ms": -20327,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": 1743,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "LIN",
       "stop_lap": 42,
-      "first_clean_lap_gain_ms": -16967,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": 3723,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "COL",
       "stop_lap": 32,
-      "first_clean_lap_gain_ms": -26315,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": 569,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "HAM",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -50024,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "SAI",
       "stop_lap": 9,
-      "first_clean_lap_gain_ms": -43274,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -35309,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "HAD",
       "stop_lap": 1,
       "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "RUS",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -52406,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "BOT",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -20099,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     },
     {
       "driver_code": "BEA",
       "stop_lap": 10,
-      "first_clean_lap_gain_ms": null,
-      "caveat": "Compares surrounding driver laps only; traffic-adjusted modeling is a TODO."
+      "first_clean_lap_gain_ms": -40765,
+      "caveat": "Compares the nearest clean laps before and after the stop; it is not adjusted for traffic, tyre warm-up, fuel, or track evolution."
     }
   ],
   "race_control_overlays": [
@@ -1407,6 +1371,7 @@
     }
   ],
   "caveats": [
-    "Pit loss and undercut/overcut values are simple estimates until full race pace context is available."
+    "Pit duration is pit-lane transit time when FastF1 provides adjacent pit-in/out timestamps.",
+    "Undercut/overcut values are descriptive surrounding-lap changes, not causal opponent models."
   ]
 }

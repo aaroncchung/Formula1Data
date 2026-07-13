@@ -617,16 +617,16 @@
     "stint": 2,
     "compound": "HARD",
     "start_lap": 19,
-    "end_lap": 28,
-    "lap_count": 10
+    "end_lap": 39,
+    "lap_count": 21
   },
   {
     "session_id": "2026-07-r",
     "driver_code": "BEA",
     "stint": 3,
     "compound": "SOFT",
-    "start_lap": 29,
+    "start_lap": 40,
     "end_lap": 60,
-    "lap_count": 32
+    "lap_count": 21
   }
 ]

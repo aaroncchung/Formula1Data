@@ -208,15 +208,6 @@
   },
   {
     "session_id": "2026-01-r",
-    "driver_code": "HUL",
-    "stint": 1,
-    "compound": "HARD",
-    "start_lap": 1,
-    "end_lap": 1,
-    "lap_count": 1
-  },
-  {
-    "session_id": "2026-01-r",
     "driver_code": "VER",
     "stint": 1,
     "compound": "HARD",

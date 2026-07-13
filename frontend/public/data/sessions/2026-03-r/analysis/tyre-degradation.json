@@ -5,523 +5,718 @@
       "driver_code": "NOR",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 0.49,
-      "r_squared": 0.0,
       "sample_count": 14,
       "stint_length": 14,
+      "degradation_ms_per_lap": 73.29,
+      "raw_slope_ms_per_lap": 18.29,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.125,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "NOR",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -18.75,
-      "r_squared": 0.129,
       "sample_count": 30,
       "stint_length": 30,
+      "degradation_ms_per_lap": 33.62,
+      "raw_slope_ms_per_lap": -21.38,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.262,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "GAS",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -0.89,
-      "r_squared": 0.001,
       "sample_count": 20,
       "stint_length": 20,
+      "degradation_ms_per_lap": 54.11,
+      "raw_slope_ms_per_lap": -0.89,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.001,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "GAS",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -14.4,
-      "r_squared": 0.063,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 55.77,
+      "raw_slope_ms_per_lap": 0.77,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.0,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "PER",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 10.99,
-      "r_squared": 0.036,
       "sample_count": 18,
       "stint_length": 18,
+      "degradation_ms_per_lap": 48.12,
+      "raw_slope_ms_per_lap": -6.88,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.043,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "PER",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -28.63,
-      "r_squared": 0.547,
       "sample_count": 26,
       "stint_length": 26,
-      "caveats": []
+      "degradation_ms_per_lap": 26.37,
+      "raw_slope_ms_per_lap": -28.63,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.547,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "ANT",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -44.73,
-      "r_squared": 0.221,
       "sample_count": 20,
       "stint_length": 20,
+      "degradation_ms_per_lap": 0.28,
+      "raw_slope_ms_per_lap": -54.72,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.419,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "ANT",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -0.04,
-      "r_squared": 0.0,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 44.36,
+      "raw_slope_ms_per_lap": -10.64,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.067,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "ALO",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -9.45,
-      "r_squared": 0.051,
       "sample_count": 19,
       "stint_length": 19,
+      "degradation_ms_per_lap": 45.55,
+      "raw_slope_ms_per_lap": -9.45,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.051,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "ALO",
       "compound": "MEDIUM",
       "stint": 3,
-      "degradation_ms_per_lap": -7.65,
-      "r_squared": 0.007,
       "sample_count": 24,
       "stint_length": 24,
+      "degradation_ms_per_lap": 2.38,
+      "raw_slope_ms_per_lap": -52.62,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.524,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LEC",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 3.68,
-      "r_squared": 0.002,
       "sample_count": 15,
       "stint_length": 15,
+      "degradation_ms_per_lap": 81.44,
+      "raw_slope_ms_per_lap": 26.44,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.233,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LEC",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -36.43,
-      "r_squared": 0.426,
       "sample_count": 29,
       "stint_length": 29,
+      "degradation_ms_per_lap": 19.38,
+      "raw_slope_ms_per_lap": -35.62,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.637,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "STR",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 7.74,
-      "r_squared": 0.03,
       "sample_count": 19,
       "stint_length": 19,
+      "degradation_ms_per_lap": 62.74,
+      "raw_slope_ms_per_lap": 7.74,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.03,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "STR",
       "compound": "MEDIUM",
       "stint": 3,
-      "degradation_ms_per_lap": null,
-      "r_squared": null,
       "sample_count": 2,
       "stint_length": 2,
+      "degradation_ms_per_lap": null,
+      "raw_slope_ms_per_lap": null,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": null,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "At least three clean laps are required for a degradation fit."
+        "At least three clean laps at distinct tyre ages are required."
       ]
     },
     {
       "driver_code": "ALB",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -50.25,
-      "r_squared": 0.6,
       "sample_count": 20,
       "stint_length": 20,
-      "caveats": []
+      "degradation_ms_per_lap": 4.75,
+      "raw_slope_ms_per_lap": -50.25,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.6,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "ALB",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -87.95,
-      "r_squared": 0.59,
       "sample_count": 17,
       "stint_length": 17,
-      "caveats": []
+      "degradation_ms_per_lap": -32.95,
+      "raw_slope_ms_per_lap": -87.95,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.59,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "ALB",
       "compound": "MEDIUM",
       "stint": 7,
-      "degradation_ms_per_lap": null,
-      "r_squared": null,
       "sample_count": 1,
       "stint_length": 1,
+      "degradation_ms_per_lap": null,
+      "raw_slope_ms_per_lap": null,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": null,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "At least three clean laps are required for a degradation fit."
+        "At least three clean laps at distinct tyre ages are required."
       ]
     },
     {
       "driver_code": "HUL",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -86.87,
+      "sample_count": 20,
+      "stint_length": 20,
+      "degradation_ms_per_lap": -31.87,
+      "raw_slope_ms_per_lap": -86.87,
+      "fuel_correction_ms_per_lap": 55.0,
       "r_squared": 0.589,
-      "sample_count": 20,
-      "stint_length": 20,
-      "caveats": []
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "HUL",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -75.83,
-      "r_squared": 0.421,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": -28.81,
+      "raw_slope_ms_per_lap": -83.81,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.578,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "VER",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -38.65,
-      "r_squared": 0.348,
       "sample_count": 20,
       "stint_length": 20,
+      "degradation_ms_per_lap": 24.99,
+      "raw_slope_ms_per_lap": -30.01,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.323,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "VER",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -21.22,
-      "r_squared": 0.107,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 43.01,
+      "raw_slope_ms_per_lap": -11.99,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.127,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LAW",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -14.38,
-      "r_squared": 0.089,
       "sample_count": 19,
       "stint_length": 19,
+      "degradation_ms_per_lap": 40.62,
+      "raw_slope_ms_per_lap": -14.38,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.089,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LAW",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -26.31,
-      "r_squared": 0.27,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 41.3,
+      "raw_slope_ms_per_lap": -13.7,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.218,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "OCO",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 38.98,
-      "r_squared": 0.282,
       "sample_count": 17,
       "stint_length": 17,
+      "degradation_ms_per_lap": 93.98,
+      "raw_slope_ms_per_lap": 38.98,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.282,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "OCO",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -22.44,
-      "r_squared": 0.158,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 48.31,
+      "raw_slope_ms_per_lap": -6.69,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.053,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LIN",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 28.76,
-      "r_squared": 0.032,
       "sample_count": 16,
       "stint_length": 16,
+      "degradation_ms_per_lap": 104.36,
+      "raw_slope_ms_per_lap": 49.36,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.406,
+      "excluded_outlier_count": 3,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "LIN",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -45.63,
-      "r_squared": 0.534,
       "sample_count": 26,
       "stint_length": 26,
-      "caveats": []
+      "degradation_ms_per_lap": 23.51,
+      "raw_slope_ms_per_lap": -31.49,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.507,
+      "excluded_outlier_count": 2,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "COL",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -0.84,
-      "r_squared": 0.0,
       "sample_count": 15,
       "stint_length": 15,
+      "degradation_ms_per_lap": 54.16,
+      "raw_slope_ms_per_lap": -0.84,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.0,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "COL",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -49.57,
-      "r_squared": 0.553,
       "sample_count": 28,
       "stint_length": 28,
-      "caveats": []
+      "degradation_ms_per_lap": 5.43,
+      "raw_slope_ms_per_lap": -49.57,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.553,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "HAM",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -31.23,
-      "r_squared": 0.507,
       "sample_count": 20,
       "stint_length": 20,
-      "caveats": []
+      "degradation_ms_per_lap": 23.77,
+      "raw_slope_ms_per_lap": -31.23,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.507,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "HAM",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": 26.74,
-      "r_squared": 0.119,
       "sample_count": 25,
       "stint_length": 25,
+      "degradation_ms_per_lap": 70.46,
+      "raw_slope_ms_per_lap": 15.46,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.06,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "BOR",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -48.05,
-      "r_squared": 0.19,
       "sample_count": 20,
       "stint_length": 20,
+      "degradation_ms_per_lap": 33.74,
+      "raw_slope_ms_per_lap": -21.26,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.085,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "BOR",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -51.03,
+      "sample_count": 26,
+      "stint_length": 26,
+      "degradation_ms_per_lap": 3.97,
+      "raw_slope_ms_per_lap": -51.03,
+      "fuel_correction_ms_per_lap": 55.0,
       "r_squared": 0.376,
-      "sample_count": 26,
-      "stint_length": 26,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "SAI",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -51.03,
-      "r_squared": 0.407,
       "sample_count": 20,
       "stint_length": 20,
+      "degradation_ms_per_lap": 3.97,
+      "raw_slope_ms_per_lap": -51.03,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.407,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "SAI",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -43.83,
-      "r_squared": 0.415,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 11.17,
+      "raw_slope_ms_per_lap": -43.83,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.415,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "HAD",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -10.06,
-      "r_squared": 0.005,
       "sample_count": 17,
       "stint_length": 17,
+      "degradation_ms_per_lap": 44.94,
+      "raw_slope_ms_per_lap": -10.06,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.005,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "HAD",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -38.4,
-      "r_squared": 0.187,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 16.6,
+      "raw_slope_ms_per_lap": -38.4,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.187,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "RUS",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": 10.02,
-      "r_squared": 0.026,
       "sample_count": 19,
       "stint_length": 19,
+      "degradation_ms_per_lap": 69.01,
+      "raw_slope_ms_per_lap": 14.01,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.109,
+      "excluded_outlier_count": 1,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "RUS",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -39.29,
-      "r_squared": 0.272,
       "sample_count": 26,
       "stint_length": 26,
+      "degradation_ms_per_lap": 23.92,
+      "raw_slope_ms_per_lap": -31.08,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.371,
+      "excluded_outlier_count": 3,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "BOT",
       "compound": "HARD",
       "stint": 1,
-      "degradation_ms_per_lap": 83.55,
-      "r_squared": 0.247,
       "sample_count": 17,
       "stint_length": 17,
+      "degradation_ms_per_lap": 100.89,
+      "raw_slope_ms_per_lap": 45.89,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.394,
+      "excluded_outlier_count": 2,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "BOT",
       "compound": "MEDIUM",
       "stint": 2,
-      "degradation_ms_per_lap": 57.16,
-      "r_squared": 0.044,
       "sample_count": 25,
       "stint_length": 25,
+      "degradation_ms_per_lap": 34.27,
+      "raw_slope_ms_per_lap": -20.73,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.389,
+      "excluded_outlier_count": 3,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "PIA",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -10.69,
-      "r_squared": 0.042,
       "sample_count": 16,
       "stint_length": 16,
+      "degradation_ms_per_lap": 44.31,
+      "raw_slope_ms_per_lap": -10.69,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.042,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "PIA",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -28.58,
-      "r_squared": 0.508,
       "sample_count": 28,
       "stint_length": 28,
-      "caveats": []
+      "degradation_ms_per_lap": 33.65,
+      "raw_slope_ms_per_lap": -21.35,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.413,
+      "excluded_outlier_count": 1,
+      "caveats": [
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     },
     {
       "driver_code": "BEA",
       "compound": "MEDIUM",
       "stint": 1,
-      "degradation_ms_per_lap": -17.0,
-      "r_squared": 0.033,
       "sample_count": 13,
       "stint_length": 13,
+      "degradation_ms_per_lap": 38.0,
+      "raw_slope_ms_per_lap": -17.0,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.033,
+      "excluded_outlier_count": 0,
       "caveats": [
-        "Low fit quality; treat the slope as directional only."
+        "Low fit quality; treat the degradation estimate as directional only.",
+        "Includes an assumed 55 ms/lap fuel-burn correction."
       ]
     },
     {
       "driver_code": "BEA",
       "compound": "HARD",
       "stint": 2,
-      "degradation_ms_per_lap": -225.0,
-      "r_squared": 0.963,
       "sample_count": 3,
       "stint_length": 3,
-      "caveats": []
+      "degradation_ms_per_lap": -170.0,
+      "raw_slope_ms_per_lap": -225.0,
+      "fuel_correction_ms_per_lap": 55.0,
+      "r_squared": 0.963,
+      "excluded_outlier_count": 0,
+      "caveats": [
+        "Includes an assumed 55 ms/lap fuel-burn correction."
+      ]
     }
+  ],
+  "model": {
+    "method": "Theil-Sen residual filter followed by ordinary least squares",
+    "race_fuel_correction_ms_per_lap": 55.0,
+    "sprint_fuel_correction_ms_per_lap": 35.0
+  },
+  "caveats": [
+    "Fuel correction is an explicit generic assumption, not measured car fuel mass.",
+    "Pit, deleted, inaccurate, neutralized, and statistical outlier laps are excluded.",
+    "Track evolution, traffic, weather, and tyre management remain confounding factors."
   ]
 }

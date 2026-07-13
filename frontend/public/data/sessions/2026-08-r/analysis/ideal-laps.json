@@ -196,8 +196,8 @@
       "best_sector_2_ms": 35182,
       "best_sector_3_ms": 24614,
       "ideal_lap_ms": 77700,
-      "best_lap_ms": 87748,
-      "delta_to_ideal_ms": 10048
+      "best_lap_ms": 84016,
+      "delta_to_ideal_ms": 6316
     }
   ]
 }

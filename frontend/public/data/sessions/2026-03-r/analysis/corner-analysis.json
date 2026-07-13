@@ -1,0 +1,1825 @@
+{
+  "session_id": "2026-03-r",
+  "representative_laps": [
+    {
+      "driver_code": "ALB",
+      "lap_number": 51,
+      "lap_time_ms": 93427
+    },
+    {
+      "driver_code": "ALO",
+      "lap_number": 47,
+      "lap_time_ms": 96221
+    },
+    {
+      "driver_code": "ANT",
+      "lap_number": 49,
+      "lap_time_ms": 92432
+    },
+    {
+      "driver_code": "BEA",
+      "lap_number": 20,
+      "lap_time_ms": 95604
+    },
+    {
+      "driver_code": "BOR",
+      "lap_number": 40,
+      "lap_time_ms": 94164
+    },
+    {
+      "driver_code": "BOT",
+      "lap_number": 52,
+      "lap_time_ms": 96269
+    },
+    {
+      "driver_code": "COL",
+      "lap_number": 41,
+      "lap_time_ms": 94512
+    },
+    {
+      "driver_code": "GAS",
+      "lap_number": 39,
+      "lap_time_ms": 93691
+    },
+    {
+      "driver_code": "HAD",
+      "lap_number": 53,
+      "lap_time_ms": 93837
+    },
+    {
+      "driver_code": "HAM",
+      "lap_number": 48,
+      "lap_time_ms": 92777
+    },
+    {
+      "driver_code": "HUL",
+      "lap_number": 47,
+      "lap_time_ms": 93732
+    },
+    {
+      "driver_code": "LAW",
+      "lap_number": 53,
+      "lap_time_ms": 94230
+    },
+    {
+      "driver_code": "LEC",
+      "lap_number": 53,
+      "lap_time_ms": 92634
+    },
+    {
+      "driver_code": "LIN",
+      "lap_number": 53,
+      "lap_time_ms": 94314
+    },
+    {
+      "driver_code": "NOR",
+      "lap_number": 52,
+      "lap_time_ms": 93208
+    },
+    {
+      "driver_code": "OCO",
+      "lap_number": 53,
+      "lap_time_ms": 94256
+    },
+    {
+      "driver_code": "PER",
+      "lap_number": 53,
+      "lap_time_ms": 95637
+    },
+    {
+      "driver_code": "PIA",
+      "lap_number": 49,
+      "lap_time_ms": 92996
+    },
+    {
+      "driver_code": "RUS",
+      "lap_number": 53,
+      "lap_time_ms": 92549
+    },
+    {
+      "driver_code": "SAI",
+      "lap_number": 38,
+      "lap_time_ms": 94514
+    },
+    {
+      "driver_code": "STR",
+      "lap_number": 29,
+      "lap_time_ms": 97217
+    },
+    {
+      "driver_code": "VER",
+      "lap_number": 41,
+      "lap_time_ms": 93552
+    }
+  ],
+  "corners": [
+    {
+      "corner_number": 1,
+      "distance_m": 841.3,
+      "x": 5273.0,
+      "y": -7006.0,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 719.5,
+          "apex_distance_m": 839.4,
+          "braking_distance_m": 119.9,
+          "entry_speed_kph": 232.7,
+          "apex_speed_kph": 149.0,
+          "exit_speed_kph": 220.1,
+          "speed_loss_kph": 83.7,
+          "brake_duration_ms": 1580.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 665.0,
+          "apex_distance_m": 834.5,
+          "braking_distance_m": 169.5,
+          "entry_speed_kph": 277.0,
+          "apex_speed_kph": 141.0,
+          "exit_speed_kph": 207.7,
+          "speed_loss_kph": 136.0,
+          "brake_duration_ms": 2301.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 661.4,
+          "apex_distance_m": 836.0,
+          "braking_distance_m": 174.7,
+          "entry_speed_kph": 285.0,
+          "apex_speed_kph": 150.1,
+          "exit_speed_kph": 216.6,
+          "speed_loss_kph": 134.9,
+          "brake_duration_ms": 2161.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 654.4,
+          "apex_distance_m": 833.6,
+          "braking_distance_m": 179.2,
+          "entry_speed_kph": 287.0,
+          "apex_speed_kph": 144.0,
+          "exit_speed_kph": 193.3,
+          "speed_loss_kph": 143.0,
+          "brake_duration_ms": 2664.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 673.7,
+          "apex_distance_m": 846.0,
+          "braking_distance_m": 172.3,
+          "entry_speed_kph": 263.0,
+          "apex_speed_kph": 134.9,
+          "exit_speed_kph": 213.9,
+          "speed_loss_kph": 128.1,
+          "brake_duration_ms": 2699.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 641.7,
+          "apex_distance_m": 880.7,
+          "braking_distance_m": 239.0,
+          "entry_speed_kph": 305.0,
+          "apex_speed_kph": 138.0,
+          "exit_speed_kph": 209.9,
+          "speed_loss_kph": 167.0,
+          "brake_duration_ms": 4363.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 680.9,
+          "apex_distance_m": 830.5,
+          "braking_distance_m": 149.5,
+          "entry_speed_kph": 279.1,
+          "apex_speed_kph": 149.7,
+          "exit_speed_kph": 208.8,
+          "speed_loss_kph": 129.5,
+          "brake_duration_ms": 2259.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 686.1,
+          "apex_distance_m": 855.8,
+          "braking_distance_m": 169.7,
+          "entry_speed_kph": 275.8,
+          "apex_speed_kph": 146.7,
+          "exit_speed_kph": 216.5,
+          "speed_loss_kph": 129.0,
+          "brake_duration_ms": 2181.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 669.0,
+          "apex_distance_m": 846.6,
+          "braking_distance_m": 177.5,
+          "entry_speed_kph": 295.0,
+          "apex_speed_kph": 148.0,
+          "exit_speed_kph": 215.6,
+          "speed_loss_kph": 147.0,
+          "brake_duration_ms": 1979.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 638.8,
+          "apex_distance_m": 846.9,
+          "braking_distance_m": 208.2,
+          "entry_speed_kph": 323.0,
+          "apex_speed_kph": 148.0,
+          "exit_speed_kph": 213.4,
+          "speed_loss_kph": 175.0,
+          "brake_duration_ms": 3182.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 655.0,
+          "apex_distance_m": 841.3,
+          "braking_distance_m": 186.3,
+          "entry_speed_kph": 281.0,
+          "apex_speed_kph": 142.4,
+          "exit_speed_kph": 215.8,
+          "speed_loss_kph": 138.6,
+          "brake_duration_ms": 2719.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 690.0,
+          "apex_distance_m": 818.6,
+          "braking_distance_m": 128.6,
+          "entry_speed_kph": 281.0,
+          "apex_speed_kph": 149.7,
+          "exit_speed_kph": 207.7,
+          "speed_loss_kph": 131.3,
+          "brake_duration_ms": 2159.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 632.5,
+          "apex_distance_m": 872.7,
+          "braking_distance_m": 240.2,
+          "entry_speed_kph": 293.0,
+          "apex_speed_kph": 142.5,
+          "exit_speed_kph": 218.4,
+          "speed_loss_kph": 150.5,
+          "brake_duration_ms": 3160.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 676.0,
+          "apex_distance_m": 858.9,
+          "braking_distance_m": 182.8,
+          "entry_speed_kph": 295.0,
+          "apex_speed_kph": 140.0,
+          "exit_speed_kph": 222.8,
+          "speed_loss_kph": 155.0,
+          "brake_duration_ms": 2379.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 606.8,
+          "apex_distance_m": 846.0,
+          "braking_distance_m": 239.2,
+          "entry_speed_kph": 303.0,
+          "apex_speed_kph": 137.2,
+          "exit_speed_kph": 214.8,
+          "speed_loss_kph": 165.8,
+          "brake_duration_ms": 3979.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 657.9,
+          "apex_distance_m": 835.9,
+          "braking_distance_m": 178.0,
+          "entry_speed_kph": 279.0,
+          "apex_speed_kph": 142.0,
+          "exit_speed_kph": 212.2,
+          "speed_loss_kph": 137.0,
+          "brake_duration_ms": 3159.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 624.9,
+          "apex_distance_m": 813.1,
+          "braking_distance_m": 188.2,
+          "entry_speed_kph": 286.8,
+          "apex_speed_kph": 148.0,
+          "exit_speed_kph": 213.1,
+          "speed_loss_kph": 138.8,
+          "brake_duration_ms": 2420.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 664.3,
+          "apex_distance_m": 836.8,
+          "braking_distance_m": 172.5,
+          "entry_speed_kph": 294.0,
+          "apex_speed_kph": 147.0,
+          "exit_speed_kph": 213.4,
+          "speed_loss_kph": 147.0,
+          "brake_duration_ms": 2759.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 628.2,
+          "apex_distance_m": 857.2,
+          "braking_distance_m": 228.9,
+          "entry_speed_kph": 296.8,
+          "apex_speed_kph": 145.0,
+          "exit_speed_kph": 214.0,
+          "speed_loss_kph": 151.8,
+          "brake_duration_ms": 4256.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 621.8,
+          "apex_distance_m": 839.6,
+          "braking_distance_m": 217.8,
+          "entry_speed_kph": 273.6,
+          "apex_speed_kph": 147.0,
+          "exit_speed_kph": 209.0,
+          "speed_loss_kph": 126.6,
+          "brake_duration_ms": 2680.0
+        },
+        {
+          "driver_code": "VER",
+          "brake_start_m": 633.6,
+          "apex_distance_m": 848.9,
+          "braking_distance_m": 215.3,
+          "entry_speed_kph": 311.0,
+          "apex_speed_kph": 146.0,
+          "exit_speed_kph": 216.2,
+          "speed_loss_kph": 165.0,
+          "brake_duration_ms": 2520.0
+        }
+      ]
+    },
+    {
+      "corner_number": 2,
+      "distance_m": 1214.1,
+      "x": 2451.62,
+      "y": -4882.12,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 1154.2,
+          "apex_distance_m": 1215.5,
+          "braking_distance_m": 61.3,
+          "entry_speed_kph": 213.6,
+          "apex_speed_kph": 185.0,
+          "exit_speed_kph": 188.0,
+          "speed_loss_kph": 28.6,
+          "brake_duration_ms": 959.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 1169.1,
+          "apex_distance_m": 1212.8,
+          "braking_distance_m": 43.6,
+          "entry_speed_kph": 190.0,
+          "apex_speed_kph": 173.0,
+          "exit_speed_kph": 176.6,
+          "speed_loss_kph": 17.0,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 1171.2,
+          "apex_distance_m": 1230.1,
+          "braking_distance_m": 58.9,
+          "entry_speed_kph": 207.0,
+          "apex_speed_kph": 191.0,
+          "exit_speed_kph": 193.1,
+          "speed_loss_kph": 16.0,
+          "brake_duration_ms": 281.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 1052.4,
+          "apex_distance_m": 1211.9,
+          "braking_distance_m": 159.5,
+          "entry_speed_kph": 226.9,
+          "apex_speed_kph": 175.1,
+          "exit_speed_kph": 175.9,
+          "speed_loss_kph": 51.7,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 1076.4,
+          "apex_distance_m": 1233.1,
+          "braking_distance_m": 156.6,
+          "entry_speed_kph": 221.0,
+          "apex_speed_kph": 181.0,
+          "exit_speed_kph": 184.4,
+          "speed_loss_kph": 40.0,
+          "brake_duration_ms": 1359.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 1150.1,
+          "apex_distance_m": 1206.6,
+          "braking_distance_m": 56.5,
+          "entry_speed_kph": 198.0,
+          "apex_speed_kph": 176.0,
+          "exit_speed_kph": 189.0,
+          "speed_loss_kph": 22.0,
+          "brake_duration_ms": 400.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 1065.6,
+          "apex_distance_m": 1218.4,
+          "braking_distance_m": 152.8,
+          "entry_speed_kph": 209.9,
+          "apex_speed_kph": 173.0,
+          "exit_speed_kph": 173.2,
+          "speed_loss_kph": 36.9,
+          "brake_duration_ms": 1434.0
+        }
+      ]
+    },
+    {
+      "corner_number": 3,
+      "distance_m": 1386.0,
+      "x": 1479.84,
+      "y": -3436.96,
+      "drivers": [
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 1156.8,
+          "apex_distance_m": 1386.0,
+          "braking_distance_m": 229.2,
+          "entry_speed_kph": 201.3,
+          "apex_speed_kph": 167.0,
+          "exit_speed_kph": 152.7,
+          "speed_loss_kph": 34.3,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 1166.6,
+          "apex_distance_m": 1390.2,
+          "braking_distance_m": 223.7,
+          "entry_speed_kph": 205.1,
+          "apex_speed_kph": 184.0,
+          "exit_speed_kph": 163.6,
+          "speed_loss_kph": 21.1,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 1168.1,
+          "apex_distance_m": 1366.1,
+          "braking_distance_m": 198.0,
+          "entry_speed_kph": 209.8,
+          "apex_speed_kph": 183.2,
+          "exit_speed_kph": 176.0,
+          "speed_loss_kph": 26.6,
+          "brake_duration_ms": 399.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 1179.4,
+          "apex_distance_m": 1381.7,
+          "braking_distance_m": 202.3,
+          "entry_speed_kph": 202.0,
+          "apex_speed_kph": 185.2,
+          "exit_speed_kph": 168.5,
+          "speed_loss_kph": 16.8,
+          "brake_duration_ms": 181.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 1222.2,
+          "apex_distance_m": 1400.9,
+          "braking_distance_m": 178.6,
+          "entry_speed_kph": 205.0,
+          "apex_speed_kph": 175.2,
+          "exit_speed_kph": 159.4,
+          "speed_loss_kph": 29.8,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 1147.7,
+          "apex_distance_m": 1380.8,
+          "braking_distance_m": 233.2,
+          "entry_speed_kph": 222.0,
+          "apex_speed_kph": 189.0,
+          "exit_speed_kph": 177.4,
+          "speed_loss_kph": 33.0,
+          "brake_duration_ms": 400.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 1174.7,
+          "apex_distance_m": 1395.3,
+          "braking_distance_m": 220.7,
+          "entry_speed_kph": 213.0,
+          "apex_speed_kph": 182.0,
+          "exit_speed_kph": 163.6,
+          "speed_loss_kph": 31.0,
+          "brake_duration_ms": 200.0
+        }
+      ]
+    },
+    {
+      "corner_number": 4,
+      "distance_m": 1555.1,
+      "x": 100.19,
+      "y": -2834.79,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 1480.9,
+          "apex_distance_m": 1577.2,
+          "braking_distance_m": 96.3,
+          "entry_speed_kph": 185.0,
+          "apex_speed_kph": 166.0,
+          "exit_speed_kph": 207.0,
+          "speed_loss_kph": 19.0,
+          "brake_duration_ms": 440.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 1467.1,
+          "apex_distance_m": 1545.9,
+          "braking_distance_m": 78.8,
+          "entry_speed_kph": 195.0,
+          "apex_speed_kph": 165.0,
+          "exit_speed_kph": 209.1,
+          "speed_loss_kph": 30.0,
+          "brake_duration_ms": 720.0
+        },
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 563.7,
+          "apex_distance_m": 1640.8,
+          "braking_distance_m": 1077.2,
+          "entry_speed_kph": 312.0,
+          "apex_speed_kph": 180.0,
+          "exit_speed_kph": 186.0,
+          "speed_loss_kph": 132.0,
+          "brake_duration_ms": 14027.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 1467.6,
+          "apex_distance_m": 1562.1,
+          "braking_distance_m": 94.5,
+          "entry_speed_kph": 194.2,
+          "apex_speed_kph": 160.6,
+          "exit_speed_kph": 196.7,
+          "speed_loss_kph": 33.6,
+          "brake_duration_ms": 420.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 1497.6,
+          "apex_distance_m": 1549.3,
+          "braking_distance_m": 51.7,
+          "entry_speed_kph": 171.0,
+          "apex_speed_kph": 149.0,
+          "exit_speed_kph": 197.5,
+          "speed_loss_kph": 22.0,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 1456.9,
+          "apex_distance_m": 1533.1,
+          "braking_distance_m": 76.2,
+          "entry_speed_kph": 194.0,
+          "apex_speed_kph": 153.0,
+          "exit_speed_kph": 199.5,
+          "speed_loss_kph": 41.0,
+          "brake_duration_ms": 744.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 1464.8,
+          "apex_distance_m": 1557.4,
+          "braking_distance_m": 92.5,
+          "entry_speed_kph": 196.0,
+          "apex_speed_kph": 163.0,
+          "exit_speed_kph": 209.8,
+          "speed_loss_kph": 33.0,
+          "brake_duration_ms": 1204.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 1481.4,
+          "apex_distance_m": 1563.0,
+          "braking_distance_m": 81.7,
+          "entry_speed_kph": 190.2,
+          "apex_speed_kph": 162.0,
+          "exit_speed_kph": 203.3,
+          "speed_loss_kph": 28.2,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 1474.6,
+          "apex_distance_m": 1551.9,
+          "braking_distance_m": 77.3,
+          "entry_speed_kph": 193.9,
+          "apex_speed_kph": 161.0,
+          "exit_speed_kph": 206.4,
+          "speed_loss_kph": 32.9,
+          "brake_duration_ms": 260.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 1464.9,
+          "apex_distance_m": 1574.0,
+          "braking_distance_m": 109.1,
+          "entry_speed_kph": 193.0,
+          "apex_speed_kph": 154.0,
+          "exit_speed_kph": 200.7,
+          "speed_loss_kph": 39.0,
+          "brake_duration_ms": 239.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 1324.8,
+          "apex_distance_m": 1555.1,
+          "braking_distance_m": 230.3,
+          "entry_speed_kph": 198.5,
+          "apex_speed_kph": 171.0,
+          "exit_speed_kph": 198.6,
+          "speed_loss_kph": 27.5,
+          "brake_duration_ms": 541.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 1488.7,
+          "apex_distance_m": 1577.3,
+          "braking_distance_m": 88.7,
+          "entry_speed_kph": 185.8,
+          "apex_speed_kph": 151.0,
+          "exit_speed_kph": 192.5,
+          "speed_loss_kph": 34.8,
+          "brake_duration_ms": 380.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 1477.4,
+          "apex_distance_m": 1548.1,
+          "braking_distance_m": 70.8,
+          "entry_speed_kph": 181.6,
+          "apex_speed_kph": 154.0,
+          "exit_speed_kph": 202.1,
+          "speed_loss_kph": 27.6,
+          "brake_duration_ms": 1800.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 1447.4,
+          "apex_distance_m": 1551.2,
+          "braking_distance_m": 103.8,
+          "entry_speed_kph": 199.0,
+          "apex_speed_kph": 154.0,
+          "exit_speed_kph": 193.8,
+          "speed_loss_kph": 45.0,
+          "brake_duration_ms": 659.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 1226.4,
+          "apex_distance_m": 1509.6,
+          "braking_distance_m": 283.1,
+          "entry_speed_kph": 197.0,
+          "apex_speed_kph": 163.8,
+          "exit_speed_kph": 201.9,
+          "speed_loss_kph": 33.2,
+          "brake_duration_ms": 1220.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 1464.2,
+          "apex_distance_m": 1556.2,
+          "braking_distance_m": 92.0,
+          "entry_speed_kph": 193.4,
+          "apex_speed_kph": 161.0,
+          "exit_speed_kph": 211.4,
+          "speed_loss_kph": 32.4,
+          "brake_duration_ms": 1160.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 1471.5,
+          "apex_distance_m": 1570.2,
+          "braking_distance_m": 98.7,
+          "entry_speed_kph": 185.0,
+          "apex_speed_kph": 155.0,
+          "exit_speed_kph": 198.6,
+          "speed_loss_kph": 30.0,
+          "brake_duration_ms": 760.0
+        }
+      ]
+    },
+    {
+      "corner_number": 5,
+      "distance_m": 1713.4,
+      "x": 352.09,
+      "y": -1248.71,
+      "drivers": [
+        {
+          "driver_code": "STR",
+          "brake_start_m": 1686.2,
+          "apex_distance_m": 1713.4,
+          "braking_distance_m": 27.2,
+          "entry_speed_kph": 196.0,
+          "apex_speed_kph": 187.0,
+          "exit_speed_kph": 228.7,
+          "speed_loss_kph": 9.0,
+          "brake_duration_ms": 0.0
+        }
+      ]
+    },
+    {
+      "corner_number": 6,
+      "distance_m": 1971.3,
+      "x": 156.82,
+      "y": -923.1,
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 1744.7,
+          "apex_distance_m": 1971.3,
+          "braking_distance_m": 226.6,
+          "entry_speed_kph": 186.0,
+          "apex_speed_kph": 161.0,
+          "exit_speed_kph": 208.0,
+          "speed_loss_kph": 25.0,
+          "brake_duration_ms": 2759.0
+        }
+      ]
+    },
+    {
+      "corner_number": 7,
+      "distance_m": 2435.2,
+      "x": -5675.0,
+      "y": -2343.0,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 2231.6,
+          "apex_distance_m": 2426.8,
+          "braking_distance_m": 195.2,
+          "entry_speed_kph": 248.3,
+          "apex_speed_kph": 135.5,
+          "exit_speed_kph": 217.7,
+          "speed_loss_kph": 112.8,
+          "brake_duration_ms": 320.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 2209.9,
+          "apex_distance_m": 2429.5,
+          "braking_distance_m": 219.6,
+          "entry_speed_kph": 253.5,
+          "apex_speed_kph": 132.0,
+          "exit_speed_kph": 213.9,
+          "speed_loss_kph": 121.5,
+          "brake_duration_ms": 640.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 2348.8,
+          "apex_distance_m": 2440.0,
+          "braking_distance_m": 91.1,
+          "entry_speed_kph": 230.0,
+          "apex_speed_kph": 141.0,
+          "exit_speed_kph": 224.5,
+          "speed_loss_kph": 89.0,
+          "brake_duration_ms": 1381.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 2344.3,
+          "apex_distance_m": 2429.1,
+          "braking_distance_m": 84.9,
+          "entry_speed_kph": 224.0,
+          "apex_speed_kph": 137.0,
+          "exit_speed_kph": 225.8,
+          "speed_loss_kph": 87.0,
+          "brake_duration_ms": 1523.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 2191.7,
+          "apex_distance_m": 2435.2,
+          "braking_distance_m": 243.5,
+          "entry_speed_kph": 260.2,
+          "apex_speed_kph": 124.0,
+          "exit_speed_kph": 215.8,
+          "speed_loss_kph": 136.2,
+          "brake_duration_ms": 522.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 2215.9,
+          "apex_distance_m": 2419.0,
+          "braking_distance_m": 203.1,
+          "entry_speed_kph": 247.1,
+          "apex_speed_kph": 133.0,
+          "exit_speed_kph": 218.4,
+          "speed_loss_kph": 114.1,
+          "brake_duration_ms": 440.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 2211.8,
+          "apex_distance_m": 2448.6,
+          "braking_distance_m": 236.9,
+          "entry_speed_kph": 258.6,
+          "apex_speed_kph": 135.5,
+          "exit_speed_kph": 226.1,
+          "speed_loss_kph": 123.0,
+          "brake_duration_ms": 720.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 2212.0,
+          "apex_distance_m": 2440.8,
+          "braking_distance_m": 228.8,
+          "entry_speed_kph": 260.1,
+          "apex_speed_kph": 130.0,
+          "exit_speed_kph": 222.8,
+          "speed_loss_kph": 130.1,
+          "brake_duration_ms": 401.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 2242.9,
+          "apex_distance_m": 2431.8,
+          "braking_distance_m": 188.9,
+          "entry_speed_kph": 236.8,
+          "apex_speed_kph": 139.2,
+          "exit_speed_kph": 221.0,
+          "speed_loss_kph": 97.5,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 2232.4,
+          "apex_distance_m": 2447.2,
+          "braking_distance_m": 214.8,
+          "entry_speed_kph": 252.0,
+          "apex_speed_kph": 136.0,
+          "exit_speed_kph": 224.9,
+          "speed_loss_kph": 116.0,
+          "brake_duration_ms": 500.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 2204.1,
+          "apex_distance_m": 2437.4,
+          "braking_distance_m": 233.3,
+          "entry_speed_kph": 270.8,
+          "apex_speed_kph": 128.0,
+          "exit_speed_kph": 219.8,
+          "speed_loss_kph": 142.8,
+          "brake_duration_ms": 900.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 2358.8,
+          "apex_distance_m": 2443.6,
+          "braking_distance_m": 84.8,
+          "entry_speed_kph": 232.6,
+          "apex_speed_kph": 136.0,
+          "exit_speed_kph": 222.8,
+          "speed_loss_kph": 96.6,
+          "brake_duration_ms": 1020.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 2244.4,
+          "apex_distance_m": 2447.9,
+          "braking_distance_m": 203.5,
+          "entry_speed_kph": 239.0,
+          "apex_speed_kph": 123.0,
+          "exit_speed_kph": 219.9,
+          "speed_loss_kph": 116.0,
+          "brake_duration_ms": 320.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 2228.8,
+          "apex_distance_m": 2436.8,
+          "braking_distance_m": 208.0,
+          "entry_speed_kph": 247.0,
+          "apex_speed_kph": 134.8,
+          "exit_speed_kph": 223.8,
+          "speed_loss_kph": 112.2,
+          "brake_duration_ms": 420.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 2230.6,
+          "apex_distance_m": 2421.1,
+          "braking_distance_m": 190.6,
+          "entry_speed_kph": 234.0,
+          "apex_speed_kph": 131.4,
+          "exit_speed_kph": 219.6,
+          "speed_loss_kph": 102.6,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 2217.5,
+          "apex_distance_m": 2420.7,
+          "braking_distance_m": 203.2,
+          "entry_speed_kph": 242.6,
+          "apex_speed_kph": 128.0,
+          "exit_speed_kph": 214.8,
+          "speed_loss_kph": 114.6,
+          "brake_duration_ms": 3301.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 1992.3,
+          "apex_distance_m": 2392.3,
+          "braking_distance_m": 400.1,
+          "entry_speed_kph": 255.0,
+          "apex_speed_kph": 139.3,
+          "exit_speed_kph": 229.5,
+          "speed_loss_kph": 115.7,
+          "brake_duration_ms": 3160.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 2218.7,
+          "apex_distance_m": 2450.8,
+          "braking_distance_m": 232.1,
+          "entry_speed_kph": 264.0,
+          "apex_speed_kph": 135.0,
+          "exit_speed_kph": 221.5,
+          "speed_loss_kph": 129.0,
+          "brake_duration_ms": 379.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 2225.6,
+          "apex_distance_m": 2444.7,
+          "braking_distance_m": 219.1,
+          "entry_speed_kph": 264.9,
+          "apex_speed_kph": 131.0,
+          "exit_speed_kph": 224.9,
+          "speed_loss_kph": 133.9,
+          "brake_duration_ms": 1000.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 2227.6,
+          "apex_distance_m": 2427.4,
+          "braking_distance_m": 199.8,
+          "entry_speed_kph": 228.0,
+          "apex_speed_kph": 128.3,
+          "exit_speed_kph": 211.9,
+          "speed_loss_kph": 99.7,
+          "brake_duration_ms": 0.0
+        },
+        {
+          "driver_code": "VER",
+          "brake_start_m": 2215.0,
+          "apex_distance_m": 2434.1,
+          "braking_distance_m": 219.2,
+          "entry_speed_kph": 253.0,
+          "apex_speed_kph": 127.0,
+          "exit_speed_kph": 223.0,
+          "speed_loss_kph": 126.0,
+          "brake_duration_ms": 360.0
+        }
+      ]
+    },
+    {
+      "corner_number": 8,
+      "distance_m": 2649.5,
+      "x": -5714.0,
+      "y": -2254.0,
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 2275.2,
+          "apex_distance_m": 2649.5,
+          "braking_distance_m": 374.3,
+          "entry_speed_kph": 256.0,
+          "apex_speed_kph": 129.5,
+          "exit_speed_kph": 221.4,
+          "speed_loss_kph": 126.5,
+          "brake_duration_ms": 8760.0
+        }
+      ]
+    },
+    {
+      "corner_number": 9,
+      "distance_m": 2892.1,
+      "x": -6080.7,
+      "y": 1933.5,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 2775.5,
+          "apex_distance_m": 2891.0,
+          "braking_distance_m": 115.4,
+          "entry_speed_kph": 244.0,
+          "apex_speed_kph": 74.0,
+          "exit_speed_kph": 212.7,
+          "speed_loss_kph": 170.0,
+          "brake_duration_ms": 2879.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 2770.7,
+          "apex_distance_m": 2884.6,
+          "braking_distance_m": 113.9,
+          "entry_speed_kph": 229.0,
+          "apex_speed_kph": 73.6,
+          "exit_speed_kph": 209.1,
+          "speed_loss_kph": 155.4,
+          "brake_duration_ms": 2621.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 2756.8,
+          "apex_distance_m": 2887.2,
+          "braking_distance_m": 130.4,
+          "entry_speed_kph": 243.0,
+          "apex_speed_kph": 71.5,
+          "exit_speed_kph": 213.3,
+          "speed_loss_kph": 171.5,
+          "brake_duration_ms": 3320.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 2800.3,
+          "apex_distance_m": 2891.8,
+          "braking_distance_m": 91.5,
+          "entry_speed_kph": 196.0,
+          "apex_speed_kph": 69.2,
+          "exit_speed_kph": 206.9,
+          "speed_loss_kph": 126.8,
+          "brake_duration_ms": 2604.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 2752.6,
+          "apex_distance_m": 2891.5,
+          "braking_distance_m": 138.9,
+          "entry_speed_kph": 239.0,
+          "apex_speed_kph": 74.0,
+          "exit_speed_kph": 214.0,
+          "speed_loss_kph": 165.0,
+          "brake_duration_ms": 3278.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 2771.6,
+          "apex_distance_m": 2892.4,
+          "braking_distance_m": 120.8,
+          "entry_speed_kph": 223.5,
+          "apex_speed_kph": 70.0,
+          "exit_speed_kph": 210.3,
+          "speed_loss_kph": 153.5,
+          "brake_duration_ms": 2981.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 2789.8,
+          "apex_distance_m": 2894.7,
+          "braking_distance_m": 104.9,
+          "entry_speed_kph": 219.9,
+          "apex_speed_kph": 72.0,
+          "exit_speed_kph": 213.9,
+          "speed_loss_kph": 147.9,
+          "brake_duration_ms": 2601.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 2796.2,
+          "apex_distance_m": 2899.0,
+          "braking_distance_m": 102.8,
+          "entry_speed_kph": 220.1,
+          "apex_speed_kph": 71.6,
+          "exit_speed_kph": 210.4,
+          "speed_loss_kph": 148.5,
+          "brake_duration_ms": 2400.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 2778.5,
+          "apex_distance_m": 2890.0,
+          "braking_distance_m": 111.4,
+          "entry_speed_kph": 233.9,
+          "apex_speed_kph": 73.0,
+          "exit_speed_kph": 212.7,
+          "speed_loss_kph": 160.9,
+          "brake_duration_ms": 2719.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 2772.7,
+          "apex_distance_m": 2901.0,
+          "braking_distance_m": 128.2,
+          "entry_speed_kph": 243.0,
+          "apex_speed_kph": 73.0,
+          "exit_speed_kph": 204.5,
+          "speed_loss_kph": 170.0,
+          "brake_duration_ms": 2799.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 2789.5,
+          "apex_distance_m": 2898.5,
+          "braking_distance_m": 109.0,
+          "entry_speed_kph": 216.0,
+          "apex_speed_kph": 76.1,
+          "exit_speed_kph": 209.4,
+          "speed_loss_kph": 139.9,
+          "brake_duration_ms": 2280.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 2796.8,
+          "apex_distance_m": 2904.5,
+          "braking_distance_m": 107.7,
+          "entry_speed_kph": 231.0,
+          "apex_speed_kph": 67.0,
+          "exit_speed_kph": 212.6,
+          "speed_loss_kph": 164.0,
+          "brake_duration_ms": 3160.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 2780.0,
+          "apex_distance_m": 2940.8,
+          "braking_distance_m": 160.7,
+          "entry_speed_kph": 232.0,
+          "apex_speed_kph": 73.0,
+          "exit_speed_kph": 213.5,
+          "speed_loss_kph": 159.0,
+          "brake_duration_ms": 2839.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 2782.5,
+          "apex_distance_m": 2892.1,
+          "braking_distance_m": 109.6,
+          "entry_speed_kph": 214.3,
+          "apex_speed_kph": 69.0,
+          "exit_speed_kph": 218.4,
+          "speed_loss_kph": 145.3,
+          "brake_duration_ms": 2501.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 2787.2,
+          "apex_distance_m": 2888.9,
+          "braking_distance_m": 101.6,
+          "entry_speed_kph": 207.9,
+          "apex_speed_kph": 72.0,
+          "exit_speed_kph": 215.3,
+          "speed_loss_kph": 135.9,
+          "brake_duration_ms": 2501.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 2764.6,
+          "apex_distance_m": 2877.2,
+          "braking_distance_m": 112.6,
+          "entry_speed_kph": 212.3,
+          "apex_speed_kph": 74.3,
+          "exit_speed_kph": 213.1,
+          "speed_loss_kph": 138.0,
+          "brake_duration_ms": 2481.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 2734.4,
+          "apex_distance_m": 2859.4,
+          "braking_distance_m": 125.0,
+          "entry_speed_kph": 220.0,
+          "apex_speed_kph": 73.0,
+          "exit_speed_kph": 223.2,
+          "speed_loss_kph": 147.0,
+          "brake_duration_ms": 3180.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 2792.8,
+          "apex_distance_m": 2906.7,
+          "braking_distance_m": 113.8,
+          "entry_speed_kph": 228.3,
+          "apex_speed_kph": 71.0,
+          "exit_speed_kph": 209.0,
+          "speed_loss_kph": 157.3,
+          "brake_duration_ms": 3101.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 2776.5,
+          "apex_distance_m": 2893.3,
+          "braking_distance_m": 116.8,
+          "entry_speed_kph": 238.0,
+          "apex_speed_kph": 70.0,
+          "exit_speed_kph": 215.7,
+          "speed_loss_kph": 168.0,
+          "brake_duration_ms": 2944.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 2775.5,
+          "apex_distance_m": 2893.8,
+          "braking_distance_m": 118.3,
+          "entry_speed_kph": 222.0,
+          "apex_speed_kph": 71.2,
+          "exit_speed_kph": 209.5,
+          "speed_loss_kph": 150.8,
+          "brake_duration_ms": 2888.0
+        },
+        {
+          "driver_code": "VER",
+          "brake_start_m": 2781.4,
+          "apex_distance_m": 2892.0,
+          "braking_distance_m": 110.6,
+          "entry_speed_kph": 228.0,
+          "apex_speed_kph": 71.0,
+          "exit_speed_kph": 212.2,
+          "speed_loss_kph": 157.0,
+          "brake_duration_ms": 2323.0
+        }
+      ]
+    },
+    {
+      "corner_number": 10,
+      "distance_m": 3154.1,
+      "x": -6181.99,
+      "y": 1908.53,
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 2943.6,
+          "apex_distance_m": 3154.1,
+          "braking_distance_m": 210.5,
+          "entry_speed_kph": 237.7,
+          "apex_speed_kph": 75.0,
+          "exit_speed_kph": 217.6,
+          "speed_loss_kph": 162.7,
+          "brake_duration_ms": 4000.0
+        }
+      ]
+    },
+    {
+      "corner_number": 11,
+      "distance_m": 3947.8,
+      "x": -13795.0,
+      "y": 2509.0,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 3711.7,
+          "apex_distance_m": 3941.2,
+          "braking_distance_m": 229.5,
+          "entry_speed_kph": 257.0,
+          "apex_speed_kph": 162.7,
+          "exit_speed_kph": 227.0,
+          "speed_loss_kph": 94.3,
+          "brake_duration_ms": 939.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 3697.2,
+          "apex_distance_m": 3958.4,
+          "braking_distance_m": 261.2,
+          "entry_speed_kph": 248.0,
+          "apex_speed_kph": 148.0,
+          "exit_speed_kph": 231.9,
+          "speed_loss_kph": 100.0,
+          "brake_duration_ms": 1359.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 3711.9,
+          "apex_distance_m": 3953.8,
+          "braking_distance_m": 242.0,
+          "entry_speed_kph": 254.0,
+          "apex_speed_kph": 159.0,
+          "exit_speed_kph": 238.0,
+          "speed_loss_kph": 95.0,
+          "brake_duration_ms": 621.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 3696.1,
+          "apex_distance_m": 3932.4,
+          "braking_distance_m": 236.2,
+          "entry_speed_kph": 252.5,
+          "apex_speed_kph": 148.0,
+          "exit_speed_kph": 224.6,
+          "speed_loss_kph": 104.5,
+          "brake_duration_ms": 920.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 3677.2,
+          "apex_distance_m": 3956.9,
+          "braking_distance_m": 279.8,
+          "entry_speed_kph": 280.1,
+          "apex_speed_kph": 141.1,
+          "exit_speed_kph": 232.8,
+          "speed_loss_kph": 139.0,
+          "brake_duration_ms": 1581.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 3690.1,
+          "apex_distance_m": 3932.5,
+          "braking_distance_m": 242.4,
+          "entry_speed_kph": 275.0,
+          "apex_speed_kph": 145.2,
+          "exit_speed_kph": 230.5,
+          "speed_loss_kph": 129.8,
+          "brake_duration_ms": 824.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 3720.1,
+          "apex_distance_m": 3981.0,
+          "braking_distance_m": 260.9,
+          "entry_speed_kph": 249.0,
+          "apex_speed_kph": 159.0,
+          "exit_speed_kph": 242.7,
+          "speed_loss_kph": 90.0,
+          "brake_duration_ms": 800.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 3685.5,
+          "apex_distance_m": 3956.8,
+          "braking_distance_m": 271.3,
+          "entry_speed_kph": 263.5,
+          "apex_speed_kph": 155.6,
+          "exit_speed_kph": 230.2,
+          "speed_loss_kph": 107.9,
+          "brake_duration_ms": 1121.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 3731.2,
+          "apex_distance_m": 3932.7,
+          "braking_distance_m": 201.5,
+          "entry_speed_kph": 228.9,
+          "apex_speed_kph": 158.0,
+          "exit_speed_kph": 226.0,
+          "speed_loss_kph": 70.9,
+          "brake_duration_ms": 180.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 3722.5,
+          "apex_distance_m": 3962.7,
+          "braking_distance_m": 240.2,
+          "entry_speed_kph": 251.1,
+          "apex_speed_kph": 158.0,
+          "exit_speed_kph": 233.3,
+          "speed_loss_kph": 93.1,
+          "brake_duration_ms": 280.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 3714.5,
+          "apex_distance_m": 3957.1,
+          "braking_distance_m": 242.7,
+          "entry_speed_kph": 250.0,
+          "apex_speed_kph": 155.0,
+          "exit_speed_kph": 230.3,
+          "speed_loss_kph": 95.0,
+          "brake_duration_ms": 779.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 3721.3,
+          "apex_distance_m": 3941.9,
+          "braking_distance_m": 220.6,
+          "entry_speed_kph": 263.7,
+          "apex_speed_kph": 156.0,
+          "exit_speed_kph": 225.2,
+          "speed_loss_kph": 107.7,
+          "brake_duration_ms": 920.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 3750.9,
+          "apex_distance_m": 4005.1,
+          "braking_distance_m": 254.2,
+          "entry_speed_kph": 253.0,
+          "apex_speed_kph": 151.3,
+          "exit_speed_kph": 237.5,
+          "speed_loss_kph": 101.7,
+          "brake_duration_ms": 3519.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 3697.9,
+          "apex_distance_m": 3940.2,
+          "braking_distance_m": 242.4,
+          "entry_speed_kph": 262.0,
+          "apex_speed_kph": 160.0,
+          "exit_speed_kph": 232.3,
+          "speed_loss_kph": 102.0,
+          "brake_duration_ms": 680.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 3707.3,
+          "apex_distance_m": 3946.1,
+          "braking_distance_m": 238.8,
+          "entry_speed_kph": 264.0,
+          "apex_speed_kph": 147.6,
+          "exit_speed_kph": 230.6,
+          "speed_loss_kph": 116.4,
+          "brake_duration_ms": 4039.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 3678.7,
+          "apex_distance_m": 3953.1,
+          "braking_distance_m": 274.3,
+          "entry_speed_kph": 266.0,
+          "apex_speed_kph": 155.4,
+          "exit_speed_kph": 235.2,
+          "speed_loss_kph": 110.6,
+          "brake_duration_ms": 999.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 3661.5,
+          "apex_distance_m": 3911.7,
+          "braking_distance_m": 250.3,
+          "entry_speed_kph": 260.0,
+          "apex_speed_kph": 155.5,
+          "exit_speed_kph": 236.7,
+          "speed_loss_kph": 104.5,
+          "brake_duration_ms": 840.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 3731.0,
+          "apex_distance_m": 3968.1,
+          "braking_distance_m": 237.1,
+          "entry_speed_kph": 257.0,
+          "apex_speed_kph": 160.0,
+          "exit_speed_kph": 228.5,
+          "speed_loss_kph": 97.0,
+          "brake_duration_ms": 879.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 3687.2,
+          "apex_distance_m": 3946.6,
+          "braking_distance_m": 259.4,
+          "entry_speed_kph": 267.1,
+          "apex_speed_kph": 149.0,
+          "exit_speed_kph": 228.7,
+          "speed_loss_kph": 118.1,
+          "brake_duration_ms": 980.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 3711.9,
+          "apex_distance_m": 3947.8,
+          "braking_distance_m": 235.9,
+          "entry_speed_kph": 241.0,
+          "apex_speed_kph": 150.6,
+          "exit_speed_kph": 225.1,
+          "speed_loss_kph": 90.4,
+          "brake_duration_ms": 1000.0
+        },
+        {
+          "driver_code": "VER",
+          "brake_start_m": 3734.5,
+          "apex_distance_m": 3947.6,
+          "braking_distance_m": 213.1,
+          "entry_speed_kph": 226.0,
+          "apex_speed_kph": 152.0,
+          "exit_speed_kph": 227.8,
+          "speed_loss_kph": 74.0,
+          "brake_duration_ms": 204.0
+        }
+      ]
+    },
+    {
+      "corner_number": 12,
+      "distance_m": 4274.2,
+      "x": -13792.25,
+      "y": 2539.91,
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 3891.2,
+          "apex_distance_m": 4274.2,
+          "braking_distance_m": 383.1,
+          "entry_speed_kph": 277.0,
+          "apex_speed_kph": 146.0,
+          "exit_speed_kph": 146.0,
+          "speed_loss_kph": 131.0,
+          "brake_duration_ms": 2393.0
+        }
+      ]
+    },
+    {
+      "corner_number": 13,
+      "distance_m": 5189.5,
+      "x": -2939.0,
+      "y": -236.0,
+      "drivers": [
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 4536.0,
+          "apex_distance_m": 5189.5,
+          "braking_distance_m": 653.5,
+          "entry_speed_kph": 314.0,
+          "apex_speed_kph": 281.5,
+          "exit_speed_kph": 92.3,
+          "speed_loss_kph": 32.5,
+          "brake_duration_ms": 4843.0
+        }
+      ]
+    },
+    {
+      "corner_number": 14,
+      "distance_m": 5365.2,
+      "x": -1766.64,
+      "y": 488.24,
+      "drivers": [
+        {
+          "driver_code": "ALB",
+          "brake_start_m": 5255.4,
+          "apex_distance_m": 5372.1,
+          "braking_distance_m": 116.8,
+          "entry_speed_kph": 259.0,
+          "apex_speed_kph": 93.7,
+          "exit_speed_kph": 191.8,
+          "speed_loss_kph": 165.3,
+          "brake_duration_ms": 2080.0
+        },
+        {
+          "driver_code": "ALO",
+          "brake_start_m": 5235.2,
+          "apex_distance_m": 5395.1,
+          "braking_distance_m": 159.9,
+          "entry_speed_kph": 260.0,
+          "apex_speed_kph": 84.0,
+          "exit_speed_kph": 203.0,
+          "speed_loss_kph": 176.0,
+          "brake_duration_ms": 3840.0
+        },
+        {
+          "driver_code": "ANT",
+          "brake_start_m": 5253.7,
+          "apex_distance_m": 5399.7,
+          "braking_distance_m": 146.1,
+          "entry_speed_kph": 256.4,
+          "apex_speed_kph": 95.6,
+          "exit_speed_kph": 213.7,
+          "speed_loss_kph": 160.8,
+          "brake_duration_ms": 3819.0
+        },
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 4949.3,
+          "apex_distance_m": 5348.0,
+          "braking_distance_m": 398.8,
+          "entry_speed_kph": 333.0,
+          "apex_speed_kph": 303.8,
+          "exit_speed_kph": 299.0,
+          "speed_loss_kph": 29.2,
+          "brake_duration_ms": 1760.0
+        },
+        {
+          "driver_code": "BOR",
+          "brake_start_m": 5232.3,
+          "apex_distance_m": 5349.0,
+          "braking_distance_m": 116.7,
+          "entry_speed_kph": 276.0,
+          "apex_speed_kph": 95.0,
+          "exit_speed_kph": 169.0,
+          "speed_loss_kph": 181.0,
+          "brake_duration_ms": 4284.0
+        },
+        {
+          "driver_code": "BOT",
+          "brake_start_m": 5259.8,
+          "apex_distance_m": 5364.7,
+          "braking_distance_m": 105.0,
+          "entry_speed_kph": 239.0,
+          "apex_speed_kph": 89.0,
+          "exit_speed_kph": 173.2,
+          "speed_loss_kph": 150.0,
+          "brake_duration_ms": 2259.0
+        },
+        {
+          "driver_code": "COL",
+          "brake_start_m": 5271.0,
+          "apex_distance_m": 5350.6,
+          "braking_distance_m": 79.6,
+          "entry_speed_kph": 199.0,
+          "apex_speed_kph": 85.0,
+          "exit_speed_kph": 181.9,
+          "speed_loss_kph": 114.0,
+          "brake_duration_ms": 3239.0
+        },
+        {
+          "driver_code": "GAS",
+          "brake_start_m": 5256.7,
+          "apex_distance_m": 5367.4,
+          "braking_distance_m": 110.6,
+          "entry_speed_kph": 248.0,
+          "apex_speed_kph": 89.4,
+          "exit_speed_kph": 188.3,
+          "speed_loss_kph": 158.6,
+          "brake_duration_ms": 2081.0
+        },
+        {
+          "driver_code": "HAD",
+          "brake_start_m": 5249.0,
+          "apex_distance_m": 5372.3,
+          "braking_distance_m": 123.3,
+          "entry_speed_kph": 290.0,
+          "apex_speed_kph": 91.0,
+          "exit_speed_kph": 177.3,
+          "speed_loss_kph": 199.0,
+          "brake_duration_ms": 2659.0
+        },
+        {
+          "driver_code": "HAM",
+          "brake_start_m": 5258.0,
+          "apex_distance_m": 5367.4,
+          "braking_distance_m": 109.3,
+          "entry_speed_kph": 250.6,
+          "apex_speed_kph": 92.6,
+          "exit_speed_kph": 188.1,
+          "speed_loss_kph": 158.0,
+          "brake_duration_ms": 3921.0
+        },
+        {
+          "driver_code": "HUL",
+          "brake_start_m": 5275.5,
+          "apex_distance_m": 5375.0,
+          "braking_distance_m": 99.5,
+          "entry_speed_kph": 245.5,
+          "apex_speed_kph": 90.0,
+          "exit_speed_kph": 176.6,
+          "speed_loss_kph": 155.5,
+          "brake_duration_ms": 2440.0
+        },
+        {
+          "driver_code": "LAW",
+          "brake_start_m": 5252.0,
+          "apex_distance_m": 5365.6,
+          "braking_distance_m": 113.6,
+          "entry_speed_kph": 266.0,
+          "apex_speed_kph": 85.0,
+          "exit_speed_kph": 183.8,
+          "speed_loss_kph": 180.9,
+          "brake_duration_ms": 2979.0
+        },
+        {
+          "driver_code": "LEC",
+          "brake_start_m": 5248.4,
+          "apex_distance_m": 5374.4,
+          "braking_distance_m": 126.0,
+          "entry_speed_kph": 292.4,
+          "apex_speed_kph": 85.0,
+          "exit_speed_kph": 181.6,
+          "speed_loss_kph": 207.4,
+          "brake_duration_ms": 2781.0
+        },
+        {
+          "driver_code": "LIN",
+          "brake_start_m": 5295.8,
+          "apex_distance_m": 5410.3,
+          "braking_distance_m": 114.6,
+          "entry_speed_kph": 261.9,
+          "apex_speed_kph": 89.0,
+          "exit_speed_kph": 176.0,
+          "speed_loss_kph": 172.9,
+          "brake_duration_ms": 2401.0
+        },
+        {
+          "driver_code": "NOR",
+          "brake_start_m": 5261.0,
+          "apex_distance_m": 5357.9,
+          "braking_distance_m": 96.8,
+          "entry_speed_kph": 238.0,
+          "apex_speed_kph": 90.0,
+          "exit_speed_kph": 181.7,
+          "speed_loss_kph": 148.0,
+          "brake_duration_ms": 2040.0
+        },
+        {
+          "driver_code": "OCO",
+          "brake_start_m": 5244.9,
+          "apex_distance_m": 5356.7,
+          "braking_distance_m": 111.8,
+          "entry_speed_kph": 256.1,
+          "apex_speed_kph": 88.5,
+          "exit_speed_kph": 186.7,
+          "speed_loss_kph": 167.6,
+          "brake_duration_ms": 4121.0
+        },
+        {
+          "driver_code": "PER",
+          "brake_start_m": 5242.4,
+          "apex_distance_m": 5338.4,
+          "braking_distance_m": 96.0,
+          "entry_speed_kph": 221.0,
+          "apex_speed_kph": 79.0,
+          "exit_speed_kph": 178.9,
+          "speed_loss_kph": 142.0,
+          "brake_duration_ms": 2759.0
+        },
+        {
+          "driver_code": "PIA",
+          "brake_start_m": 5213.5,
+          "apex_distance_m": 5324.4,
+          "braking_distance_m": 110.8,
+          "entry_speed_kph": 255.0,
+          "apex_speed_kph": 93.7,
+          "exit_speed_kph": 189.0,
+          "speed_loss_kph": 161.3,
+          "brake_duration_ms": 2161.0
+        },
+        {
+          "driver_code": "RUS",
+          "brake_start_m": 5245.6,
+          "apex_distance_m": 5387.7,
+          "braking_distance_m": 142.1,
+          "entry_speed_kph": 288.0,
+          "apex_speed_kph": 88.2,
+          "exit_speed_kph": 185.9,
+          "speed_loss_kph": 199.8,
+          "brake_duration_ms": 2979.0
+        },
+        {
+          "driver_code": "SAI",
+          "brake_start_m": 5236.4,
+          "apex_distance_m": 5348.2,
+          "braking_distance_m": 111.8,
+          "entry_speed_kph": 247.0,
+          "apex_speed_kph": 90.0,
+          "exit_speed_kph": 174.0,
+          "speed_loss_kph": 157.0,
+          "brake_duration_ms": 4024.0
+        },
+        {
+          "driver_code": "STR",
+          "brake_start_m": 5275.3,
+          "apex_distance_m": 5360.5,
+          "braking_distance_m": 85.2,
+          "entry_speed_kph": 211.0,
+          "apex_speed_kph": 89.0,
+          "exit_speed_kph": 178.1,
+          "speed_loss_kph": 122.0,
+          "brake_duration_ms": 3400.0
+        },
+        {
+          "driver_code": "VER",
+          "brake_start_m": 5246.8,
+          "apex_distance_m": 5360.6,
+          "braking_distance_m": 113.8,
+          "entry_speed_kph": 269.0,
+          "apex_speed_kph": 87.5,
+          "exit_speed_kph": 186.9,
+          "speed_loss_kph": 181.5,
+          "brake_duration_ms": 2223.0
+        }
+      ]
+    },
+    {
+      "corner_number": 15,
+      "distance_m": 5768.2,
+      "x": -1761.0,
+      "y": 487.0,
+      "drivers": [
+        {
+          "driver_code": "BEA",
+          "brake_start_m": 5468.1,
+          "apex_distance_m": 5768.2,
+          "braking_distance_m": 300.2,
+          "entry_speed_kph": 299.0,
+          "apex_speed_kph": 86.0,
+          "exit_speed_kph": 103.0,
+          "speed_loss_kph": 213.0,
+          "brake_duration_ms": 11510.0
+        }
+      ]
+    }
+  ],
+  "caveats": [
+    "Corners are inferred from brake application and speed loss, not official circuit geometry.",
+    "Entry, apex, and exit values are distance-interpolated from downsampled telemetry."
+  ]
+}

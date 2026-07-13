@@ -168,7 +168,7 @@
     },
     {
       "driver_code": "BEA",
-      "compound": "SOFT",
+      "compound": "HARD",
       "stint": null,
       "median_lap_ms": 84689.5,
       "mean_lap_ms": 84942.24074074074,
@@ -653,6 +653,17 @@
       "gap_to_best_ms": 3290.0
     },
     {
+      "driver_code": "BEA",
+      "compound": "SOFT",
+      "stint": 3,
+      "median_lap_ms": 84106.0,
+      "mean_lap_ms": 83970.15789473684,
+      "trimmed_mean_lap_ms": 83839.76470588235,
+      "fastest_clean_lap_ms": 82419,
+      "lap_count": 19,
+      "gap_to_best_ms": 3474.0
+    },
+    {
       "driver_code": "SAI",
       "compound": "HARD",
       "stint": 3,
@@ -662,28 +673,6 @@
       "fastest_clean_lap_ms": 83482,
       "lap_count": 21,
       "gap_to_best_ms": 3551.0
-    },
-    {
-      "driver_code": "BEA",
-      "compound": "SOFT",
-      "stint": 3,
-      "median_lap_ms": 84255.0,
-      "mean_lap_ms": 84386.06896551725,
-      "trimmed_mean_lap_ms": 84334.77777777778,
-      "fastest_clean_lap_ms": 82419,
-      "lap_count": 29,
-      "gap_to_best_ms": 3623.0
-    },
-    {
-      "driver_code": "BEA",
-      "compound": "HARD",
-      "stint": 2,
-      "median_lap_ms": 84285.0,
-      "mean_lap_ms": 84881.11111111111,
-      "trimmed_mean_lap_ms": 84765.0,
-      "fastest_clean_lap_ms": 83746,
-      "lap_count": 9,
-      "gap_to_best_ms": 3653.0
     },
     {
       "driver_code": "ALB",
@@ -728,6 +717,17 @@
       "fastest_clean_lap_ms": 83470,
       "lap_count": 16,
       "gap_to_best_ms": 3764.5
+    },
+    {
+      "driver_code": "BEA",
+      "compound": "HARD",
+      "stint": 2,
+      "median_lap_ms": 84430.0,
+      "mean_lap_ms": 85036.47368421052,
+      "trimmed_mean_lap_ms": 85006.94117647059,
+      "fastest_clean_lap_ms": 83746,
+      "lap_count": 19,
+      "gap_to_best_ms": 3798.0
     },
     {
       "driver_code": "HUL",

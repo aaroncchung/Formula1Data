@@ -1,0 +1,902 @@
+{
+  "session_id": "2026-02-r",
+  "representative_laps": [
+    {
+      "driver_code": "ALO",
+      "lap_number": 25,
+      "lap_time_ms": 99721
+    },
+    {
+      "driver_code": "ANT",
+      "lap_number": 52,
+      "lap_time_ms": 95275
+    },
+    {
+      "driver_code": "BEA",
+      "lap_number": 56,
+      "lap_time_ms": 96429
+    },
+    {
+      "driver_code": "BOT",
+      "lap_number": 55,
+      "lap_time_ms": 98393
+    },
+    {
+      "driver_code": "COL",
+      "lap_number": 35,
+      "lap_time_ms": 96783
+    },
+    {
+      "driver_code": "GAS",
+      "lap_number": 53,
+      "lap_time_ms": 96505
+    },
+    {
+      "driver_code": "HAD",
+      "lap_number": 46,
+      "lap_time_ms": 97311
+    },
+    {
+      "driver_code": "HAM",
+      "lap_number": 55,
+      "lap_time_ms": 96092
+    },
+    {
+      "driver_code": "HUL",
+      "lap_number": 38,
+      "lap_time_ms": 96180
+    },
+    {
+      "driver_code": "LAW",
+      "lap_number": 56,
+      "lap_time_ms": 97096
+    },
+    {
+      "driver_code": "LEC",
+      "lap_number": 56,
+      "lap_time_ms": 96011
+    },
+    {
+      "driver_code": "LIN",
+      "lap_number": 46,
+      "lap_time_ms": 96099
+    },
+    {
+      "driver_code": "OCO",
+      "lap_number": 54,
+      "lap_time_ms": 95964
+    },
+    {
+      "driver_code": "PER",
+      "lap_number": 50,
+      "lap_time_ms": 98523
+    },
+    {
+      "driver_code": "RUS",
+      "lap_number": 56,
+      "lap_time_ms": 95400
+    },
+    {
+      "driver_code": "SAI",
+      "lap_number": 51,
+      "lap_time_ms": 97981
+    },
+    {
+      "driver_code": "STR",
+      "lap_number": 9,
+      "lap_time_ms": 100883
+    },
+    {
+      "driver_code": "VER",
+      "lap_number": 39,
+      "lap_time_ms": 97046
+    }
+  ],
+  "minisector_count": 25,
+  "minisectors": [
+    {
+      "index": 1,
+      "start_distance_m": 0.0,
+      "end_distance_m": 215.5,
+      "midpoint": {
+        "x": -545.17,
+        "y": -1683.61
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 2566.2,
+      "gap_to_next_ms": 14.2,
+      "driver_times_ms": {
+        "HAD": 2566.2,
+        "HAM": 2580.4,
+        "HUL": 2585.5,
+        "LIN": 2594.1,
+        "VER": 2598.2,
+        "PER": 2604.3,
+        "BEA": 2606.4,
+        "BOT": 2615.9,
+        "LEC": 2617.0,
+        "LAW": 2635.4,
+        "OCO": 2645.8,
+        "COL": 2679.7,
+        "ANT": 2698.2,
+        "RUS": 2704.7,
+        "ALO": 2711.4,
+        "GAS": 2712.0,
+        "SAI": 2791.4,
+        "STR": 2892.5
+      }
+    },
+    {
+      "index": 2,
+      "start_distance_m": 215.5,
+      "end_distance_m": 431.0,
+      "midpoint": {
+        "x": -2646.68,
+        "y": -2141.9
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 2503.0,
+      "gap_to_next_ms": 24.1,
+      "driver_times_ms": {
+        "HAD": 2503.0,
+        "HUL": 2527.1,
+        "HAM": 2533.8,
+        "PER": 2534.1,
+        "VER": 2538.4,
+        "BEA": 2542.5,
+        "LIN": 2552.0,
+        "BOT": 2575.8,
+        "LEC": 2575.8,
+        "LAW": 2592.2,
+        "GAS": 2595.3,
+        "OCO": 2601.6,
+        "ALO": 2622.7,
+        "COL": 2638.1,
+        "RUS": 2645.2,
+        "ANT": 2649.7,
+        "SAI": 2707.5,
+        "STR": 2823.9
+      }
+    },
+    {
+      "index": 3,
+      "start_distance_m": 431.0,
+      "end_distance_m": 646.5,
+      "midpoint": {
+        "x": -4780.16,
+        "y": -2569.89
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 2621.0,
+      "gap_to_next_ms": 560.0,
+      "driver_times_ms": {
+        "ALO": 2621.0,
+        "LEC": 3181.0,
+        "ANT": 3253.4,
+        "OCO": 3282.7,
+        "HAM": 3285.2,
+        "HUL": 3290.3,
+        "BEA": 3307.1,
+        "LIN": 3309.7,
+        "RUS": 3339.1,
+        "GAS": 3355.5,
+        "LAW": 3444.3,
+        "BOT": 3455.6,
+        "VER": 3463.7,
+        "COL": 3470.8,
+        "HAD": 3491.1,
+        "SAI": 3613.3,
+        "STR": 3642.5,
+        "PER": 3724.9
+      }
+    },
+    {
+      "index": 4,
+      "start_distance_m": 646.5,
+      "end_distance_m": 862.0,
+      "midpoint": {
+        "x": -5309.16,
+        "y": -1030.17
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 2621.0,
+      "gap_to_next_ms": 2285.1,
+      "driver_times_ms": {
+        "ALO": 2621.0,
+        "HAD": 4906.1,
+        "OCO": 6306.4,
+        "LIN": 6327.4,
+        "ANT": 6382.4,
+        "HUL": 6487.1,
+        "HAM": 6497.7,
+        "RUS": 6559.4,
+        "LEC": 6559.9,
+        "GAS": 6607.3,
+        "LAW": 6701.4,
+        "BEA": 6714.1,
+        "BOT": 6768.5,
+        "VER": 6797.1,
+        "COL": 6867.0,
+        "STR": 7006.0,
+        "PER": 7052.3,
+        "SAI": 7081.9
+      }
+    },
+    {
+      "index": 5,
+      "start_distance_m": 862.0,
+      "end_distance_m": 1077.5,
+      "midpoint": {
+        "x": -4065.65,
+        "y": -1596.7
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 2621.8,
+      "gap_to_next_ms": 2288.4,
+      "driver_times_ms": {
+        "ALO": 2621.8,
+        "HAD": 4910.2,
+        "RUS": 5453.6,
+        "COL": 5511.2,
+        "BEA": 5549.0,
+        "LEC": 5587.1,
+        "VER": 5612.5,
+        "STR": 5638.9,
+        "HAM": 5649.4,
+        "SAI": 5653.5,
+        "LAW": 5657.1,
+        "LIN": 5676.5,
+        "PER": 5677.3,
+        "GAS": 5680.5,
+        "ANT": 5702.2,
+        "OCO": 5728.1,
+        "HUL": 5758.5,
+        "BOT": 5836.7
+      }
+    },
+    {
+      "index": 6,
+      "start_distance_m": 1077.5,
+      "end_distance_m": 1293.0,
+      "midpoint": {
+        "x": -4999.53,
+        "y": 76.65
+      },
+      "winner_driver_code": "HUL",
+      "segment_time_ms": 2951.5,
+      "gap_to_next_ms": 7.5,
+      "driver_times_ms": {
+        "HUL": 2951.5,
+        "LAW": 2959.0,
+        "SAI": 2962.4,
+        "PER": 2968.4,
+        "COL": 2981.0,
+        "BEA": 2989.4,
+        "LEC": 2990.7,
+        "RUS": 3009.8,
+        "BOT": 3025.6,
+        "HAM": 3031.7,
+        "LIN": 3032.6,
+        "ANT": 3034.2,
+        "VER": 3063.6,
+        "OCO": 3110.1,
+        "GAS": 3128.0,
+        "STR": 3239.5,
+        "HAD": 4200.3,
+        "ALO": 6484.1
+      }
+    },
+    {
+      "index": 7,
+      "start_distance_m": 1293.0,
+      "end_distance_m": 1508.5,
+      "midpoint": {
+        "x": -6170.08,
+        "y": 1733.97
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 2868.4,
+      "gap_to_next_ms": 70.0,
+      "driver_times_ms": {
+        "HAD": 2868.4,
+        "LEC": 2938.4,
+        "HUL": 2970.2,
+        "HAM": 2971.2,
+        "VER": 2977.6,
+        "ANT": 2998.7,
+        "OCO": 3060.1,
+        "LIN": 3060.9,
+        "BOT": 3061.2,
+        "LAW": 3088.3,
+        "BEA": 3127.8,
+        "PER": 3136.3,
+        "RUS": 3153.1,
+        "COL": 3190.9,
+        "GAS": 3256.8,
+        "SAI": 3533.5,
+        "ALO": 3682.1,
+        "STR": 3726.4
+      }
+    },
+    {
+      "index": 8,
+      "start_distance_m": 1508.5,
+      "end_distance_m": 1724.0,
+      "midpoint": {
+        "x": -6481.67,
+        "y": 3660.88
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 3057.7,
+      "gap_to_next_ms": 2308.2,
+      "driver_times_ms": {
+        "ALO": 3057.7,
+        "HAD": 5365.9,
+        "GAS": 5908.4,
+        "SAI": 5914.0,
+        "OCO": 5974.8,
+        "STR": 5975.3,
+        "COL": 5980.8,
+        "RUS": 6046.8,
+        "ANT": 6095.2,
+        "HAM": 6103.8,
+        "BEA": 6116.9,
+        "LIN": 6126.0,
+        "LAW": 6167.9,
+        "PER": 6173.2,
+        "LEC": 6175.3,
+        "HUL": 6201.7,
+        "VER": 6208.4,
+        "BOT": 6262.0
+      }
+    },
+    {
+      "index": 9,
+      "start_distance_m": 1724.0,
+      "end_distance_m": 1939.5,
+      "midpoint": {
+        "x": -5130.74,
+        "y": 1971.5
+      },
+      "winner_driver_code": "RUS",
+      "segment_time_ms": 3042.3,
+      "gap_to_next_ms": 35.8,
+      "driver_times_ms": {
+        "RUS": 3042.3,
+        "ANT": 3078.1,
+        "SAI": 3121.7,
+        "GAS": 3123.9,
+        "COL": 3129.0,
+        "LAW": 3165.9,
+        "BEA": 3173.6,
+        "BOT": 3178.8,
+        "PER": 3191.6,
+        "OCO": 3198.1,
+        "LEC": 3201.7,
+        "HAM": 3212.8,
+        "LIN": 3252.4,
+        "VER": 3270.9,
+        "HUL": 3287.4,
+        "STR": 3413.0,
+        "HAD": 4118.0,
+        "ALO": 6105.4
+      }
+    },
+    {
+      "index": 10,
+      "start_distance_m": 1939.5,
+      "end_distance_m": 2155.0,
+      "midpoint": {
+        "x": -3665.06,
+        "y": 605.34
+      },
+      "winner_driver_code": "RUS",
+      "segment_time_ms": 3038.0,
+      "gap_to_next_ms": 1.4,
+      "driver_times_ms": {
+        "RUS": 3038.0,
+        "ANT": 3039.4,
+        "GAS": 3098.0,
+        "HAM": 3118.1,
+        "COL": 3119.4,
+        "LEC": 3120.0,
+        "BEA": 3123.8,
+        "OCO": 3126.6,
+        "HAD": 3131.7,
+        "BOT": 3142.4,
+        "LIN": 3153.0,
+        "LAW": 3181.4,
+        "SAI": 3185.2,
+        "VER": 3199.8,
+        "HUL": 3207.4,
+        "PER": 3227.0,
+        "STR": 3424.8,
+        "ALO": 3850.0
+      }
+    },
+    {
+      "index": 11,
+      "start_distance_m": 2155.0,
+      "end_distance_m": 2370.5,
+      "midpoint": {
+        "x": -2129.68,
+        "y": 2070.72
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 3270.3,
+      "gap_to_next_ms": 72.3,
+      "driver_times_ms": {
+        "HAD": 3270.3,
+        "ALO": 3342.6,
+        "LEC": 3584.5,
+        "OCO": 3653.0,
+        "HAM": 3655.9,
+        "GAS": 3657.0,
+        "RUS": 3662.1,
+        "BEA": 3677.2,
+        "ANT": 3695.0,
+        "LIN": 3750.8,
+        "BOT": 3865.4,
+        "HUL": 3867.9,
+        "VER": 3873.1,
+        "COL": 3916.0,
+        "LAW": 3936.4,
+        "PER": 4000.2,
+        "SAI": 4091.8,
+        "STR": 4146.6
+      }
+    },
+    {
+      "index": 12,
+      "start_distance_m": 2370.5,
+      "end_distance_m": 2586.0,
+      "midpoint": {
+        "x": -583.71,
+        "y": 1854.82
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 3525.4,
+      "gap_to_next_ms": 1065.4,
+      "driver_times_ms": {
+        "ALO": 3525.4,
+        "HAD": 4590.8,
+        "ANT": 5183.9,
+        "LEC": 5187.1,
+        "OCO": 5273.9,
+        "LIN": 5280.4,
+        "HAM": 5283.9,
+        "RUS": 5322.9,
+        "BEA": 5378.6,
+        "HUL": 5390.7,
+        "COL": 5417.3,
+        "LAW": 5540.8,
+        "VER": 5547.3,
+        "PER": 5588.9,
+        "SAI": 5607.4,
+        "GAS": 5622.8,
+        "BOT": 5663.4,
+        "STR": 5683.8
+      }
+    },
+    {
+      "index": 13,
+      "start_distance_m": 2586.0,
+      "end_distance_m": 2801.5,
+      "midpoint": {
+        "x": 361.16,
+        "y": 2471.8
+      },
+      "winner_driver_code": "SAI",
+      "segment_time_ms": 3651.2,
+      "gap_to_next_ms": 81.3,
+      "driver_times_ms": {
+        "SAI": 3651.2,
+        "LAW": 3732.5,
+        "COL": 3749.7,
+        "LIN": 3781.8,
+        "RUS": 3784.1,
+        "ANT": 3787.6,
+        "GAS": 3806.2,
+        "HUL": 3824.0,
+        "VER": 3827.1,
+        "STR": 3837.7,
+        "BEA": 3848.3,
+        "HAM": 3871.4,
+        "LEC": 3904.8,
+        "PER": 3911.5,
+        "BOT": 3913.2,
+        "OCO": 3927.8,
+        "ALO": 4843.4,
+        "HAD": 5551.5
+      }
+    },
+    {
+      "index": 14,
+      "start_distance_m": 2801.5,
+      "end_distance_m": 3017.0,
+      "midpoint": {
+        "x": -736.29,
+        "y": 4344.97
+      },
+      "winner_driver_code": "BEA",
+      "segment_time_ms": 2974.8,
+      "gap_to_next_ms": 25.3,
+      "driver_times_ms": {
+        "BEA": 2974.8,
+        "HAM": 3000.1,
+        "LEC": 3007.9,
+        "VER": 3019.0,
+        "OCO": 3028.1,
+        "PER": 3032.3,
+        "LIN": 3036.1,
+        "ANT": 3039.0,
+        "LAW": 3041.2,
+        "HUL": 3049.0,
+        "BOT": 3051.0,
+        "HAD": 3086.5,
+        "GAS": 3088.6,
+        "RUS": 3096.9,
+        "COL": 3106.2,
+        "SAI": 3111.2,
+        "STR": 3383.0,
+        "ALO": 5125.3
+      }
+    },
+    {
+      "index": 15,
+      "start_distance_m": 3017.0,
+      "end_distance_m": 3232.5,
+      "midpoint": {
+        "x": -1804.46,
+        "y": 6052.88
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 3257.5,
+      "gap_to_next_ms": 1392.1,
+      "driver_times_ms": {
+        "ALO": 3257.5,
+        "HAD": 4649.6,
+        "ANT": 6436.2,
+        "OCO": 6453.0,
+        "HAM": 6525.1,
+        "LEC": 6557.0,
+        "LIN": 6635.1,
+        "VER": 6680.1,
+        "RUS": 6692.6,
+        "LAW": 6735.7,
+        "BEA": 6762.8,
+        "PER": 6784.4,
+        "BOT": 6797.4,
+        "HUL": 6798.9,
+        "COL": 6810.1,
+        "GAS": 6911.5,
+        "SAI": 7118.7,
+        "STR": 7887.8
+      }
+    },
+    {
+      "index": 16,
+      "start_distance_m": 3232.5,
+      "end_distance_m": 3448.0,
+      "midpoint": {
+        "x": -2704.75,
+        "y": 6985.73
+      },
+      "winner_driver_code": "STR",
+      "segment_time_ms": 3809.6,
+      "gap_to_next_ms": 164.3,
+      "driver_times_ms": {
+        "STR": 3809.6,
+        "RUS": 3973.9,
+        "HUL": 3980.9,
+        "GAS": 4006.4,
+        "SAI": 4008.1,
+        "COL": 4018.2,
+        "OCO": 4130.3,
+        "VER": 4135.6,
+        "LIN": 4142.7,
+        "ANT": 4157.5,
+        "BEA": 4185.2,
+        "LAW": 4190.0,
+        "HAM": 4243.9,
+        "PER": 4310.7,
+        "LEC": 4320.3,
+        "BOT": 4342.0,
+        "ALO": 5792.9,
+        "HAD": 6112.3
+      }
+    },
+    {
+      "index": 17,
+      "start_distance_m": 3448.0,
+      "end_distance_m": 3663.5,
+      "midpoint": {
+        "x": -1060.01,
+        "y": 6672.7
+      },
+      "winner_driver_code": "GAS",
+      "segment_time_ms": 2873.2,
+      "gap_to_next_ms": 3.6,
+      "driver_times_ms": {
+        "GAS": 2873.2,
+        "RUS": 2876.8,
+        "SAI": 2881.2,
+        "STR": 2881.8,
+        "HUL": 2895.2,
+        "COL": 2900.2,
+        "VER": 2904.7,
+        "ANT": 2920.2,
+        "LIN": 2926.8,
+        "LAW": 2929.0,
+        "BEA": 2935.0,
+        "LEC": 2937.2,
+        "OCO": 2938.8,
+        "HAM": 2952.3,
+        "BOT": 2989.7,
+        "PER": 3027.4,
+        "HAD": 3366.8,
+        "ALO": 5427.2
+      }
+    },
+    {
+      "index": 18,
+      "start_distance_m": 3663.5,
+      "end_distance_m": 3879.0,
+      "midpoint": {
+        "x": 116.41,
+        "y": 4847.76
+      },
+      "winner_driver_code": "SAI",
+      "segment_time_ms": 2459.9,
+      "gap_to_next_ms": 26.3,
+      "driver_times_ms": {
+        "SAI": 2459.9,
+        "RUS": 2486.2,
+        "HUL": 2487.2,
+        "ANT": 2498.7,
+        "BEA": 2504.3,
+        "STR": 2506.8,
+        "GAS": 2508.1,
+        "COL": 2510.6,
+        "LIN": 2515.0,
+        "LAW": 2517.5,
+        "OCO": 2528.5,
+        "LEC": 2528.7,
+        "VER": 2528.7,
+        "HAM": 2529.5,
+        "PER": 2537.1,
+        "BOT": 2537.9,
+        "HAD": 2689.8,
+        "ALO": 3225.9
+      }
+    },
+    {
+      "index": 19,
+      "start_distance_m": 3879.0,
+      "end_distance_m": 4094.5,
+      "midpoint": {
+        "x": 1201.02,
+        "y": 3150.31
+      },
+      "winner_driver_code": "SAI",
+      "segment_time_ms": 2312.8,
+      "gap_to_next_ms": 38.3,
+      "driver_times_ms": {
+        "SAI": 2312.8,
+        "PER": 2351.1,
+        "HAD": 2376.1,
+        "RUS": 2395.0,
+        "GAS": 2405.1,
+        "LAW": 2405.1,
+        "HUL": 2405.3,
+        "COL": 2405.6,
+        "STR": 2405.7,
+        "VER": 2408.3,
+        "LIN": 2408.5,
+        "ANT": 2425.0,
+        "BEA": 2430.5,
+        "HAM": 2436.0,
+        "BOT": 2436.1,
+        "LEC": 2439.8,
+        "OCO": 2454.8,
+        "ALO": 2752.4
+      }
+    },
+    {
+      "index": 20,
+      "start_distance_m": 4094.5,
+      "end_distance_m": 4310.0,
+      "midpoint": {
+        "x": 2503.85,
+        "y": 1111.8
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 2311.3,
+      "gap_to_next_ms": 12.7,
+      "driver_times_ms": {
+        "HAD": 2311.3,
+        "SAI": 2324.0,
+        "PER": 2355.5,
+        "HUL": 2368.2,
+        "RUS": 2370.2,
+        "GAS": 2382.1,
+        "BEA": 2403.8,
+        "STR": 2414.3,
+        "LAW": 2417.3,
+        "VER": 2418.5,
+        "COL": 2422.3,
+        "LIN": 2433.4,
+        "ANT": 2477.3,
+        "BOT": 2487.1,
+        "HAM": 2491.8,
+        "LEC": 2497.3,
+        "OCO": 2519.3,
+        "ALO": 2540.2
+      }
+    },
+    {
+      "index": 21,
+      "start_distance_m": 4310.0,
+      "end_distance_m": 4525.5,
+      "midpoint": {
+        "x": 3631.8,
+        "y": -652.01
+      },
+      "winner_driver_code": "HUL",
+      "segment_time_ms": 2297.2,
+      "gap_to_next_ms": 73.0,
+      "driver_times_ms": {
+        "HUL": 2297.2,
+        "HAD": 2370.2,
+        "BEA": 2376.4,
+        "RUS": 2385.7,
+        "SAI": 2409.0,
+        "GAS": 2416.3,
+        "STR": 2424.4,
+        "PER": 2432.4,
+        "ALO": 2452.5,
+        "VER": 2472.2,
+        "COL": 2484.4,
+        "LIN": 2485.9,
+        "LAW": 2492.1,
+        "ANT": 2523.5,
+        "HAM": 2536.5,
+        "LEC": 2542.4,
+        "OCO": 2558.5,
+        "BOT": 2561.9
+      }
+    },
+    {
+      "index": 22,
+      "start_distance_m": 4525.5,
+      "end_distance_m": 4741.0,
+      "midpoint": {
+        "x": 4815.93,
+        "y": -2502.35
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 2512.1,
+      "gap_to_next_ms": 17.5,
+      "driver_times_ms": {
+        "ALO": 2512.1,
+        "HAD": 2529.6,
+        "LIN": 2670.1,
+        "GAS": 3560.0,
+        "LEC": 3831.1,
+        "SAI": 3930.0,
+        "HAM": 3937.4,
+        "RUS": 3947.6,
+        "PER": 4004.4,
+        "VER": 4086.7,
+        "BOT": 4206.1,
+        "OCO": 4234.2,
+        "ANT": 4352.9,
+        "BEA": 4537.6,
+        "COL": 4544.9,
+        "LAW": 4573.6,
+        "HUL": 4887.2,
+        "STR": 5492.4
+      }
+    },
+    {
+      "index": 23,
+      "start_distance_m": 4741.0,
+      "end_distance_m": 4956.5,
+      "midpoint": {
+        "x": 4659.76,
+        "y": -3201.58
+      },
+      "winner_driver_code": "ALO",
+      "segment_time_ms": 3205.8,
+      "gap_to_next_ms": 1668.6,
+      "driver_times_ms": {
+        "ALO": 3205.8,
+        "STR": 4874.4,
+        "HUL": 5270.4,
+        "COL": 5354.4,
+        "ANT": 5513.2,
+        "LAW": 5522.9,
+        "BEA": 5600.7,
+        "OCO": 5736.0,
+        "RUS": 5746.4,
+        "SAI": 5776.3,
+        "BOT": 5817.2,
+        "VER": 5829.2,
+        "PER": 5889.7,
+        "HAM": 5970.7,
+        "GAS": 6142.4,
+        "LEC": 6145.1,
+        "LIN": 6719.8,
+        "HAD": 6788.5
+      }
+    },
+    {
+      "index": 24,
+      "start_distance_m": 4956.5,
+      "end_distance_m": 5172.0,
+      "midpoint": {
+        "x": 3337.69,
+        "y": -1344.24
+      },
+      "winner_driver_code": "HAD",
+      "segment_time_ms": 3649.9,
+      "gap_to_next_ms": 123.0,
+      "driver_times_ms": {
+        "HAD": 3649.9,
+        "STR": 3772.9,
+        "LEC": 3968.1,
+        "RUS": 4028.3,
+        "LIN": 4064.9,
+        "VER": 4065.2,
+        "GAS": 4090.1,
+        "PER": 4101.9,
+        "ANT": 4102.4,
+        "HAM": 4110.4,
+        "OCO": 4148.8,
+        "HUL": 4156.9,
+        "BEA": 4159.4,
+        "COL": 4172.3,
+        "LAW": 4239.0,
+        "BOT": 4325.0,
+        "SAI": 4333.1,
+        "ALO": 6772.9
+      }
+    },
+    {
+      "index": 25,
+      "start_distance_m": 5172.0,
+      "end_distance_m": 5387.6,
+      "midpoint": {
+        "x": 1543.93,
+        "y": -1227.4
+      },
+      "winner_driver_code": "LAW",
+      "segment_time_ms": 3142.3,
+      "gap_to_next_ms": 49.7,
+      "driver_times_ms": {
+        "LAW": 3142.3,
+        "HUL": 3192.0,
+        "OCO": 3220.2,
+        "ANT": 3228.9,
+        "COL": 3229.4,
+        "LEC": 3316.1,
+        "VER": 3317.6,
+        "BOT": 3325.4,
+        "BEA": 3329.1,
+        "HAM": 3330.0,
+        "SAI": 3401.8,
+        "RUS": 3405.4,
+        "STR": 3420.3,
+        "PER": 3454.8,
+        "GAS": 3481.4,
+        "LIN": 3497.5,
+        "ALO": 4132.9,
+        "HAD": 4271.7
+      }
+    }
+  ],
+  "caveats": [
+    "Each driver's fastest non-deleted lap with telemetry is compared.",
+    "Minisector time is interpolated at distance boundaries; it is not an FIA timing sector."
+  ]
+}
