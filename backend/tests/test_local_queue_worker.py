@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pipeline.local_queue_worker import (
+    build_success_payload,
     callback_job_status,
     expected_session_id,
     hydrate_r2_indexes,
@@ -19,7 +20,9 @@ from pipeline.local_queue_worker import (
     merge_season,
     session_artifacts_exist,
     sync_artifacts_to_r2,
+    verify_remote_manifest,
 )
+from pipeline.artifacts import checksum_file, write_json
 
 
 class LocalQueueWorkerTests(unittest.TestCase):
@@ -180,6 +183,80 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
                 with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
                     hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+
+    def test_hundreds_of_telemetry_laps_use_a_compact_manifest_callback(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            session_id = "2026-09-r"
+            session_dir = output_dir / "sessions" / session_id
+            summary_path = session_dir / "summary.json"
+            telemetry_index_path = session_dir / "telemetry" / "index.json"
+            write_json(summary_path, {"session_id": session_id})
+            write_json(telemetry_index_path, {"session_id": session_id, "laps": []})
+            sections = [
+                {
+                    "kind": "summary",
+                    "path": f"sessions/{session_id}/summary.json",
+                    "size_bytes": summary_path.stat().st_size,
+                    "checksum": checksum_file(summary_path),
+                },
+                {
+                    "kind": "telemetry-index",
+                    "path": f"sessions/{session_id}/telemetry/index.json",
+                    "size_bytes": telemetry_index_path.stat().st_size,
+                    "checksum": checksum_file(telemetry_index_path),
+                },
+            ]
+            for lap in range(500):
+                sections.append(
+                    {
+                        "kind": "telemetry-lap",
+                        "path": f"sessions/{session_id}/telemetry/driver-lap-{lap + 1}.json",
+                        "size_bytes": 100,
+                        "checksum": f"sha256:{lap:064x}",
+                    }
+                )
+            write_json(
+                session_dir / "manifest.json",
+                {
+                    "session_id": session_id,
+                    "generated_at": "2026-07-13T12:00:00Z",
+                    "sections": sections,
+                    "telemetry": {
+                        "lap_count": 500,
+                        "sample_count": 100000,
+                        "max_samples_per_lap": 300,
+                    },
+                },
+            )
+
+            payload = build_success_payload(output_dir, session_id, "2026-07-13T12:00:00Z")
+
+            self.assertEqual(payload["manifest"]["kind"], "manifest")
+            self.assertEqual(len(payload["artifacts"]), 2)
+            telemetry = next(
+                artifact
+                for artifact in payload["artifacts"]
+                if artifact["kind"] == "telemetry-index"
+            )
+            self.assertEqual(telemetry["metadata"]["lap_file_count"], 500)
+
+    def test_remote_manifest_is_compared_to_the_published_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            session_id = "2026-09-r"
+            manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+            write_json(manifest_path, {"session_id": session_id, "sections": []})
+
+            def download(_bucket, _key, destination, **_kwargs):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(manifest_path.read_bytes())
+                return True
+
+            with patch("pipeline.local_queue_worker.download_r2_object", side_effect=download):
+                manifest = verify_remote_manifest(output_dir, "bucket", "", session_id)
+
+            self.assertEqual(manifest["session_id"], session_id)
 
 
 if __name__ == "__main__":

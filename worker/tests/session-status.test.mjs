@@ -113,3 +113,55 @@ test("resolveSessionStatus avoids redundant D1-style writes for an unchanged rea
   assert.equal(writes, 0);
   assert.equal(headCalls, 1);
 });
+
+test("a D1-ready session with no manifest or summary becomes stale", async () => {
+  const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-09-r",
+    year: 2026,
+    round: 9,
+    session_type: "R",
+    status: "ready",
+    artifact_base_path: "sessions/2026-09-r",
+    source: "r2"
+  });
+
+  const status = await resolveSessionStatus({
+    repository,
+    artifacts: { head: async () => null },
+    year: 2026,
+    round: 9,
+    session: "R"
+  });
+
+  assert.equal(status.status, "stale");
+  assert.equal(status.artifact_exists, false);
+  assert.equal((await repository.getSession("2026-09-r")).status, "stale");
+});
+
+test("optional missing sections remain a ready quality condition", async () => {
+  const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-09-r",
+    year: 2026,
+    round: 9,
+    session_type: "R",
+    status: "ready",
+    artifact_base_path: "sessions/2026-09-r",
+    source: "r2",
+    quality_json: JSON.stringify({ status: "partial", missing_sections: ["weather"] })
+  });
+  const status = await resolveSessionStatus({
+    repository,
+    artifacts: {
+      head: async (path) =>
+        path.endsWith("manifest.json") ? { key: path, size: 42, uploaded: null } : null
+    },
+    year: 2026,
+    round: 9,
+    session: "R"
+  });
+
+  assert.equal(status.status, "ready");
+  assert.deepEqual(status.quality, { status: "partial", missing_sections: ["weather"] });
+});

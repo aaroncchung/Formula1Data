@@ -151,6 +151,8 @@ jobs:
               --r2-bucket "$R2_BUCKET" \
               --callback-url "$WORKER_BASE_URL" \
               --callback-token "$INGESTION_API_TOKEN" \
+              --defer-terminal-callbacks \
+              --success-payload-file success-callback.json \
               $FORCE_FLAG; then
               echo "Ingestion attempt $attempt succeeded"
               exit 0
@@ -176,6 +178,15 @@ jobs:
           echo "id=$SESSION_ID" >> "$GITHUB_OUTPUT"
           wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/manifest.json" --remote --file manifest-check.json
           python -m json.tool manifest-check.json > /dev/null
+          python -c "import json; expected=json.load(open('message.json'))['session_id']; actual=json.load(open('manifest-check.json'))['session_id']; assert actual == expected, f'manifest session_id {actual} does not match {expected}'"
+
+      - name: Report ingestion success
+        env:
+          JOB_ID: ${{ steps.message.outputs.job_id }}
+        run: >-
+          python -c "import json, os; from pipeline.local_queue_worker import callback_job_status;
+          callback_job_status(os.environ['WORKER_BASE_URL'], os.environ.get('INGESTION_API_TOKEN'),
+          os.environ['JOB_ID'], json.load(open('success-callback.json')))"
 
       - name: Upload generated session snapshot
         if: always()
@@ -185,6 +196,7 @@ jobs:
           path: |
             frontend/public/data/sessions/${{ steps.session.outputs.id }}
             manifest-check.json
+            success-callback.json
           if-no-files-found: ignore
           retention-days: 1
 

@@ -81,3 +81,28 @@ test("HEAD artifact requests use R2 metadata without reading the object", async 
   assert.equal(response.headers.get("content-length"), "42");
   assert.equal(getCalls, 0);
 });
+
+for (const baseUrl of ["https://formula1data.pages.dev/data", "https://formula1data.pages.dev/data/"]) {
+  test(`fallback joins the exact Pages data URL from ${baseUrl}`, async () => {
+    const previousFetch = globalThis.fetch;
+    const urls = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      return new Response("{}", {
+        status: 200,
+        headers: { "content-type": "application/json", "content-length": "2" }
+      });
+    };
+    try {
+      const store = createArtifactStore({ STATIC_DATA_BASE_URL: baseUrl });
+      await store.get("catalog.json");
+      await store.get("sessions/2026-09-r/summary.json");
+      assert.deepEqual(urls, [
+        "https://formula1data.pages.dev/data/catalog.json",
+        "https://formula1data.pages.dev/data/sessions/2026-09-r/summary.json"
+      ]);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
+}

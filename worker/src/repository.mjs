@@ -28,8 +28,8 @@ export function createD1Repository(db) {
           `insert into sessions (
             session_id, year, round, meeting_id, meeting_name, session_type,
             scheduled_start, status, artifact_base_path, generated_at, source,
-            created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            quality_json, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           on conflict(session_id) do update set
             year = excluded.year,
             round = excluded.round,
@@ -41,6 +41,7 @@ export function createD1Repository(db) {
             artifact_base_path = excluded.artifact_base_path,
             generated_at = coalesce(excluded.generated_at, sessions.generated_at),
             source = coalesce(excluded.source, sessions.source),
+            quality_json = coalesce(excluded.quality_json, sessions.quality_json),
             updated_at = datetime('now')`
         )
         .bind(
@@ -54,7 +55,8 @@ export function createD1Repository(db) {
           session.status,
           session.artifact_base_path || null,
           session.generated_at || null,
-          session.source || null
+          session.source || null,
+          session.quality_json || null
         )
         .run();
       return this.getSession(session.session_id);
@@ -139,6 +141,48 @@ export function createD1Repository(db) {
       return this.getJob(jobId);
     },
 
+    async transitionJobAndSession(jobId, jobUpdates, sessionUpdates) {
+      const [currentJob, currentSession] = await Promise.all([
+        this.getJob(jobId),
+        this.getSession(sessionUpdates.session_id)
+      ]);
+      if (!currentJob || !currentSession) {
+        return null;
+      }
+      const nextJob = { ...currentJob, ...jobUpdates };
+      const nextSession = { ...currentSession, ...sessionUpdates };
+      await db.batch([
+        db
+          .prepare(
+            `update ingestion_jobs
+            set status = ?, attempts = ?, error_message = ?, started_at = ?, finished_at = ?
+            where job_id = ?`
+          )
+          .bind(
+            nextJob.status,
+            nextJob.attempts || 0,
+            nextJob.error_message || null,
+            nextJob.started_at || null,
+            nextJob.finished_at || null,
+            jobId
+          ),
+        db
+          .prepare(
+            `update sessions
+            set status = ?, generated_at = coalesce(?, generated_at),
+                quality_json = coalesce(?, quality_json), updated_at = datetime('now')
+            where session_id = ?`
+          )
+          .bind(
+            nextSession.status,
+            nextSession.generated_at || null,
+            nextSession.quality_json || null,
+            nextSession.session_id
+          )
+      ]);
+      return { job: await this.getJob(jobId), session: await this.getSession(nextSession.session_id) };
+    },
+
     async incrementJobAttempts(jobId, errorMessage = null) {
       await db
         .prepare(
@@ -157,12 +201,13 @@ export function createD1Repository(db) {
         db
           .prepare(
             `insert into artifacts (
-              session_id, kind, path, size_bytes, checksum, generated_at
-            ) values (?, ?, ?, ?, ?, ?)
+              session_id, kind, path, size_bytes, checksum, generated_at, metadata_json
+            ) values (?, ?, ?, ?, ?, ?, ?)
             on conflict(session_id, kind, path) do update set
               size_bytes = excluded.size_bytes,
               checksum = excluded.checksum,
-              generated_at = excluded.generated_at`
+              generated_at = excluded.generated_at,
+              metadata_json = excluded.metadata_json`
           )
           .bind(
             sessionId,
@@ -170,7 +215,8 @@ export function createD1Repository(db) {
             artifact.path,
             artifact.size_bytes ?? null,
             artifact.checksum || null,
-            artifact.generated_at || null
+            artifact.generated_at || null,
+            artifact.metadata ? JSON.stringify(artifact.metadata) : null
           )
       );
       if (statements.length) {
@@ -304,6 +350,20 @@ export function createMemoryRepository(state = memoryState) {
       const next = { ...current, ...updates };
       state.jobs.set(jobId, next);
       return next;
+    },
+
+    async transitionJobAndSession(jobId, jobUpdates, sessionUpdates) {
+      const currentJob = state.jobs.get(jobId);
+      const currentSession = state.sessions.get(sessionUpdates.session_id);
+      if (!currentJob || !currentSession) {
+        return null;
+      }
+      const now = new Date().toISOString();
+      const job = { ...currentJob, ...jobUpdates };
+      const session = { ...currentSession, ...sessionUpdates, updated_at: now };
+      state.jobs.set(jobId, job);
+      state.sessions.set(session.session_id, session);
+      return { job, session };
     },
 
     async incrementJobAttempts(jobId, errorMessage = null) {

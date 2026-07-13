@@ -6,7 +6,7 @@
 	"vars": {
 		"ENABLE_LIVE_MODE": "false",
 		"OPENF1_BASE_URL": "https://api.openf1.org/v1",
-		"STATIC_DATA_BASE_URL": "https://formula1data.pages.dev/",
+		"STATIC_DATA_BASE_URL": "https://formula1data.pages.dev/data",
 		"CORS_ALLOW_ORIGIN": "https://formula1data.pages.dev",
 		// Keep false for the browser flow only when the Worker route is protected by Cloudflare Access.
 		// Set true for token-authenticated non-browser deployments.

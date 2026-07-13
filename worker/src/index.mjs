@@ -5,13 +5,14 @@ import {
   artifactBasePath,
   normalizeSessionCode,
   sanitizeArtifactPath,
-  sessionIdFromParts
+  sessionIdFromParts,
+  sessionManifestPath
 } from "./session-utils.mjs";
 
 const LIVE_TTL_SECONDS = 3;
 const MAX_JSON_BODY_BYTES = 256 * 1024;
 const MAX_UPSTREAM_JSON_BYTES = 8 * 1024 * 1024;
-const MAX_ARTIFACT_RECORDS = 250;
+const MAX_COMPACT_ARTIFACT_RECORDS = 100;
 const MAX_QUEUE_ATTEMPTS = 3;
 const DEFAULT_STALE_JOB_MINUTES = 120;
 const DISABLED_LIVE_RESPONSE = {
@@ -48,7 +49,7 @@ export default {
       if (request.method === "OPTIONS") {
         return withCors(preflightResponse(request, env), env, request, requestId);
       }
-      const response = await route(request, env, ctx);
+      const response = await route(request, env, ctx, requestId);
       return withCors(response, env, request, requestId);
     } catch (error) {
       const httpError = error instanceof HttpError ? error : null;
@@ -113,7 +114,7 @@ export default {
   }
 };
 
-async function route(request, env, ctx) {
+async function route(request, env, ctx, requestId) {
   const url = new URL(request.url);
 
   if (request.method === "GET" && url.pathname === "/health") {
@@ -129,12 +130,12 @@ async function route(request, env, ctx) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/ingestion/session") {
-    return postIngestionSession(request, env);
+    return postIngestionSession(request, env, requestId);
   }
 
   const jobStatusMatch = url.pathname.match(/^\/api\/ingestion\/jobs\/([^/]+)\/status$/);
   if (request.method === "POST" && jobStatusMatch) {
-    return updateIngestionJob(request, env, decodePathSegment(jobStatusMatch[1], "job id"));
+    return updateIngestionJob(request, env, decodePathSegment(jobStatusMatch[1], "job id"), requestId);
   }
 
   const jobMatch = url.pathname.match(/^\/api\/ingestion\/jobs\/([^/]+)$/);
@@ -206,7 +207,7 @@ async function getSessionStatus(url, env) {
   return json(status);
 }
 
-async function postIngestionSession(request, env) {
+async function postIngestionSession(request, env, requestId) {
   if (!(await isAuthorizedIngestionRequest(request, env))) {
     return json({ code: "unauthorized", message: "Ingestion request is not authorized" }, 401);
   }
@@ -234,7 +235,8 @@ async function postIngestionSession(request, env) {
     meetingId: optionalString(payload.meeting_id, "meeting_id", 200),
     meetingName: optionalString(payload.meeting_name, "meeting_name", 300),
     scheduledStart: optionalIsoDate(payload.scheduled_start, "scheduled_start"),
-    force: optionalBoolean(payload.force, "force")
+    force: optionalBoolean(payload.force, "force"),
+    requestId
   });
 
   const status = result.action === "ready" ? 200 : result.action === "reused" ? 200 : 202;
@@ -250,61 +252,116 @@ async function getIngestionJob(env, jobId) {
   return json(job);
 }
 
-async function updateIngestionJob(request, env, jobId) {
+async function updateIngestionJob(request, env, jobId, requestId) {
   validateJobId(jobId);
   if (!(await isAuthorizedIngestionCallback(request, env))) {
     return json({ code: "unauthorized", message: "Ingestion callback is not authorized" }, 401);
   }
 
   const payload = await readJsonBody(request);
+  return applyIngestionJobUpdate({
+    repository: createRepository(env),
+    artifacts: createArtifactStore(env),
+    jobId,
+    payload,
+    requestId
+  });
+}
+
+export async function applyIngestionJobUpdate({ repository, artifacts, jobId, payload, requestId = null }) {
   const status = String(payload.status || "").toLowerCase();
   if (!["running", "succeeded", "failed"].includes(status)) {
     return json({ code: "bad_request", message: "status must be running, succeeded, or failed" }, 400);
   }
   const errorMessage = optionalString(payload.error_message, "error_message", 2000);
   const generatedAt = optionalIsoDate(payload.generated_at, "generated_at");
-  let artifacts = null;
+  let artifactRecords = null;
   if (payload.artifacts !== undefined) {
     if (!Array.isArray(payload.artifacts)) {
       throw new HttpError(400, "bad_request", "artifacts must be an array");
     }
-    artifacts = validateArtifactRecords(payload.artifacts);
+    artifactRecords = validateArtifactRecords(payload.artifacts);
   }
+  const manifest = status === "succeeded" ? validateManifestRecord(payload.manifest) : null;
+  const quality = validateQuality(payload.quality);
 
-  const repository = createRepository(env);
   const existing = await repository.getJob(jobId);
   if (!existing) {
     return json({ code: "job_not_found", message: "Ingestion job was not found" }, 404);
   }
-  if (["succeeded", "failed"].includes(existing.status) && status !== existing.status) {
+  if (["succeeded", "failed"].includes(existing.status)) {
     const terminalStatus = existing.status === "succeeded" ? "ready" : "failed";
     return json({ job: existing, status: terminalStatus });
   }
-  if (artifacts) {
-    validateArtifactOwnership(artifacts, existing.session_id);
+  if (manifest) {
+    validateManifestOwnership(manifest, existing.session_id);
+  }
+  if (artifactRecords) {
+    validateArtifactOwnership(artifactRecords, existing.session_id);
+  }
+
+  if (status === "succeeded") {
+    let verification;
+    try {
+      verification = await artifacts.verify(manifest, { r2Only: true });
+    } catch (error) {
+      verification = {
+        verified: false,
+        reason: "verification_error",
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+    logLifecycle({
+      requestId,
+      jobId,
+      sessionId: existing.session_id,
+      transition: "running->publication_verification",
+      artifactVerification: verification.verified ? "succeeded" : verification.reason || "failed"
+    });
+    if (!verification.verified) {
+      const message = `Manifest publication verification failed: ${verification.reason || "unknown error"}`;
+      await failIngestionTransition(repository, existing, message);
+      logLifecycle({
+        requestId,
+        jobId,
+        sessionId: existing.session_id,
+        transition: `${existing.status}->failed`,
+        artifactVerification: verification.reason || "failed"
+      });
+      throw new HttpError(409, "publication_verification_failed", message, verification);
+    }
   }
 
   const now = new Date().toISOString();
-  const job = await repository.updateJob(jobId, {
+  if (status === "succeeded") {
+    await repository.recordArtifacts(existing.session_id, [manifest, ...(artifactRecords || [])]);
+  }
+
+  const sessionStatus = status === "succeeded" ? "ready" : status === "running" ? "ingesting" : "failed";
+  const session = await repository.getSession(existing.session_id);
+  const transition = await repository.transitionJobAndSession(jobId, {
     status,
     error_message: errorMessage,
     started_at: status === "running" ? existing.started_at || now : existing.started_at,
     finished_at: status === "succeeded" || status === "failed" ? now : existing.finished_at
+  }, {
+    session_id: existing.session_id,
+    status: sessionStatus,
+    generated_at: generatedAt || (status === "succeeded" ? now : session?.generated_at),
+    quality_json: quality ? JSON.stringify(quality) : session?.quality_json || null
   });
-
-  const sessionStatus = status === "succeeded" ? "ready" : status === "running" ? "ingesting" : "failed";
-  const session = await repository.getSession(existing.session_id);
-  if (session) {
-    await repository.upsertSession({
-      ...session,
-      status: sessionStatus,
-      generated_at: generatedAt || (status === "succeeded" ? now : session.generated_at)
-    });
+  if (!transition) {
+    throw new Error("Failed to transition the ingestion job and session together");
   }
+  const job = transition.job;
 
-  if (status === "succeeded" && artifacts) {
-    await repository.recordArtifacts(existing.session_id, artifacts);
-  }
+  logLifecycle({
+    requestId,
+    jobId,
+    sessionId: existing.session_id,
+    transition: `${existing.status}->${status}`,
+    artifactVerification: status === "succeeded" ? "succeeded" : "not_applicable"
+  });
 
   return json({ job, status: sessionStatus });
 }
@@ -409,6 +466,13 @@ export async function dispatchQueueMessage(body, env, repository) {
     started_at: current?.started_at || now,
     error_message: null
   });
+  logLifecycle({
+    requestId: null,
+    jobId,
+    sessionId: body.session_id,
+    transition: `${current.status}->running`,
+    artifactVerification: "not_applicable"
+  });
 
   if (hasGitHubDispatchConfig(env)) {
     await dispatchGitHubWorkflow(body, env, repository);
@@ -502,33 +566,60 @@ async function failQueueJob(body, repository, errorMessage) {
   const jobId = body.job_id;
   const current = await repository.getJob(jobId);
   const now = new Date().toISOString();
-  const job = await repository.updateJob(jobId, {
+  const sessionId = current?.session_id || body.session_id;
+  if (!sessionId) {
+    return;
+  }
+  const transition = await repository.transitionJobAndSession(jobId, {
     status: "failed",
     attempts: Number(current?.attempts || 0),
     error_message: errorMessage,
     started_at: current?.started_at || null,
     finished_at: now
-  });
-
-  const sessionId = job?.session_id || current?.session_id || body.session_id;
-  if (!sessionId) {
-    return;
-  }
-
-  const existingSession = await repository.getSession(sessionId);
-  await repository.upsertSession({
+  }, {
     session_id: sessionId,
-    year: Number(existingSession?.year || body.year),
-    round: Number(existingSession?.round || body.round),
-    meeting_id: existingSession?.meeting_id || body.meeting_id || null,
-    meeting_name: existingSession?.meeting_name || body.meeting_name || null,
-    session_type: existingSession?.session_type || body.session || null,
-    scheduled_start: existingSession?.scheduled_start || null,
-    status: "failed",
-    artifact_base_path: existingSession?.artifact_base_path || body.artifact_base_path || artifactBasePath(sessionId),
-    generated_at: existingSession?.generated_at || null,
-    source: existingSession?.source || "dynamic"
+    status: "failed"
   });
+  if (!transition) {
+    throw new Error("Failed to transition the queue job and session to failed");
+  }
+  logLifecycle({
+    requestId: null,
+    jobId,
+    sessionId,
+    transition: `${current?.status || "unknown"}->failed`,
+    artifactVerification: "not_applicable"
+  });
+}
+
+async function failIngestionTransition(repository, existingJob, errorMessage) {
+  const now = new Date().toISOString();
+  const transition = await repository.transitionJobAndSession(existingJob.job_id, {
+    status: "failed",
+    error_message: errorMessage,
+    started_at: existingJob.started_at || null,
+    finished_at: now
+  }, {
+    session_id: existingJob.session_id,
+    status: "failed"
+  });
+  if (!transition) {
+    throw new Error("Failed to record the publication verification failure");
+  }
+}
+
+function logLifecycle({ requestId, jobId, sessionId, transition, artifactVerification }) {
+  console.info(
+    JSON.stringify({
+      message: "ingestion lifecycle transition",
+      request_id: requestId,
+      job_id: jobId,
+      session_id: sessionId,
+      lifecycle_transition: transition,
+      artifact_verification_result: artifactVerification,
+      queue_send_result: "not_applicable"
+    })
+  );
 }
 
 function createQueue(env) {
@@ -747,17 +838,35 @@ function optionalIsoDate(value, name) {
 }
 
 function validateArtifactRecords(artifacts) {
-  if (artifacts.length > MAX_ARTIFACT_RECORDS) {
-    throw new HttpError(400, "bad_request", `artifacts cannot contain more than ${MAX_ARTIFACT_RECORDS} records`);
+  if (artifacts.length > MAX_COMPACT_ARTIFACT_RECORDS) {
+    throw new HttpError(
+      400,
+      "bad_request",
+      `artifacts must be a compact manifest summary with no more than ${MAX_COMPACT_ARTIFACT_RECORDS} records`
+    );
   }
-  return artifacts.map((artifact, index) => {
+  return artifacts.map((artifact, index) => validateArtifactRecord(artifact, `artifacts[${index}]`));
+}
+
+function validateManifestRecord(manifest) {
+  if (manifest === undefined || manifest === null) {
+    throw new HttpError(400, "bad_request", "succeeded callbacks require a manifest record");
+  }
+  const record = validateArtifactRecord(manifest, "manifest");
+  if (record.kind !== "manifest") {
+    throw new HttpError(400, "bad_request", "manifest.kind must be manifest");
+  }
+  return record;
+}
+
+function validateArtifactRecord(artifact, label) {
     if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) {
-      throw new HttpError(400, "bad_request", `artifacts[${index}] must be an object`);
+      throw new HttpError(400, "bad_request", `${label} must be an object`);
     }
-    const kind = optionalString(artifact.kind, `artifacts[${index}].kind`, 64);
-    const rawPath = optionalString(artifact.path, `artifacts[${index}].path`, 1024);
-    if (!kind || !rawPath || !/^[A-Za-z0-9._-]+$/.test(kind)) {
-      throw new HttpError(400, "bad_request", `artifacts[${index}] has an invalid kind or path`);
+    const kind = optionalString(artifact.kind, `${label}.kind`, 64);
+    const rawPath = optionalString(artifact.path, `${label}.path`, 1024);
+    if (!kind || !rawPath || !/^[A-Za-z0-9._:-]+$/.test(kind)) {
+      throw new HttpError(400, "bad_request", `${label} has an invalid kind or path`);
     }
     let path;
     try {
@@ -766,21 +875,26 @@ function validateArtifactRecords(artifacts) {
       throw new HttpError(
         400,
         "bad_request",
-        `artifacts[${index}].path is invalid: ${error instanceof Error ? error.message : "invalid path"}`
+        `${label}.path is invalid: ${error instanceof Error ? error.message : "invalid path"}`
       );
     }
-    const sizeBytes = artifact.size_bytes ?? null;
-    if (sizeBytes !== null && (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0)) {
-      throw new HttpError(400, "bad_request", `artifacts[${index}].size_bytes must be a non-negative integer`);
+    const sizeBytes = artifact.size_bytes;
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
+      throw new HttpError(400, "bad_request", `${label}.size_bytes must be a non-negative integer`);
     }
+    const checksum = optionalString(artifact.checksum, `${label}.checksum`, 71);
+    if (!checksum || !/^sha256:[a-f0-9]{64}$/.test(checksum)) {
+      throw new HttpError(400, "bad_request", `${label}.checksum must be a lowercase sha256 checksum`);
+    }
+    const metadata = validateArtifactMetadata(artifact.metadata, `${label}.metadata`);
     return {
       kind,
       path,
       size_bytes: sizeBytes,
-      checksum: optionalString(artifact.checksum, `artifacts[${index}].checksum`, 256),
-      generated_at: optionalIsoDate(artifact.generated_at, `artifacts[${index}].generated_at`)
+      checksum,
+      generated_at: optionalIsoDate(artifact.generated_at, `${label}.generated_at`),
+      metadata
     };
-  });
 }
 
 function validateArtifactOwnership(artifacts, sessionId) {
@@ -790,6 +904,59 @@ function validateArtifactOwnership(artifacts, sessionId) {
       throw new HttpError(400, "bad_request", "artifact paths must belong to the ingestion job session");
     }
   }
+}
+
+function validateManifestOwnership(manifest, sessionId) {
+  if (manifest.path !== sessionManifestPath(sessionId)) {
+    throw new HttpError(400, "bad_request", "manifest path must belong to the ingestion job session");
+  }
+}
+
+function validateArtifactMetadata(value, name) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "bad_request", `${name} must be an object`);
+  }
+  if (JSON.stringify(value).length > 16_384) {
+    throw new HttpError(400, "bad_request", `${name} is too large`);
+  }
+  return value;
+}
+
+function validateQuality(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "bad_request", "quality must be an object");
+  }
+  const status = optionalString(value.status, "quality.status", 32);
+  if (!status || !["complete", "partial", "unknown"].includes(status)) {
+    throw new HttpError(400, "bad_request", "quality.status must be complete, partial, or unknown");
+  }
+  return {
+    status,
+    missing_sections: validateStringList(value.missing_sections, "quality.missing_sections"),
+    available_sections: validateStringList(value.available_sections, "quality.available_sections")
+  };
+}
+
+function validateStringList(value, name) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.length > 100) {
+    throw new HttpError(400, "bad_request", `${name} must be an array with no more than 100 values`);
+  }
+  return value.map((item, index) => {
+    const normalized = optionalString(item, `${name}[${index}]`, 100);
+    if (!normalized) {
+      throw new HttpError(400, "bad_request", `${name}[${index}] is invalid`);
+    }
+    return normalized;
+  });
 }
 
 function validateQueueMessage(body) {

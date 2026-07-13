@@ -17,7 +17,9 @@ from typing import Any, Iterable
 from pipeline.artifacts import (
     DEFAULT_DATA_DIR,
     DEFAULT_OUTPUT_DIR,
+    SESSION_SECTION_FILES,
     build_static_artifacts,
+    checksum_file,
     read_json,
     write_json,
 )
@@ -40,6 +42,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--r2-prefix", default="", help="Optional object key prefix for R2 uploads.")
     parser.add_argument("--callback-url", help="Worker base URL or full job status callback URL.")
     parser.add_argument("--callback-token", help="Bearer token for the Worker ingestion callback.")
+    parser.add_argument(
+        "--defer-terminal-callbacks",
+        action="store_true",
+        help="Leave success/failure reporting to the caller after additional verification.",
+    )
+    parser.add_argument("--success-payload-file", type=Path)
     parser.add_argument("--force", action="store_true", help="Force FastF1 reingestion.")
     args = parser.parse_args(argv)
 
@@ -58,6 +66,8 @@ def main(argv: list[str] | None = None) -> None:
             callback_url=args.callback_url,
             callback_token=args.callback_token,
             force=args.force,
+            defer_terminal_callbacks=args.defer_terminal_callbacks,
+            success_payload_file=args.success_payload_file,
         )
 
 
@@ -71,6 +81,8 @@ def process_message(
     callback_url: str | None = None,
     callback_token: str | None = None,
     force: bool = False,
+    defer_terminal_callbacks: bool = False,
+    success_payload_file: Path | None = None,
 ) -> dict[str, Any]:
     job_id = required(message, "job_id")
     kind = required(message, "kind")
@@ -126,13 +138,20 @@ def process_message(
                         data_dir / "processed" / "sessions" / session_id / "dataset.json"
                     ),
                 )
-                artifacts = collect_session_artifacts(publication_dir, session_id)
-                payload = {
-                    "status": "succeeded",
-                    "generated_at": summary["generated_at"],
-                    "artifacts": artifacts,
-                }
-                callback_job_status(callback_url, callback_token, job_id, payload)
+                if artifact_destination == "r2":
+                    verify_remote_manifest(
+                        publication_dir,
+                        required_value(r2_bucket, "--r2-bucket"),
+                        r2_prefix,
+                        session_id,
+                    )
+                payload = build_success_payload(
+                    publication_dir, session_id, summary["generated_at"]
+                )
+                write_success_payload(success_payload_file, payload)
+                if not defer_terminal_callbacks:
+                    callback_job_status(callback_url, callback_token, job_id, payload)
+                artifacts = payload["artifacts"]
                 return {"job_id": job_id, "session_id": session_id, "artifacts": len(artifacts)}
 
         if artifact_destination == "r2":
@@ -144,22 +163,27 @@ def process_message(
                 year=int(required(message, "year")),
                 include_indexes=False,
             )
+            verify_remote_manifest(
+                publication_dir,
+                required_value(r2_bucket, "--r2-bucket"),
+                r2_prefix,
+                session_id,
+            )
 
-        artifacts = collect_session_artifacts(publication_dir, session_id)
-        payload = {
-            "status": "succeeded",
-            "generated_at": summary["generated_at"],
-            "artifacts": artifacts,
-        }
-        callback_job_status(callback_url, callback_token, job_id, payload)
+        payload = build_success_payload(publication_dir, session_id, summary["generated_at"])
+        write_success_payload(success_payload_file, payload)
+        if not defer_terminal_callbacks:
+            callback_job_status(callback_url, callback_token, job_id, payload)
+        artifacts = payload["artifacts"]
         return {"job_id": job_id, "session_id": session_id, "artifacts": len(artifacts)}
     except Exception as exc:
-        callback_job_status(
-            callback_url,
-            callback_token,
-            job_id,
-            {"status": "failed", "error_message": str(exc)},
-        )
+        if not defer_terminal_callbacks:
+            callback_job_status(
+                callback_url,
+                callback_token,
+                job_id,
+                {"status": "failed", "error_message": str(exc)},
+            )
         raise
 
 
@@ -204,18 +228,76 @@ def collect_session_artifacts(output_dir: Path, session_id: str) -> list[dict[st
     manifest_path = output_dir / "sessions" / session_id / "manifest.json"
     manifest = read_json(manifest_path)
     generated_at = manifest.get("generated_at")
+    sections = manifest.get("sections", [])
     artifacts = []
-    for section in manifest.get("sections", []):
-        artifacts.append(
-            {
-                "kind": section.get("kind"),
-                "path": section.get("path"),
-                "size_bytes": section.get("size_bytes"),
-                "checksum": section.get("checksum"),
-                "generated_at": generated_at,
+    telemetry_sections = [section for section in sections if section.get("kind") == "telemetry-lap"]
+    for section in sections:
+        if section.get("kind") == "telemetry-lap":
+            continue
+        artifact = {
+            "kind": section.get("kind"),
+            "path": section.get("path"),
+            "size_bytes": section.get("size_bytes"),
+            "checksum": section.get("checksum"),
+            "generated_at": generated_at,
+        }
+        if section.get("kind") == "telemetry-index":
+            artifact["metadata"] = {
+                "lap_file_count": len(telemetry_sections),
+                "lap_count": int(manifest.get("telemetry", {}).get("lap_count") or 0),
+                "sample_count": int(manifest.get("telemetry", {}).get("sample_count") or 0),
+                "max_samples_per_lap": int(
+                    manifest.get("telemetry", {}).get("max_samples_per_lap") or 0
+                ),
+                "total_size_bytes": sum(
+                    int(item.get("size_bytes") or 0) for item in telemetry_sections
+                ),
             }
-        )
+        artifacts.append(artifact)
     return artifacts
+
+
+def build_success_payload(
+    output_dir: Path, session_id: str, generated_at: str | None
+) -> dict[str, Any]:
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    manifest = read_json(manifest_path)
+    if manifest.get("session_id") != session_id or not isinstance(manifest.get("sections"), list):
+        raise ValueError(f"Invalid session manifest for {session_id}")
+    sections = manifest["sections"]
+    available = sorted(
+        {
+            str(section.get("kind"))
+            for section in sections
+            if section.get("kind") and section.get("kind") != "telemetry-lap"
+        }
+    )
+    if "summary" not in available:
+        raise ValueError(f"Session manifest for {session_id} is missing the core summary artifact")
+    optional = (set(SESSION_SECTION_FILES) - {"summary"}) | {"telemetry-index"}
+    missing = sorted(optional - set(available))
+    return {
+        "status": "succeeded",
+        "generated_at": generated_at or manifest.get("generated_at"),
+        "manifest": {
+            "kind": "manifest",
+            "path": f"sessions/{session_id}/manifest.json",
+            "size_bytes": manifest_path.stat().st_size,
+            "checksum": checksum_file(manifest_path),
+            "generated_at": generated_at or manifest.get("generated_at"),
+        },
+        "artifacts": collect_session_artifacts(output_dir, session_id),
+        "quality": {
+            "status": "partial" if missing else "complete",
+            "missing_sections": missing,
+            "available_sections": available,
+        },
+    }
+
+
+def write_success_payload(path: Path | None, payload: dict[str, Any]) -> None:
+    if path:
+        write_json(path, payload)
 
 
 def sync_artifacts_to_r2(
@@ -336,6 +418,7 @@ def download_r2_object(
     destination: Path,
     *,
     required: bool,
+    error_context: str = "R2 index",
 ) -> bool:
     destination.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
@@ -359,8 +442,37 @@ def download_r2_object(
         destination.unlink()
     if required:
         detail = (result.stderr or result.stdout or "unknown Wrangler error").strip()
-        raise RuntimeError(f"Could not hydrate required R2 index {key}: {detail}")
+        action = "hydrate" if error_context == "R2 index" else "download"
+        raise RuntimeError(f"Could not {action} required {error_context} {key}: {detail}")
     return False
+
+
+def verify_remote_manifest(
+    output_dir: Path, bucket: str, prefix: str, session_id: str
+) -> dict[str, Any]:
+    local_path = output_dir / "sessions" / session_id / "manifest.json"
+    if not local_path.is_file():
+        raise RuntimeError(f"Local manifest is missing for {session_id}")
+    with tempfile.TemporaryDirectory(prefix="f1-manifest-check-") as temporary_directory:
+        remote_path = Path(temporary_directory) / "manifest.json"
+        key = object_key(prefix, f"sessions/{session_id}/manifest.json")
+        download_r2_object(
+            bucket,
+            key,
+            remote_path,
+            required=True,
+            error_context="R2 manifest",
+        )
+        if remote_path.stat().st_size != local_path.stat().st_size:
+            raise RuntimeError(f"Remote R2 manifest size mismatch for {session_id}")
+        if checksum_file(remote_path) != checksum_file(local_path):
+            raise RuntimeError(f"Remote R2 manifest checksum mismatch for {session_id}")
+        manifest = read_json(remote_path)
+        if manifest.get("session_id") != session_id or not isinstance(
+            manifest.get("sections"), list
+        ):
+            raise RuntimeError(f"Remote R2 manifest is invalid for {session_id}")
+        return manifest
 
 
 def object_key(prefix: str, path: str) -> str:

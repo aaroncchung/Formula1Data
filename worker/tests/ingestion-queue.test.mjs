@@ -246,3 +246,41 @@ test("stale active jobs and sessions are failed for later retry", async () => {
   assert.equal((await repository.getJob("stale-job")).status, "failed");
   assert.equal((await repository.getSession("2026-08-r")).status, "failed");
 });
+
+test("queue send failure immediately fails the job and session and permits retry", async () => {
+  const repository = freshRepository();
+  const artifacts = { head: async () => null };
+  const queue = { send: async () => { throw new Error("queue unavailable"); } };
+
+  await assert.rejects(
+    enqueueIngestionJob({
+      repository,
+      artifacts,
+      queue,
+      year: 2026,
+      round: 9,
+      session: "R",
+      now: new Date("2026-07-13T12:00:00Z")
+    }),
+    /Queue send failed: queue unavailable/
+  );
+
+  const first = await repository.getLatestJob("2026-09-r", "ingest_session");
+  assert.equal(first.status, "failed");
+  assert.match(first.error_message, /queue unavailable/);
+  assert.equal((await repository.getSession("2026-09-r")).status, "failed");
+
+  const sent = [];
+  const retry = await enqueueIngestionJob({
+    repository,
+    artifacts,
+    queue: { send: async (message) => sent.push(message) },
+    year: 2026,
+    round: 9,
+    session: "R",
+    now: new Date("2026-07-13T12:00:01Z")
+  });
+  assert.equal(retry.action, "queued");
+  assert.notEqual(retry.job.job_id, first.job_id);
+  assert.equal(sent.length, 1);
+});

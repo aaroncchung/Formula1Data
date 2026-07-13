@@ -31,7 +31,8 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
       status: "ready",
       artifact_base_path: artifactBasePath(sessionId),
       generated_at: artifact.uploaded || sessionRow?.generated_at || null,
-      source: sessionRow?.source || "r2"
+      source: sessionRow?.source || "r2",
+      quality_json: sessionRow?.quality_json || null
     };
     const readySession = sessionMatches(sessionRow, readyValues)
       ? sessionRow
@@ -68,12 +69,17 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
   }
 
   if (sessionRow) {
-    const sessionStatus = sessionRow.status || "missing";
+    let resolvedSession = sessionRow;
+    let sessionStatus = sessionRow.status || "missing";
+    if (sessionStatus === "ready") {
+      sessionStatus = "stale";
+      resolvedSession = await repository.upsertSession({ ...sessionRow, status: sessionStatus });
+    }
     const latestJob =
       sessionStatus === "failed" && typeof repository.getLatestJob === "function"
         ? await repository.getLatestJob(sessionId, INGEST_SESSION)
         : null;
-    return statusResponse(sessionRow, sessionStatus, {
+    return statusResponse(resolvedSession, sessionStatus, {
       artifact_exists: false,
       job: latestJob
     });
@@ -108,7 +114,8 @@ export async function enqueueIngestionJob({
   meetingName = null,
   scheduledStart = null,
   force = false,
-  now = new Date()
+  now = new Date(),
+  requestId = null
 }) {
   const sessionType = normalizeSessionCode(session);
   const sessionId = sessionIdFromParts(year, round, sessionType);
@@ -174,7 +181,39 @@ export async function enqueueIngestionJob({
   }
 
   const message = queueMessageForJob({ ...job, force }, sessionRow);
-  await queue.send(message);
+  try {
+    await queue.send(message);
+    logLifecycle({
+      requestId,
+      jobId: job.job_id,
+      sessionId,
+      transition: "missing_or_terminal->queued",
+      queueSend: "succeeded"
+    });
+  } catch (error) {
+    const errorMessage = `Queue send failed: ${error instanceof Error ? error.message : String(error)}`;
+    const finishedAt = new Date().toISOString();
+    const transition = await repository.transitionJobAndSession(job.job_id, {
+      status: "failed",
+      error_message: errorMessage,
+      finished_at: finishedAt
+    }, {
+      session_id: sessionId,
+      status: "failed"
+    });
+    if (!transition) {
+      throw new Error(`${errorMessage}; failed to persist the compensated state`);
+    }
+    logLifecycle({
+      requestId,
+      jobId: job.job_id,
+      sessionId,
+      transition: "queued->failed",
+      queueSend: "failed",
+      error: errorMessage
+    });
+    throw new Error(errorMessage);
+  }
 
   return {
     action: "queued",
@@ -200,6 +239,7 @@ export function statusResponse(session, status, details = {}) {
     artifact_base_path: session.artifact_base_path || artifactBasePath(session.session_id),
     generated_at: session.generated_at || null,
     source: session.source || "dynamic",
+    quality: parseQuality(session.quality_json),
     artifact_exists: Boolean(details.artifact_exists),
     artifact_path: details.artifact_path || null,
     size_bytes: details.size_bytes ?? null,
@@ -222,6 +262,36 @@ function sessionMatches(current, expected) {
     "status",
     "artifact_base_path",
     "generated_at",
-    "source"
+    "source",
+    "quality_json"
   ].every((key) => String(current[key] ?? "") === String(expected[key] ?? ""));
+}
+
+function parseQuality(value) {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === "object") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function logLifecycle({ requestId, jobId, sessionId, transition, queueSend, error = null }) {
+  console.info(
+    JSON.stringify({
+      message: "ingestion lifecycle transition",
+      request_id: requestId,
+      job_id: jobId,
+      session_id: sessionId,
+      lifecycle_transition: transition,
+      artifact_verification_result: "not_applicable",
+      queue_send_result: queueSend,
+      error
+    })
+  );
 }
