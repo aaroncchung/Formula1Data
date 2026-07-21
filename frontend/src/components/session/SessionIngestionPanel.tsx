@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Clock3, Play, RefreshCw, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { EmptyState } from "@/components/dashboard/EmptyState";
@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
 import { api, dynamicApi, dynamicApiSourceLabel, isApiFailure, isDynamicApiRouteMissing, safeApi } from "@/lib/api";
+import { createRequestGenerationGuard } from "@/lib/request-generation";
 import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
 
 type LoadState =
@@ -44,14 +45,20 @@ export function SessionIngestionPanel({
   const [statusState, setStatusState] = useState<LoadState>({ state: "idle" });
   const [dashboardState, setDashboardState] = useState<DashboardState>({ state: "idle" });
   const [isQueueing, setIsQueueing] = useState(false);
+  const statusRequests = useRef(createRequestGenerationGuard());
+  const dashboardRequests = useRef(createRequestGenerationGuard());
+  const retriedGeneration = useRef<string | null>(null);
 
   const loadStatus = useCallback(async () => {
+    const requestToken = statusRequests.current.begin();
     setStatusState({ state: "loading" });
     try {
       const status = await dynamicApi.sessionStatus({ year, round, session });
+      if (!statusRequests.current.isCurrent(requestToken)) return null;
       setStatusState({ state: "ready", status });
       return status;
     } catch (error) {
+      if (!statusRequests.current.isCurrent(requestToken)) return null;
       if (isDynamicApiRouteMissing(error)) {
         setStatusState({
           state: "static-only",
@@ -66,6 +73,7 @@ export function SessionIngestionPanel({
   }, [round, session, year]);
 
   const loadDashboard = useCallback(async (sessionId: string) => {
+    const requestToken = dashboardRequests.current.begin();
     setDashboardState({ state: "loading" });
     const [
       summary,
@@ -80,7 +88,14 @@ export function SessionIngestionPanel({
       raceControl,
       results,
       telemetryIndex,
-      positionReplay
+      positionReplay,
+      idealLaps,
+      teammateComparison,
+      strategy,
+      trackDominance,
+      cornerAnalysis,
+      carPerformance,
+      pacePrediction
     ] = await Promise.all([
       safeApi(() => api.summary(sessionId)),
       safeApi(() => api.drivers(sessionId)),
@@ -94,7 +109,14 @@ export function SessionIngestionPanel({
       safeApi(() => api.raceControl(sessionId)),
       safeApi(() => api.results(sessionId)),
       safeApi(() => api.telemetryIndex(sessionId)),
-      safeApi(() => api.positionReplay(sessionId))
+      safeApi(() => api.positionReplay(sessionId)),
+      safeApi(() => api.idealLaps(sessionId)),
+      safeApi(() => api.teammateComparison(sessionId)),
+      safeApi(() => api.strategy(sessionId)),
+      safeApi(() => api.trackDominance(sessionId)),
+      safeApi(() => api.cornerAnalysis(sessionId)),
+      safeApi(() => api.carPerformance(sessionId)),
+      safeApi(() => api.pacePrediction(sessionId))
     ]);
     const all = [
       summary,
@@ -113,6 +135,7 @@ export function SessionIngestionPanel({
     ];
     const failed = all.find(isApiFailure);
     if (failed) {
+      if (!dashboardRequests.current.isCurrent(requestToken)) return;
       setDashboardState({ state: "error", detail: failed.error.message });
       return;
     }
@@ -132,6 +155,7 @@ export function SessionIngestionPanel({
       positionReplay.ok
     ) {
       const telemetryComparison = await initialTelemetryComparison(sessionId, telemetryIndex.data);
+      if (!dashboardRequests.current.isCurrent(requestToken)) return;
       if (!telemetryComparison.ok) {
         setDashboardState({ state: "error", detail: telemetryComparison.error.message });
         return;
@@ -151,18 +175,37 @@ export function SessionIngestionPanel({
           raceControl: raceControl.data,
           results: results.data,
           telemetryComparison: telemetryComparison.data,
-          positionReplay: positionReplay.data
+          telemetryIndex: telemetryIndex.data,
+          positionReplay: positionReplay.data,
+          idealLaps: idealLaps.ok ? idealLaps.data : null,
+          teammateComparison: teammateComparison.ok ? teammateComparison.data : null,
+          strategy: strategy.ok ? strategy.data : null,
+          trackDominance: trackDominance.ok ? trackDominance.data : null,
+          cornerAnalysis: cornerAnalysis.ok ? cornerAnalysis.data : null,
+          carPerformance: carPerformance.ok ? carPerformance.data : null,
+          pacePrediction: pacePrediction.ok ? pacePrediction.data : null
         }
       });
     }
   }, []);
 
   useEffect(() => {
+    const sessionId = `${year}-${String(round).padStart(2, "0")}-${session.toLowerCase()}`;
+    const statusGuard = statusRequests.current;
+    const dashboardGuard = dashboardRequests.current;
     const timer = window.setTimeout(() => {
+      retriedGeneration.current = null;
+      setIsQueueing(false);
+      void loadDashboard(sessionId);
       void loadStatus();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadStatus]);
+    return () => {
+      window.clearTimeout(timer);
+      statusGuard.invalidate();
+      dashboardGuard.invalidate();
+      retriedGeneration.current = null;
+    };
+  }, [loadDashboard, loadStatus, round, session, year]);
 
   const status = statusState.state === "ready" ? statusState.status : null;
   useEffect(() => {
@@ -176,7 +219,14 @@ export function SessionIngestionPanel({
   }, [loadStatus, status]);
 
   useEffect(() => {
-    if (status?.status === "ready" && dashboardState.state === "idle") {
+    const generation = status?.generated_at || status?.session_id || null;
+    if (
+      status?.status === "ready" &&
+      dashboardState.state !== "ready" &&
+      dashboardState.state !== "loading" &&
+      generation !== retriedGeneration.current
+    ) {
+      retriedGeneration.current = generation;
       const timer = window.setTimeout(() => {
         void loadDashboard(status.session_id);
       }, 0);
@@ -207,6 +257,7 @@ export function SessionIngestionPanel({
       await loadStatus();
       return;
     }
+    const requestToken = statusRequests.current.begin();
     setIsQueueing(true);
     try {
       const response = await dynamicApi.queueSessionIngestion({
@@ -218,11 +269,13 @@ export function SessionIngestionPanel({
         scheduled_start: scheduledStart,
         force
       });
+      if (!statusRequests.current.isCurrent(requestToken)) return;
       setStatusState({ state: "ready", status: response.status });
     } catch (error) {
+      if (!statusRequests.current.isCurrent(requestToken)) return;
       setStatusState({ state: "error", error: apiError(error) });
     } finally {
-      setIsQueueing(false);
+      if (statusRequests.current.isCurrent(requestToken)) setIsQueueing(false);
     }
   }
 
@@ -246,8 +299,8 @@ export function SessionIngestionPanel({
         title={`${year} Round ${round} ${session.toUpperCase()}`}
         description={
           statusState.state === "static-only"
-            ? "This page can show committed artifacts, but queueing a new ingestion job needs the dynamic API."
-            : "This static page can queue on-demand ingestion through the Cloudflare API layer."
+            ? "This page reads local artifacts, but queueing a new ingestion job needs the dynamic API."
+            : "This route shell reads current artifacts and can queue on-demand ingestion through the Cloudflare API layer."
         }
       >
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -290,13 +343,13 @@ export function SessionIngestionPanel({
           <div className="mt-4">
             <EmptyState
               title="Static-only deployment"
-              detail={`${statusState.detail} Historical browsing does not need a backend; it reads the committed files under /data. Dynamic API target checked: ${dynamicApiSourceLabel()}.`}
+              detail={`${statusState.detail} Offline browsing reads files under /data. Dynamic API target checked: ${dynamicApiSourceLabel()}.`}
             />
           </div>
         ) : null}
         {dashboardState.state === "loading" ? (
           <div className="mt-4">
-            <EmptyState title="Loading generated artifacts" detail="The session is ready; dashboard data is loading from /data." />
+            <EmptyState title="Loading generated artifacts" detail="Dashboard data is loading from the configured artifact source." />
           </div>
         ) : null}
         {dashboardState.state === "error" ? (

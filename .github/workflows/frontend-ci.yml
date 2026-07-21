@@ -36,6 +36,13 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Test runtime artifact loading
+        working-directory: frontend
+        run: npm test
+
+      - name: Test Worker artifact publication
+        run: node --test worker/tests/*.test.mjs
+
       - name: Build static export
         working-directory: frontend
         run: npm run build

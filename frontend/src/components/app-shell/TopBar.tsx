@@ -2,7 +2,7 @@
 
 import { Database, Menu } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { GlobalSessionPicker } from "@/components/app-shell/GlobalSessionPicker";
 import { Sidebar } from "@/components/app-shell/Sidebar";
@@ -24,7 +24,9 @@ export function TopBar() {
             <Menu size={18} />
           </button>
         </div>
-        <GlobalSessionPicker />
+        <Suspense fallback={<div className="min-w-0 flex-1" />}>
+          <GlobalSessionPicker />
+        </Suspense>
         <div className="hidden shrink-0 items-center gap-2 text-xs text-slate-500 2xl:flex" title={`Data source: ${staticDataBasePath()}`}>
           <Database size={14} className="text-aqua" aria-hidden="true" />
           <span>Static data ready</span>

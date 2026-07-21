@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 import json
 import hashlib
 import math
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,12 +35,10 @@ def build_static_artifacts(
     data_dir: Path = DEFAULT_DATA_DIR,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     sample_only: bool = False,
-    session_ids: set[str] | None = None,
+    generated_at: str | None = None,
 ) -> dict[str, Any]:
-    generated_at = datetime.now(timezone.utc).isoformat()
-    dataset, dataset_sources = load_merged_dataset(
-        data_dir, sample_only=sample_only, session_ids=session_ids
-    )
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    dataset, dataset_sources = load_merged_dataset(data_dir, sample_only=sample_only)
 
     reset_directory(output_dir)
     write_catalog(output_dir, dataset, dataset_sources, generated_at, sample_only)
@@ -70,6 +70,80 @@ def build_static_artifacts(
     }
 
 
+def build_incremental_artifacts(
+    session_ids: set[str],
+    data_dir: Path = DEFAULT_DATA_DIR,
+    output_dir: Path = DEFAULT_OUTPUT_DIR,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Rebuild selected sessions and their shared indexes without touching other sessions."""
+    if not session_ids:
+        raise ValueError("At least one session_id is required for an incremental build")
+
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    dataset, dataset_sources = load_merged_dataset(data_dir, session_ids=session_ids)
+    bundles = dataset.get("session_data", {})
+    missing = sorted(session_ids - set(bundles))
+    if missing:
+        raise ValueError(f"Processed datasets are missing sessions: {', '.join(missing)}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    affected_years = {
+        int(session["year"])
+        for session in dataset.get("sessions", [])
+        if session.get("session_id") in session_ids
+    }
+    session_manifests = []
+    with tempfile.TemporaryDirectory(prefix="f1-artifacts-") as temporary_directory:
+        staging_dir = Path(temporary_directory) / "data"
+        for session_id in sorted(session_ids):
+            session_manifests.append(
+                write_session_artifacts(
+                    output_dir=staging_dir,
+                    session_id=session_id,
+                    bundle=bundles[session_id],
+                    generated_at=generated_at,
+                    source_files=dataset_sources,
+                )
+            )
+        write_season_artifacts(staging_dir, dataset, generated_at, years=affected_years)
+        write_catalog(staging_dir, dataset, dataset_sources, generated_at, False)
+        merge_incremental_indexes(output_dir, staging_dir, affected_years)
+
+        for session_id in sorted(session_ids):
+            source = staging_dir / "sessions" / session_id
+            destination = output_dir / "sessions" / session_id
+            reset_directory(destination)
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+        for year in sorted(affected_years):
+            source = staging_dir / "seasons" / f"{year}.json"
+            destination = output_dir / "seasons" / f"{year}.json"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        shutil.copy2(staging_dir / "catalog.json", output_dir / "catalog.json")
+
+    changed_paths = [output_dir / "catalog.json"]
+    changed_paths.extend(output_dir / "seasons" / f"{year}.json" for year in affected_years)
+    for session_id in session_ids:
+        changed_paths.extend((output_dir / "sessions" / session_id).rglob("*.json"))
+    changed_artifacts = [path for path in changed_paths if path.is_file()]
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "output_dir": str(output_dir),
+        "source_files": [str(path) for path in dataset_sources],
+        "season_count": len(affected_years),
+        "meeting_count": len(
+            [meeting for meeting in dataset.get("meetings", []) if int(meeting["year"]) in affected_years]
+        ),
+        "session_count": len(session_ids),
+        "artifact_count": len(changed_artifacts),
+        "total_size_bytes": sum(path.stat().st_size for path in changed_artifacts),
+        "sessions": session_manifests,
+        "incremental": True,
+    }
+
+
 def load_merged_dataset(
     data_dir: Path,
     sample_only: bool = False,
@@ -84,11 +158,12 @@ def load_merged_dataset(
         sources.append(sample_dataset)
 
     if not sample_only:
-        seasons_dir = data_dir / "processed" / "seasons"
-        if seasons_dir.exists():
-            for artifact in sorted(seasons_dir.glob("*/dataset.json")):
-                dataset = merge_datasets(dataset, read_json(artifact))
-                sources.append(artifact)
+        if session_ids is None:
+            seasons_dir = data_dir / "processed" / "seasons"
+            if seasons_dir.exists():
+                for artifact in sorted(seasons_dir.glob("*/dataset.json")):
+                    dataset = merge_datasets(dataset, read_json(artifact))
+                    sources.append(artifact)
 
         sessions_dir = data_dir / "processed" / "sessions"
         if sessions_dir.exists():
@@ -98,7 +173,7 @@ def load_merged_dataset(
                 dataset = merge_datasets(dataset, read_json(artifact))
                 sources.append(artifact)
 
-        if not sources and sample_dataset.exists():
+        if session_ids is None and not sources and sample_dataset.exists():
             dataset = merge_datasets(dataset, read_json(sample_dataset))
             sources.append(sample_dataset)
 
@@ -144,13 +219,20 @@ def write_catalog(
     )
 
 
-def write_season_artifacts(output_dir: Path, dataset: dict[str, Any], generated_at: str) -> None:
+def write_season_artifacts(
+    output_dir: Path,
+    dataset: dict[str, Any],
+    generated_at: str,
+    years: set[int] | None = None,
+) -> None:
     seasons = sorted(dataset.get("seasons", []), key=lambda row: row["year"])
     meetings = dataset.get("meetings", [])
     sessions = dataset.get("sessions", [])
 
     for season in seasons:
         year = season["year"]
+        if years is not None and int(year) not in years:
+            continue
         season_meetings = sorted(
             [meeting for meeting in meetings if meeting["year"] == year],
             key=lambda row: row["round"],
@@ -319,6 +401,128 @@ def merge_datasets(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any
         "sessions": dedupe(left.get("sessions", []) + right.get("sessions", []), "session_id"),
         "session_data": {**left.get("session_data", {}), **right.get("session_data", {})},
     }
+
+
+def merge_incremental_indexes(
+    existing_dir: Path, publication_dir: Path, years: set[int]
+) -> None:
+    catalog_path = publication_dir / "catalog.json"
+    existing_catalog_path = existing_dir / "catalog.json"
+    if existing_catalog_path.is_file() and catalog_path.is_file():
+        write_json(
+            catalog_path,
+            merge_catalog(read_json(existing_catalog_path), read_json(catalog_path)),
+        )
+
+    for year in sorted(years):
+        season_path = publication_dir / "seasons" / f"{year}.json"
+        existing_season_path = existing_dir / "seasons" / f"{year}.json"
+        if existing_season_path.is_file() and season_path.is_file():
+            write_json(
+                season_path,
+                merge_season(read_json(existing_season_path), read_json(season_path)),
+            )
+
+
+def merge_catalog(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(existing)
+    result["schema_version"] = max(
+        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
+    )
+    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
+    result["artifact_strategy"] = incoming.get("artifact_strategy") or existing.get(
+        "artifact_strategy"
+    )
+    result["source"] = merge_source(existing.get("source"), incoming.get("source"))
+    result["meetings"] = merge_rows(
+        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
+    )
+    result["sessions"] = merge_rows(
+        existing.get("sessions"), incoming.get("sessions"), "session_id"
+    )
+    result["seasons"] = merge_season_rows(
+        existing.get("seasons"), incoming.get("seasons"), result["meetings"]
+    )
+    result["meetings"].sort(
+        key=lambda row: (int(row.get("year") or 0), int(row.get("round") or 0))
+    )
+    result["sessions"].sort(key=session_sort_key)
+    result["seasons"].sort(key=lambda row: int(row.get("year") or 0))
+    result["totals"] = {
+        "seasons": len(result["seasons"]),
+        "meetings": len(result["meetings"]),
+        "sessions": len(result["sessions"]),
+    }
+    return result
+
+
+def merge_season(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(existing)
+    result["schema_version"] = max(
+        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
+    )
+    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
+    result["meetings"] = merge_rows(
+        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
+    )
+    result["sessions"] = merge_rows(
+        existing.get("sessions"), incoming.get("sessions"), "session_id"
+    )
+    result["meetings"].sort(key=lambda row: int(row.get("round") or 0))
+    result["sessions"].sort(key=session_sort_key)
+    season_rows = merge_season_rows(
+        [existing.get("season")], [incoming.get("season")], result["meetings"]
+    )
+    result["season"] = (
+        season_rows[0] if season_rows else incoming.get("season") or existing.get("season")
+    )
+    return result
+
+
+def merge_rows(existing: Any, incoming: Any, key: str) -> list[dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in list(existing or []) + list(incoming or []):
+        if isinstance(row, dict) and row.get(key) is not None:
+            rows[str(row[key])] = copy.deepcopy(row)
+    return list(rows.values())
+
+
+def merge_season_rows(
+    existing: Any, incoming: Any, meetings: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    rows = merge_rows(existing, incoming, "year")
+    for row in rows:
+        season_meetings = [
+            meeting
+            for meeting in meetings
+            if int(meeting.get("year") or 0) == int(row["year"])
+        ]
+        row["meeting_count"] = len(season_meetings)
+        row["ingested_meeting_count"] = sum(
+            bool(meeting.get("is_ingested")) for meeting in season_meetings
+        )
+        row["is_sample"] = bool(season_meetings) and all(
+            bool(meeting.get("is_sample")) for meeting in season_meetings
+        )
+    return rows
+
+
+def merge_source(existing: Any, incoming: Any) -> Any:
+    if not isinstance(existing, dict) or not isinstance(incoming, dict):
+        return copy.deepcopy(incoming or existing)
+    result = {**existing, **incoming}
+    files = list(existing.get("files") or []) + list(incoming.get("files") or [])
+    result["files"] = list(dict.fromkeys(files))
+    return result
+
+
+def session_sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
+    session_order = {"FP1": 1, "FP2": 2, "FP3": 3, "SQ": 4, "S": 5, "Q": 6, "R": 7}
+    return (
+        int(row.get("year") or 0),
+        int(row.get("round") or 0),
+        session_order.get(str(row.get("type") or "").upper(), 0),
+    )
 
 
 def merge_seasons(seasons: list[dict[str, Any]], meetings: list[dict[str, Any]]) -> list[dict[str, Any]]:

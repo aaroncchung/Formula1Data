@@ -74,19 +74,18 @@ Verify the tables and active-job index:
 npx.cmd --yes wrangler@latest d1 execute formula-1-data --remote --command "select name from sqlite_schema where type in ('table','index') order by name"
 ```
 
-## 5. Seed the required R2 indexes
+## 5. Seed the complete historical R2 artifact tree
 
 Queue-driven ingestion deliberately refuses to publish unless the current R2 `catalog.json` can be
 downloaded first. This prevents a temporary credential or R2 failure from replacing the production
 catalog with a partial local build.
 
-Upload the catalog and all checked-in season indexes:
+R2 is the production source of truth. Upload every existing local JSON artifact once, preserving its
+path. Pages keeps the same files only for local/offline builds.
 
 ```powershell
-npx.cmd --yes wrangler@latest r2 object put formula-1-data-artifacts/catalog.json --file frontend/public/data/catalog.json --remote
-
-Get-ChildItem frontend/public/data/seasons -Filter *.json | ForEach-Object {
-    $key = "seasons/$($_.Name)"
+Get-ChildItem frontend/public/data -Recurse -Filter *.json | ForEach-Object {
+    $key = $_.FullName.Substring((Resolve-Path frontend/public/data).Path.Length + 1).Replace("\", "/")
     npx.cmd --yes wrangler@latest r2 object put "formula-1-data-artifacts/$key" --file $_.FullName --remote
 }
 ```
@@ -99,9 +98,11 @@ npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/catalog.jso
 (Get-Content -Raw $check | ConvertFrom-Json).totals
 ```
 
-Existing session files may continue to come from the configured Pages fallback. New and refreshed
-sessions will be written to R2. If you want R2 to contain every historical artifact immediately,
-upload the remaining files under `frontend/public/data` while preserving their relative paths.
+These seeded sessions use canonical keys. New and refreshed sessions use versioned R2 generations;
+the Worker resolves both through the same public `/data/sessions/{session_id}/*` paths.
+On the first session-status request, a canonical manifest read directly from R2 is registered as
+`ready` in D1 with source `r2-seed`. This lazy bootstrap applies only when no D1 row exists. Pages
+fallbacks and active generation paths still require the normal verified ingestion callback.
 
 ## 6. Create the GitHub dispatch token
 
@@ -165,6 +166,8 @@ Add these GitHub Actions repository variables:
 |---|---|
 | `WORKER_BASE_URL` | The final Worker origin, without a trailing slash |
 | `R2_BUCKET` | `formula-1-data-artifacts` |
+| `NEXT_PUBLIC_ARTIFACT_BASE_URL` | The Worker origin plus `/data` |
+| `NEXT_PUBLIC_DYNAMIC_API_BASE_URL` | The Worker origin |
 
 Example Worker origin: `https://api.example.com` or the assigned `workers.dev` origin.
 
@@ -215,8 +218,9 @@ currently:
 https://formula1data.pages.dev
 ```
 
-Set `STATIC_DATA_BASE_URL` to the Pages `/data` origin used as the fallback for artifacts not yet in
-R2. Do not use `*` for CORS in production.
+Leave `STATIC_DATA_BASE_URL` empty after the complete R2 seed. It is a temporary legacy migration
+fallback only; keeping it disabled makes R2 the one production historical source. Do not use `*`
+for CORS in production.
 
 ## 11. Deploy the Worker
 
@@ -273,12 +277,18 @@ Expected progression:
 queued → running → succeeded
 ```
 
-Then verify the session manifest and normalized source dataset:
+Then verify the public manifest through the Worker, the active generation pointer in R2, and the
+normalized source dataset:
 
 ```powershell
-npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/sessions/SESSION_ID/manifest.json --file "$env:TEMP/session-manifest.json" --remote
+Invoke-RestMethod "$env:WORKER_BASE_URL/data/sessions/SESSION_ID/manifest.json" | ConvertTo-Json -Depth 6 | Set-Content "$env:TEMP/session-manifest.json"
+npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/sessions/SESSION_ID/active.json --file "$env:TEMP/session-active.json" --remote
 npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/source/sessions/SESSION_ID/dataset.json --file "$env:TEMP/session-source.json" --remote
 ```
+
+The runner verifies every manifest-referenced object before switching `active.json`. The Worker
+success callback performs a bounded independent check of the active pointer and manifest checksum;
+it does not download every telemetry-lap object again.
 
 Replace `SESSION_ID` with a value such as `2026-09-r`. Finally, open the session in the frontend and
 check summary, laps, analysis, and telemetry.
@@ -292,7 +302,7 @@ check summary, laps, analysis, and telemetry.
 | Runner cannot hydrate `catalog.json` | Confirm the R2 seed exists and GitHub's Cloudflare token has object read/write access. |
 | Callback receives 401 | Confirm `INGESTION_API_TOKEN` matches in Worker and GitHub; if Access is enabled, also confirm both Access secrets and the Service Auth policy. |
 | Browser ingestion receives 401 | Either sign in through Access or verify whether bearer-only mode intentionally disables browser ingestion. |
-| Session succeeds but is absent from navigation | Inspect R2 `catalog.json` and `seasons/{year}.json`; the runner publishes these after the session manifest. |
+| Session succeeds but is absent from navigation | Inspect R2 `active.json`, `catalog.json`, and `seasons/{year}.json`; indexes publish only after complete generation verification and the active-pointer switch. |
 | Job remains running | Wait for the two-hour stale-job threshold or inspect the GitHub workflow; the Worker cron will mark stale jobs failed. |
 | Queue retries are exhausted | Inspect `f1-ingestion-jobs-dlq` and the Worker logs before retrying. |
 

@@ -168,7 +168,7 @@ jobs:
             fi
           done
 
-      - name: Verify remote R2 manifest
+      - name: Verify active R2 generation
         id: session
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -176,7 +176,9 @@ jobs:
         run: |
           SESSION_ID="$(python -c "import json; print(json.load(open('message.json'))['session_id'])")"
           echo "id=$SESSION_ID" >> "$GITHUB_OUTPUT"
-          wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/manifest.json" --remote --file manifest-check.json
+          wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/active.json" --remote --file active-check.json
+          GENERATION_BASE="$(python -c "import json; print(json.load(open('active-check.json'))['artifact_base_path'])")"
+          wrangler r2 object get "$R2_BUCKET/$GENERATION_BASE/manifest.json" --remote --file manifest-check.json
           python -m json.tool manifest-check.json > /dev/null
           python -c "import json; expected=json.load(open('message.json'))['session_id']; actual=json.load(open('manifest-check.json'))['session_id']; assert actual == expected, f'manifest session_id {actual} does not match {expected}'"
 
@@ -195,6 +197,7 @@ jobs:
           name: generated-data
           path: |
             frontend/public/data/sessions/${{ steps.session.outputs.id }}
+            active-check.json
             manifest-check.json
             success-callback.json
           if-no-files-found: ignore

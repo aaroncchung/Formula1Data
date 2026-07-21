@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import os
 import shutil
@@ -18,8 +17,11 @@ from pipeline.artifacts import (
     DEFAULT_DATA_DIR,
     DEFAULT_OUTPUT_DIR,
     SESSION_SECTION_FILES,
-    build_static_artifacts,
+    build_incremental_artifacts,
     checksum_file,
+    merge_catalog,
+    merge_incremental_indexes,
+    merge_season,
     read_json,
     write_json,
 )
@@ -118,13 +120,15 @@ def process_message(
                         r2_prefix,
                         int(required(message, "year")),
                     )
-                summary = build_static_artifacts(
+                summary = build_incremental_artifacts(
+                    {session_id},
                     data_dir=data_dir,
                     output_dir=publication_dir,
-                    session_ids={session_id},
                 )
                 merge_incremental_indexes(
-                    existing_indexes_dir, publication_dir, int(required(message, "year"))
+                    existing_indexes_dir,
+                    publication_dir,
+                    {int(required(message, "year"))},
                 )
                 publish_artifacts(
                     publication_dir,
@@ -138,13 +142,6 @@ def process_message(
                         data_dir / "processed" / "sessions" / session_id / "dataset.json"
                     ),
                 )
-                if artifact_destination == "r2":
-                    verify_remote_manifest(
-                        publication_dir,
-                        required_value(r2_bucket, "--r2-bucket"),
-                        r2_prefix,
-                        session_id,
-                    )
                 payload = build_success_payload(
                     publication_dir, session_id, summary["generated_at"]
                 )
@@ -155,6 +152,7 @@ def process_message(
                 return {"job_id": job_id, "session_id": session_id, "artifacts": len(artifacts)}
 
         if artifact_destination == "r2":
+            generation_id = publication_generation_id(publication_dir, session_id)
             sync_artifacts_to_r2(
                 publication_dir,
                 required_value(r2_bucket, "--r2-bucket"),
@@ -162,12 +160,21 @@ def process_message(
                 session_id=session_id,
                 year=int(required(message, "year")),
                 include_indexes=False,
+                generation_id=generation_id,
             )
-            verify_remote_manifest(
+            verify_remote_publication(
                 publication_dir,
                 required_value(r2_bucket, "--r2-bucket"),
                 r2_prefix,
                 session_id,
+                generation_id=generation_id,
+            )
+            publish_active_generation(
+                publication_dir,
+                required_value(r2_bucket, "--r2-bucket"),
+                r2_prefix,
+                session_id,
+                generation_id,
             )
 
         payload = build_success_payload(publication_dir, session_id, summary["generated_at"])
@@ -308,6 +315,7 @@ def sync_artifacts_to_r2(
     session_id: str,
     year: int,
     include_indexes: bool = True,
+    generation_id: str | None = None,
 ) -> None:
     """Upload a session first and publish its indexes last."""
     normalized_prefix = prefix.strip("/")
@@ -323,6 +331,9 @@ def sync_artifacts_to_r2(
         if not path.is_file():
             continue
         key = path.relative_to(output_dir).as_posix()
+        if generation_id and key.startswith(f"sessions/{session_id}/"):
+            relative = key.removeprefix(f"sessions/{session_id}/")
+            key = f"sessions/{session_id}/generations/{generation_id}/{relative}"
         if normalized_prefix:
             key = f"{normalized_prefix}/{key}"
         subprocess.run(
@@ -344,6 +355,7 @@ def publish_artifacts(
 ) -> None:
     if artifact_destination == "r2":
         bucket = required_value(r2_bucket, "--r2-bucket")
+        generation_id = publication_generation_id(publication_dir, session_id)
         if source_dataset.is_file():
             upload_r2_object(
                 source_dataset,
@@ -356,17 +368,27 @@ def publish_artifacts(
             r2_prefix,
             session_id=session_id,
             year=year,
+            include_indexes=False,
+            generation_id=generation_id,
         )
+        verify_remote_publication(
+            publication_dir, bucket, r2_prefix, session_id, generation_id=generation_id
+        )
+        publish_active_generation(
+            publication_dir, bucket, r2_prefix, session_id, generation_id
+        )
+        sync_shared_indexes_to_r2(publication_dir, bucket, r2_prefix, year=year)
         return
-    publish_artifacts_locally(publication_dir, output_dir, session_id=session_id, year=year)
+    publish_session_artifacts_locally(publication_dir, output_dir, session_id=session_id)
+    verify_local_publication(output_dir, session_id)
+    publish_shared_indexes_locally(publication_dir, output_dir, year=year)
 
 
-def publish_artifacts_locally(
+def publish_session_artifacts_locally(
     publication_dir: Path,
     output_dir: Path,
     *,
     session_id: str,
-    year: int,
 ) -> None:
     session_dir = publication_dir / "sessions" / session_id
     manifest = session_dir / "manifest.json"
@@ -375,9 +397,22 @@ def publish_artifacts_locally(
             copy_file_atomic(path, output_dir / path.relative_to(publication_dir))
     if manifest.is_file():
         copy_file_atomic(manifest, output_dir / manifest.relative_to(publication_dir))
+
+
+def publish_shared_indexes_locally(
+    publication_dir: Path, output_dir: Path, *, year: int
+) -> None:
     for path in [publication_dir / "seasons" / f"{year}.json", publication_dir / "catalog.json"]:
         if path.is_file():
             copy_file_atomic(path, output_dir / path.relative_to(publication_dir))
+
+
+def sync_shared_indexes_to_r2(
+    output_dir: Path, bucket: str, prefix: str = "", *, year: int
+) -> None:
+    for path in [output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"]:
+        if path.is_file():
+            upload_r2_object(path, bucket, object_key(prefix, path.relative_to(output_dir).as_posix()))
 
 
 def copy_file_atomic(source: Path, destination: Path) -> None:
@@ -448,14 +483,21 @@ def download_r2_object(
 
 
 def verify_remote_manifest(
-    output_dir: Path, bucket: str, prefix: str, session_id: str
+    output_dir: Path,
+    bucket: str,
+    prefix: str,
+    session_id: str,
+    generation_id: str | None = None,
 ) -> dict[str, Any]:
     local_path = output_dir / "sessions" / session_id / "manifest.json"
     if not local_path.is_file():
         raise RuntimeError(f"Local manifest is missing for {session_id}")
     with tempfile.TemporaryDirectory(prefix="f1-manifest-check-") as temporary_directory:
         remote_path = Path(temporary_directory) / "manifest.json"
-        key = object_key(prefix, f"sessions/{session_id}/manifest.json")
+        key = object_key(
+            prefix,
+            remote_session_artifact_path(session_id, "manifest.json", generation_id),
+        )
         download_r2_object(
             bucket,
             key,
@@ -475,126 +517,163 @@ def verify_remote_manifest(
         return manifest
 
 
+def verify_remote_publication(
+    output_dir: Path,
+    bucket: str,
+    prefix: str,
+    session_id: str,
+    generation_id: str | None = None,
+) -> dict[str, Any]:
+    """Verify every manifest-referenced R2 object before shared indexes are published."""
+    manifest = verify_remote_manifest(
+        output_dir, bucket, prefix, session_id, generation_id=generation_id
+    )
+    sections = validate_manifest_sections(output_dir, manifest, session_id)
+    with tempfile.TemporaryDirectory(prefix="f1-publication-check-") as temporary_directory:
+        remote_path = Path(temporary_directory) / "artifact.json"
+        for section in sections:
+            if remote_path.exists():
+                remote_path.unlink()
+            download_r2_object(
+                bucket,
+                object_key(
+                    prefix,
+                    remote_session_artifact_path(
+                        session_id,
+                        section["path"].removeprefix(f"sessions/{session_id}/"),
+                        generation_id,
+                    ),
+                ),
+                remote_path,
+                required=True,
+                error_context="R2 artifact",
+            )
+            verify_artifact_file(remote_path, section, "Remote R2")
+    return {"session_id": session_id, "artifact_count": len(sections), "verified": True}
+
+
+def verify_local_publication(output_dir: Path, session_id: str) -> dict[str, Any]:
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"Published manifest is missing for {session_id}")
+    manifest = read_json(manifest_path)
+    sections = validate_manifest_sections(output_dir, manifest, session_id)
+    for section in sections:
+        verify_artifact_file(output_dir / section["path"], section, "Published local")
+    return {"session_id": session_id, "artifact_count": len(sections), "verified": True}
+
+
+def validate_manifest_sections(
+    output_dir: Path, manifest: dict[str, Any], session_id: str
+) -> list[dict[str, Any]]:
+    if manifest.get("session_id") != session_id or not isinstance(manifest.get("sections"), list):
+        raise RuntimeError(f"Manifest is invalid for {session_id}")
+    expected_prefix = f"sessions/{session_id}/"
+    sections: list[dict[str, Any]] = []
+    paths: set[str] = set()
+    for section in manifest["sections"]:
+        if not isinstance(section, dict):
+            raise RuntimeError(f"Manifest contains an invalid section for {session_id}")
+        path = str(section.get("path") or "")
+        if (
+            not path.startswith(expected_prefix)
+            or ".." in Path(path).parts
+            or path in paths
+            or not isinstance(section.get("size_bytes"), int)
+            or int(section["size_bytes"]) < 0
+            or not str(section.get("checksum") or "").startswith("sha256:")
+        ):
+            raise RuntimeError(f"Manifest contains an invalid artifact record for {session_id}: {path}")
+        paths.add(path)
+        sections.append(section)
+
+    if not any(section.get("kind") == "summary" for section in sections):
+        raise RuntimeError(f"Manifest is missing the core summary artifact for {session_id}")
+
+    telemetry_indexes = [section for section in sections if section.get("kind") == "telemetry-index"]
+    telemetry_laps = {section["path"] for section in sections if section.get("kind") == "telemetry-lap"}
+    if len(telemetry_indexes) != 1:
+        raise RuntimeError(f"Manifest must contain one telemetry index for {session_id}")
+    telemetry_index_path = output_dir / telemetry_indexes[0]["path"]
+    if not telemetry_index_path.is_file():
+        raise RuntimeError(f"Local telemetry index is missing for {session_id}")
+    telemetry_index = read_json(telemetry_index_path)
+    indexed_laps = {
+        f"sessions/{session_id}/{lap.get('path')}"
+        for lap in telemetry_index.get("laps", [])
+        if isinstance(lap, dict) and lap.get("path")
+    }
+    if indexed_laps != telemetry_laps:
+        raise RuntimeError(f"Telemetry index and manifest disagree for {session_id}")
+    return sections
+
+
+def verify_artifact_file(path: Path, section: dict[str, Any], source: str) -> None:
+    if not path.is_file():
+        raise RuntimeError(f"{source} artifact is missing: {section['path']}")
+    if path.stat().st_size != int(section["size_bytes"]):
+        raise RuntimeError(f"{source} artifact size mismatch: {section['path']}")
+    if checksum_file(path) != section["checksum"]:
+        raise RuntimeError(f"{source} artifact checksum mismatch: {section['path']}")
+
+
+def publication_generation_id(output_dir: Path, session_id: str) -> str:
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"Local manifest is missing for {session_id}")
+    return checksum_file(manifest_path).removeprefix("sha256:")
+
+
+def remote_session_artifact_path(
+    session_id: str, relative_path: str, generation_id: str | None
+) -> str:
+    if generation_id:
+        return f"sessions/{session_id}/generations/{generation_id}/{relative_path}"
+    return f"sessions/{session_id}/{relative_path}"
+
+
+def publish_active_generation(
+    output_dir: Path,
+    bucket: str,
+    prefix: str,
+    session_id: str,
+    generation_id: str,
+) -> dict[str, Any]:
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    pointer = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "artifact_base_path": f"sessions/{session_id}/generations/{generation_id}",
+        "generated_at": read_json(manifest_path).get("generated_at"),
+        "manifest": {
+            "size_bytes": manifest_path.stat().st_size,
+            "checksum": checksum_file(manifest_path),
+        },
+    }
+    with tempfile.TemporaryDirectory(prefix="f1-active-generation-") as temporary_directory:
+        local_pointer = Path(temporary_directory) / "active.json"
+        remote_pointer = Path(temporary_directory) / "active-remote.json"
+        write_json(local_pointer, pointer)
+        key = object_key(prefix, f"sessions/{session_id}/active.json")
+        upload_r2_object(local_pointer, bucket, key)
+        download_r2_object(
+            bucket,
+            key,
+            remote_pointer,
+            required=True,
+            error_context="R2 active generation",
+        )
+        if (
+            remote_pointer.stat().st_size != local_pointer.stat().st_size
+            or checksum_file(remote_pointer) != checksum_file(local_pointer)
+        ):
+            raise RuntimeError(f"Remote R2 active generation mismatch for {session_id}")
+    return pointer
+
+
 def object_key(prefix: str, path: str) -> str:
     normalized_prefix = prefix.strip("/")
     return f"{normalized_prefix}/{path}" if normalized_prefix else path
-
-
-def merge_incremental_indexes(existing_dir: Path, publication_dir: Path, year: int) -> None:
-    catalog_path = publication_dir / "catalog.json"
-    existing_catalog_path = existing_dir / "catalog.json"
-    if existing_catalog_path.is_file() and catalog_path.is_file():
-        write_json(
-            catalog_path,
-            merge_catalog(read_json(existing_catalog_path), read_json(catalog_path)),
-        )
-
-    season_path = publication_dir / "seasons" / f"{year}.json"
-    existing_season_path = existing_dir / "seasons" / f"{year}.json"
-    if existing_season_path.is_file() and season_path.is_file():
-        write_json(
-            season_path,
-            merge_season(read_json(existing_season_path), read_json(season_path)),
-        )
-
-
-def merge_catalog(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    result = copy.deepcopy(existing)
-    result["schema_version"] = max(
-        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
-    )
-    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
-    result["artifact_strategy"] = incoming.get("artifact_strategy") or existing.get(
-        "artifact_strategy"
-    )
-    result["source"] = merge_source(existing.get("source"), incoming.get("source"))
-    result["meetings"] = merge_rows(
-        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
-    )
-    result["sessions"] = merge_rows(
-        existing.get("sessions"), incoming.get("sessions"), "session_id"
-    )
-    result["seasons"] = merge_season_rows(
-        existing.get("seasons"), incoming.get("seasons"), result["meetings"]
-    )
-    result["meetings"].sort(key=lambda row: (int(row.get("year") or 0), int(row.get("round") or 0)))
-    result["sessions"].sort(key=session_sort_key)
-    result["seasons"].sort(key=lambda row: int(row.get("year") or 0))
-    result["totals"] = {
-        "seasons": len(result["seasons"]),
-        "meetings": len(result["meetings"]),
-        "sessions": len(result["sessions"]),
-    }
-    return result
-
-
-def merge_season(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    result = copy.deepcopy(existing)
-    result["schema_version"] = max(
-        int(existing.get("schema_version") or 0), int(incoming.get("schema_version") or 0)
-    )
-    result["generated_at"] = incoming.get("generated_at") or existing.get("generated_at")
-    result["meetings"] = merge_rows(
-        existing.get("meetings"), incoming.get("meetings"), "meeting_id"
-    )
-    result["sessions"] = merge_rows(
-        existing.get("sessions"), incoming.get("sessions"), "session_id"
-    )
-    result["meetings"].sort(key=lambda row: int(row.get("round") or 0))
-    result["sessions"].sort(key=session_sort_key)
-    season_rows = merge_season_rows(
-        [existing.get("season")], [incoming.get("season")], result["meetings"]
-    )
-    result["season"] = (
-        season_rows[0] if season_rows else incoming.get("season") or existing.get("season")
-    )
-    return result
-
-
-def merge_rows(existing: Any, incoming: Any, key: str) -> list[dict[str, Any]]:
-    rows: dict[str, dict[str, Any]] = {}
-    for row in list(existing or []) + list(incoming or []):
-        if isinstance(row, dict) and row.get(key) is not None:
-            rows[str(row[key])] = copy.deepcopy(row)
-    return list(rows.values())
-
-
-def merge_season_rows(
-    existing: Any, incoming: Any, meetings: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    rows = merge_rows(existing, incoming, "year")
-    for row in rows:
-        season_meetings = [
-            meeting
-            for meeting in meetings
-            if int(meeting.get("year") or 0) == int(row["year"])
-        ]
-        row["meeting_count"] = len(season_meetings)
-        row["ingested_meeting_count"] = sum(
-            bool(meeting.get("is_ingested")) for meeting in season_meetings
-        )
-        row["is_sample"] = bool(season_meetings) and all(
-            bool(meeting.get("is_sample")) for meeting in season_meetings
-        )
-    return rows
-
-
-def merge_source(existing: Any, incoming: Any) -> Any:
-    if not isinstance(existing, dict) or not isinstance(incoming, dict):
-        return copy.deepcopy(incoming or existing)
-    result = {**existing, **incoming}
-    files = list(existing.get("files") or []) + list(incoming.get("files") or [])
-    result["files"] = list(dict.fromkeys(files))
-    return result
-
-
-def session_sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
-    session_order = {"FP1": 1, "FP2": 2, "FP3": 3, "SQ": 4, "S": 5, "Q": 6, "R": 7}
-    return (
-        int(row.get("year") or 0),
-        int(row.get("round") or 0),
-        session_order.get(str(row.get("type") or "").upper(), 0),
-    )
 
 
 def callback_job_status(

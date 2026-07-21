@@ -6,7 +6,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from pipeline.artifacts import DEFAULT_DATA_DIR, DEFAULT_OUTPUT_DIR, build_static_artifacts
+from pipeline.artifacts import (
+    DEFAULT_DATA_DIR,
+    DEFAULT_OUTPUT_DIR,
+    build_incremental_artifacts,
+    build_static_artifacts,
+)
 from pipeline.backfill import print_backfill_summary, run_backfill
 
 
@@ -133,7 +138,9 @@ def ingest_one_session(args: argparse.Namespace) -> None:
     )
     print(f"Ingested session: {session_id}")
     if not args.no_build_artifacts:
-        summary = build_static_artifacts(data_dir=args.data_dir, output_dir=args.output_dir)
+        summary = build_incremental_artifacts(
+            {session_id}, data_dir=args.data_dir, output_dir=args.output_dir
+        )
         print_summary(summary)
 
 
@@ -149,8 +156,17 @@ def ingest_one_season(args: argparse.Namespace) -> None:
     scope = "race sessions" if args.races_only else "sessions"
     print(f"Ingested {count} {scope} for {args.year}.")
     if not args.no_build_artifacts:
-        summary = build_static_artifacts(data_dir=args.data_dir, output_dir=args.output_dir)
-        print_summary(summary)
+        session_ids = {
+            path.parent.name
+            for path in (args.data_dir / "processed" / "sessions").glob(
+                f"{args.year}-*/dataset.json"
+            )
+        }
+        if session_ids:
+            summary = build_incremental_artifacts(
+                session_ids, data_dir=args.data_dir, output_dir=args.output_dir
+            )
+            print_summary(summary)
 
 
 def backfill_sessions(args: argparse.Namespace) -> None:

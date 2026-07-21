@@ -66,12 +66,17 @@ export type TelemetryIndex = {
 export type ArtifactReader = <T>(path: string) => Promise<T>;
 
 export class ApiClientError extends Error {
+  public readonly payload: ApiErrorPayload;
+  public readonly apiBaseUrl: string;
+
   constructor(
     message: string,
-    public readonly payload: ApiErrorPayload,
-    public readonly apiBaseUrl: string
+    payload: ApiErrorPayload,
+    apiBaseUrl: string
   ) {
     super(message);
+    this.payload = payload;
+    this.apiBaseUrl = apiBaseUrl;
   }
 }
 

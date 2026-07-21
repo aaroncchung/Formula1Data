@@ -1,15 +1,17 @@
 "use client";
 
 import { ArrowRight, CalendarRange } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
+import { parseExploreTarget, sessionHref } from "@/lib/season-routes";
 import type { CatalogArtifact } from "@/lib/static-api-core";
 
 export function GlobalSessionPicker() {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [catalog, setCatalog] = useState<CatalogArtifact | null>(null);
   const [year, setYear] = useState("");
   const [meetingId, setMeetingId] = useState("");
@@ -20,12 +22,7 @@ export function GlobalSessionPicker() {
     api.catalog().then((nextCatalog) => {
       if (ignore) return;
       setCatalog(nextCatalog);
-      const route = pathname.match(/^\/seasons\/(\d{4})\/(\d+)\/([^/]+)/);
-      const routeSession = route
-        ? nextCatalog.sessions.find(
-            (item) => item.year === Number(route[1]) && item.round === Number(route[2]) && item.type.toLowerCase() === route[3].toLowerCase() && item.status !== "missing"
-          )
-        : null;
+      const routeSession = selectRouteSession(nextCatalog, pathname, searchParams);
       const selected = routeSession || selectLatestSession(nextCatalog);
       if (selected) {
         setYear(String(selected.year));
@@ -36,7 +33,7 @@ export function GlobalSessionPicker() {
     return () => {
       ignore = true;
     };
-  }, [pathname]);
+  }, [pathname, searchParams]);
 
   const years = useMemo(
     () => [...new Set((catalog?.sessions || []).map((item) => item.year))].sort((a, b) => b - a),
@@ -80,8 +77,15 @@ export function GlobalSessionPicker() {
   function openSession() {
     const selected = catalog?.sessions.find((item) => item.session_id === sessionId);
     if (selected) {
-      const section = pathname.startsWith("/telemetry") ? "#telemetry" : pathname.startsWith("/strategy") ? "#strategy" : "";
-      router.push(`/seasons/${selected.year}/${selected.round}/${selected.type}${section}`);
+      const currentHash = window.location.hash;
+      const section = pathname.startsWith("/telemetry")
+        ? "#telemetry"
+        : pathname.startsWith("/strategy")
+          ? "#strategy"
+          : ["#telemetry", "#strategy"].includes(currentHash)
+            ? currentHash
+            : "";
+      router.push(sessionHref(selected.year, selected.round, selected.type, section));
     }
   }
 
@@ -138,6 +142,43 @@ function selectLatestSession(catalog: CatalogArtifact) {
     .filter((item) => item.status !== "missing")
     .sort((a, b) => (a.year * 10000 + a.round * 10 + (order[a.type.toUpperCase()] || 0)) - (b.year * 10000 + b.round * 10 + (order[b.type.toUpperCase()] || 0)))
     .at(-1);
+}
+
+function selectRouteSession(
+  catalog: CatalogArtifact,
+  pathname: string,
+  searchParams: Pick<URLSearchParams, "get">
+) {
+  const prettyRoute = pathname.match(/^\/seasons\/(\d{4})\/(\d+)\/([^/]+)/);
+  if (prettyRoute) {
+    return catalog.sessions.find(
+      (item) =>
+        item.year === Number(prettyRoute[1]) &&
+        item.round === Number(prettyRoute[2]) &&
+        item.type.toLowerCase() === prettyRoute[3].toLowerCase() &&
+        item.status !== "missing"
+    );
+  }
+  if (pathname !== "/seasons/explore") return null;
+
+  const target = parseExploreTarget(searchParams);
+  const candidates = catalog.sessions.filter((item) => {
+    if (item.status === "missing" || target.kind === "error") return false;
+    if (item.year !== target.year) return false;
+    if (target.kind === "season") return true;
+    if (item.round !== target.round) return false;
+    return target.kind !== "session" || item.type.toUpperCase() === target.session;
+  });
+  return target.kind === "season"
+    ? candidates.sort(compareSessions).at(-1)
+    : candidates.sort((left, right) => sessionOrder(left.type) - sessionOrder(right.type))[0];
+}
+
+function compareSessions(left: CatalogArtifact["sessions"][number], right: CatalogArtifact["sessions"][number]) {
+  return (
+    left.year * 10000 + left.round * 10 + sessionOrder(left.type) -
+    (right.year * 10000 + right.round * 10 + sessionOrder(right.type))
+  );
 }
 
 function sessionOrder(type: string) {

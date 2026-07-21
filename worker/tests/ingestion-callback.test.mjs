@@ -46,7 +46,7 @@ test("succeeded callbacks require a manifest record", async () => {
   await assert.rejects(
     applyIngestionJobUpdate({
       repository: await seededRepository(),
-      artifacts: { verify: async () => ({ verified: true }) },
+      artifacts: { verifyManifest: async () => ({ verified: true }) },
       jobId: "job-1",
       payload: { status: "succeeded", artifacts: [] }
     }),
@@ -58,7 +58,7 @@ test("a manifest belonging to another session is rejected", async () => {
   await assert.rejects(
     applyIngestionJobUpdate({
       repository: await seededRepository(),
-      artifacts: { verify: async () => ({ verified: true }) },
+      artifacts: { verifyManifest: async () => ({ verified: true }) },
       jobId: "job-1",
       payload: {
         status: "succeeded",
@@ -74,7 +74,7 @@ test("manifest checksum and size formats are validated", async () => {
   await assert.rejects(
     applyIngestionJobUpdate({
       repository: await seededRepository(),
-      artifacts: { verify: async () => ({ verified: true }) },
+      artifacts: { verifyManifest: async () => ({ verified: true }) },
       jobId: "job-1",
       payload: {
         status: "succeeded",
@@ -87,7 +87,7 @@ test("manifest checksum and size formats are validated", async () => {
   await assert.rejects(
     applyIngestionJobUpdate({
       repository: await seededRepository(),
-      artifacts: { verify: async () => ({ verified: true }) },
+      artifacts: { verifyManifest: async () => ({ verified: true }) },
       jobId: "job-1",
       payload: {
         status: "succeeded",
@@ -104,7 +104,7 @@ test("verified publication failure leaves both job and session failed", async ()
   await assert.rejects(
     applyIngestionJobUpdate({
       repository,
-      artifacts: { verify: async () => ({ verified: false, reason: "checksum_mismatch" }) },
+      artifacts: { verifyManifest: async () => ({ verified: false, reason: "checksum_mismatch" }) },
       jobId: "job-1",
       payload: { status: "succeeded", manifest, artifacts: [] }
     }),
@@ -118,7 +118,7 @@ test("a verified compact callback records quality without telemetry lap rows", a
   const repository = await seededRepository();
   const response = await applyIngestionJobUpdate({
     repository,
-    artifacts: { verify: async () => ({ verified: true, source: "r2" }) },
+    artifacts: { verifyManifest: async () => ({ verified: true, source: "r2" }) },
     jobId: "job-1",
     payload: {
       status: "succeeded",

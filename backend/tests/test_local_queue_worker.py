@@ -18,8 +18,11 @@ from pipeline.local_queue_worker import (
     hydrate_r2_indexes,
     merge_catalog,
     merge_season,
+    publish_artifacts,
+    process_message,
     session_artifacts_exist,
     sync_artifacts_to_r2,
+    verify_local_publication,
     verify_remote_manifest,
 )
 from pipeline.artifacts import checksum_file, write_json
@@ -113,6 +116,117 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
             ordered_keys = [call.args[0][4] for call in run.call_args_list]
             self.assertEqual(ordered_keys[-2:], ["test-bucket/prod/data/seasons/2025.json", "test-bucket/prod/data/catalog.json"])
+
+    def test_r2_sync_writes_a_versioned_session_with_manifest_last(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            session_dir = output_dir / "sessions" / "2025-09-r"
+            write_json(session_dir / "summary.json", {})
+            write_json(session_dir / "manifest.json", {})
+
+            with patch("pipeline.local_queue_worker.subprocess.run") as run:
+                sync_artifacts_to_r2(
+                    output_dir,
+                    "test-bucket",
+                    "",
+                    session_id="2025-09-r",
+                    year=2025,
+                    include_indexes=False,
+                    generation_id="generation-id",
+                )
+
+            keys = [call.args[0][4] for call in run.call_args_list]
+            self.assertEqual(
+                keys,
+                [
+                    "test-bucket/sessions/2025-09-r/generations/generation-id/summary.json",
+                    "test-bucket/sessions/2025-09-r/generations/generation-id/manifest.json",
+                ],
+            )
+
+    def test_r2_publication_verifies_before_activation_and_indexes(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            publication_dir = Path(temporary_directory)
+            session_id = "2025-09-r"
+            write_json(
+                publication_dir / "sessions" / session_id / "manifest.json",
+                {"schema_version": 1, "session_id": session_id, "sections": []},
+            )
+            order = []
+            with (
+                patch(
+                    "pipeline.local_queue_worker.sync_artifacts_to_r2",
+                    side_effect=lambda *_args, **_kwargs: order.append("upload"),
+                ),
+                patch(
+                    "pipeline.local_queue_worker.verify_remote_publication",
+                    side_effect=lambda *_args, **_kwargs: order.append("verify"),
+                ),
+                patch(
+                    "pipeline.local_queue_worker.publish_active_generation",
+                    side_effect=lambda *_args, **_kwargs: order.append("activate"),
+                ),
+                patch(
+                    "pipeline.local_queue_worker.sync_shared_indexes_to_r2",
+                    side_effect=lambda *_args, **_kwargs: order.append("indexes"),
+                ),
+            ):
+                publish_artifacts(
+                    publication_dir,
+                    publication_dir / "unused",
+                    artifact_destination="r2",
+                    r2_bucket="test-bucket",
+                    r2_prefix="",
+                    session_id=session_id,
+                    year=2025,
+                    source_dataset=publication_dir / "missing-dataset.json",
+                )
+
+            self.assertEqual(order, ["upload", "verify", "activate", "indexes"])
+
+    def test_reused_r2_artifacts_do_not_publish_stale_indexes(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            session_id = "2025-09-r"
+            summary_path = output_dir / "sessions" / session_id / "summary.json"
+            write_json(summary_path, {"session_id": session_id})
+            write_json(
+                output_dir / "sessions" / session_id / "manifest.json",
+                {
+                    "schema_version": 1,
+                    "session_id": session_id,
+                    "sections": [
+                        {
+                            "kind": "summary",
+                            "path": f"sessions/{session_id}/summary.json",
+                            "size_bytes": summary_path.stat().st_size,
+                            "checksum": checksum_file(summary_path),
+                        }
+                    ],
+                },
+            )
+
+            with (
+                patch("pipeline.local_queue_worker.sync_artifacts_to_r2"),
+                patch("pipeline.local_queue_worker.verify_remote_publication"),
+                patch("pipeline.local_queue_worker.publish_active_generation"),
+                patch("pipeline.local_queue_worker.sync_shared_indexes_to_r2") as sync_indexes,
+            ):
+                process_message(
+                    {
+                        "job_id": "job-id",
+                        "kind": "ingest_session",
+                        "session_id": session_id,
+                        "year": 2025,
+                        "round": 9,
+                        "session": "R",
+                    },
+                    output_dir=output_dir,
+                    artifact_destination="r2",
+                    r2_bucket="test-bucket",
+                )
+
+            sync_indexes.assert_not_called()
 
     def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
         existing = {
@@ -257,6 +371,39 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 manifest = verify_remote_manifest(output_dir, "bucket", "", session_id)
 
             self.assertEqual(manifest["session_id"], session_id)
+
+    def test_complete_local_publication_passes_and_corruption_fails(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            session_id = "2026-09-r"
+            session_dir = output_dir / "sessions" / session_id
+            summary_path = session_dir / "summary.json"
+            telemetry_index_path = session_dir / "telemetry" / "index.json"
+            write_json(summary_path, {"session_id": session_id})
+            write_json(telemetry_index_path, {"session_id": session_id, "laps": []})
+            sections = [
+                {
+                    "kind": "summary",
+                    "path": f"sessions/{session_id}/summary.json",
+                    "size_bytes": summary_path.stat().st_size,
+                    "checksum": checksum_file(summary_path),
+                },
+                {
+                    "kind": "telemetry-index",
+                    "path": f"sessions/{session_id}/telemetry/index.json",
+                    "size_bytes": telemetry_index_path.stat().st_size,
+                    "checksum": checksum_file(telemetry_index_path),
+                },
+            ]
+            write_json(session_dir / "manifest.json", {"session_id": session_id, "sections": sections})
+
+            self.assertTrue(verify_local_publication(output_dir, session_id)["verified"])
+            summary_path.write_text('{"session_id":"corrupt"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "(size|checksum) mismatch"):
+                verify_local_publication(output_dir, session_id)
+            summary_path.unlink()
+            with self.assertRaisesRegex(RuntimeError, "missing"):
+                verify_local_publication(output_dir, session_id)
 
 
 if __name__ == "__main__":

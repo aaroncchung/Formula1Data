@@ -4,8 +4,7 @@ import {
   normalizeSessionCode,
   queueMessageForJob,
   sessionIdFromParts,
-  sessionManifestPath,
-  sessionSummaryPath
+  sessionManifestPath
 } from "./session-utils.mjs";
 
 export const INGEST_SESSION = "ingest_session";
@@ -17,9 +16,30 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
     repository.getSession(sessionId),
     artifacts.head(sessionManifestPath(sessionId))
   ]);
-  const artifact = manifest || (await artifacts.head(sessionSummaryPath(sessionId)));
 
-  if (artifact) {
+  if (!sessionRow && isCanonicalR2Seed(manifest)) {
+    const seededSession = await repository.upsertSession({
+      session_id: sessionId,
+      year: Number(year),
+      round: Number(round),
+      meeting_id: null,
+      meeting_name: null,
+      session_type: sessionType,
+      scheduled_start: null,
+      status: "ready",
+      artifact_base_path: artifactBasePath(sessionId),
+      generated_at: manifest.uploaded || null,
+      source: "r2-seed",
+      quality_json: null
+    });
+    return statusResponse(seededSession, "ready", {
+      artifact_exists: true,
+      artifact_path: manifest.key,
+      size_bytes: manifest.size
+    });
+  }
+
+  if (manifest && sessionRow?.status === "ready") {
     const readyValues = {
       session_id: sessionId,
       year: Number(year),
@@ -30,7 +50,7 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
       scheduled_start: sessionRow?.scheduled_start || null,
       status: "ready",
       artifact_base_path: artifactBasePath(sessionId),
-      generated_at: artifact.uploaded || sessionRow?.generated_at || null,
+      generated_at: manifest.uploaded || sessionRow.generated_at || null,
       source: sessionRow?.source || "r2",
       quality_json: sessionRow?.quality_json || null
     };
@@ -39,8 +59,8 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
       : await repository.upsertSession(readyValues);
     return statusResponse(readySession, "ready", {
       artifact_exists: true,
-      artifact_path: artifact.key,
-      size_bytes: artifact.size
+      artifact_path: manifest.key,
+      size_bytes: manifest.size
     });
   }
 
@@ -101,6 +121,15 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
   return statusResponse(missing, "missing", {
     artifact_exists: false
   });
+}
+
+function isCanonicalR2Seed(manifest) {
+  return Boolean(
+    manifest &&
+      manifest.source === "r2" &&
+      manifest.storage_key === manifest.key &&
+      /^sessions\/[^/]+\/manifest\.json$/.test(manifest.key)
+  );
 }
 
 export async function enqueueIngestionJob({

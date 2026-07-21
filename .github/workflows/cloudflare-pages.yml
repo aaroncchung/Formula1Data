@@ -26,6 +26,9 @@ jobs:
 
       - name: Build static export
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_ARTIFACT_BASE_URL: ${{ vars.NEXT_PUBLIC_ARTIFACT_BASE_URL }}
+          NEXT_PUBLIC_DYNAMIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_DYNAMIC_API_BASE_URL }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

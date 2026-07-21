@@ -303,7 +303,7 @@ export async function applyIngestionJobUpdate({ repository, artifacts, jobId, pa
   if (status === "succeeded") {
     let verification;
     try {
-      verification = await artifacts.verify(manifest, { r2Only: true });
+      verification = await artifacts.verifyManifest(manifest, { r2Only: true });
     } catch (error) {
       verification = {
         verified: false,

@@ -1,6 +1,6 @@
 # Formula 1 Data
 
-Formula 1 Data is a static-first Formula 1 analytics dashboard. The production app is a Next.js static export that reads precomputed JSON artifacts from `/data`. The project also includes a Cloudflare-native dynamic data plane for on-demand session ingestion and live-session proxying while keeping FastF1, pandas, and other heavy Python work outside Cloudflare Workers.
+Formula 1 Data is a static-first Formula 1 analytics dashboard. Cloudflare Pages serves a Next.js static route shell, while production views read the current historical catalog and session artifacts from the Worker `/data/*` boundary backed by R2. Local/offline builds use the same schemas from `frontend/public/data`. FastF1, pandas, and other heavy Python work remain outside Cloudflare Workers.
 
 This project is unofficial and is not associated with Formula 1, FIA, FastF1, or OpenF1.
 
@@ -13,7 +13,7 @@ This project is unofficial and is not associated with Formula 1, FIA, FastF1, or
 - Track-dominance minisectors, inferred corner and braking analysis, car/team performance profiles, and practice long-run pace predictions.
 - Fuel-adjusted tyre degradation with robust outlier filtering and explicit model assumptions.
 - Driver and constructor standings, ideal-lap potential, team-mate comparison, and pit-lane transit analysis.
-- Static JSON artifacts committed under `frontend/public/data`.
+- Local/offline JSON artifacts under `frontend/public/data`.
 - Python pipeline for sample generation, FastF1 ingestion, and precomputed analysis.
 - Cloudflare Pages-ready static export from `frontend/out`.
 - Cloudflare Worker API for R2 artifact reads, D1 status/catalog tables, Queue-backed ingestion requests, and OpenF1 live proxying.
@@ -22,29 +22,24 @@ This project is unofficial and is not associated with Formula 1, FIA, FastF1, or
 ## Architecture
 
 ```text
-                 manual or scheduled
-                 GitHub Actions / local CLI
-                         |
-                         v
-backend/data ----> pipeline/ ------------------+
-sample + FastF1    ingest + precompute         |
-processed JSON                                  v
-                                       frontend/public/data/
-                                       split static JSON
-                                                |
-                                                v
-frontend/ Next.js static export ------> Cloudflare Pages
-Recharts dashboard                      any device, no backend
+frontend/ Next.js static route shells --------> Cloudflare Pages
+                  | browser runtime reads
+                  v
+         Cloudflare Worker /data/* ------------> R2 artifacts
+
+backend/data ----> pipeline/ ----> verified R2 generation + active pointer
+sample + FastF1    ingest + precompute
 ```
 
-Core rule: deployed historical browsing serves static HTML, JS, CSS, and JSON. Dynamic requests go through the Cloudflare Worker, but Python, FastF1, pandas, pyarrow, and local disks remain ingestion-runner concerns only.
+Core rule: production HTML, JS, and CSS remain static, but historical JSON is runtime data served by the Worker from R2. Python, FastF1, pandas, pyarrow, and local disks remain ingestion-runner concerns only. Running the frontend without Worker variables keeps the fully static `/data` offline mode.
+
+Runtime catalog links use the always-exported `/seasons/explore` route with year, round, and session query parameters, so newly published catalog entries do not require another Pages build. Pretty `/seasons/{year}/{round}/{session}` routes generated from the checked-in catalog remain available for existing bookmarks.
 
 Hybrid production mode adds this path:
 
 ```text
 frontend static export ------> Cloudflare Pages
-        |                               |
-        | /data/*, /api/*               v
+        | runtime /data/* and /api/*
         +----------------------> Cloudflare Worker
                                   | R2: JSON artifacts
                                   | D1: sessions, jobs, manifests
@@ -62,8 +57,8 @@ frontend static export ------> Cloudflare Pages
 │   └── analysis/             Dependency-light precomputed analytics
 ├── frontend/
 │   ├── public/data/          Generated static JSON artifacts
-│   ├── src/lib/api.ts        Browser static artifact reader
-│   ├── src/lib/api-server.ts Build-time static artifact reader
+│   ├── src/lib/api.ts        Browser runtime artifact reader
+│   ├── src/lib/route-catalog.ts Build-time route-shell catalog reader
 │   └── next.config.ts        Static export configuration
 ├── backend/                  Optional local FastAPI/FastF1 code path
 │   ├── app/                  Existing routes, ingestion, services, models
@@ -103,7 +98,7 @@ frontend/public/data/sessions/{session_id}/telemetry/{driver_code}-lap-{lap_numb
 frontend/public/data/sessions/{session_id}/position-replay.json
 ```
 
-`catalog.json`, season files, session manifests, and telemetry indexes include schema version, generation timestamp, source files, and size metadata. Telemetry is downsampled to at most 300 samples per driver/lap artifact by default.
+`catalog.json`, season files, session manifests, and telemetry indexes retain schema version 1. Telemetry is downsampled to at most 300 samples per driver/lap artifact by default. R2 additionally stores a versioned session generation and a small `sessions/{session_id}/active.json` pointer; the Worker resolves the existing public session paths through that pointer.
 
 ## Local Development
 
@@ -162,13 +157,13 @@ Build artifacts from all processed datasets under `backend/data/processed`:
 python -m pipeline build-artifacts
 ```
 
-Ingest one FastF1 session and rebuild static artifacts:
+Ingest one FastF1 session and rebuild only that session plus its catalog and season indexes:
 
 ```powershell
 python -m pipeline ingest-session --year 2025 --event "Monaco Grand Prix" --session R
 ```
 
-Ingest all available FastF1 sessions for a season:
+Ingest all available FastF1 sessions for a season and rebuild only that season's processed sessions plus shared indexes:
 
 ```powershell
 python -m pipeline ingest-season --year 2025
@@ -239,13 +234,13 @@ Sample generation does not require network access or backend dependencies.
 
 ## Adding A Race Or Session
 
-1. Install backend dependencies if you have not already.
-2. Run `python -m pipeline ingest-session --year <year> --event "<event name>" --session <code>`.
-3. Review generated files under `frontend/public/data`.
-4. Run `cd frontend; npm run lint; npm run build`.
-5. Commit the updated `frontend/public/data` artifacts.
+For local/offline data, install the backend dependencies and run
+`python -m pipeline ingest-session --year <year> --event "<event name>" --session <code>`.
+Review the changed session and indexes under `frontend/public/data`; use `--force` to replace an
+existing processed session.
 
-Use `--force` if you need to replace an existing processed session.
+Production ingestion must use the Worker/Queue runner described below. Its verified R2 publication
+is visible immediately through `/seasons/explore` and does not require committing generated data or rebuilding Pages.
 
 ## Cloudflare Hybrid Mode
 
@@ -307,7 +302,7 @@ The Worker exposes:
 - `POST /api/ingestion/jobs/:jobId/status`
 - `GET /data/*`
 
-Status checks look for `sessions/{session_id}/manifest.json` or `summary.json` in R2, then D1 active jobs. Missing sessions can be queued from the frontend. The Worker creates or reuses an active `ingest_session` job, writes D1 state, and sends the Cloudflare Queue message.
+Status checks require both a D1 `ready` state and the active session manifest. A manifest uploaded before verification cannot make a session ready. Trusted canonical manifests from the initial R2 seed are registered lazily when first checked, but fallback files and versioned generations cannot bypass the verified callback. Missing sessions can be queued from the frontend; the Worker creates or reuses an active `ingest_session` job, writes D1 state, and sends the Cloudflare Queue message.
 
 Queue message shape:
 
@@ -350,17 +345,21 @@ python -m pipeline process-queue --message-file .\message.json --artifact-destin
 
 Production queue consumption is intentionally a boundary: the Worker consumer can dispatch messages to `INGESTION_WEBHOOK_URL`, and the external Python runner performs FastF1 ingestion, artifact generation, optional R2 upload, then calls the protected job-status callback.
 
-R2 publication is incremental. The runner first downloads the current R2 catalog and affected
-season index, builds in a temporary directory, merges the new session, uploads the normalized
-source dataset under `source/sessions/{session_id}/dataset.json`, and publishes session files,
-manifest, season index, then catalog in that order. The Worker only exposes `catalog.json`,
-`seasons/*`, and `sessions/*` through `/data`, so normalized source datasets remain private.
+R2 publication is incremental and generation-safe. The runner downloads the current catalog and
+affected season index, builds only the affected session in a temporary directory, uploads it under
+`sessions/{session_id}/generations/{manifest_sha256}/`, and verifies every manifest-referenced
+object's size and SHA-256 checksum. It then atomically switches `active.json` and publishes the
+season index and catalog last. A failed refresh leaves the previous active generation readable.
+Before accepting the success callback, the Worker independently verifies that `active.json` points
+to the callback's manifest and that the active manifest's size and SHA-256 checksum match. It does
+not re-read every section already verified by the runner. Normalized datasets remain private under
+`source/`.
 Keep direct R2 public access disabled; the Worker allowlist is the intended read boundary.
 
-The current R2 `catalog.json` must exist before queue-driven ingestion begins. Seed the initial
-catalog and season files from `frontend/public/data` during first deployment. Requiring the current
-catalog prevents a transient R2 or credential failure from replacing production indexes with a
-partial local view.
+The current R2 `catalog.json` must exist before queue-driven ingestion begins. Seed the complete
+historical artifact tree during migration so R2 is the single production source of truth; Pages
+files remain the local/offline source only. Requiring the current catalog prevents a transient R2
+or credential failure from replacing production indexes with a partial local view.
 
 ### Scheduling and recovery
 
@@ -408,9 +407,9 @@ Build output directory: out
 Node version: 22
 ```
 
-No frontend secret is required for historical mode. `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` defaults to `/data`; only set it if static JSON is served from a different path.
+No frontend secret is required. For production, set `NEXT_PUBLIC_ARTIFACT_BASE_URL` to the Worker `/data` URL and `NEXT_PUBLIC_DYNAMIC_API_BASE_URL` to the Worker origin at build time. The GitHub Pages workflow reads both from repository variables.
 
-For hybrid mode, configure `/api/*` and `/data/*` to reach the Worker, or set `NEXT_PUBLIC_DYNAMIC_API_BASE_URL` and `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` to the Worker origin. Static-only deployments can continue serving committed `frontend/public/data` directly from Pages.
+If `NEXT_PUBLIC_ARTIFACT_BASE_URL` is omitted, it derives from `NEXT_PUBLIC_DYNAMIC_API_BASE_URL`; if both are omitted, the frontend uses same-origin `/data` for local/offline static files. Production should not configure the Pages artifact fallback after the R2 migration is complete.
 
 Deployment options:
 
@@ -422,7 +421,7 @@ Deployment options:
 ## GitHub Actions
 
 - `frontend-ci.yml`: generates sample artifacts, runs frontend lint, builds the static export, and uploads `frontend/out`.
-- `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
+- `generate-artifacts.yml`: manually generates local/offline artifacts or validates sample generation. An optional data commit updates the offline snapshot only; production reads R2.
 - `cloudflare-pages.yml`: manual static export deployment to Cloudflare Pages via Wrangler.
 
 ## Artifact Size Strategy
@@ -431,7 +430,7 @@ Deployment options:
 - Session data is split by section so a page can fetch only what it needs.
 - Analysis artifacts are precomputed once in the pipeline instead of calculated per browser request.
 - Telemetry is split by driver/lap and capped at 300 samples per lap artifact.
-- Queue-driven R2 uploads update only the catalog, affected season, and affected session rather than re-uploading historical data.
+- Queue-driven R2 uploads update only a new session generation, its active pointer, the affected season, and the catalog.
 - Heavy raw/cache files stay under `backend/data` and are not part of the static frontend.
 
 ## Docker

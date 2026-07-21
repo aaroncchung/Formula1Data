@@ -1,16 +1,22 @@
 import { sanitizeArtifactPath } from "./session-utils.mjs";
 
 const MAX_VERIFIED_ARTIFACT_BYTES = 8 * 1024 * 1024;
+const MAX_MANIFEST_BYTES = 1024 * 1024;
+const MAX_MANIFEST_SECTIONS = 5_000;
+const MAX_ACTIVE_POINTER_BYTES = 4 * 1024;
 
 export function createArtifactStore(env) {
   return {
     async head(path) {
       const key = sanitizeArtifactPath(path);
       if (env.ARTIFACTS_BUCKET?.head) {
-        const object = await env.ARTIFACTS_BUCKET.head(key);
+        const r2Key = await createR2KeyResolver(env)(key);
+        const object = await env.ARTIFACTS_BUCKET.head(r2Key);
         if (object) {
           return {
             key,
+            storage_key: r2Key,
+            source: "r2",
             size: object.size ?? null,
             etag: object.httpEtag || null,
             uploaded: object.uploaded ? object.uploaded.toISOString() : null
@@ -22,6 +28,8 @@ export function createArtifactStore(env) {
       if (fallback && (fallback.ok || fallback.status === 304 || fallback.status === 416)) {
         return {
           key,
+          storage_key: key,
+          source: "fallback",
           size: numberOrNull(fallback.headers.get("content-length")),
           etag: fallback.headers.get("etag"),
           uploaded: fallback.headers.get("last-modified")
@@ -33,14 +41,15 @@ export function createArtifactStore(env) {
     async get(path, request = null) {
       const key = sanitizeArtifactPath(path);
       const method = request?.method === "HEAD" ? "HEAD" : "GET";
+      const resolveR2Key = createR2KeyResolver(env);
       if (method === "HEAD" && env.ARTIFACTS_BUCKET?.head) {
-        const object = await env.ARTIFACTS_BUCKET.head(key);
+        const object = await env.ARTIFACTS_BUCKET.head(await resolveR2Key(key));
         if (object) {
           return r2ObjectResponse(object, key, true, request?.headers);
         }
       } else if (env.ARTIFACTS_BUCKET?.get) {
         const options = r2GetOptions(request?.headers);
-        const object = await env.ARTIFACTS_BUCKET.get(key, options);
+        const object = await env.ARTIFACTS_BUCKET.get(await resolveR2Key(key), options);
         if (object) {
           return r2ObjectResponse(object, key, false, request?.headers);
         }
@@ -64,28 +73,74 @@ export function createArtifactStore(env) {
     },
 
     async verify(record, { r2Only = false } = {}) {
+      return verifyArtifactRecord(env, record, r2Only, createR2KeyResolver(env));
+    },
+
+    async verifyManifest(record) {
       const key = sanitizeArtifactPath(record.path);
-      const loaded = await loadArtifactBytes(env, key, r2Only);
-      if (!loaded) {
-        return { verified: false, key, source: r2Only ? "r2" : null, reason: "missing" };
+      const match = key.match(/^sessions\/([^/]+)\/manifest\.json$/);
+      if (!match || !isArtifactRecord(record)) {
+        return { verified: false, key, source: "r2", reason: "invalid_manifest_record" };
       }
-      if (loaded.bytes.byteLength !== record.size_bytes) {
+
+      let active;
+      try {
+        active = await loadActivePointer(env, match[1]);
+      } catch (error) {
         return {
           verified: false,
           key,
-          source: loaded.source,
-          reason: "size_mismatch",
-          actual_size_bytes: loaded.bytes.byteLength
+          source: "r2",
+          reason: "invalid_active_pointer",
+          error: error instanceof Error ? error.message : String(error)
         };
       }
-      const checksum = await sha256Checksum(loaded.bytes);
+      if (!active) {
+        return { verified: false, key, source: "r2", reason: "missing_active_pointer" };
+      }
+      if (
+        active.pointer.manifest.size_bytes !== record.size_bytes ||
+        active.pointer.manifest.checksum !== record.checksum
+      ) {
+        return { verified: false, key, source: "r2", reason: "active_manifest_mismatch" };
+      }
+
+      let loaded;
+      try {
+        loaded = await loadVerifiedArtifact(
+          env,
+          record,
+          true,
+          async () => `${active.base}/manifest.json`,
+          MAX_MANIFEST_BYTES
+        );
+      } catch (error) {
+        return {
+          verified: false,
+          key,
+          source: "r2",
+          reason: "verification_error",
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+      if (!loaded.verification.verified) {
+        return loaded.verification;
+      }
+
+      let manifest;
+      try {
+        manifest = JSON.parse(new TextDecoder().decode(loaded.bytes));
+      } catch {
+        return { ...loaded.verification, verified: false, reason: "invalid_manifest_json" };
+      }
+      const validation = validateManifest(manifest, record.path);
+      if (!validation.valid) {
+        return { ...loaded.verification, verified: false, reason: validation.reason };
+      }
+
       return {
-        verified: checksum === record.checksum,
-        key,
-        source: loaded.source,
-        reason: checksum === record.checksum ? null : "checksum_mismatch",
-        actual_size_bytes: loaded.bytes.byteLength,
-        actual_checksum: checksum
+        ...loaded.verification,
+        artifact_count: validation.sections.length
       };
     }
   };
@@ -128,14 +183,89 @@ function fallbackUrl(baseUrl, key) {
   return new URL(key, normalizedBase);
 }
 
-async function loadArtifactBytes(env, key, r2Only) {
+function createR2KeyResolver(env) {
+  const activePointers = new Map();
+  return async (key) => {
+    const match = key.match(/^sessions\/([^/]+)\/(.+)$/);
+    if (!match || match[2] === "active.json" || match[2].startsWith("generations/") || !env.ARTIFACTS_BUCKET?.get) {
+      return key;
+    }
+    const sessionId = match[1];
+    if (!activePointers.has(sessionId)) {
+      activePointers.set(sessionId, await loadActivePointer(env, sessionId));
+    }
+    const active = activePointers.get(sessionId);
+    return active ? `${active.base}/${match[2]}` : key;
+  };
+}
+
+async function loadActivePointer(env, sessionId) {
+  if (!env.ARTIFACTS_BUCKET?.get) {
+    return null;
+  }
+  const object = await env.ARTIFACTS_BUCKET.get(`sessions/${sessionId}/active.json`);
+  if (!object?.body) {
+    return null;
+  }
+  if (Number(object.size) > MAX_ACTIVE_POINTER_BYTES) {
+    await object.body.cancel();
+    throw new Error(`Active generation pointer for ${sessionId} is too large`);
+  }
+  const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
+  if (bytes.byteLength > MAX_ACTIVE_POINTER_BYTES) {
+    throw new Error(`Active generation pointer for ${sessionId} is too large`);
+  }
+
+  let pointer;
+  try {
+    pointer = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error(`Active generation pointer for ${sessionId} is invalid`);
+  }
+  const base = String(pointer?.artifact_base_path || "");
+  const expectedPrefix = `sessions/${sessionId}/generations/`;
+  const generationId = base.startsWith(expectedPrefix) ? base.slice(expectedPrefix.length) : "";
+  if (
+    pointer?.schema_version !== 1 ||
+    pointer?.session_id !== sessionId ||
+    !/^[a-f0-9]{64}$/.test(generationId) ||
+    !isManifestMetadata(pointer?.manifest) ||
+    generationId !== pointer.manifest.checksum.slice("sha256:".length)
+  ) {
+    throw new Error(`Active generation pointer for ${sessionId} is invalid`);
+  }
+  return { pointer, base };
+}
+
+function isManifestMetadata(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Number.isSafeInteger(value.size_bytes) &&
+    value.size_bytes >= 0 &&
+    typeof value.checksum === "string" &&
+    /^sha256:[a-f0-9]{64}$/.test(value.checksum)
+  );
+}
+
+async function loadArtifactBytes(
+  env,
+  key,
+  r2Only,
+  resolveR2Key,
+  maxBytes = MAX_VERIFIED_ARTIFACT_BYTES
+) {
   if (env.ARTIFACTS_BUCKET?.get) {
-    const object = await env.ARTIFACTS_BUCKET.get(key);
+    const object = await env.ARTIFACTS_BUCKET.get(await resolveR2Key(key));
     if (object?.body) {
-      if (Number(object.size) > MAX_VERIFIED_ARTIFACT_BYTES) {
+      if (Number(object.size) > maxBytes) {
         throw new Error(`Artifact ${key} exceeds the verification size limit`);
       }
       const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
+      if (bytes.byteLength > maxBytes) {
+        throw new Error(`Artifact ${key} exceeds the verification size limit`);
+      }
       return { bytes, source: "r2" };
     }
   }
@@ -147,15 +277,116 @@ async function loadArtifactBytes(env, key, r2Only) {
     return null;
   }
   const declaredSize = Number.parseInt(response.headers.get("content-length") || "", 10);
-  if (Number.isFinite(declaredSize) && declaredSize > MAX_VERIFIED_ARTIFACT_BYTES) {
+  if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
     await response.body?.cancel();
     throw new Error(`Artifact ${key} exceeds the verification size limit`);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_VERIFIED_ARTIFACT_BYTES) {
+  if (bytes.byteLength > maxBytes) {
     throw new Error(`Artifact ${key} exceeds the verification size limit`);
   }
   return { bytes, source: "fallback" };
+}
+
+async function verifyArtifactRecord(env, record, r2Only, resolveR2Key) {
+  const loaded = await loadVerifiedArtifact(env, record, r2Only, resolveR2Key);
+  return loaded.verification;
+}
+
+async function loadVerifiedArtifact(
+  env,
+  record,
+  r2Only,
+  resolveR2Key,
+  maxBytes = MAX_VERIFIED_ARTIFACT_BYTES
+) {
+  const key = sanitizeArtifactPath(record.path);
+  const loaded = await loadArtifactBytes(env, key, r2Only, resolveR2Key, maxBytes);
+  if (!loaded) {
+    return {
+      bytes: null,
+      verification: { verified: false, key, source: r2Only ? "r2" : null, reason: "missing" }
+    };
+  }
+  if (loaded.bytes.byteLength !== record.size_bytes) {
+    return {
+      bytes: loaded.bytes,
+      verification: {
+        verified: false,
+        key,
+        source: loaded.source,
+        reason: "size_mismatch",
+        actual_size_bytes: loaded.bytes.byteLength
+      }
+    };
+  }
+  const checksum = await sha256Checksum(loaded.bytes);
+  return {
+    bytes: loaded.bytes,
+    verification: {
+      verified: checksum === record.checksum,
+      key,
+      source: loaded.source,
+      reason: checksum === record.checksum ? null : "checksum_mismatch",
+      actual_size_bytes: loaded.bytes.byteLength,
+      actual_checksum: checksum
+    }
+  };
+}
+
+function validateManifest(manifest, manifestPath) {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return { valid: false, reason: "invalid_manifest" };
+  }
+  const sessionId = String(manifest.session_id || "");
+  const expectedManifestPath = `sessions/${sessionId}/manifest.json`;
+  if (
+    manifest.schema_version !== 1 ||
+    !sessionId ||
+    manifestPath !== expectedManifestPath ||
+    !Array.isArray(manifest.sections)
+  ) {
+    return { valid: false, reason: "invalid_manifest" };
+  }
+  if (manifest.sections.length > MAX_MANIFEST_SECTIONS) {
+    return { valid: false, reason: "manifest_too_large" };
+  }
+
+  const prefix = `sessions/${sessionId}/`;
+  const paths = new Set();
+  let hasSummary = false;
+  for (const section of manifest.sections) {
+    if (!isArtifactRecord(section) || !section.path.startsWith(prefix) || paths.has(section.path)) {
+      return { valid: false, reason: "invalid_manifest_section" };
+    }
+    try {
+      if (sanitizeArtifactPath(section.path) !== section.path) {
+        return { valid: false, reason: "invalid_manifest_section" };
+      }
+    } catch {
+      return { valid: false, reason: "invalid_manifest_section" };
+    }
+    paths.add(section.path);
+    hasSummary ||= section.kind === "summary";
+  }
+  if (!hasSummary) {
+    return { valid: false, reason: "manifest_missing_summary" };
+  }
+  return { valid: true, sections: manifest.sections };
+}
+
+function isArtifactRecord(record) {
+  return (
+    record &&
+    typeof record === "object" &&
+    !Array.isArray(record) &&
+    typeof record.kind === "string" &&
+    typeof record.path === "string" &&
+    Number.isSafeInteger(record.size_bytes) &&
+    record.size_bytes >= 0 &&
+    typeof record.checksum === "string" &&
+    /^sha256:[a-f0-9]{64}$/.test(record.checksum)
+  );
 }
 
 async function sha256Checksum(bytes) {

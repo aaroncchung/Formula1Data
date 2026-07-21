@@ -45,8 +45,17 @@ test("enqueueIngestionJob reuses active jobs for the same session", async () => 
   assert.equal(messages[0].session_id, "2026-08-r");
 });
 
-test("resolveSessionStatus reports ready when a manifest artifact exists", async () => {
+test("resolveSessionStatus reports ready only after D1 readiness and a manifest both exist", async () => {
   const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-01-r",
+    year: 2026,
+    round: 1,
+    session_type: "R",
+    status: "ready",
+    artifact_base_path: "sessions/2026-01-r",
+    source: "r2"
+  });
   const artifacts = {
     head: async (path) =>
       path.endsWith("manifest.json")
@@ -68,6 +77,118 @@ test("resolveSessionStatus reports ready when a manifest artifact exists", async
   assert.equal(result.action, "ready");
   assert.equal(status.status, "ready");
   assert.equal(status.artifact_path, "sessions/2026-01-r/manifest.json");
+});
+
+test("a canonical R2 seed lazily creates one ready session row", async () => {
+  const repository = freshRepository();
+  let writes = 0;
+  const countingRepository = {
+    ...repository,
+    async upsertSession(session) {
+      writes += 1;
+      return repository.upsertSession(session);
+    }
+  };
+  const artifacts = {
+    head: async (path) => ({
+      key: path,
+      storage_key: path,
+      source: "r2",
+      size: 512,
+      uploaded: "2026-07-04T12:00:00Z"
+    })
+  };
+
+  const first = await resolveSessionStatus({
+    repository: countingRepository,
+    artifacts,
+    year: 2026,
+    round: 1,
+    session: "R"
+  });
+  const second = await resolveSessionStatus({
+    repository: countingRepository,
+    artifacts,
+    year: 2026,
+    round: 1,
+    session: "R"
+  });
+
+  assert.equal(first.status, "ready");
+  assert.equal(first.source, "r2-seed");
+  assert.equal(second.status, "ready");
+  assert.equal(writes, 1);
+});
+
+test("a generation manifest published before verification does not make a session ready", async () => {
+  const repository = freshRepository();
+  const artifacts = {
+    head: async (path) => ({
+      key: path,
+      storage_key: `sessions/2026-01-r/generations/${"a".repeat(64)}/manifest.json`,
+      source: "r2",
+      size: 512,
+      uploaded: "2026-07-04T12:00:00Z"
+    })
+  };
+
+  const status = await resolveSessionStatus({ repository, artifacts, year: 2026, round: 1, session: "R" });
+
+  assert.equal(status.status, "missing");
+  assert.equal(status.artifact_exists, false);
+});
+
+test("a fallback manifest cannot bootstrap D1 readiness", async () => {
+  const repository = freshRepository();
+  const status = await resolveSessionStatus({
+    repository,
+    artifacts: {
+      head: async (path) => ({
+        key: path,
+        storage_key: path,
+        source: "fallback",
+        size: 512,
+        uploaded: "2026-07-04T12:00:00Z"
+      })
+    },
+    year: 2026,
+    round: 1,
+    session: "R"
+  });
+
+  assert.equal(status.status, "missing");
+  assert.equal(await repository.getSession("2026-01-r"), null);
+});
+
+test("an existing queued session takes precedence over a canonical manifest", async () => {
+  const repository = freshRepository();
+  await repository.upsertSession({
+    session_id: "2026-01-r",
+    year: 2026,
+    round: 1,
+    session_type: "R",
+    status: "queued",
+    artifact_base_path: "sessions/2026-01-r",
+    source: "dynamic"
+  });
+  const status = await resolveSessionStatus({
+    repository,
+    artifacts: {
+      head: async (path) => ({
+        key: path,
+        storage_key: path,
+        source: "r2",
+        size: 512,
+        uploaded: "2026-07-04T12:00:00Z"
+      })
+    },
+    year: 2026,
+    round: 1,
+    session: "R"
+  });
+
+  assert.equal(status.status, "queued");
+  assert.equal((await repository.getSession("2026-01-r")).source, "dynamic");
 });
 
 test("resolveSessionStatus avoids redundant D1-style writes for an unchanged ready session", async () => {

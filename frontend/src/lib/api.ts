@@ -9,6 +9,7 @@ import {
 } from "@/lib/static-api-core";
 import type { QueueIngestionResponse, SessionStatusResponse } from "@/types/api";
 import type { LiveDisabledResponse } from "@/types/domain";
+import { fetchArtifactResponse, resolveArtifactBaseUrl } from "@/lib/artifact-source";
 
 const DEFAULT_STATIC_DATA_BASE_PATH = "/data";
 const DEFAULT_DYNAMIC_API_BASE_PATH = "";
@@ -23,7 +24,11 @@ export {
 };
 
 export function staticDataBasePath(): string {
-  return process.env.NEXT_PUBLIC_STATIC_DATA_BASE_PATH || DEFAULT_STATIC_DATA_BASE_PATH;
+  return resolveArtifactBaseUrl({
+    artifactBaseUrl: process.env.NEXT_PUBLIC_ARTIFACT_BASE_URL,
+    dynamicApiBaseUrl: process.env.NEXT_PUBLIC_DYNAMIC_API_BASE_URL,
+    staticDataBasePath: process.env.NEXT_PUBLIC_STATIC_DATA_BASE_PATH || DEFAULT_STATIC_DATA_BASE_PATH
+  });
 }
 
 export function apiBaseUrl(): string {
@@ -56,10 +61,7 @@ async function readBrowserArtifact<T>(path: string): Promise<T> {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const source = staticDataBasePath();
   try {
-    const response = await fetch(`${source}/${path}`, {
-      signal: controller.signal,
-      cache: "force-cache"
-    });
+    const response = await fetchArtifactResponse(source, path, controller.signal);
     if (!response.ok) {
       throw new ApiClientError(
         response.status === 404 ? "Static artifact was not generated" : "Static artifact could not be loaded",
