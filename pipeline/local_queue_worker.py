@@ -8,9 +8,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -314,21 +317,51 @@ def sync_artifacts_to_r2(
     session_dir = output_dir / "sessions" / session_id
     session_files = sorted(session_dir.rglob("*.json")) if session_dir.exists() else []
     manifest = session_dir / "manifest.json"
-    candidates = [path for path in session_files if path != manifest]
-    if manifest.is_file():
-        candidates.append(manifest)
+
+    # The manifest and the season/catalog indexes are commit markers: readers
+    # treat them as the signal that a session is complete, so they must land
+    # only after every file they reference. Bodies upload concurrently; the
+    # markers stay strictly ordered and serial behind them.
+    bodies = [path for path in session_files if path != manifest and path.is_file()]
+    markers = [manifest] if manifest.is_file() else []
     if include_indexes:
-        candidates.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
-    for path in candidates:
-        if not path.is_file():
-            continue
+        markers.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
+
+    def object_key(path: Path) -> str:
         key = path.relative_to(output_dir).as_posix()
-        if normalized_prefix:
-            key = f"{normalized_prefix}/{key}"
-        subprocess.run(
-            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
-            check=True,
-        )
+        return f"{normalized_prefix}/{key}" if normalized_prefix else key
+
+    # One wrangler invocation costs a full Node process start, so a session's
+    # ~1k telemetry files took ~28 minutes serially. Overlap them instead.
+    #
+    # The default is deliberately conservative. R2's REST API is rate limited
+    # per account, and a session issues on the order of a thousand PUTs; at
+    # roughly a second per upload, four in flight stays well inside the budget
+    # while still cutting the wall clock by about 4x.
+    max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "4")))
+    if bodies:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [
+                pool.submit(upload_r2_object, path, bucket, object_key(path)) for path in bodies
+            ]
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except Exception:
+                # Bodies are overwritten in place over the live session, so a
+                # failure part-way leaves the published manifest pointing at a
+                # mix of old and new files. Cancelling drops uploads that have
+                # not started yet; ones already running still finish, because
+                # leaving the executor shuts it down with wait=True. This only
+                # narrows the window. Publishing to immutable per-generation
+                # keys is the actual fix and is not done here.
+                for pending in futures:
+                    pending.cancel()
+                raise
+
+    for path in markers:
+        if path.is_file():
+            upload_r2_object(path, bucket, object_key(path))
 
 
 def publish_artifacts(
@@ -387,11 +420,81 @@ def copy_file_atomic(source: Path, destination: Path) -> None:
     os.replace(temporary, destination)
 
 
+class _RequestPacer:
+    """Spaces request starts so concurrent uploads cannot outrun R2's budget.
+
+    Cloudflare meters its REST API per account over a rolling window, so what
+    matters is the request *rate*, not how many uploads are in flight. Worker
+    count alone does not bound the rate: if wrangler returns quickly, N workers
+    simply issue N times as many requests per second. This paces every start.
+    """
+
+    def __init__(self, per_second: float) -> None:
+        self._interval = 1.0 / per_second if per_second > 0 else 0.0
+        self._lock = threading.Lock()
+        self._next_start = 0.0
+
+    def acquire(self) -> None:
+        if self._interval <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            start_at = max(now, self._next_start)
+            self._next_start = start_at + self._interval
+        delay = start_at - now
+        if delay > 0:
+            # Sleep outside the lock so other workers can claim later slots.
+            time.sleep(delay)
+
+
+def _build_request_pacer() -> _RequestPacer:
+    # R2's documented ceiling is 1200 REST operations per five minutes (4/s).
+    # Default below it for headroom; 0 disables pacing entirely.
+    return _RequestPacer(float(os.getenv("R2_UPLOAD_RATE_PER_SECOND", "3")))
+
+
+_REQUEST_PACER = _build_request_pacer()
+
+# Signals that a failure was throttling rather than a genuine error. Cloudflare
+# blocks further calls for the remainder of the window once the quota is spent,
+# so these back off on a much longer scale than an ordinary retry.
+_THROTTLE_MARKERS = ("429", "rate limit", "rate-limit", "too many requests", "quota")
+
+
 def upload_r2_object(path: Path, bucket: str, key: str) -> None:
-    subprocess.run(
-        ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
-        check=True,
-    )
+    # Output is captured rather than inherited: uploads now run concurrently, so
+    # wrangler's per-invocation banner would interleave into unreadable noise,
+    # and a session emits roughly a thousand of them. Surface it only on failure.
+    #
+    # Retried with backoff because R2's REST API is rate limited per account and
+    # a session issues on the order of a thousand PUTs. A throttled upload
+    # should wait and retry rather than fail the whole ingestion, which would
+    # otherwise leave the session half-overwritten.
+    attempts = max(1, int(os.getenv("R2_UPLOAD_ATTEMPTS", "3")))
+    for attempt in range(1, attempts + 1):
+        _REQUEST_PACER.acquire()
+        result = subprocess.run(
+            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+        # str() rather than a bare join: callers patch subprocess.run in tests,
+        # and a non-string stdout should not turn a failure into a TypeError.
+        detail = "\n".join(str(part) for part in (result.stdout, result.stderr) if part).strip()
+        if attempt == attempts:
+            raise RuntimeError(
+                f"wrangler failed to upload {key} after {attempts} attempt(s) "
+                f"(exit {result.returncode}):\n{detail}"
+            )
+        lowered = detail.lower()
+        if any(marker in lowered for marker in _THROTTLE_MARKERS):
+            # Wrangler does not surface Retry-After, and the quota window is
+            # five minutes, so wait on that scale rather than seconds.
+            time.sleep(min(60 * attempt, 300))
+        else:
+            time.sleep(min(2**attempt, 30))
 
 
 def hydrate_r2_indexes(destination: Path, bucket: str, prefix: str, year: int) -> None:

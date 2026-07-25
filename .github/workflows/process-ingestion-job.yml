@@ -211,6 +211,123 @@ jobs:
           python -m json.tool manifest-check.json > /dev/null
           python -c "import json; expected=json.load(open('message.json'))['session_id']; actual=json.load(open('manifest-check.json'))['session_id']; assert actual == expected, f'manifest session_id {actual} does not match {expected}'"
 
+      - name: Summarize callback artifact records
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -f success-callback.json ]; then
+            echo "No success-callback.json; ingestion did not reach the success payload."
+            exit 0
+          fi
+
+          # Approximate the Worker's validateArtifactRecord checks so a rejected
+          # record is named here, in the log, instead of surfacing only as an
+          # opaque "artifacts[N] has an invalid kind or path" 400. This prints
+          # to the log deliberately: logs are not subject to the Actions
+          # artifact storage quota, so it works even when uploads are blocked.
+          #
+          # This is a diagnostic aid, not a reimplementation. The Worker is the
+          # authority and applies further checks (metadata shape, generated_at,
+          # session ownership), so "no problems found" here does not guarantee
+          # the Worker will accept the payload -- the printed records do.
+          python - <<'PY'
+          import json
+          import re
+          import urllib.parse
+
+          KIND_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
+          CHECKSUM_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
+          MAX_SAFE_INTEGER = 2**53 - 1
+          BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+          def sanitize_path(raw):
+              """Port of sanitizeArtifactPath in worker/src/session-utils.mjs."""
+              if BAD_ESCAPE.search(raw):
+                  raise ValueError("path contains invalid encoding")
+              candidate = urllib.parse.unquote(raw, errors="strict")
+              candidate = re.sub(r"^/+", "", candidate)
+              candidate = re.sub(r"^data/+", "", candidate)
+              candidate = candidate.replace("\\", "/")
+              if not candidate:
+                  raise ValueError("path is empty")
+              if len(candidate.encode("utf-8")) > 1024:
+                  raise ValueError("path exceeds 1024 bytes")
+              if "\0" in candidate:
+                  raise ValueError("path contains a NUL byte")
+              segments = candidate.split("/")
+              if any(segment == ".." for segment in segments):
+                  raise ValueError("path contains parent directory segments")
+              if any(not segment or segment == "." for segment in segments):
+                  raise ValueError("path contains empty or dot segments")
+              return candidate
+
+
+          with open("success-callback.json", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          records = payload.get("artifacts")
+          if records is None:
+              print("No artifacts key in the success payload.")
+              raise SystemExit(0)
+          if not isinstance(records, list):
+              print(f"artifacts must be an array, got {type(records).__name__}.")
+              raise SystemExit(0)
+
+          print(f"{len(records)} artifact record(s) in the success payload")
+
+          flagged = 0
+          for index, record in enumerate(records):
+              # Never let a malformed record abort the summary; naming the bad
+              # index is the entire point of this step.
+              if not isinstance(record, dict):
+                  flagged += 1
+                  print(f"  [{index}] <-- PROBLEM: record must be an object, got {type(record).__name__}")
+                  continue
+
+              kind = record.get("kind")
+              path = record.get("path")
+              checksum = record.get("checksum")
+              size_bytes = record.get("size_bytes")
+
+              problems = []
+              # The Worker coerces via optionalString, which rejects non-strings
+              # outright rather than stringifying them.
+              if not isinstance(kind, str) or not kind:
+                  problems.append("kind must be a non-empty string")
+              elif len(kind) > 64:
+                  problems.append("kind exceeds 64 characters")
+              elif not KIND_PATTERN.match(kind):
+                  problems.append("kind fails the Worker pattern")
+
+              if not isinstance(path, str) or not path:
+                  problems.append("path must be a non-empty string")
+              else:
+                  try:
+                      sanitize_path(path)
+                  except (ValueError, UnicodeDecodeError) as error:
+                      problems.append(str(error))
+
+              if (
+                  not isinstance(size_bytes, int)
+                  or isinstance(size_bytes, bool)
+                  or size_bytes < 0
+                  or size_bytes > MAX_SAFE_INTEGER
+              ):
+                  problems.append("size_bytes must be a safe non-negative integer")
+
+              if not isinstance(checksum, str) or not CHECKSUM_PATTERN.match(checksum):
+                  problems.append("checksum must be a lowercase sha256")
+
+              suffix = ""
+              if problems:
+                  flagged += 1
+                  suffix = "  <-- PROBLEM: " + ", ".join(problems)
+              print(f"  [{index}] kind={kind!r} path={path!r}{suffix}")
+
+          print(f"{flagged} record(s) failed these checks (the Worker may reject others).")
+          PY
+
       - name: Report ingestion success
         env:
           JOB_ID: ${{ steps.message.outputs.job_id }}
