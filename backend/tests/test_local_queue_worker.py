@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -20,8 +21,10 @@ from pipeline.local_queue_worker import (
     merge_season,
     session_artifacts_exist,
     sync_artifacts_to_r2,
+    upload_r2_object,
     verify_remote_manifest,
 )
+from pipeline import local_queue_worker
 from pipeline.artifacts import checksum_file, write_json
 
 
@@ -129,35 +132,73 @@ class LocalQueueWorkerTests(unittest.TestCase):
         (output_dir / "seasons" / "2025.json").write_text("{}", encoding="utf-8")
         (output_dir / "catalog.json").write_text("{}", encoding="utf-8")
 
-    def test_r2_sync_uploads_every_body_before_any_commit_marker(self):
-        """Bodies upload concurrently, but the commit markers must land last."""
+    MARKER_KEYS = [
+        "test-bucket/sessions/2025-09-r/manifest.json",
+        "test-bucket/seasons/2025.json",
+        "test-bucket/catalog.json",
+    ]
+
+    def test_r2_sync_uploads_bodies_concurrently(self):
+        """A serial implementation cannot satisfy the barrier and would fail."""
+        import threading
+        from types import SimpleNamespace
+
+        workers = 4
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            self._build_session_tree(output_dir, body_count=workers * 2)
+
+            barrier = threading.Barrier(workers, timeout=10)
+
+            def fake_run(args, **kwargs):
+                if "telemetry" in args[4]:
+                    # Blocks until `workers` bodies are in flight together.
+                    barrier.wait()
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.dict(os.environ, {"R2_UPLOAD_CONCURRENCY": str(workers)}):
+                with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+                    with patch(
+                        "pipeline.local_queue_worker.subprocess.run", side_effect=fake_run
+                    ):
+                        sync_artifacts_to_r2(
+                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                        )
+
+    def test_r2_sync_finishes_every_body_before_starting_any_commit_marker(self):
+        """Markers must follow body completion, not merely body submission."""
+        import threading
         from types import SimpleNamespace
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_dir = Path(temporary_directory)
-            self._build_session_tree(output_dir, body_count=25)
+            self._build_session_tree(output_dir, body_count=12)
 
-            order = []
+            lock = threading.Lock()
+            body_finished = []
+            marker_started = []
 
             def fake_run(args, **kwargs):
-                order.append(args[4])
+                key = args[4]
+                if "telemetry" in key:
+                    time.sleep(0.02)
+                    with lock:
+                        body_finished.append(time.monotonic())
+                else:
+                    with lock:
+                        marker_started.append((time.monotonic(), key))
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-            with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
-                sync_artifacts_to_r2(
-                    output_dir, "test-bucket", session_id="2025-09-r", year=2025
-                )
+            with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+                with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+                    sync_artifacts_to_r2(
+                        output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                    )
 
-            markers = [
-                "test-bucket/sessions/2025-09-r/manifest.json",
-                "test-bucket/seasons/2025.json",
-                "test-bucket/catalog.json",
-            ]
-            self.assertEqual(order[-3:], markers)
-            body_count = len(order) - len(markers)
-            self.assertEqual(body_count, 25)
-            for marker in markers:
-                self.assertGreaterEqual(order.index(marker), body_count)
+            self.assertEqual(len(body_finished), 12)
+            self.assertEqual([key for _, key in marker_started], self.MARKER_KEYS)
+            # Every body completed before the first marker was even started.
+            self.assertLess(max(body_finished), marker_started[0][0])
 
     def test_r2_sync_skips_commit_markers_when_a_body_upload_fails(self):
         """A failed body must never be followed by a marker claiming completeness."""
@@ -184,12 +225,51 @@ class LocalQueueWorkerTests(unittest.TestCase):
                             output_dir, "test-bucket", session_id="2025-09-r", year=2025
                         )
 
-            for marker in (
-                "test-bucket/sessions/2025-09-r/manifest.json",
-                "test-bucket/seasons/2025.json",
-                "test-bucket/catalog.json",
-            ):
+            for marker in self.MARKER_KEYS:
                 self.assertNotIn(marker, attempted)
+
+    def test_upload_retries_with_backoff_then_succeeds(self):
+        from types import SimpleNamespace
+
+        results = [
+            SimpleNamespace(returncode=1, stdout="", stderr="transient"),
+            SimpleNamespace(returncode=1, stdout="", stderr="transient"),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ]
+
+        with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+            with patch("pipeline.local_queue_worker.time.sleep") as sleep:
+                with patch(
+                    "pipeline.local_queue_worker.subprocess.run", side_effect=results
+                ) as run:
+                    upload_r2_object(Path("body.json"), "test-bucket", "key.json")
+
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4])
+
+    def test_upload_backs_off_far_longer_when_throttled(self):
+        """A rate-limit response must not be retried on a seconds-scale delay."""
+        from types import SimpleNamespace
+
+        throttled = SimpleNamespace(returncode=1, stdout="", stderr="Error 429: rate limit exceeded")
+
+        with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+            with patch("pipeline.local_queue_worker.time.sleep") as sleep:
+                with patch(
+                    "pipeline.local_queue_worker.subprocess.run",
+                    side_effect=[throttled, SimpleNamespace(returncode=0, stdout="", stderr="")],
+                ):
+                    upload_r2_object(Path("body.json"), "test-bucket", "key.json")
+
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [60])
+
+    def test_request_pacer_spaces_out_starts(self):
+        pacer = local_queue_worker._RequestPacer(per_second=50)
+        started = time.monotonic()
+        for _ in range(5):
+            pacer.acquire()
+        # Four intervals of 20ms between five starts.
+        self.assertGreaterEqual(time.monotonic() - started, 0.06)
 
     def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
         existing = {

@@ -233,19 +233,58 @@ jobs:
           python - <<'PY'
           import json
           import re
+          import urllib.parse
 
           KIND_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
           CHECKSUM_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
           MAX_SAFE_INTEGER = 2**53 - 1
+          BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+          def sanitize_path(raw):
+              """Port of sanitizeArtifactPath in worker/src/session-utils.mjs."""
+              if BAD_ESCAPE.search(raw):
+                  raise ValueError("path contains invalid encoding")
+              candidate = urllib.parse.unquote(raw, errors="strict")
+              candidate = re.sub(r"^/+", "", candidate)
+              candidate = re.sub(r"^data/+", "", candidate)
+              candidate = candidate.replace("\\", "/")
+              if not candidate:
+                  raise ValueError("path is empty")
+              if len(candidate.encode("utf-8")) > 1024:
+                  raise ValueError("path exceeds 1024 bytes")
+              if "\0" in candidate:
+                  raise ValueError("path contains a NUL byte")
+              segments = candidate.split("/")
+              if any(segment == ".." for segment in segments):
+                  raise ValueError("path contains parent directory segments")
+              if any(not segment or segment == "." for segment in segments):
+                  raise ValueError("path contains empty or dot segments")
+              return candidate
+
 
           with open("success-callback.json", encoding="utf-8") as handle:
               payload = json.load(handle)
 
-          records = payload.get("artifacts") or []
+          records = payload.get("artifacts")
+          if records is None:
+              print("No artifacts key in the success payload.")
+              raise SystemExit(0)
+          if not isinstance(records, list):
+              print(f"artifacts must be an array, got {type(records).__name__}.")
+              raise SystemExit(0)
+
           print(f"{len(records)} artifact record(s) in the success payload")
 
           flagged = 0
           for index, record in enumerate(records):
+              # Never let a malformed record abort the summary; naming the bad
+              # index is the entire point of this step.
+              if not isinstance(record, dict):
+                  flagged += 1
+                  print(f"  [{index}] <-- PROBLEM: record must be an object, got {type(record).__name__}")
+                  continue
+
               kind = record.get("kind")
               path = record.get("path")
               checksum = record.get("checksum")
@@ -263,10 +302,11 @@ jobs:
 
               if not isinstance(path, str) or not path:
                   problems.append("path must be a non-empty string")
-              elif len(path) > 1024:
-                  problems.append("path exceeds 1024 characters")
-              elif path.startswith("/") or ".." in path.split("/"):
-                  problems.append("path is not a safe relative path")
+              else:
+                  try:
+                      sanitize_path(path)
+                  except (ValueError, UnicodeDecodeError) as error:
+                      problems.append(str(error))
 
               if (
                   not isinstance(size_bytes, int)
