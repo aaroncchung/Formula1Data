@@ -89,14 +89,23 @@ jobs:
             printf '%s' "$WORKFLOW_MESSAGE" > message.json
           fi
           python -m json.tool message.json > /dev/null
-          echo "job_id=$(python -c \"import json; print(json.load(open('message.json'))['job_id'])\")" >> "$GITHUB_OUTPUT"
 
-          # Project the queue message down to known-safe fields for the
-          # diagnostics artifact. workflow_dispatch accepts an arbitrary JSON
-          # blob, so uploading it verbatim would archive anything a caller
-          # happened to paste in. Extra keys are recorded by name only.
+          # Publish job_id and project the queue message down to known-safe
+          # fields for the diagnostics artifact, in a single interpreter run.
+          #
+          # This previously used:
+          #   echo "job_id=$(python -c \"import json; ...\")" >> "$GITHUB_OUTPUT"
+          # which is a bash syntax error. Inside $( ) a fresh parsing context
+          # begins, so the backslash-escaped quotes did not quote the Python
+          # source and bash tripped over the unquoted parentheses. Under
+          # `bash -e` that killed the step, so every run failed here.
+          #
+          # job_id is read leniently: when it is absent the dedicated
+          # validation step below reports the missing fields, which is a far
+          # clearer error than a KeyError traceback out of this step.
           python - <<'PY'
           import json
+          import os
 
           known = ("job_id", "session_id", "year", "round", "session", "artifact_base_path")
 
@@ -108,6 +117,9 @@ jobs:
 
           with open("message-summary.json", "w", encoding="utf-8") as handle:
               json.dump(summary, handle, indent=2, sort_keys=True)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write("job_id={}\n".format(message.get("job_id", "")))
           PY
 
       - name: Validate queue message
