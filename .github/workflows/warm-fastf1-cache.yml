@@ -53,8 +53,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
 
+      # actions/cache declares post-if: success(), so a warm run that failed
+      # part-way through saved nothing -- the opposite of this workflow's whole
+      # purpose. Split restore/save so partial progress is always kept.
       - name: Restore FastF1 cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: backend/data/cache/fastf1
           key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
@@ -85,3 +88,22 @@ jobs:
             --session "$WARM_SESSION" \
             --no-build-artifacts \
             $FORCE_FLAG
+
+      - name: Report warmed cache state
+        if: always()
+        run: |
+          if [ -d backend/data/cache/fastf1 ]; then
+            CACHE_FILES="$(find backend/data/cache/fastf1 -type f | wc -l)"
+            CACHE_BYTES="$(du -sh backend/data/cache/fastf1 | cut -f1)"
+            echo "FastF1 cache contains ${CACHE_FILES} files (${CACHE_BYTES}) after warming."
+          else
+            echo "FastF1 cache directory still does not exist."
+          fi
+
+      - name: Save FastF1 cache
+        if: always() && hashFiles('backend/data/cache/fastf1/**') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: backend/data/cache/fastf1
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}

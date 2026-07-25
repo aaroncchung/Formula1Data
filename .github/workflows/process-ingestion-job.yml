@@ -58,8 +58,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt
 
+      # Split restore/save rather than actions/cache, which declares
+      # post-if: success() and therefore only saves when the whole job passes.
+      # Every ingestion run since 2026-07-12 failed at some step, so the FastF1
+      # data each one downloaded was discarded and the next run started cold --
+      # a cold fetch being exactly what makes the next failure more likely.
       - name: Restore FastF1 cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: backend/data/cache/fastf1
           key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
@@ -198,6 +203,17 @@ jobs:
               exit 1
             fi
           done
+
+      # Save whatever FastF1 downloaded even when ingestion failed, so a
+      # partially warmed cache still benefits the next attempt. The run_id in
+      # the key makes every save a new entry; restore-keys pick up the newest.
+      - name: Save FastF1 cache
+        if: always() && hashFiles('backend/data/cache/fastf1/**') != ''
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: backend/data/cache/fastf1
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
 
       - name: Verify remote R2 manifest
         id: session
