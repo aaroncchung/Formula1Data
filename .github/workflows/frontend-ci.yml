@@ -39,11 +39,3 @@ jobs:
       - name: Build static export
         working-directory: frontend
         run: npm run build
-
-      - name: Upload static export
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-out
-          path: frontend/out
-          retention-days: 1
-

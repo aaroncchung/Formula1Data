@@ -34,6 +34,11 @@ on:
         required: false
         type: boolean
         default: false
+      upload_artifact:
+        description: "Upload frontend/public/data as a run artifact (~1 GB, off by default)"
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "23 9 * * 1"
 
@@ -92,7 +97,11 @@ jobs:
         run: git status --short -- frontend/public/data
 
       - name: Upload generated static data
-        if: github.event_name == 'workflow_dispatch'
+        # frontend/public/data is ~1 GB, which on its own can exhaust the
+        # Actions storage quota in a single run. Opt in when the artifact is
+        # actually needed; commit_artifacts is the usual delivery path.
+        if: github.event_name == 'workflow_dispatch' && inputs.upload_artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: static-data
