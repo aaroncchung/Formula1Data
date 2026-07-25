@@ -218,12 +218,16 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
-                # Skip the retry backoff so the test does not sleep.
-                with patch("pipeline.local_queue_worker.time.sleep"):
-                    with self.assertRaises(RuntimeError):
-                        sync_artifacts_to_r2(
-                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
-                        )
+                # Skip the retry backoff so the test does not sleep. The pacer is
+                # stubbed too: patching time.sleep alone would let it reserve
+                # slots without ever waiting, mutating shared module state and
+                # making this test order-dependent.
+                with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+                    with patch("pipeline.local_queue_worker.time.sleep"):
+                        with self.assertRaises(RuntimeError):
+                            sync_artifacts_to_r2(
+                                output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                            )
 
             for marker in self.MARKER_KEYS:
                 self.assertNotIn(marker, attempted)
@@ -263,13 +267,47 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [60])
 
-    def test_request_pacer_spaces_out_starts(self):
-        pacer = local_queue_worker._RequestPacer(per_second=50)
-        started = time.monotonic()
-        for _ in range(5):
+    def test_request_pacer_spaces_starts_across_threads(self):
+        """The point of the pacer is cross-thread spacing, so assert that.
+
+        A sequential-only assertion would still pass an implementation that
+        dropped its lock or let concurrent callers cluster into one slot.
+        """
+        import threading
+
+        per_second = 100.0
+        interval = 1.0 / per_second
+        calls = 20
+        pacer = local_queue_worker._RequestPacer(per_second=per_second)
+
+        starts = []
+        lock = threading.Lock()
+
+        def worker():
             pacer.acquire()
-        # Four intervals of 20ms between five starts.
-        self.assertGreaterEqual(time.monotonic() - started, 0.06)
+            with lock:
+                starts.append(time.monotonic())
+
+        threads = [threading.Thread(target=worker) for _ in range(calls)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(len(starts), calls)
+        starts.sort()
+        gaps = [later - earlier for earlier, later in zip(starts, starts[1:])]
+        # Generous factors: this asserts starts are spaced at all, without
+        # becoming flaky when a loaded CI runner deschedules a thread.
+        self.assertGreaterEqual(min(gaps), interval * 0.5)
+        self.assertGreaterEqual(starts[-1] - starts[0], interval * (calls - 1) * 0.8)
+
+    def test_request_pacer_is_disabled_when_rate_is_zero(self):
+        pacer = local_queue_worker._RequestPacer(per_second=0)
+        started = time.monotonic()
+        for _ in range(50):
+            pacer.acquire()
+        self.assertLess(time.monotonic() - started, 0.5)
 
     def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
         existing = {
