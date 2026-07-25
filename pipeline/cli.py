@@ -100,6 +100,12 @@ def main(argv: list[str] | None = None) -> None:
     process_queue.add_argument("--r2-prefix", default="", help="Optional object key prefix for R2 uploads.")
     process_queue.add_argument("--callback-url", help="Worker base URL or full job status callback URL.")
     process_queue.add_argument("--callback-token", help="Bearer token for the Worker callback.")
+    process_queue.add_argument(
+        "--defer-terminal-callbacks",
+        action="store_true",
+        help="Leave success/failure reporting to the caller after additional verification.",
+    )
+    process_queue.add_argument("--success-payload-file", type=Path)
     process_queue.add_argument("--force", action="store_true", help="Force FastF1 reingestion.")
     process_queue.set_defaults(func=process_queue_messages)
 
@@ -190,6 +196,8 @@ def process_queue_messages(args: argparse.Namespace) -> None:
             callback_url=args.callback_url,
             callback_token=args.callback_token,
             force=args.force,
+            defer_terminal_callbacks=args.defer_terminal_callbacks,
+            success_payload_file=args.success_payload_file,
         )
         print(f"Processed {result['job_id']} for {result['session_id']} ({result['artifacts']} artifacts).")
 
