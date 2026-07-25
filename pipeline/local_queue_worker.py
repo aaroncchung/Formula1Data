@@ -11,6 +11,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -314,21 +315,35 @@ def sync_artifacts_to_r2(
     session_dir = output_dir / "sessions" / session_id
     session_files = sorted(session_dir.rglob("*.json")) if session_dir.exists() else []
     manifest = session_dir / "manifest.json"
-    candidates = [path for path in session_files if path != manifest]
-    if manifest.is_file():
-        candidates.append(manifest)
+
+    # The manifest and the season/catalog indexes are commit markers: readers
+    # treat them as the signal that a session is complete, so they must land
+    # only after every file they reference. Bodies upload concurrently; the
+    # markers stay strictly ordered and serial behind them.
+    bodies = [path for path in session_files if path != manifest and path.is_file()]
+    markers = [manifest] if manifest.is_file() else []
     if include_indexes:
-        candidates.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
-    for path in candidates:
-        if not path.is_file():
-            continue
+        markers.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
+
+    def object_key(path: Path) -> str:
         key = path.relative_to(output_dir).as_posix()
-        if normalized_prefix:
-            key = f"{normalized_prefix}/{key}"
-        subprocess.run(
-            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
-            check=True,
-        )
+        return f"{normalized_prefix}/{key}" if normalized_prefix else key
+
+    # One wrangler invocation costs a full Node process start, so a session's
+    # ~1k telemetry files took ~28 minutes serially. Overlap them instead.
+    max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "8")))
+    if bodies:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [
+                pool.submit(upload_r2_object, path, bucket, object_key(path)) for path in bodies
+            ]
+            for future in as_completed(futures):
+                # Re-raise the first failure; the context manager drains the rest.
+                future.result()
+
+    for path in markers:
+        if path.is_file():
+            upload_r2_object(path, bucket, object_key(path))
 
 
 def publish_artifacts(
@@ -388,10 +403,17 @@ def copy_file_atomic(source: Path, destination: Path) -> None:
 
 
 def upload_r2_object(path: Path, bucket: str, key: str) -> None:
-    subprocess.run(
+    # Output is captured rather than inherited: uploads now run concurrently, so
+    # wrangler's per-invocation banner would interleave into unreadable noise,
+    # and a session emits roughly a thousand of them. Surface it only on failure.
+    result = subprocess.run(
         ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
-        check=True,
+        capture_output=True,
+        text=True,
     )
+    if result.returncode != 0:
+        detail = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        raise RuntimeError(f"wrangler failed to upload {key} (exit {result.returncode}):\n{detail}")
 
 
 def hydrate_r2_indexes(destination: Path, bucket: str, prefix: str, year: int) -> None:

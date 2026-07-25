@@ -211,6 +211,61 @@ jobs:
           python -m json.tool manifest-check.json > /dev/null
           python -c "import json; expected=json.load(open('message.json'))['session_id']; actual=json.load(open('manifest-check.json'))['session_id']; assert actual == expected, f'manifest session_id {actual} does not match {expected}'"
 
+      - name: Summarize callback artifact records
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -f success-callback.json ]; then
+            echo "No success-callback.json; ingestion did not reach the success payload."
+            exit 0
+          fi
+
+          # Mirror the Worker's validateArtifactRecord checks so a rejected
+          # record is named here, in the log, instead of surfacing only as an
+          # opaque "artifacts[N] has an invalid kind or path" 400. This prints
+          # to the log deliberately: logs are not subject to the Actions
+          # artifact storage quota, so it works even when uploads are blocked.
+          python - <<'PY'
+          import json
+          import re
+
+          KIND_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
+          CHECKSUM_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
+
+          with open("success-callback.json", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          records = payload.get("artifacts") or []
+          print(f"{len(records)} artifact record(s) in the success payload")
+
+          rejected = 0
+          for index, record in enumerate(records):
+              kind = record.get("kind")
+              path = record.get("path")
+              checksum = record.get("checksum")
+              size_bytes = record.get("size_bytes")
+
+              problems = []
+              if not kind:
+                  problems.append("missing kind")
+              elif not KIND_PATTERN.match(str(kind)):
+                  problems.append("kind fails the Worker pattern")
+              if not path:
+                  problems.append("missing path")
+              if not isinstance(size_bytes, int) or isinstance(size_bytes, bool) or size_bytes < 0:
+                  problems.append("size_bytes must be a non-negative integer")
+              if not checksum or not CHECKSUM_PATTERN.match(str(checksum)):
+                  problems.append("checksum must be a lowercase sha256")
+
+              suffix = ""
+              if problems:
+                  rejected += 1
+                  suffix = "  <-- REJECTED: " + ", ".join(problems)
+              print(f"  [{index}] kind={kind!r} path={path!r}{suffix}")
+
+          print(f"{rejected} record(s) the Worker would reject.")
+          PY
+
       - name: Report ingestion success
         env:
           JOB_ID: ${{ steps.message.outputs.job_id }}
