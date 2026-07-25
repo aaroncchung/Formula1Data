@@ -91,6 +91,25 @@ jobs:
           python -m json.tool message.json > /dev/null
           echo "job_id=$(python -c \"import json; print(json.load(open('message.json'))['job_id'])\")" >> "$GITHUB_OUTPUT"
 
+          # Project the queue message down to known-safe fields for the
+          # diagnostics artifact. workflow_dispatch accepts an arbitrary JSON
+          # blob, so uploading it verbatim would archive anything a caller
+          # happened to paste in. Extra keys are recorded by name only.
+          python - <<'PY'
+          import json
+
+          known = ("job_id", "session_id", "year", "round", "session", "artifact_base_path")
+
+          with open("message.json", encoding="utf-8") as handle:
+              message = json.load(handle)
+
+          summary = {field: message[field] for field in known if field in message}
+          summary["_redacted_extra_fields"] = sorted(set(message) - set(known))
+
+          with open("message-summary.json", "w", encoding="utf-8") as handle:
+              json.dump(summary, handle, indent=2, sort_keys=True)
+          PY
+
       - name: Validate queue message
         run: |
           python - <<'PY'
@@ -190,11 +209,16 @@ jobs:
 
       - name: Upload ingestion diagnostics
         if: always()
+        # Never let a diagnostics upload decide the fate of the run. The
+        # session data is already durable in R2 by this point, and a blocked
+        # or throttled upload must not turn a successful ingestion red and
+        # trigger the failure callback below.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ingestion-diagnostics
           path: |
-            message.json
+            message-summary.json
             manifest-check.json
             success-callback.json
           if-no-files-found: ignore
