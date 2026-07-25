@@ -220,17 +220,23 @@ jobs:
             exit 0
           fi
 
-          # Mirror the Worker's validateArtifactRecord checks so a rejected
+          # Approximate the Worker's validateArtifactRecord checks so a rejected
           # record is named here, in the log, instead of surfacing only as an
           # opaque "artifacts[N] has an invalid kind or path" 400. This prints
           # to the log deliberately: logs are not subject to the Actions
           # artifact storage quota, so it works even when uploads are blocked.
+          #
+          # This is a diagnostic aid, not a reimplementation. The Worker is the
+          # authority and applies further checks (metadata shape, generated_at,
+          # session ownership), so "no problems found" here does not guarantee
+          # the Worker will accept the payload -- the printed records do.
           python - <<'PY'
           import json
           import re
 
           KIND_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
           CHECKSUM_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
+          MAX_SAFE_INTEGER = 2**53 - 1
 
           with open("success-callback.json", encoding="utf-8") as handle:
               payload = json.load(handle)
@@ -238,7 +244,7 @@ jobs:
           records = payload.get("artifacts") or []
           print(f"{len(records)} artifact record(s) in the success payload")
 
-          rejected = 0
+          flagged = 0
           for index, record in enumerate(records):
               kind = record.get("kind")
               path = record.get("path")
@@ -246,24 +252,40 @@ jobs:
               size_bytes = record.get("size_bytes")
 
               problems = []
-              if not kind:
-                  problems.append("missing kind")
-              elif not KIND_PATTERN.match(str(kind)):
+              # The Worker coerces via optionalString, which rejects non-strings
+              # outright rather than stringifying them.
+              if not isinstance(kind, str) or not kind:
+                  problems.append("kind must be a non-empty string")
+              elif len(kind) > 64:
+                  problems.append("kind exceeds 64 characters")
+              elif not KIND_PATTERN.match(kind):
                   problems.append("kind fails the Worker pattern")
-              if not path:
-                  problems.append("missing path")
-              if not isinstance(size_bytes, int) or isinstance(size_bytes, bool) or size_bytes < 0:
-                  problems.append("size_bytes must be a non-negative integer")
-              if not checksum or not CHECKSUM_PATTERN.match(str(checksum)):
+
+              if not isinstance(path, str) or not path:
+                  problems.append("path must be a non-empty string")
+              elif len(path) > 1024:
+                  problems.append("path exceeds 1024 characters")
+              elif path.startswith("/") or ".." in path.split("/"):
+                  problems.append("path is not a safe relative path")
+
+              if (
+                  not isinstance(size_bytes, int)
+                  or isinstance(size_bytes, bool)
+                  or size_bytes < 0
+                  or size_bytes > MAX_SAFE_INTEGER
+              ):
+                  problems.append("size_bytes must be a safe non-negative integer")
+
+              if not isinstance(checksum, str) or not CHECKSUM_PATTERN.match(checksum):
                   problems.append("checksum must be a lowercase sha256")
 
               suffix = ""
               if problems:
-                  rejected += 1
-                  suffix = "  <-- REJECTED: " + ", ".join(problems)
+                  flagged += 1
+                  suffix = "  <-- PROBLEM: " + ", ".join(problems)
               print(f"  [{index}] kind={kind!r} path={path!r}{suffix}")
 
-          print(f"{rejected} record(s) the Worker would reject.")
+          print(f"{flagged} record(s) failed these checks (the Worker may reject others).")
           PY
 
       - name: Report ingestion success

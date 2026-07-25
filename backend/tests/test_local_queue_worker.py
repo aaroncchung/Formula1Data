@@ -84,6 +84,11 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 path.write_text("{}", encoding="utf-8")
 
             with patch("pipeline.local_queue_worker.subprocess.run") as run:
+                # upload_r2_object inspects returncode, so the mock has to look
+                # like a completed process rather than a bare MagicMock.
+                run.return_value.returncode = 0
+                run.return_value.stdout = ""
+                run.return_value.stderr = ""
                 sync_artifacts_to_r2(
                     output_dir,
                     "test-bucket",
@@ -113,6 +118,78 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
             ordered_keys = [call.args[0][4] for call in run.call_args_list]
             self.assertEqual(ordered_keys[-2:], ["test-bucket/prod/data/seasons/2025.json", "test-bucket/prod/data/catalog.json"])
+
+    def _build_session_tree(self, output_dir, body_count):
+        session_dir = output_dir / "sessions" / "2025-09-r"
+        (session_dir / "telemetry").mkdir(parents=True, exist_ok=True)
+        for index in range(body_count):
+            (session_dir / "telemetry" / f"ver-lap-{index}.json").write_text("{}", encoding="utf-8")
+        (session_dir / "manifest.json").write_text("{}", encoding="utf-8")
+        (output_dir / "seasons").mkdir(parents=True, exist_ok=True)
+        (output_dir / "seasons" / "2025.json").write_text("{}", encoding="utf-8")
+        (output_dir / "catalog.json").write_text("{}", encoding="utf-8")
+
+    def test_r2_sync_uploads_every_body_before_any_commit_marker(self):
+        """Bodies upload concurrently, but the commit markers must land last."""
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            self._build_session_tree(output_dir, body_count=25)
+
+            order = []
+
+            def fake_run(args, **kwargs):
+                order.append(args[4])
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+                sync_artifacts_to_r2(
+                    output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                )
+
+            markers = [
+                "test-bucket/sessions/2025-09-r/manifest.json",
+                "test-bucket/seasons/2025.json",
+                "test-bucket/catalog.json",
+            ]
+            self.assertEqual(order[-3:], markers)
+            body_count = len(order) - len(markers)
+            self.assertEqual(body_count, 25)
+            for marker in markers:
+                self.assertGreaterEqual(order.index(marker), body_count)
+
+    def test_r2_sync_skips_commit_markers_when_a_body_upload_fails(self):
+        """A failed body must never be followed by a marker claiming completeness."""
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory)
+            self._build_session_tree(output_dir, body_count=10)
+
+            attempted = []
+
+            def fake_run(args, **kwargs):
+                key = args[4]
+                attempted.append(key)
+                if key.endswith("ver-lap-3.json"):
+                    return SimpleNamespace(returncode=1, stdout="", stderr="boom")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+                # Skip the retry backoff so the test does not sleep.
+                with patch("pipeline.local_queue_worker.time.sleep"):
+                    with self.assertRaises(RuntimeError):
+                        sync_artifacts_to_r2(
+                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                        )
+
+            for marker in (
+                "test-bucket/sessions/2025-09-r/manifest.json",
+                "test-bucket/seasons/2025.json",
+                "test-bucket/catalog.json",
+            ):
+                self.assertNotIn(marker, attempted)
 
     def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
         existing = {

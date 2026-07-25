@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -331,15 +332,30 @@ def sync_artifacts_to_r2(
 
     # One wrangler invocation costs a full Node process start, so a session's
     # ~1k telemetry files took ~28 minutes serially. Overlap them instead.
-    max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "8")))
+    #
+    # The default is deliberately conservative. R2's REST API is rate limited
+    # per account, and a session issues on the order of a thousand PUTs; at
+    # roughly a second per upload, four in flight stays well inside the budget
+    # while still cutting the wall clock by about 4x.
+    max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "4")))
     if bodies:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = [
                 pool.submit(upload_r2_object, path, bucket, object_key(path)) for path in bodies
             ]
-            for future in as_completed(futures):
-                # Re-raise the first failure; the context manager drains the rest.
-                future.result()
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except Exception:
+                # Bodies are overwritten in place over the live session, so a
+                # failure part-way leaves the published manifest pointing at a
+                # mix of old and new files. Stop issuing further overwrites
+                # immediately rather than draining the queue, which keeps that
+                # window as small as this layout allows. Publishing to
+                # immutable per-generation keys is the real fix.
+                for pending in futures:
+                    pending.cancel()
+                raise
 
     for path in markers:
         if path.is_file():
@@ -406,14 +422,29 @@ def upload_r2_object(path: Path, bucket: str, key: str) -> None:
     # Output is captured rather than inherited: uploads now run concurrently, so
     # wrangler's per-invocation banner would interleave into unreadable noise,
     # and a session emits roughly a thousand of them. Surface it only on failure.
-    result = subprocess.run(
-        ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        detail = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
-        raise RuntimeError(f"wrangler failed to upload {key} (exit {result.returncode}):\n{detail}")
+    #
+    # Retried with backoff because R2's REST API is rate limited per account and
+    # a session issues on the order of a thousand PUTs. A throttled upload
+    # should wait and retry rather than fail the whole ingestion, which would
+    # otherwise leave the session half-overwritten.
+    attempts = max(1, int(os.getenv("R2_UPLOAD_ATTEMPTS", "3")))
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(
+            ["wrangler", "r2", "object", "put", f"{bucket}/{key}", "--file", str(path), "--remote"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+        # str() rather than a bare join: callers patch subprocess.run in tests,
+        # and a non-string stdout should not turn a failure into a TypeError.
+        detail = "\n".join(str(part) for part in (result.stdout, result.stderr) if part).strip()
+        if attempt == attempts:
+            raise RuntimeError(
+                f"wrangler failed to upload {key} after {attempts} attempt(s) "
+                f"(exit {result.returncode}):\n{detail}"
+            )
+        time.sleep(min(2**attempt, 30))
 
 
 def hydrate_r2_indexes(destination: Path, bucket: str, prefix: str, year: int) -> None:
