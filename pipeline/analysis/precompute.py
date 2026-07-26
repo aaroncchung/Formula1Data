@@ -27,6 +27,7 @@ from backend.app.analysis.common import (
     trimmed_mean,
 )
 from backend.app.analysis.ideal_laps import calculate_ideal_laps
+from backend.app.analysis.lap_times import lap_time_series
 from backend.app.analysis.position_replay import (
     MAX_REPLAY_FRAMES,
     REPLAY_INTERVAL_MS,
@@ -50,7 +51,6 @@ __all__ = [
     "calculate_strategy",
     "calculate_teammate_comparison",
     "calculate_track_dominance",
-    "calculate_tyre_degradation",
     "clean_laps",
     "grouped",
     "lap_statistics",
@@ -90,35 +90,3 @@ def precompute_session_analysis(session_id: str, bundle: dict[str, Any]) -> dict
 
 def precompute_position_replay(session_id: str, bundle: dict[str, Any]) -> list[dict[str, Any]]:
     return build_position_replay(session_id, bundle.get("telemetry", []))
-
-
-def lap_time_series(laps: list[dict[str, Any]], drivers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_driver: dict[str, dict[str, Any]] = {}
-    driver_colors = {
-        driver["code"]: driver.get("team", {}).get("color")
-        for driver in drivers
-        if driver.get("code")
-    }
-    for lap in laps:
-        if lap.get("lap_time_ms") is None:
-            continue
-        row = by_driver.setdefault(
-            lap["driver_code"],
-            {"x": [], "y": [], "color": driver_colors.get(lap["driver_code"])},
-        )
-        row["x"].append(lap["lap_number"])
-        row["y"].append(lap["lap_time_ms"])
-    return [
-        {
-            "name": driver,
-            "x": row["x"],
-            "y": row["y"],
-            "color": row["color"],
-            "metadata": {},
-        }
-        for driver, row in sorted(by_driver.items())
-    ]
-
-
-def calculate_tyre_degradation(session_id: str, laps: list[dict[str, Any]]) -> dict[str, Any]:
-    return calculate_fuel_adjusted_tyre_degradation(session_id, {}, laps)

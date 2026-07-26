@@ -14,6 +14,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 import app.analysis.advanced as backend_advanced
 import app.analysis.common as backend_common
 import app.analysis.ideal_laps as backend_ideal_laps
+import app.analysis.lap_times as backend_lap_times
 import app.analysis.position_replay as backend_position_replay
 import app.analysis.race_pace as backend_race_pace
 import app.analysis.strategy as backend_strategy
@@ -35,7 +36,7 @@ from pipeline.analysis.precompute import (
 )
 
 
-# The ten functions that F-12 found duplicated between ``backend/app/analysis``
+# The functions F-12 found duplicated between ``backend/app/analysis``
 # and ``pipeline/analysis/precompute.py``. Each entry is
 # (name, backend module, pipeline module).
 DEDUPLICATED_ANALYSIS_FUNCTIONS = [
@@ -49,6 +50,8 @@ DEDUPLICATED_ANALYSIS_FUNCTIONS = [
     ("calculate_ideal_laps", backend_ideal_laps, pipeline_precompute),
     ("calculate_teammate_comparison", backend_teammate_comparison, pipeline_precompute),
     ("build_position_replay", backend_position_replay, pipeline_precompute),
+    # F-30: an eleventh pair, missed by the F-12 table.
+    ("lap_time_series", backend_lap_times, pipeline_precompute),
 ]
 
 

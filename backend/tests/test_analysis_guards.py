@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.analysis.advanced import calculate_pace_prediction
+from app.analysis.lap_times import lap_time_series
 from app.analysis.strategy import calculate_strategy
 from app.analysis.telemetry_compare import compare_telemetry
 from pipeline.analysis.precompute import calculate_strategy as calculate_pipeline_strategy
@@ -118,6 +119,33 @@ def _telemetry(driver: str, lap_number: int, sample_count: int) -> list[dict[str
         }
         for index in range(sample_count)
     ]
+
+
+class LapTimeSeriesTests(unittest.TestCase):
+    """F-30: the API route inlined this pivot without the driver-code guard."""
+
+    def test_a_driver_record_without_a_code_is_skipped_not_fatal(self):
+        laps = [{"driver_code": "VER", "lap_number": 1, "lap_time_ms": 90_000}]
+        drivers = [
+            {"code": "VER", "team": {"color": "#001"}},
+            {"full_name": "Reserve driver, no code"},
+        ]
+
+        # The route's copy did `driver["code"]` unguarded, so this raised
+        # KeyError there while the pipeline silently skipped the record.
+        series = lap_time_series(laps, drivers)
+
+        self.assertEqual([row["name"] for row in series], ["VER"])
+        self.assertEqual(series[0]["color"], "#001")
+
+    def test_series_carry_the_metadata_key_the_chart_model_expects(self):
+        series = lap_time_series(
+            [{"driver_code": "VER", "lap_number": 1, "lap_time_ms": 90_000}],
+            [{"code": "VER", "team": {"color": "#001"}}],
+        )
+        self.assertEqual(
+            series[0], {"name": "VER", "x": [1], "y": [90_000], "color": "#001", "metadata": {}}
+        )
 
 
 if __name__ == "__main__":
