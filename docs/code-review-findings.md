@@ -109,11 +109,15 @@ finding's own **Status** row records whether it is still open.
 | P2 — Worker HTTP | F-05, F-07, F-17 | **Resolved** |
 | P3 — pipeline and backend | F-03, F-06, F-10, F-18, F-19, F-20, F-24, F-26, F-28 | **Resolved** |
 | P4 — frontend UI | F-04, F-09, F-11, F-25, F-27 | **Resolved** |
-| — | F-02, F-12 (both need a design decision) | Open |
-| — | **F-29, introduced by the F-03 fix** | **Open — read before deploying** |
+| F-29 | fail-loud catalog read + download retry | **Resolved** |
+| F-02 | guarded refresh with rollback | **Resolved** |
+| F-12 | analysis-layer deduplication | **Resolved** |
+| — | **F-30, F-31** (found while fixing F-12) | Open |
 
-After batches 1 and P1-P4 the Python suite is 63/63 and the Worker suite
-55/55, both run by
+All 29 findings from this review are resolved. Two new ones were opened during
+the work and are recorded below.
+
+The Python suite is 73/73 and the Worker suite 55/55, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
 
@@ -253,7 +257,13 @@ D1 state distinguishes "never started" from "started and hung".
 | **Category** | Data integrity |
 | **Severity** | High |
 | **Confidence** | High |
-| **Status** | Confirmed (by code inspection and read-path audit) |
+| **Status** | **Resolved** |
+
+**Resolution** A refresh now takes a local backup of the live generation before overwriting any body, and restores it if a body upload exhausts its retries. The guard lives inside `sync_artifacts_to_r2`, so the fresh-ingestion and reuse paths both get it unchanged; an existing generation is detected by probing for the remote manifest, which is reliable now that `download_r2_object` retries (F-29). A first publication pays only the probe. The upload error is held rather than propagated so the rollback runs after the executor shuts down -- restoring while a straggler upload was still in flight could re-corrupt the key it had just restored. A failed restore raises naming the session and stating it may be inconsistent.
+
+Immutable generation-prefixed keys were considered and rejected: the frontend addresses artifacts by convention (`static-api-core.ts` builds `sessions/<id>/summary.json` from hardcoded filenames, and telemetry paths are relative to the session directory), so that scheme would force every read through the manifest. The key layout is unchanged and neither the frontend nor the Worker was touched. Cost: a refresh roughly doubles its R2 operations; a first publication pays 3 extra GETs.
+
+**Residual, accepted:** the guard covers body uploads only. If every body lands and the manifest PUT then exhausts its retries, the session is a complete new generation described by the old manifest. `verify_remote_manifest` fails, the job is marked failed, and a re-run repairs it -- stale metadata rather than mixed data. Pulling the manifest inside the guarded region would make a rollback re-PUT a marker key, contradicting the existing invariant that markers never follow a failed body upload.
 
 **Locations**
 
@@ -909,7 +919,17 @@ assert points split across both constructors in the correct proportion.
 | **Category** | Maintainability |
 | **Severity** | Medium |
 | **Confidence** | High |
-| **Status** | Confirmed |
+| **Status** | **Resolved** |
+
+**Resolution** There is now one analysis layer. `pipeline/analysis/precompute.py` drops from 468 to 118 lines and implements nothing -- it names the artifacts and routes each to the shared function in `backend/app/analysis/`, keeping only its two genuinely pipeline-only pieces. The third lap-filter copy, `advanced._clean_laps`, is deleted in favour of `common.clean_laps`. Module and function names are preserved.
+
+The Pydantic/dict split was resolved at the route boundary as recommended: shared functions return dicts, and `analysis.py` and `telemetry.py` wrap them (`RacePaceResult(**...)`, `[PositionReplayFrame(**f) ...]`). `response_model` declarations are unchanged and pydantic is verified absent from the pipeline import graph.
+
+**The import root was deliberately not standardised.** Both directions break an invariant: `backend.app.*` breaks the container (`WORKDIR /app`, no `backend` parent), and `app.*` would require a `sys.path` mutation as an import side effect in `pipeline/__init__.py`. The enabling property turned out to be root-agnosticism rather than a single root name -- sibling imports inside the shared package are now relative and no shared module reaches into `app.models`. Both entry points verified: `app.main` imports with only `backend/` on the path and no `backend.*` leakage; `python -m pipeline` still works from the repo root. **The dual-module identity hazard is untouched and still latent**, and this refactor was audited not to spring it: no custom exception class crosses the boundary.
+
+`test_pipeline_parity.py` was strengthened, not retired -- it now asserts all ten pairs resolve to one source file, that `advanced` uses the shared filter, and that no shared module imports outside its package. Identity comparison is unavailable because the package is genuinely loaded twice under two module names.
+
+Behaviour was checked rather than assumed: generating the sample artifacts from pre- and post-refactor code gives byte-identical output for all ten analysis artifacts and `position-replay`, differing only in `generated_at` and the one checksum derived from it.
 
 **Locations**
 
@@ -1522,7 +1542,9 @@ defect. Prefer `if best is not None`.
 | **Category** | Data integrity |
 | **Severity** | High |
 | **Confidence** | High |
-| **Status** | Confirmed — **introduced by this review's own F-03 fix** |
+| **Status** | **Resolved** |
+
+**Resolution** Both mitigations landed. The catalog read is fail-loud by default again, with bootstrap available only under an explicit `--allow-missing-catalog` flag threaded from `pipeline/cli.py` -- a flag rather than an env var, so it cannot be inherited by every later run in the same shell or workflow. `.github/workflows/process-ingestion-job.yml` deliberately does not pass it, so the CI path stays fail-loud. Separately, `download_r2_object` now retries on the same conventions as `upload_r2_object` (`R2_DOWNLOAD_ATTEMPTS`, shared backoff, `_REQUEST_PACER`), so a blip is no longer read as absence. F-03 remains fixed: bootstrap is possible and documented in both the README and the production ingestion guide, just no longer implicit.
 
 **Locations** `pipeline/local_queue_worker.py` — `hydrate_r2_indexes` (catalog
 now `required=False`) and `download_r2_object` (no retry).
@@ -1564,6 +1586,65 @@ stderr — the message is not a stable contract. Two options that are:
 **Suggested regression test** Patch `subprocess.run` so the catalog read fails
 while the bucket *does* contain a catalog, and assert the published catalog
 still contains the pre-existing sessions.
+
+---
+
+### F-30 — `lap_times` is an eleventh duplication the F-12 table missed
+
+| | |
+| --- | --- |
+| **Category** | Maintainability |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | Confirmed — found while resolving F-12 |
+
+**Locations** `backend/app/api/routes/analysis.py:32-48` inlines the same pivot
+as `pipeline/analysis/precompute.py::lap_time_series`.
+
+F-12's table listed ten duplicated functions; this is an eleventh, and it was
+not consolidated with the rest because the two are **not** a pure move. The
+route emits `ChartSeries` without the `metadata: {}` key the pipeline includes,
+and it reads `driver_colors` without the `if driver.get("code")` guard, so a
+driver record with no `code` raises there and is skipped in the pipeline.
+Consolidating means first deciding which behaviour is correct.
+
+**Recommended direction** Treat the guard as the correct behaviour, move the
+pivot into the shared analysis package alongside the other ten, and let the
+route wrap the result in `ChartSeries` at its boundary as `race_pace` and
+`position_replay` now do.
+
+**Effort** S.
+
+---
+
+### F-31 — Dead analysis helper retained
+
+| | |
+| --- | --- |
+| **Category** | Cleanup |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | Confirmed — found while resolving F-12 |
+
+**Location** `pipeline/analysis/precompute.py::calculate_tyre_degradation`.
+
+Nothing in the repository calls it — `precompute_session_analysis` calls
+`calculate_fuel_adjusted_tyre_degradation` directly. It was kept during F-12
+rather than deleted, because it is a public-looking symbol and removing it is a
+separate decision from deduplicating. A second, smaller instance was removed
+during F-12: `precompute.linear_fit`, unreferenced and a copy of
+`advanced._linear_fit`.
+
+Note `backend/app/analysis/tyre_degradation.py` is now stylistically
+inconsistent for the same reason — it is a Pydantic wrapper still inside the
+analysis package, while `race_pace` and `position_replay` moved their wrapping
+to the routes. It is documented as an exception in the package docstring.
+
+**Recommended direction** Delete the dead delegation and move the
+`tyre_degradation` wrapper to the route for consistency, or keep both and
+accept the documented exception.
+
+**Effort** S.
 
 ---
 
