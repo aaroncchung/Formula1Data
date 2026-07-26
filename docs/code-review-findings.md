@@ -105,9 +105,12 @@ finding's own **Status** row records whether it is still open.
 | Batch | Findings | State |
 | --- | --- | --- |
 | 1 — test foundation and CI | F-13, F-14, F-15, F-16 | **Resolved** |
-| — | the remaining 24 | Open |
+| P1 — CI and config | F-01, F-08, F-21, F-22, F-23 | **Resolved** |
+| P2 — Worker HTTP | F-05, F-07, F-17 | **Resolved** |
+| — | the remaining 16 | Open |
 
-After batch 1 the Python suite is 50/50 and the Worker suite 38/38, both run by
+After batches 1, P1 and P2 the Python suite is 50/50 and the Worker suite
+55/55, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
 
@@ -153,7 +156,9 @@ batches are therefore regression-checked by CI rather than by hand.
 | **Category** | CI/CD orchestration, job loss |
 | **Severity** | High |
 | **Confidence** | High |
-| **Status** | Confirmed |
+| **Status** | **Resolved (batch P1)** |
+
+**Resolution** Added `queue: max` to the `concurrency` block in `process-ingestion-job.yml`, alongside the existing `cancel-in-progress: false` (the two are compatible; `queue: max` with `cancel-in-progress: true` is a validation error). A comment records the documented 100-pending ceiling and that a full backfill can still exceed it. Separately, `dispatchGitHubWorkflow` in `worker/src/index.mjs` now reverts the job to `queued` with `started_at` cleared whenever the dispatch is unconfirmed -- both a thrown fetch and a retryable status -- so D1 distinguishes "never started" from "started and hung" instead of waiting two hours for the stale reconciler to report a timeout that never happened. `schedule-ingestion.yml` was deliberately left alone: its group serialises an hourly cron whose evicted ticks are re-queued an hour later, so the eviction is cheap there.
 
 **Locations**
 
@@ -482,7 +487,9 @@ explicit `null`s, so omission becomes a compile error.
 | **Category** | Caching / data freshness |
 | **Severity** | Medium |
 | **Confidence** | High |
-| **Status** | Confirmed |
+| **Status** | **Resolved (batch P2)** |
+
+**Resolution** `frontend/src/lib/api.ts` now uses `cache: "default"`, so the Worker's existing `cache-control` headers govern. Landed **after** F-07 -- fixing it first would have restored conditional revalidation while the Worker still turned a fallback 304 into a 404.
 
 **Locations** `frontend/src/lib/api.ts:57-62`; contrast
 `worker/src/artifact-store.mjs:94-99`.
@@ -603,7 +610,9 @@ clearest evidence it is unintended.
 | **Category** | HTTP correctness |
 | **Severity** | Medium |
 | **Confidence** | High |
-| **Status** | Confirmed (reproduced) |
+| **Status** | **Resolved (batch P2)** |
+
+**Resolution** `artifact-store.mjs` gained a shared `isAcceptableFallback()` (`ok || 304 || 416`) used by both `head()` and `get()`, removing the asymmetry that caused this. `get()` forwards the upstream status and headers, passing a `null` body for null-body statuses so the `Response` constructor does not throw on a 304. 206 was already correct and is untouched. Verified with the review's original probe: 304 and 416 now return `Response 304` / `Response 416` where they previously returned `null`, while 404 and 500 still return `null`. 13 regression tests assert the full probe table across both methods.
 
 **Locations** `worker/src/artifact-store.mjs:49-63` (`get`); contrast
 `:21-29` (`head`).
@@ -657,7 +666,9 @@ therefore unaffected.
 | **Category** | CI/CD efficiency and correctness |
 | **Severity** | Medium |
 | **Confidence** | High (a, b) / Low (c) |
-| **Status** | Confirmed (a, b); Potential (c) |
+| **Status** | **Resolved (batch P1)** |
+
+**Resolution** `github.run_attempt` was added to the restore and save keys in both workflows, so a re-run no longer hits its own immutable entry from attempt 1 and can write an improved cache. Saves are now gated on a path-and-size fingerprint taken before ingestion and recompared afterwards, replacing the `hashFiles(...) != ''` guard that restored files alone satisfied -- an unchanged cache is no longer re-uploaded. (c), the warm/ingestion lineage fork, was left as-is: it is Potential-confidence and the shared lineage is currently intentional.
 
 **Locations**
 
@@ -1173,7 +1184,9 @@ session returns `action: "reused"`.
 | **Category** | Dead code |
 | **Severity** | Low |
 | **Confidence** | High |
-| **Status** | Confirmed (reproduced) |
+| **Status** | **Resolved (batch P2)** |
+
+**Resolution** `createMemoryRepository` now defaults to a fresh `createMemoryState()` per call rather than a module-level singleton. All three existing callers construct fresh state per repository, so a shared singleton would have leaked state between instances; making the parameter required would only have traded a `ReferenceError` for a later `TypeError`. `createMemoryState` is intentionally not exported. Three regression tests cover no-arg construction, instance independence, and explicit state.
 
 **Location** `worker/src/repository.mjs:279`.
 
@@ -1331,7 +1344,9 @@ malformed catalog entry takes down the whole hourly run.
 
 ### F-21 — `body.txt` is a committed debug artifact
 
-**Severity** Low · **Confirmed** · Location: repository root.
+**Severity** Low · **Resolved (batch P1)** · Location: repository root.
+
+**Resolution** `body.txt` removed.
 
 Contents are a Cloudflare `302 Found` HTML error page. Delete it.
 
@@ -1341,7 +1356,11 @@ Contents are a Cloudflare `302 Found` HTML error page. Delete it.
 
 ### F-22 — `frontend/.env.example` documents a variable that no longer exists
 
-**Severity** Low · **Confirmed** · Location: `frontend/.env.example:1`.
+**Severity** Low · **Resolved (batch P1)** · Location: `frontend/.env.example:1`.
+
+**Resolution** Rewritten to document `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` and
+`NEXT_PUBLIC_DYNAMIC_API_BASE_URL`, matching the root `.env.example` and the
+variables the code actually reads.
 
 It documents only `NEXT_PUBLIC_API_BASE_URL`, which appears nowhere in the
 source. The frontend reads `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` and
@@ -1355,7 +1374,11 @@ anyone configuring hybrid mode — the exact mode F-04 and F-07 depend on.
 
 ### F-23 — `npm start` runs the dev server
 
-**Severity** Low · **Confirmed** · Location: `frontend/package.json:8`.
+**Severity** Low · **Resolved (batch P1)** · Location: `frontend/package.json:8`.
+
+**Resolution** `start` is now `npx --yes serve out`, which serves the built
+static export instead of duplicating `dev`. `serve` is fetched on demand rather
+than declared as a devDependency.
 
 ```json
 "start": "next dev --hostname 0.0.0.0 --port 3000"
