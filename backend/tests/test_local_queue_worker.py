@@ -183,10 +183,10 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 if "telemetry" in key:
                     time.sleep(0.02)
                     with lock:
-                        body_finished.append(time.monotonic())
+                        body_finished.append(time.perf_counter())
                 else:
                     with lock:
-                        marker_started.append((time.monotonic(), key))
+                        marker_started.append((time.perf_counter(), key))
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
@@ -286,7 +286,7 @@ class LocalQueueWorkerTests(unittest.TestCase):
         def worker():
             pacer.acquire()
             with lock:
-                starts.append(time.monotonic())
+                starts.append(time.perf_counter())
 
         threads = [threading.Thread(target=worker) for _ in range(calls)]
         for thread in threads:
@@ -297,6 +297,12 @@ class LocalQueueWorkerTests(unittest.TestCase):
         self.assertEqual(len(starts), calls)
         starts.sort()
         gaps = [later - earlier for earlier, later in zip(starts, starts[1:])]
+        # perf_counter, not monotonic: this asserts a 10ms spacing, and
+        # time.monotonic() is GetTickCount64() on Windows with a 15.625ms
+        # resolution -- coarser than the interval being measured, so
+        # concurrent starts read as identical and min(gaps) is 0.0.
+        # perf_counter is QueryPerformanceCounter there (~100ns).
+        #
         # Generous factors: this asserts starts are spaced at all, without
         # becoming flaky when a loaded CI runner deschedules a thread.
         self.assertGreaterEqual(min(gaps), interval * 0.5)
@@ -304,10 +310,10 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
     def test_request_pacer_is_disabled_when_rate_is_zero(self):
         pacer = local_queue_worker._RequestPacer(per_second=0)
-        started = time.monotonic()
+        started = time.perf_counter()
         for _ in range(50):
             pacer.acquire()
-        self.assertLess(time.monotonic() - started, 0.5)
+        self.assertLess(time.perf_counter() - started, 0.5)
 
     def test_catalog_merge_preserves_existing_sessions_and_recomputes_totals(self):
         existing = {

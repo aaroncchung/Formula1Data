@@ -148,6 +148,27 @@ npm run build
 
 The Cloudflare Pages output directory is `frontend/out`.
 
+### Tests
+
+Two suites, both run by `tests.yml` in CI. Run them from the repo root:
+
+```powershell
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests -q
+```
+
+```powershell
+node --test "worker/tests/*.test.mjs"
+```
+
+The Python suite covers the pipeline, the ingestion normalizer, and the local
+queue worker; `backend/tests/conftest.py` puts the repo root and `backend/` on
+`sys.path`, so individual files can be run on their own. The Worker suite is
+plain `node:test` with no dependencies to install. `repository-d1.test.mjs`
+exercises the real D1 SQL against `node:sqlite` with `migrations/` applied, and
+skips itself on Node versions where that module is still flagged (Node 22 needs
+`--experimental-sqlite`; Node 24 does not).
+
 ## Pipeline Commands
 
 Offline sample artifacts:
@@ -421,6 +442,7 @@ Deployment options:
 
 ## GitHub Actions
 
+- `tests.yml`: runs the Python suite (`pytest backend/tests`) and the Cloudflare Worker suite (`node --test`) on every pull request and push to `main`.
 - `frontend-ci.yml`: generates sample artifacts, runs frontend lint, builds the static export, and uploads `frontend/out`.
 - `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
 - `cloudflare-pages.yml`: manual static export deployment to Cloudflare Pages via Wrangler.

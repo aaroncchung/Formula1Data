@@ -1,0 +1,62 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (pipeline + backend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          # Both files: requirements-dev.txt only adds pytest on top of
+          # `-r requirements.txt`, so a pin change in the latter must
+          # invalidate the cache too.
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+
+      # Run from the repo root: backend/pyproject.toml supplies the pytest
+      # config, and backend/tests/conftest.py puts both the repo root and
+      # backend/ on sys.path so `pipeline` and `app` both resolve.
+      - name: Run test suite
+        run: python -m pytest backend/tests -q
+
+  worker:
+    name: Cloudflare Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 24: repository-d1.test.mjs uses node:sqlite, which still needs
+      # --experimental-sqlite on Node 22. The test skips itself rather than
+      # failing if the module is unavailable, so a downgrade degrades coverage
+      # silently -- pin the version that keeps it running.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # worker/ has no dependencies and no package.json; the suite is plain
+      # node:test against the source modules.
+      - name: Run test suite
+        run: node --test "worker/tests/*.test.mjs"
