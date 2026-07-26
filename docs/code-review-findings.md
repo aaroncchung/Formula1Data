@@ -1,102 +1,495 @@
 # Code review findings
 
-Full-codebase review performed 2026-07-25 against branch `fix/persist-fastf1-cache`
-(HEAD `fc5203e`). Scope: `worker/`, `pipeline/`, `backend/`, `frontend/`,
-`.github/workflows/`, `migrations/`, and root configuration.
+## 1. Review metadata
 
-Test suites were run locally at review time:
+| Item | Value |
+| --- | --- |
+| Repository | `Ntrxi/Formula1Data` |
+| Branch | `fix/persist-fastf1-cache` |
+| Commit reviewed | `97507c7` |
+| Application code equivalent to | `fc5203e` — the only diff is `docs/code-review-findings.md` itself (`git diff --stat fc5203e..HEAD` = 1 file, +400) |
+| Review date | 2026-07-25 |
+| Supersedes | The previous revision of this file (findings H1–H4, M1–M8, L1–L13) |
 
-| Suite | Command | Result |
+### Scope
+
+`worker/`, `pipeline/`, `backend/`, `frontend/`, `.github/workflows/`,
+`migrations/`, root configuration and documentation.
+
+### Environment
+
+| Item | Value |
+| --- | --- |
+| OS | Windows 11 Pro 10.0.26200 |
+| Node | v24.18.0 |
+| npm | 11.16.0 |
+| Interpreter A ("project venv") | `backend/.venv` — Python 3.12.13, with the pinned set: pandas 2.2.3, numpy 2.2.1, fastf1 3.8.3, fastapi 0.115.6, pydantic 2.10.4 |
+| Interpreter B ("system") | Python 3.14.6, pandas 3.0.5 (not the pinned version; used only for cross-checking) |
+| pytest | 9.1.1 (installed into both for this review; not a project dependency) |
+| actionlint | **Not available on this machine — workflow linting was not performed** |
+
+`backend/.venv` matches `backend/requirements.txt` exactly and is treated as the
+authoritative environment for Python results below.
+
+### Commands run and results
+
+| # | Command | Working dir | Result |
+| --- | --- | --- | --- |
+| 1 | `node --test "worker/tests/*.test.mjs"` | repo root | **31 passed, 0 failed, 0 skipped** |
+| 2 | `backend/.venv/Scripts/python.exe -m pytest backend/tests -q` | repo root | **48 passed, 2 failed** — see F-15 |
+| 3 | `python -m pytest backend/tests -q` (system 3.14 / pandas 3.0.5) | repo root | 50 passed |
+| 4 | `pytest.exe backend/tests -q` (console script, no cwd on `sys.path`) | repo root | 50 passed |
+| 5 | `pytest.exe backend/tests/test_schedule_ingestion.py -q` | repo root | **1 collection error** — see F-14 |
+| 6 | `pytest.exe backend/tests/test_backfill.py backend/tests/test_schedule_ingestion.py -q` | repo root | 6 passed — see F-14 |
+| 7 | `npm ci` | `frontend/` | Success (2 install-script warnings: `sharp`, `unrs-resolver`) |
+| 8 | `npm run lint` | `frontend/` | **Clean, no output** |
+| 9 | `npm run build` | `frontend/` | **Success** — 290 static pages (230 session routes), TypeScript clean |
+| 10 | `actionlint` | — | **Not run — binary unavailable** |
+
+The two Python failures in the project venv (command 2) are environment-specific
+and are themselves reported as F-15. They do not indicate a defect in
+application code. The system-interpreter runs (commands 3–4) pass because
+`GetTickCount64` resolution is incidental to which interpreter is used — the
+difference is machine timing, not Python version; both were observed on this
+same host and the discrepancy is explained in F-15.
+
+### Reproductions performed
+
+No repository files were modified. All reproductions ran from a scratch
+directory against the branch's modules:
+
+| Repro | Method | Outcome |
 | --- | --- | --- |
-| Worker | `node --test "worker/tests/*.test.mjs"` | 31 passed, 0 failed |
-| Python | `python backend/tests/test_*.py` | 46 passed, 8 skipped (pandas absent locally), 1 file failed to import |
+| `createMemoryRepository()` default | ESM import, call with no args | `ReferenceError: memoryState is not defined` (F-17) |
+| Fallback status handling | Stubbed `globalThis.fetch`, no R2 binding, probed 200/206/304/416/404/500 | 304 and 416 → `null` → 404; 206 passes through (F-07) |
+| Telemetry downsampling | Computed backend vs frontend step for n = 300…1200 | Diverges above n=300; upstream cap makes it unreachable (F-18) |
+| Empty R2 catalog bootstrap | Patched `subprocess.run` to fail all `wrangler r2 object get` | `RuntimeError: Could not hydrate required R2 index catalog.json` (F-03) |
+| Scheduler after one failed candidate | Patched `get_status` / `post_json` to raise on round 1 | Rounds 2 and 3 never attempted (F-10) |
+| Null `start_date` in catalog | One meeting with `start_date: null` | `ValueError: Invalid isoformat string: 'None'` (F-20) |
+| Post-ingestion dashboard props | Source comparison of `SessionTabsProps` vs `loadDashboard` | 8 props omitted (F-04) |
+| Cache key across rerun attempts | GitHub docs verification (`run_id`, cache immutability) | Confirmed by documentation, not executed (F-08) |
+| Standings team attribution | Replayed the page's aggregation over committed artifacts | 2 within-year team changes in 2025; 0 in 2026 (F-11) |
 
-Findings are ordered by severity. Each entry names the observable failure, the
-code that causes it, and the direction of a fix. Nothing in this document has
-been changed in the code yet.
-
----
-
-## High severity
-
-### H1. Bulk-queued ingestion jobs are silently cancelled by GitHub Actions concurrency
-
-- **Where:** `.github/workflows/process-ingestion-job.yml:21-23`
-- **Related:** `.github/workflows/schedule-ingestion.yml:16-18`, `pipeline/schedule_ingestion.py:88-104`, `worker/src/index.mjs:178-188`
-
-`process-ingestion-job.yml` declares `concurrency: { group: ingestion,
-cancel-in-progress: false }`. GitHub Actions permits only **one pending run per
-concurrency group** — when a new run is queued, any previously pending run in
-that group is cancelled outright.
-
-`schedule-ingestion.yml` runs hourly and `pipeline.schedule_ingestion` POSTs one
-ingestion request per session (up to 7 session codes per meeting). The Worker
-turns each into its own `repository_dispatch`. With one run executing and one
-pending, every additional dispatch evicts the previously pending run.
-
-Consequence: most queued sessions are never ingested. Their D1 jobs stay
-`queued`/`running` until `reconcileStaleIngestionJobs` fails them 120 minutes
-later with `Ingestion did not complete within 120 minutes` — a message that
-points at FastF1 rather than at the real cause, which makes this expensive to
-diagnose from the logs.
-
-**Direction:** make the concurrency group per-session (for example
-`ingestion-${{ github.event.client_payload.message.session_id }}`), or replace
-the per-job dispatch with a single draining runner that processes the queue in
-one workflow run.
+External behaviour was verified against current GitHub and Cloudflare
+documentation where it is load-bearing; those quotations are cited inline.
 
 ---
 
-### H2. Re-ingesting a session that already has committed artifacts never updates the R2 indexes
+## 2. Executive summary
 
-- **Where:** `pipeline/local_queue_worker.py:101-104`, `pipeline/local_queue_worker.py:160-168`
+### Counts
 
-`process_message` has two publication paths:
+| Severity | Count |
+| --- | --- |
+| Critical | 0 |
+| High | 4 |
+| Medium | 9 |
+| Low | 15 |
+| **Total** | **28** |
 
-- **Fresh ingestion** (lines 113-158): builds into a temp dir, calls
-  `merge_incremental_indexes`, then `publish_artifacts` → `sync_artifacts_to_r2`
-  with `include_indexes` defaulting to `True`. Correct.
-- **Reuse** (lines 101-104, 160-168), taken whenever
-  `frontend/public/data/sessions/<id>/manifest.json` exists in the checkout —
-  true for all 33 committed sessions: calls `sync_artifacts_to_r2(...,
-  include_indexes=False)` and never calls `merge_incremental_indexes` at all.
+| Status | Count |
+| --- | --- |
+| Confirmed | 26 |
+| Potential | 2 (F-08b lineage fork; F-11 currently latent for the rendered year) |
+| Informational | 0 retained as standalone |
 
-On the reuse path the session's own files are uploaded to R2, but `catalog.json`
-and `seasons/<year>.json` are not. The job reports `succeeded` while the session
-remains absent from any UI that reads the R2 catalog.
+Two findings from the previous revision were **removed as unsupported**
+(old L6, old L13). Five were **materially reclassified** after tracing full
+execution paths. Four findings are **new**.
 
-The reuse behaviour itself is intentional and documented (`README.md:212`); the
-index omission is the defect.
+### Resolution status
 
-**Direction:** run the index merge and marker upload on both paths. The reuse
-path already has `output_dir` as its publication dir, so it needs the same
-`merge_incremental_indexes` + `include_indexes=True` treatment.
+Counts above are as-found and are not decremented as findings are fixed; each
+finding's own **Status** row records whether it is still open.
+
+| Batch | Findings | State |
+| --- | --- | --- |
+| 1 — test foundation and CI | F-13, F-14, F-15, F-16 | **Resolved** |
+| — | the remaining 24 | Open |
+
+After batch 1 the Python suite is 50/50 and the Worker suite 38/38, both run by
+`.github/workflows/tests.yml` on every pull request and push to `main`. Later
+batches are therefore regression-checked by CI rather than by hand.
+
+### Highest priority
+
+1. **F-01** — Bulk-dispatched ingestion runs are cancelled by the shared
+   concurrency group, silently losing jobs. A one-line `queue: max` fix now
+   exists in GitHub's syntax.
+2. **F-02** — A failed forced refresh overwrites live R2 session bodies in
+   place, leaving a published session pointing at a mix of generations that
+   nothing on the read path validates.
+3. **F-03** — The first ingestion into a fresh R2 bucket always fails.
+4. **F-04** — Successful on-demand ingestion renders a materially degraded
+   dashboard versus the statically built page, defeating the feature's purpose.
+
+### Substantive changes from the previous revision
+
+| Old ID | Change |
+| --- | --- |
+| H1 | Retained High. **Corrected:** the stale-job message does not mention FastF1. **Added:** GitHub's `concurrency.queue: max` changes the recommended fix. |
+| H2 | **Downgraded High → Medium** (F-06). The claim that this path is reached for "all 33 committed sessions" was wrong: `resolveSessionStatus` short-circuits before a job is ever queued, and `force` routes to the fresh path. |
+| H3 | Retained High (F-03), now with a reproduction. |
+| H4 | **Downgraded High → Medium** (F-05); "indefinitely" removed. **Added:** fixing it in isolation exposes F-07. |
+| M2 | **Corrected** (F-07): 206 is fine; 304 **and 416** are the broken cases. |
+| M4 | **Downgraded Medium → Low** (F-14). The file is *not* dead — it passes in full-suite runs. The real defect is a cross-file `sys.path` ordering dependency. |
+| M6 | **Downgraded Medium → Low** (F-18). The divergence is unreachable: telemetry is capped at 300 samples/lap upstream, so both implementations agree on every reachable input. The previous claim of "live drift" was wrong. |
+| M7 | **Downgraded Medium → Low** (F-19). The normalizer cannot emit `None`; `_safe_int(..., default=0)` returns `0`. |
+| M8 | **Retained Medium** (F-12), reworded: "verbatim" removed, return-type and import-root obstacles documented, dual-module identity marked as a hazard with no demonstrated failing boundary. |
+| L5 | **Upgraded Low → Medium** (F-10), but **the Cloudflare Access premise was removed as unsupported** — the docs state status checks are public. The confirmed defect is fail-fast abort. |
+| L11 | **Upgraded Low → Medium** (F-11), split into team attribution vs. UI semantics, with data evidence. |
+| L6 | **Removed — unsupported.** |
+| L13 | **Removed — unsupported.** |
+| — | **New:** F-02, F-04, F-08, F-15, F-16. |
 
 ---
 
-### H3. The first ingestion into an empty R2 bucket always fails
+## 3. Findings
 
-- **Where:** `pipeline/local_queue_worker.py:500-515`
+### F-01 — Shared concurrency group cancels pending ingestion runs
 
-```python
-download_r2_object(bucket, object_key(prefix, "catalog.json"),
-                   destination / "catalog.json", required=True)
+| | |
+| --- | --- |
+| **Category** | CI/CD orchestration, job loss |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | Confirmed |
+
+**Locations**
+
+- `.github/workflows/process-ingestion-job.yml:21-23`
+- `.github/workflows/schedule-ingestion.yml:16-18`
+- `pipeline/schedule_ingestion.py:88-104`
+- `wrangler.jsonc:55-62` (queue consumer batching)
+- `worker/src/index.mjs:463-480` (job marked `running` before dispatch)
+- `worker/src/index.mjs:178-188` (only cleanup mechanism)
+
+**Reachability**
+
+`schedule-ingestion.yml` runs hourly (`cron: "37 * * * *"`) and
+`pipeline.schedule_ingestion` POSTs one request per candidate session
+(`--sessions FP1 FP2 FP3 SQ S Q R`). The Worker queue consumer is configured
+`max_batch_size: 10`, `max_concurrency: 1` (`wrangler.jsonc:57,62`), so a single
+consumer invocation can issue up to ten `repository_dispatch` calls in immediate
+succession. Every resulting workflow run shares `concurrency.group: ingestion`.
+
+**Observable impact**
+
+GitHub's documented behaviour, verified against current syntax reference:
+
+> "any existing `pending` job or workflow run in the same concurrency group will
+> be canceled and the new queued job or workflow will take its place."
+
+With one run executing and one pending, each additional dispatch evicts the
+previously pending run. Most dispatched sessions are therefore never ingested.
+
+Because `dispatchQueueMessage` sets the job to `running` **before** dispatching
+(`index.mjs:463-468`, dispatch at `:477-480`) and nothing reverts it when the
+workflow is cancelled, those jobs sit in D1 as `running` until the 30-minute
+cron reconciler fails them after `STALE_JOB_TIMEOUT_MINUTES` (120). That is the
+only cleanup mechanism.
+
+**Code evidence**
+
+```yaml
+# .github/workflows/process-ingestion-job.yml:21-23
+concurrency:
+  group: ingestion
+  cancel-in-progress: false
 ```
 
-`catalog.json` is required unconditionally, so a bucket that does not yet have
-one raises `Could not hydrate required R2 index catalog.json: ...` and the job
-fails. The season index immediately below gets this right — it derives
-`required=season_exists` from the catalog contents.
+```js
+// worker/src/index.mjs:184-187 — the resulting failure text
+`Ingestion did not complete within ${timeoutMinutes} minutes`
+```
 
-**Direction:** treat a missing catalog as "bootstrap" (`required=False`) and let
-`merge_incremental_indexes` skip the merge when the hydrated file is absent,
-which it already handles (`local_queue_worker.py:589`).
+**Correction to the previous revision:** that message contains no reference to
+FastF1. It is generic. The misleading aspect is that it describes a *timeout*
+when the actual event was a *cancellation that never started* — the job's
+`started_at` is set, so the run looks like it began and hung.
+
+**Recommended direction**
+
+GitHub now supports a `queue` property on `concurrency`, verified against the
+current workflow-syntax reference:
+
+> "`max`: Up to 100 jobs or workflow runs can be `pending` in the concurrency
+> group."
+>
+> "The combination of `queue: max` and `cancel-in-progress: true` is not allowed
+> and will result in a workflow validation error."
+
+Since this workflow already sets `cancel-in-progress: false`, adding
+`queue: max` is compatible and is the minimal fix. Note the 100-pending ceiling:
+a full backfill (7 codes × 24 meetings = 168 candidates) can still exceed it, so
+for bulk work prefer either a per-session group
+(`group: ingestion-${{ github.event.client_payload.message.session_id }}`,
+which also unlocks parallelism) or a single draining runner. Independently,
+consider reverting the job to `queued` when dispatch cannot be confirmed, so the
+D1 state distinguishes "never started" from "started and hung".
+
+**Effort** S for `queue: max`; M for per-session groups or a draining runner.
+
+**Suggested regression tests**
+
+- A Worker unit test asserting a job is not left `running` when dispatch fails.
+- A workflow-level smoke test dispatching three sessions and asserting three
+  completions (would have caught this).
 
 ---
 
-### H4. Browser artifact reads are pinned to `force-cache`
+### F-02 — Failed forced refresh corrupts a published R2 session
 
-- **Where:** `frontend/src/lib/api.ts:57-62`
+| | |
+| --- | --- |
+| **Category** | Data integrity |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | Confirmed (by code inspection and read-path audit) |
+
+**Locations**
+
+- `pipeline/local_queue_worker.py:306-364` (`sync_artifacts_to_r2`)
+- `pipeline/local_queue_worker.py:347-360` (failure handling)
+- `worker/src/index.mjs:153-176` (`getArtifact` — read path)
+- `worker/src/artifact-store.mjs:66-90` (`verify` — the only checksum check)
+
+**Reachability**
+
+Requires two conditions:
+
+1. A **forced** re-ingestion of a session already published to R2. Reachable via
+   the UI retry button (`SessionIngestionPanel.tsx:268` passes `force` when the
+   status is `failed`), `pipeline.schedule_ingestion --force`, and the workflow
+   `force` input.
+2. An upload failure that survives `R2_UPLOAD_ATTEMPTS` retries. The module's own
+   pacer and throttle-backoff logic (`:423-497`) exists precisely because R2 rate
+   limiting is expected under a ~1,000-PUT session.
+
+On *first* publication there are no prior bodies, so a partial failure merely
+leaves an unreferenced set with no manifest — readers correctly see "not ready".
+Corruption is specific to refresh.
+
+**Observable impact**
+
+Bodies are uploaded to the **same keys** as the live generation, concurrently,
+before any commit marker:
+
+```python
+# pipeline/local_queue_worker.py:325-328
+bodies  = [path for path in session_files if path != manifest and path.is_file()]
+markers = [manifest] if manifest.is_file() else []
+if include_indexes:
+    markers.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
+```
+
+If a body upload fails part-way, the old `manifest.json` remains published while
+the underlying object set is a mixture of old and new generations. The module
+documents this honestly:
+
+```python
+# pipeline/local_queue_worker.py:351-357
+# Bodies are overwritten in place over the live session, so a
+# failure part-way leaves the published manifest pointing at a
+# mix of old and new files. Cancelling drops uploads that have
+# not started yet; ones already running still finish, because
+# leaving the executor shuts it down with wait=True. This only
+# narrows the window. Publishing to immutable per-generation
+# keys is the actual fix and is not done here.
+```
+
+The decisive aggravating factor is that **nothing detects the inconsistency**.
+`artifacts.verify()` is called exactly once in the entire Worker
+(`index.mjs:306`), against the **manifest only**, with `r2Only: true`, at
+job-completion time. Section artifacts listed in the manifest are never
+checksum-verified — not at write time, not at read time. `getArtifact`
+(`index.mjs:153-176`) performs a path allowlist check and streams the object.
+So a corrupted session serves silently corrupted analysis data indefinitely,
+while the job itself is marked `failed` and gives no indication that published
+data was damaged.
+
+**Recommended direction**
+
+Publish to immutable, generation-prefixed keys and flip the manifest as the
+single atomic commit marker — the fix the code comment already identifies. A
+cheaper interim mitigation: on failure, re-upload the previous generation's
+bodies, or refuse to start a forced refresh unless a full rollback copy exists.
+Independently, consider verifying a sample of section checksums during the
+success callback rather than the manifest alone.
+
+**Effort** L (key-scheme change touches `sync_artifacts_to_r2`,
+`build_success_payload`, manifest paths, and the Worker's ownership validation).
+
+**Suggested regression tests**
+
+- Patch `upload_r2_object` to fail on the Nth body; assert the previously
+  published manifest and its referenced bodies remain mutually consistent.
+- A Worker test asserting a section whose bytes do not match its recorded
+  checksum is detectable through whatever verification path is added.
+
+---
+
+### F-03 — First ingestion into an empty R2 bucket always fails
+
+| | |
+| --- | --- |
+| **Category** | Bootstrap / deployment |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | Confirmed (reproduced) |
+
+**Locations**
+
+- `pipeline/local_queue_worker.py:500-515` (`hydrate_r2_indexes`)
+- `pipeline/local_queue_worker.py:586-601` (`merge_incremental_indexes`)
+
+**Reachability**
+
+Any `--artifact-destination r2` ingestion into a bucket that does not yet
+contain `catalog.json` — i.e. every green-field deployment following
+`docs/production-ingestion-setup.md` that has not manually pre-seeded the
+bucket. (Section 6 of that document does show a manual `catalog.json` upload,
+which is why this has not blocked the existing deployment; it makes the manual
+step mandatory rather than optional, undocumented as such.)
+
+**Observable impact**
+
+```python
+# pipeline/local_queue_worker.py:502-507
+download_r2_object(
+    bucket,
+    object_key(prefix, "catalog.json"),
+    destination / "catalog.json",
+    required=True,          # <-- unconditional
+)
+```
+
+Reproduction, with `subprocess.run` patched to fail every `wrangler r2 object
+get`:
+
+```
+RuntimeError: Could not hydrate required R2 index catalog.json:
+The specified key does not exist.
+```
+
+The season index immediately below gets this right — it derives
+`required=season_exists` from the catalog contents (`:509-515`). And the
+downstream consumer already tolerates absence; the same reproduction confirms
+`merge_incremental_indexes` no-ops cleanly when the hydrated directory is empty
+(guarded by `is_file()` at `:589` and `:597`).
+
+**Recommended direction**
+
+Treat a missing catalog as bootstrap: `required=False`, then let the existing
+`is_file()` guards skip the merge. The freshly built catalog is then published
+as-is, which is the correct outcome for an empty bucket.
+
+**Effort** S (one argument, plus a test).
+
+**Suggested regression test**
+
+The reproduction above, asserting `hydrate_r2_indexes` succeeds and the
+published catalog contains exactly the newly ingested session.
+
+---
+
+### F-04 — On-demand ingestion renders a degraded dashboard
+
+| | |
+| --- | --- |
+| **Category** | Feature completeness / correctness |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | Confirmed |
+
+**Locations**
+
+- `frontend/src/components/session/SessionIngestionPanel.tsx:68-158` (`loadDashboard`)
+- `frontend/src/components/session/SessionTabs.tsx:61-82` (`SessionTabsProps`)
+- `frontend/src/components/session/SessionTabs.tsx:264-273` (`TelemetryView`)
+- `frontend/src/app/seasons/[year]/[round]/[session]/page.tsx:40-61,125-150` (the static path, for contrast)
+
+**Reachability**
+
+This is the path a user takes after clicking "Queue ingestion" for a session
+absent from the static build and waiting for it to complete — the entire purpose
+of the on-demand ingestion feature. It requires hybrid mode, which `README.md:413`
+documents: *"configure `/api/*` and `/data/*` to reach the Worker, or set
+`NEXT_PUBLIC_DYNAMIC_API_BASE_URL` and `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` to
+the Worker origin."* In the committed static-only defaults
+(`frontend/wrangler.jsonc:6-7`) the panel short-circuits to "static-only" mode
+and never reaches `loadDashboard`.
+
+**Observable impact**
+
+The static page fetches 20 artifacts and passes 20 props. `loadDashboard`
+fetches 13 and passes 13. Eight props are missing:
+
+| Prop | Fetched by `loadDashboard`? | Passed to `SessionTabs`? |
+| --- | --- | --- |
+| `telemetryIndex` | **Yes** (`:96`) | **No** |
+| `idealLaps` | No | No |
+| `teammateComparison` | No | No |
+| `strategy` | No | No |
+| `trackDominance` | No | No |
+| `cornerAnalysis` | No | No |
+| `carPerformance` | No | No |
+| `pacePrediction` | No | No |
+
+All eight are declared optional in `SessionTabsProps` (`SessionTabs.tsx:74-82`),
+so this is not a type error — which is why `npm run lint` and `npm run build`
+both pass cleanly. Consequences per tab:
+
+- **Telemetry** — `TelemetryView` passes `availableLaps={telemetryIndex?.laps || []}`
+  (`SessionTabs.tsx:273`). With the index omitted, both driver selectors and both
+  lap selectors render empty. The initial comparison chart still displays, so the
+  tab looks functional while being frozen on one pair of laps. This is the
+  sharpest symptom: the data was fetched and then discarded one line before use.
+- **Performance** — all four advanced sections are gated on
+  `props.X?.length` (`PerformanceAnalysis.tsx:42,48,54,60`) and are therefore
+  hidden; the two remaining panels render their null empty-states.
+- **Strategy** — `compound_usage`, `undercut_overcut` and `pit_loss_estimate_ms`
+  are all absent (`StrategyAnalysis.tsx:7-9,22`); the view degrades to raw pit
+  stops.
+
+The underlying artifacts exist — `precompute_session_analysis`
+(`pipeline/analysis/precompute.py:31-53`) generates all of them and they are
+uploaded with the session. The client simply never requests them.
+
+**Recommended direction**
+
+Extract the artifact fan-out shared by the server page and `loadDashboard` into
+one function returning a complete `SessionTabsProps`, so the two paths cannot
+diverge again. As a minimum, add the seven missing fetches and pass
+`telemetryIndex` through. Consider making the eight props required and supplying
+explicit `null`s, so omission becomes a compile error.
+
+**Effort** S–M.
+
+**Suggested regression tests**
+
+- A unit test asserting the key set produced by `loadDashboard` equals the key
+  set passed by the server component.
+- A component test asserting the telemetry driver selector is non-empty when a
+  telemetry index is available.
+
+---
+
+### F-05 — Static artifact reads are pinned to `force-cache`
+
+| | |
+| --- | --- |
+| **Category** | Caching / data freshness |
+| **Severity** | Medium |
+| **Confidence** | High |
+| **Status** | Confirmed |
+
+**Locations** `frontend/src/lib/api.ts:57-62`; contrast
+`worker/src/artifact-store.mjs:94-99`.
+
+**Reachability** Every browser artifact read on a repeat visit.
+
+**Observable impact**
 
 ```ts
 const response = await fetch(`${source}/${path}`, {
@@ -105,296 +498,1052 @@ const response = await fetch(`${source}/${path}`, {
 });
 ```
 
-`force-cache` serves any cached entry regardless of freshness. `catalog.json`,
-`seasons/*.json`, and every session artifact change as sessions are ingested, so
-a returning visitor keeps seeing a stale catalog indefinitely. This directly
-undercuts the on-demand ingestion flow in `SessionIngestionPanel`: the job
-completes, the artifacts land, and the browser still renders the old catalog.
+Per the Fetch specification, `force-cache` returns a matching cached entry
+**fresh or stale**, and only issues a network request when there is no match. It
+does not revalidate. `catalog.json`, `seasons/*.json` and session artifacts all
+change as sessions are ingested, so a user who has previously loaded a page can
+continue to see a superseded catalog. Meanwhile the Worker's carefully chosen
+headers (30 s for `sessions/`, 120 s otherwise, both with
+`stale-while-revalidate`) have no effect on these requests.
 
-The Worker already emits appropriate `cache-control` headers
-(`worker/src/artifact-store.mjs:94-99`: 30 s for sessions, 120 s otherwise, both
-with `stale-while-revalidate`).
+**Corrected from the previous revision:** this is not permanent. Normal browser
+cache eviction, a hard refresh, a private window, or storage pressure will all
+clear the entry. The accurate characterisation is that an ordinary returning
+visitor has no reliable way to obtain fresh data through normal navigation, and
+the staleness window is bounded only by the browser's eviction policy rather
+than by any header the project controls.
 
-**Direction:** drop to `cache: "default"` and let the server headers govern.
+**Important interaction:** fixing this in isolation makes **F-07** acutely
+reachable. Once conditional revalidation resumes, every `if-none-match`
+revalidation of an artifact served from the Pages fallback returns 304 to the
+Worker, which converts it to a 404. Fix F-07 first, or fix both together.
 
----
+**Recommended direction** Use `cache: "default"` and let the Worker's
+`cache-control` headers govern.
 
-## Medium severity
+**Effort** S (one line) — but sequence it after F-07.
 
-### M1. `/live` polls forever when live mode is disabled
-
-- **Where:** `frontend/src/components/live/LiveDataPanel.tsx:63-80`
-
-Polling is only suppressed when the dynamic route is *missing*
-(`isDynamicApiRouteMissing`). A `{ enabled: false }` payload — what the Worker
-returns under the default `ENABLE_LIVE_MODE: "false"` (`wrangler.jsonc`) — is a
-successful response, so `load()` returns `true` and the 4-second interval keeps
-running. Each tick issues 5 requests, so every open `/live` tab costs 75 Worker
-requests per minute indefinitely.
-
-**Direction:** stop the interval once every payload satisfies `isLiveDisabled`,
-leaving the existing manual "Refresh" button as the escape hatch.
+**Suggested regression test** Assert that a second read after an artifact
+changes on the origin returns the new payload.
 
 ---
 
-### M2. Conditional GETs served from the static fallback return 404
+### F-06 — Reuse path publishes a session without updating the R2 indexes
 
-- **Where:** `worker/src/artifact-store.mjs:49-63`
+| | |
+| --- | --- |
+| **Category** | Data consistency |
+| **Severity** | Medium (**downgraded from High**) |
+| **Confidence** | High |
+| **Status** | Confirmed defect; narrow reachability |
 
-`get()` gates on `if (fallback?.ok)`. When the client sends `if-none-match` /
-`if-modified-since` (forwarded at line 51 via `forwardedRequestHeaders`) and the
-Pages origin answers `304 Not Modified`, `ok` is false, so `get()` returns
-`null` and `getArtifact` responds `artifact_not_found` (404).
+**Locations**
 
-`head()` at lines 21-29 already accepts `ok || 304 || 416`; `get()` should
-match, passing 304 and 206 through to the caller.
+- `pipeline/local_queue_worker.py:101-104` (branch condition)
+- `pipeline/local_queue_worker.py:160-168` (`include_indexes=False`)
+- `pipeline/local_queue_worker.py:113-158` (the correct branch, for contrast)
+- `worker/src/session-status.mjs:122-138` (upstream short-circuit)
+
+**Reachability — corrected**
+
+The previous revision claimed this branch is taken for "all 33 committed
+sessions". Tracing the full path shows that is wrong:
+
+1. `GET /api/session-status` → `resolveSessionStatus` calls
+   `artifacts.head(sessionManifestPath(...))` (`session-status.mjs:16-20`), which
+   checks R2 and then falls back to `STATIC_DATA_BASE_URL`. For a committed
+   session with a healthy Pages origin the manifest is found → status `ready`.
+2. `enqueueIngestionJob` then returns early:
+   `if (current.status === "ready" && !force) return { action: "ready", job: null }`
+   (`session-status.mjs:124-130`). **No job is queued at all**, so
+   `process_message` is never invoked.
+3. If `force` *is* set, it propagates into the queue message
+   (`session-status.mjs:183` → `session-utils.mjs:97`) and
+   `should_force = force or bool(message.get("force"))`
+   (`local_queue_worker.py:100`) selects the **fresh** branch, not the reuse
+   branch.
+
+So the reuse branch requires all of: a job was queued (manifest missing from
+**both** R2 and the Pages fallback), `force` is false, and the runner's checkout
+*does* contain `frontend/public/data/sessions/<id>/manifest.json`.
+
+That combination is reachable, principally because Pages deploys are manual
+(`cloudflare-pages.yml` is `workflow_dispatch` only). Artifacts committed to
+`main` by `generate-artifacts.yml` exist in the runner's checkout but not on the
+deployed Pages origin until someone redeploys. A `STATIC_DATA_BASE_URL` outage or
+misconfiguration produces the same window.
+
+**Observable impact**
+
+In that window the session's own files are uploaded to R2 but `catalog.json` and
+`seasons/<year>.json` are not, and `merge_incremental_indexes` is never called
+on this branch. The job reports `succeeded` while the session remains absent from
+the catalog any hybrid-mode client reads.
+
+The reuse behaviour itself is intentional and documented (`README.md:212`); the
+index omission is the defect. The asymmetry with the fresh branch — which does
+call `merge_incremental_indexes` and defaults `include_indexes=True` — is the
+clearest evidence it is unintended.
+
+**Recommended direction** Run the index merge and marker upload on both branches.
+
+**Effort** S.
+
+**Suggested regression test** Assert the reuse branch uploads `catalog.json` and
+`seasons/<year>.json`. Note the existing suite only tests
+`session_artifacts_exist` for the *False* case
+(`test_local_queue_worker.py:72-73`), which is why this survived.
 
 ---
 
-### M3. `createMemoryRepository()` throws `ReferenceError` when called without arguments
+### F-07 — Fallback `304` and `416` responses become `404`
 
-- **Where:** `worker/src/repository.mjs:279`
+| | |
+| --- | --- |
+| **Category** | HTTP correctness |
+| **Severity** | Medium |
+| **Confidence** | High |
+| **Status** | Confirmed (reproduced) |
+
+**Locations** `worker/src/artifact-store.mjs:49-63` (`get`); contrast
+`:21-29` (`head`).
+
+**Reachability** Hybrid mode, where `/data/*` is routed to the Worker
+(`README.md:413`), for any artifact not in R2 — which is every committed session,
+since only newly ingested sessions are written to R2. Currently masked by F-05,
+because `force-cache` suppresses conditional requests; unmasked the moment F-05
+is fixed.
+
+**Observable impact — corrected**
+
+Reproduction with no R2 binding and a stubbed fallback origin:
+
+```
+fallback 200 (OK               ) -> get(): Response 200
+fallback 206 (Partial Content  ) -> get(): Response 206
+fallback 304 (Not Modified     ) -> get(): null -> caller emits 404 artifact_not_found
+fallback 416 (Range Not Satisf.) -> get(): null -> caller emits 404 artifact_not_found
+fallback 404 (Not Found        ) -> get(): null -> caller emits 404 artifact_not_found
+fallback 500 (Server Error     ) -> get(): null -> caller emits 404 artifact_not_found
+```
+
+The previous revision named only 304. **206 is not affected** — it satisfies
+`Response.ok`. **416 is affected** and was missed. The cause is the single gate:
+
+```js
+// worker/src/artifact-store.mjs:62
+if (fallback?.ok) { ... }
+return null;
+```
+
+`head()` already handles this correctly — `fallback.ok || fallback.status === 304
+|| fallback.status === 416` (`:22`) — so the two methods disagree about what
+constitutes a successful fallback. `resolveSessionStatus` uses `head()` and is
+therefore unaffected.
+
+**Recommended direction** Mirror the `head()` acceptance set in `get()` and pass
+304/416 through to the caller with their headers.
+
+**Effort** S.
+
+**Suggested regression test** The probe table above, asserted per status code.
+
+---
+
+### F-08 — FastF1 cache: snapshot churn, and reruns that cannot improve the cache
+
+| | |
+| --- | --- |
+| **Category** | CI/CD efficiency and correctness |
+| **Severity** | Medium |
+| **Confidence** | High (a, b) / Low (c) |
+| **Status** | Confirmed (a, b); Potential (c) |
+
+**Locations**
+
+- `.github/workflows/process-ingestion-job.yml:66-73` (restore), `:207-215` (save)
+- `.github/workflows/warm-fastf1-cache.yml:59-66` (restore), `:103-109` (save)
+
+Both workflows use the identical key
+`${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}`
+with the same two restore-key prefixes.
+
+**(a) Every run uploads a full new snapshot — Confirmed**
+
+The save condition is `if: always() && hashFiles('backend/data/cache/fastf1/**') != ''`.
+Restored files satisfy that predicate, so a run that downloaded nothing new still
+saves. Because the key embeds `github.run_id`, every run writes a *new* immutable
+entry containing the entire restored cache plus any delta.
+
+Verified against GitHub's caching reference: the limit is *"10 GB per
+repository"*, entries *"that have not been accessed in over 7 days"* are removed,
+and when storage is exceeded *"the cache eviction policy will create space by
+deleting the caches in order of last access date, from oldest to most recent."*
+With hourly scheduling and multi-hundred-megabyte FastF1 caches, near-duplicate
+snapshots accumulate quickly and evict each other.
+
+**(b) Re-runs are pinned to the first attempt's partial cache — Confirmed**
+
+Verified against GitHub's context reference:
+
+> `github.run_id` — *"This number does not change if you re-run the workflow run."*
+> `github.run_attempt` — *"begins at 1 ... and increments with each re-run."*
+
+And the caching reference: *"You cannot change the contents of an existing cache.
+Instead, you can create a new cache with a new key."*
+
+Therefore, on attempt 1 the restore primary key never matches (nothing saved
+under it yet) and the prefix restore-keys select the newest available snapshot;
+the save then writes that key. On attempt 2 the primary key now matches
+**exactly**, so the restore returns attempt 1's possibly-partial cache in
+preference to any older, more complete snapshot — and the subsequent save cannot
+replace the immutable entry. `continue-on-error: true` conceals that failure.
+
+This directly undercuts the stated purpose of commit `fc5203e` ("Persist the
+FastF1 cache even when a run fails"): a re-run, the most natural response to a
+failure, is exactly the case that cannot improve the cache.
+
+**(c) Warm/ingestion lineage fork — Potential**
+
+The two workflows use different concurrency groups (`fastf1-cache` vs
+`ingestion`) but the same key namespace, so they can run concurrently, both
+restore snapshot A, add different sessions, and save A+B and A+C under separate
+run ids. A later prefix restore selects one snapshot rather than their union, so
+one lineage's work is dropped. This follows from the key design but **was not
+demonstrated against real workflow runs** and is reported as potential.
+
+**Not asserted:** whether `if: always()` reliably completes a large cache upload
+when the 90-minute job timeout fires or the runner is terminated. `always()` does
+schedule the step on cancellation, but the grace window is bounded and a runner
+loss executes nothing. This was evaluated and is recorded as a caveat rather than
+a separate finding.
+
+**Recommended direction**
+
+Include `github.run_attempt` in the save key so re-runs can write, and gate the
+save on the cache having actually changed (for example, record a file count or
+digest after restore and compare before saving). Consider separate key namespaces
+for the warm and ingestion workflows, or a single scheduled warm job that owns
+the lineage.
+
+**Effort** S–M.
+
+**Suggested regression test** Not unit-testable; verify by inspecting two
+consecutive runs and one re-run in the Actions cache list.
+
+---
+
+### F-09 — `/live` polls indefinitely when live mode is disabled
+
+| | |
+| --- | --- |
+| **Category** | Resource consumption |
+| **Severity** | Medium |
+| **Confidence** | High |
+| **Status** | Confirmed |
+
+**Locations** `frontend/src/components/live/LiveDataPanel.tsx:34-80`;
+`worker/src/index.mjs:369-372`; `wrangler.jsonc:8` (`ENABLE_LIVE_MODE: "false"`).
+
+**Reachability** Any visitor on `/live` in hybrid mode — the default Worker
+configuration ships with live mode disabled.
+
+**Observable impact** Polling is suppressed only when the dynamic route is
+*missing* (`isDynamicApiRouteMissing`, `:47-54`). A `{ enabled: false }` body is
+a 200 response, so `load()` returns `true` and the interval established at
+`:70-74` keeps running. Each tick issues five requests
+(`liveCurrentSession`, `liveTiming`, `liveRaceControl`, `livePositions`,
+`liveWeather`) every 4 s — 75 Worker requests per minute per open tab, for a
+panel that renders a static "Live mode is disabled" message.
+
+**Recommended direction** Stop the interval once every payload satisfies
+`isLiveDisabled`; the existing manual "Refresh" button already covers recovery.
+
+**Effort** S.
+
+**Suggested regression test** Assert no interval is registered when all five
+payloads report `enabled: false`.
+
+---
+
+### F-10 — One failed candidate aborts the entire scheduler run
+
+| | |
+| --- | --- |
+| **Category** | Reliability |
+| **Severity** | Medium (**upgraded from Low**) |
+| **Confidence** | High |
+| **Status** | Confirmed (reproduced) |
+
+**Locations** `pipeline/schedule_ingestion.py:106-124` (the loop),
+`:145-166` (`get_status`, `post_json`).
+
+**Reachability** Every hourly `schedule-ingestion.yml` run. Any transient error
+on any candidate — one 5xx, one timeout, one malformed response — aborts the run.
+
+**Observable impact** Reproduction with three candidates where round 1's status
+check raises:
+
+```
+outcome            : RuntimeError: Ingestion API returned a non-JSON response ...
+status checks tried: rounds [1]
+sessions queued    : rounds []
+-> rounds never reached: [2, 3]
+```
+
+And with a failing POST instead:
+
+```
+outcome            : RuntimeError: HTTP Error 500
+status checks tried: rounds [1]
+sessions queued    : rounds []
+```
+
+Neither `get_status` nor `post_json` catches anything, and the loop has no
+per-candidate error handling, so the first failure propagates out of `main`.
+Candidates are ordered by meeting, so a persistent problem with an early round
+permanently starves every later round.
+
+**Premise removed:** the previous revision attributed this to Cloudflare Access
+returning an HTML login page, because `get_status` strips
+`CF-Access-Client-Id`/`CF-Access-Client-Secret` (`:145-150`) while `post_json`
+retains them. That premise is **unsupported**:
+`docs/production-ingestion-setup.md:178` scopes the Access application to
+`api.example.com/api/ingestion/*`, and `:206` states *"Historical reads and
+session status checks remain public."* The header stripping is therefore
+deliberate and correct for the documented topology. It would only bite a
+deployment that placed Access across the whole hostname, contrary to the guide.
+
+**Recommended direction** Wrap each candidate in `try/except`, log and count
+failures, continue, and exit non-zero at the end if any failed.
+
+**Effort** S.
+
+**Suggested regression test** The reproduction above, asserting rounds 2 and 3
+are still queued when round 1 fails.
+
+---
+
+### F-11 — Season standings freeze a driver's team at first appearance
+
+| | |
+| --- | --- |
+| **Category** | Domain correctness |
+| **Severity** | Medium (**upgraded from Low**) |
+| **Confidence** | High |
+| **Status** | Confirmed defect; currently latent for the rendered year |
+
+**Locations** `frontend/src/app/standings/page.tsx:30-38` (driver map),
+`:54-63` (aggregation), `:97-110` (`ConstructorStandings`).
+
+**Reachability**
+
+```ts
+for (const d of resp.data) {
+  if (!driverMap.has(d.code)) { driverMap.set(d.code, d); }   // first-seen wins
+}
+```
+
+`pointSessions` derives from the catalog, which `write_catalog`
+(`pipeline/artifacts.py:117`) sorts by `(year, round, type)`, so "first" is the
+earliest round. A driver's entire season — points, wins, podiums — is attributed
+to whichever team they drove for in their earliest committed race, and
+`ConstructorStandings` groups by that frozen `team.team_id`.
+
+Replaying the page's aggregation over the committed artifacts:
+
+| Year | Point sessions | Drivers with a within-year team change |
+| --- | --- | --- |
+| 2025 | 24 | **2** — `TSU` Racing Bulls → Red Bull Racing (round 3); `LAW` Red Bull Racing → Racing Bulls (round 3) |
+| 2026 | 9 | 0 |
+
+The page renders only `primarySession.year`, which currently resolves to **2026**
+(`2026-09-r`), where no within-year change exists — so today's output is correct.
+The 2025 data in this same repository would be misreported: TSU's full season
+credited to Racing Bulls and LAW's to Red Bull Racing, each the opposite of where
+they scored most of their points. There is no year selector, so the wrong year is
+not currently selectable — but a mid-season swap is an ordinary, recurring event
+requiring no unusual input, and the failure is silent.
+
+**Separate, lower-severity issue in the same component:** `pointSessions` includes
+`S` (sprint) sessions (`:20-22`), whose finishes are counted into columns labelled
+"Wins", "Podiums" and "Starts" (`:47-50`) without qualification. The committed
+catalog contains 33 point sessions, **all of type `R`**, so this is latent today.
+
+**Recommended direction** Key the aggregation by `(driver, session)` and attribute
+each session's points to the team recorded *for that session*; derive constructor
+totals from those per-session pairs. Separately, either exclude sprints or label
+the columns to include them.
+
+**Effort** M.
+
+**Suggested regression test** A fixture with a driver moving teams at round 3;
+assert points split across both constructors in the correct proportion.
+
+---
+
+### F-12 — Pipeline duplicates the backend analysis layer
+
+| | |
+| --- | --- |
+| **Category** | Maintainability |
+| **Severity** | Medium |
+| **Confidence** | High |
+| **Status** | Confirmed |
+
+**Locations**
+
+| Function | Backend | Pipeline |
+| --- | --- | --- |
+| `clean_laps` | `backend/app/analysis/common.py:19` | `pipeline/analysis/precompute.py:339` |
+| `grouped` | `common.py:38` | `precompute.py:359` |
+| `trimmed_mean` | `common.py:47` | `precompute.py:367` |
+| `most_common` | `common.py:55` | `precompute.py:376` |
+| `lap_statistics` | `common.py:62` | `precompute.py:383` |
+| `calculate_race_pace` | `race_pace.py:7` | `precompute.py:88` |
+| `calculate_strategy` | `strategy.py:5` | `precompute.py:137` |
+| `calculate_ideal_laps` | `ideal_laps.py:5` | `precompute.py:185` |
+| `calculate_teammate_comparison` | `teammate_comparison.py:8` | `precompute.py:213` |
+| `build_position_replay` | `position_replay.py:8` | `precompute.py:257` |
+
+A third copy of the lap filter exists as `_clean_laps` at
+`backend/app/analysis/advanced.py:622`.
+
+**Reworded from the previous revision:** these are **not verbatim** copies, and
+consolidation is **not trivial**. Two real obstacles:
+
+1. **Return types differ.** The backend variants return Pydantic models —
+   `calculate_race_pace` returns `RacePaceResult` and builds
+   `RacePaceDriverRow` objects (`race_pace.py:7-45`); `build_position_replay`
+   returns `list[PositionReplayFrame]` (`position_replay.py:8`). The pipeline
+   variants return plain dictionaries so they can be serialised directly by
+   `write_json` / `to_jsonable`. Sharing the code means either introducing
+   Pydantic into the artifact pipeline or extracting dict-returning cores and
+   wrapping them at the API boundary.
+2. **Import roots are inconsistent.** `pipeline/artifacts.py:12` imports
+   `backend.app.ingestion.result_validation`, while
+   `backend/app/ingestion/normalizer.py:5` imports
+   `app.ingestion.result_validation`. Both work (PEP 420 namespace packages;
+   there is no `backend/__init__.py`), but the same source file is loaded under
+   two module names, producing two distinct `InvalidSessionResultsError` classes.
+
+**Hazard, not a demonstrated failure:** the dual identity would break any
+`except` or `isinstance` that crosses the boundary. Auditing current call sites,
+none does — `normalizer._results` catches the exception raised within its own
+module (`normalizer.py:457-460`), and the `backend.app.*` copy invoked from
+`pipeline/artifacts.py:181-182` is not caught anywhere. So this is a latent trap
+that would be triggered by the very refactor recommended here.
+
+The drift risk is real but was **overstated previously**: the only concrete
+divergence found (F-18) turns out to be unreachable. `test_pipeline_parity.py`
+exists specifically to police this boundary and currently passes.
+
+**Recommended direction** Extract dict-returning cores into a shared module,
+have the backend wrap them in Pydantic models, and standardise on one import
+root before doing so.
+
+**Effort** L.
+
+**Suggested regression test** Extend `test_pipeline_parity.py` to assert both
+implementations agree on a shared fixture for every duplicated function.
+
+---
+
+### F-13 — No CI job runs any test suite
+
+| | |
+| --- | --- |
+| **Category** | Process / verification |
+| **Severity** | Medium |
+| **Confidence** | High |
+| **Status** | **Resolved (batch 1)** |
+
+**Resolution** Added `.github/workflows/tests.yml` with a `python` job
+(`python -m pytest backend/tests -q`) and a `worker` job
+(`node --test "worker/tests/*.test.mjs"`), triggered on pull requests and
+pushes to `main`. Test-only dependencies live in `backend/requirements-dev.txt`
+so the backend Docker image does not ship a test runner. The worker job pins
+Node 24 because `node:sqlite` — used by the F-16 test — still requires
+`--experimental-sqlite` on Node 22, and that test skips rather than fails when
+the module is missing, so a downgrade would drop coverage silently. Both
+commands are documented under *Local Development → Tests* in the README.
+
+**Locations** `.github/workflows/` (absence); `worker/` has no `package.json`.
+
+`frontend-ci.yml` runs `npm run lint` and `npm run build` only. Grepping
+`.github/`, `README.md` and `docs/` for `pytest|unittest|node --test|npm
+test|vitest` returns nothing. Unenforced: 13 test files, ~1,500 lines, including
+`test_pipeline_parity.py` — the guard for F-12 — and all 31 Worker tests.
+
+Both suites pass as of this review (31/31 Worker; 50/50 Python on the system
+interpreter), which makes this the cheapest moment to lock the state in. The
+absence of CI is also the proximate reason F-14, F-15 and F-16 went unnoticed.
+
+**Recommended direction** Add a Python job (`pytest backend/tests` from the repo
+root, with `backend/requirements.txt` installed) and a Worker job
+(`node --test "worker/tests/*.test.mjs"`). Document both in the README.
+
+**Effort** S.
+
+---
+
+### F-14 — `test_schedule_ingestion.py` depends on another test file's import side effect
+
+| | |
+| --- | --- |
+| **Category** | Test infrastructure |
+| **Severity** | Low (**downgraded from Medium**) |
+| **Confidence** | High |
+| **Status** | **Resolved (batch 1)** |
+
+**Resolution** Added `backend/tests/conftest.py`, which inserts the repository
+root and `backend/` into `sys.path` once, before pytest collects any test
+module. `pytest backend/tests/test_schedule_ingestion.py` went from a
+collection error to 4 passed. The per-file inserts in the other six test files
+were left in place deliberately: conftest is a pytest-only hook, so removing
+them would break `python backend/tests/test_x.py` direct execution.
+
+**Locations** `backend/tests/test_schedule_ingestion.py:1-7`.
+
+**Corrected from the previous revision.** The earlier claim that this file
+"never runs" and "cannot be imported" was wrong. It is the only test file with
+no `sys.path` manipulation:
+
+| File | `sys.path.insert` lines |
+| --- | --- |
+| `test_backfill.py` | `parents[1]`, `parents[2]` |
+| `test_local_queue_worker.py` | `parents[1]`, `parents[2]` |
+| `test_pipeline_parity.py` | `REPOSITORY_ROOT`, `BACKEND_ROOT` |
+| `test_fastf1_service.py`, `test_result_validation.py`, `test_session_metadata.py` | `parents[1]` |
+| **`test_schedule_ingestion.py`** | **none** |
+
+It resolves `pipeline` only because a sibling that inserts `parents[2]` (the
+repository root) is imported first. `test_backfill.py` sorts first
+alphabetically, so full-suite runs always work:
+
+```
+pytest backend/tests                                       -> 50 passed
+pytest backend/tests/test_backfill.py \
+       backend/tests/test_schedule_ingestion.py            -> 6 passed
+pytest backend/tests/test_schedule_ingestion.py            -> 1 collection error:
+                                    ModuleNotFoundError: No module named 'pipeline'
+```
+
+So the file runs in aggregate but cannot be run in isolation, and the suite is
+one filename change or one `-k` filter away from breaking. Note also that
+`python -m pytest` masks this entirely, because `-m` places the working
+directory on `sys.path`.
+
+**Recommended direction** Add the same two inserts as its siblings, or better,
+add a single `backend/tests/conftest.py` that does it once and remove the
+per-file boilerplate.
+
+**Effort** S.
+
+---
+
+### F-15 — Two tests cannot pass on Windows: 10 ms assertions against a 15.625 ms clock
+
+| | |
+| --- | --- |
+| **Category** | Test portability |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | **Resolved (batch 1)** |
+
+**Resolution** Converted the four measurement sites in
+`backend/tests/test_local_queue_worker.py` from `time.monotonic()` to
+`time.perf_counter()` (`QueryPerformanceCounter`, ~100 ns on Windows), with a
+comment recording the resolution mismatch that caused the failures. Both tests
+now pass on Windows, verified over three consecutive runs. Production
+`_RequestPacer` still uses `time.monotonic()`: its 333 ms interval is far above
+the clock's resolution, and a coarse `now` reading only makes it over-delay,
+which is the safe direction for rate limiting.
+
+**Locations**
+
+- `backend/tests/test_local_queue_worker.py:270-302` (`test_request_pacer_spaces_starts_across_threads`)
+- `backend/tests/test_local_queue_worker.py:170-201` (`test_r2_sync_finishes_every_body_before_starting_any_commit_marker`)
+
+**Observable impact** In the project venv (Python 3.12.13, pinned deps):
+
+```
+FAILED ... ::test_r2_sync_finishes_every_body_before_starting_any_commit_marker
+FAILED ... ::test_request_pacer_spaces_starts_across_threads
+2 failed, 48 passed
+```
+
+Both fail on identical timestamps, not on wrong ordering:
+
+```
+test_request_pacer...  AssertionError: 0.0 not greater than or equal to 0.005
+test_r2_sync...        AssertionError: 165279.218 not less than 165279.218
+```
+
+The cause is the clock, not the code under test:
+
+```
+monotonic     resolution 0.015625   implementation GetTickCount64()
+perf_counter  resolution 1e-07      implementation QueryPerformanceCounter()
+```
+
+Both tests use `time.monotonic()` while asserting on intervals of 10 ms
+(`per_second = 100.0`) and 20 ms — at or below the clock's 15.625 ms resolution
+on Windows. Reproduced 3/3; this is deterministic, not flaky. The assertions are
+sound on a high-resolution clock and would be expected to pass on the Linux CI
+runners the workflows target.
+
+This matters because the repository owner develops on Windows and there is no CI
+(F-13), so the suite is red on the only machine that routinely runs it.
+
+**Recommended direction** Switch both tests to `time.perf_counter()`, which is
+`QueryPerformanceCounter` on Windows and monotonic in practice for interval
+measurement. Optionally raise the pacer test's `per_second` so the interval
+comfortably exceeds any platform's clock granularity.
+
+**Effort** S.
+
+---
+
+### F-16 — The real D1 repository and the duplicate-job recovery path are untested
+
+| | |
+| --- | --- |
+| **Category** | Test coverage |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | **Resolved (batch 1)** |
+
+**Resolution** Added `worker/tests/repository-d1.test.mjs`: a D1-shaped adapter
+over `node:sqlite` (`prepare`/`bind`/`first`/`all`/`run` plus `batch` as one
+transaction) running against the real `migrations/0001`–`0003`. Seven tests
+cover `upsertSession` coalesce semantics, the `db.batch` in
+`transitionJobAndSession`, the `recordArtifacts` upsert, `failStaleJobs`, and —
+the two that motivated this finding — migration 0002's partial unique index
+forcing `createJob` to return `null`, and a forced re-enqueue reaching the
+recovery branch at `session-status.mjs:167-181`. That branch is exercised via
+`force: true`, which skips both early-return guards in `enqueueIngestionJob` and
+is the path the UI's "Retry ingestion" button takes.
+
+The index pair was mutation-checked rather than assumed: with migration 0002
+applied the duplicate `createJob` returns `null`; with it removed the duplicate
+active job is admitted. The test detects the difference. Worker suite: 31 → 38.
+
+**Locations** `worker/tests/*` (absence); `worker/src/repository.mjs:10-277`
+(`createD1Repository`); `worker/src/session-status.mjs:167-181`.
+
+Grepping the Worker tests for `createD1Repository`, `createRepository` or
+`F1_DB` returns **nothing** — all 31 tests construct `createMemoryRepository`.
+Consequently none of the actual SQL is exercised: the `db.batch` in
+`transitionJobAndSession` (`:154-182`), the `on conflict` upsert in
+`upsertSession` (`:33-45`), `failStaleJobs` (`:227-262`), or the interaction
+between `createJob`'s `insert or ignore` (`:96`) and the partial unique index
+added in `migrations/0002_prevent_duplicate_active_jobs.sql`.
+
+That last pairing has a specific consequence. `createJob` returns `null` under
+D1 when the unique index suppresses a duplicate active job, which is what makes
+the recovery branch at `session-status.mjs:167-181` reachable:
+
+```js
+const job = await repository.createJob(jobRequest);
+if (!job) {
+  const activeJob = await repository.getActiveJob(sessionId, INGEST_SESSION);
+  ...
+}
+```
+
+`createMemoryRepository.createJob` (`repository.mjs:336-339`) unconditionally
+stores and returns the job, so **that branch can never execute under test**. The
+duplicate-active-job protection — the entire point of migration 0002 — is
+unverified.
+
+**Recommended direction** Add a small SQLite-backed or `wrangler d1 execute
+--local` fixture that applies the migrations and runs the repository contract
+against real SQL, and add a test that a second concurrent enqueue for one
+session returns `action: "reused"`.
+
+**Effort** M.
+
+---
+
+### F-17 — `createMemoryRepository()` throws when called without arguments
+
+| | |
+| --- | --- |
+| **Category** | Dead code |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | Confirmed (reproduced) |
+
+**Location** `worker/src/repository.mjs:279`.
 
 ```js
 export function createMemoryRepository(state = memoryState) {
 ```
 
-`memoryState` is not defined anywhere in the repository (verified by grep across
-`.mjs`/`.js`/`.ts`). All three call sites — `ingestion-callback.test.mjs:8`,
-`ingestion-queue.test.mjs:9`, `session-status.test.mjs:8` — pass explicit state,
-so the default is dead code that fails the moment anyone relies on it.
+`memoryState` is not defined anywhere in the repository. Reproduction:
 
-**Direction:** define the module-level default state, or remove the parameter
-default and make `state` required.
+```
+THREW: ReferenceError: memoryState is not defined
+```
 
----
+**Reachability: none in production.** The function is used only by
+`ingestion-callback.test.mjs:8`, `ingestion-queue.test.mjs:9` and
+`session-status.test.mjs:8`, all of which pass explicit state. Production
+request handling always goes through `createRepository(env)` →
+`createD1Repository`. This is a latent trap for the next caller, not a live
+defect.
 
-### M4. `test_schedule_ingestion.py` cannot be imported
+**Recommended direction** Define the module-level default, or drop the parameter
+default so the argument is required.
 
-- **Where:** `backend/tests/test_schedule_ingestion.py:1-7`
-
-The file does `from pipeline.schedule_ingestion import ...` without adding the
-repository root to `sys.path`. Every sibling test does add it (for example
-`test_pipeline_parity.py:8-11`, `test_local_queue_worker.py:12-13`). This is the
-one file that fails locally with `ModuleNotFoundError: No module named
-'pipeline'`.
-
-`backend/pyproject.toml`'s `pythonpath = ["."]` resolves relative to `backend/`,
-so pytest does not rescue it either.
-
-**Direction:** add the same two `sys.path.insert` lines used by its siblings —
-or better, fix it centrally as part of M5.
+**Effort** S.
 
 ---
 
-### M5. No CI job runs any test suite
+### F-18 — Backend and frontend telemetry downsampling differ, unreachably
 
-- **Where:** `.github/workflows/` (absence)
+| | |
+| --- | --- |
+| **Category** | Consistency |
+| **Severity** | Low (**downgraded from Medium**) |
+| **Confidence** | High |
+| **Status** | Confirmed defect; unreachable |
 
-`frontend-ci.yml` runs `npm run lint` and `npm run build` only. There is no
-`pytest`/`unittest` step and no `node --test` step in any workflow, and
-`worker/` has no `package.json` to hang a test script on. Grepping the whole of
-`.github/`, `README.md`, and `docs/` for `pytest|unittest|node --test|npm
-test|vitest` returns nothing.
-
-Unenforced: 13 test files, roughly 1,500 lines, including
-`test_pipeline_parity.py`, which exists specifically to guard the duplication
-described in M8 — and which has already failed to prevent the drift in M6.
-
-Both suites pass today, which makes this the ideal moment to lock the state in.
-
-**Direction:** add a `backend`/`pipeline` test job and a `worker` test job to CI;
-document both commands in the README.
-
----
-
-### M6. Backend telemetry downsampling does not actually cap at 300 samples
-
-- **Where:** `backend/app/analysis/telemetry_compare.py:33` vs `frontend/src/lib/static-api-core.ts:210`
+**Locations** `backend/app/analysis/telemetry_compare.py:33`;
+`frontend/src/lib/static-api-core.ts:210`.
 
 ```python
-step = max(1, len(samples_a) // 300)      # backend  — floor
+step = max(1, len(samples_a) // 300)                        # floor
 ```
 ```ts
-const step = Math.max(1, Math.ceil(samplesA.length / 300));  // frontend — ceil
+const step = Math.max(1, Math.ceil(samplesA.length / 300)); // ceil
 ```
 
-Floor division only begins thinning at 600 samples. For a 500-sample lap the
-backend returns all 500 points while the frontend returns 250. These two
-implementations are meant to be parity-equivalent; this is live drift.
+Computed across candidate lengths:
+
+| n | backend samples out | frontend samples out |
+| --- | --- | --- |
+| 300 | 300 | 300 |
+| 301 | 301 | 151 |
+| 500 | **500** | 250 |
+| 599 | **599** | 300 |
+| 1200 | 300 | 300 |
+
+**Corrected from the previous revision, which called this "live drift".** It is
+not reachable. Both inputs are capped at 300 samples per lap upstream:
+
+- `backend/app/ingestion/normalizer.py:28,488` —
+  `_bounded_frame(telemetry, MAX_INGESTED_TELEMETRY_SAMPLES_PER_LAP)` with the
+  constant set to 300, applied before any sample reaches
+  `processed/sessions/*/dataset.json`.
+- `pipeline/artifacts.py:18,254` — the published artifacts are capped at 300 as
+  well. Measured: the largest committed telemetry artifact contains exactly 300
+  samples (`sessions/2025-20-r/telemetry/rus-lap-50.json`).
+
+With n ≤ 300 both expressions yield `step = 1` and identical output. The
+divergence would only appear if either cap were raised.
+
+**Recommended direction** Align on `math.ceil` for symmetry and to make the
+300-sample contract hold independently of the upstream cap.
+
+**Effort** S.
 
 ---
 
-### M7. `TypeError` on pit stops with a null lap number
+### F-19 — Pit-stop `lap_number` default does not guard an explicit `None`
 
-- **Where:** `backend/app/analysis/strategy.py:22-24`, duplicated at `pipeline/analysis/precompute.py:153-155`
+| | |
+| --- | --- |
+| **Category** | Defensive correctness |
+| **Severity** | Low (**downgraded from Medium**) |
+| **Confidence** | High |
+| **Status** | Confirmed defect; no current producer |
+
+**Locations** `backend/app/analysis/strategy.py:22-24`; duplicate at
+`pipeline/analysis/precompute.py:153-155`.
 
 ```python
 first_stop = min(stops, key=lambda stop: stop.get("lap_number", 999))
 before = _nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), -1)
 ```
 
-The `999` default applies only when the key is *absent*, not when its value is
-`None`. A present-but-null `lap_number` makes `min` compare `None` against `int`
-(`TypeError`), and `int(None)` on the next line would fail regardless.
+`dict.get(k, default)` returns the default only when the key is **absent**. A
+present-but-`None` value makes `min` compare `None` with `int` (`TypeError`), and
+`int(None)` on the next line would fail regardless.
 
-`_pit_stops` (`backend/app/ingestion/normalizer.py:379`) can emit `None` through
-`_safe_int(..., default=0)` when `LapNumber` is missing.
+**Corrected from the previous revision.** The claim that
+`normalizer._pit_stops` can emit `None` was wrong:
 
-Currently latent: 0 of 1,223 committed pit stops have a null `lap_number`.
+```python
+# backend/app/ingestion/normalizer.py:379
+"lap_number": _safe_int(lap.get("LapNumber"), default=0),
+```
 
-**Direction:** coerce with `stop.get("lap_number") or 999` and skip stops with no
+`_safe_int` (`:627-633`) returns the default on both missing and unparseable
+input, so with `default=0` it returns `0`, never `None`. Additionally
+`PitStop.lap_number` is a required `int` (`models/domain.py:103`), so a `None`
+could not survive API validation. Measured: 0 of 1,223 committed pit stops have
+a null `lap_number`.
+
+The guard is still wrong in principle and would fail on hand-authored or legacy
+data, but no current producer can trigger it.
+
+**Recommended direction** `stop.get("lap_number") or 999`, and skip stops with no
 usable lap number.
 
+**Effort** S.
+
 ---
 
-### M8. The pipeline duplicates the backend analysis layer verbatim
+### F-20 — A single null `start_date` aborts scheduler candidate selection
 
-- **Where:** `pipeline/analysis/precompute.py` vs `backend/app/analysis/`
+| | |
+| --- | --- |
+| **Category** | Robustness |
+| **Severity** | Low |
+| **Confidence** | High |
+| **Status** | Confirmed (reproduced) |
 
-Reimplemented in both trees, near-identically:
+**Location** `pipeline/schedule_ingestion.py:94`.
 
-| Function | Backend | Pipeline |
+```python
+meeting_date = date.fromisoformat(str(meeting["start_date"])[:10])
+```
+
+Reproduction with one null-dated meeting:
+
+```
+ValueError: Invalid isoformat string: 'None'
+-> a single null start_date aborts candidate selection entirely
+```
+
+`normalizer._event_date` (`backend/app/ingestion/normalizer.py:588-598`) can
+return `None`, and the key could also be absent (`KeyError`). Measured: 0 of 46
+committed meetings are affected, so this is latent. Compounds with F-10 — a
+malformed catalog entry takes down the whole hourly run.
+
+**Recommended direction** Skip meetings with an unparseable date and log them.
+
+**Effort** S.
+
+---
+
+### F-21 — `body.txt` is a committed debug artifact
+
+**Severity** Low · **Confirmed** · Location: repository root.
+
+Contents are a Cloudflare `302 Found` HTML error page. Delete it.
+
+**Effort** S.
+
+---
+
+### F-22 — `frontend/.env.example` documents a variable that no longer exists
+
+**Severity** Low · **Confirmed** · Location: `frontend/.env.example:1`.
+
+It documents only `NEXT_PUBLIC_API_BASE_URL`, which appears nowhere in the
+source. The frontend reads `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` and
+`NEXT_PUBLIC_DYNAMIC_API_BASE_URL` (`frontend/src/lib/api.ts:26,32`), both of
+which are correctly documented in the root `.env.example:2-3`. Misleading for
+anyone configuring hybrid mode — the exact mode F-04 and F-07 depend on.
+
+**Effort** S.
+
+---
+
+### F-23 — `npm start` runs the dev server
+
+**Severity** Low · **Confirmed** · Location: `frontend/package.json:8`.
+
+```json
+"start": "next dev --hostname 0.0.0.0 --port 3000"
+```
+
+Identical to `dev`. With `output: "export"` (`next.config.ts:5`) there is no
+`next start`; the built site is a static `out/` directory. Serving `out/` (for
+example `npx serve out`) or removing the script would avoid implying a
+production server exists.
+
+**Effort** S.
+
+---
+
+### F-24 — `_guess_session_id` cannot match name-based events
+
+**Severity** Low · **Confirmed** · Location:
+`backend/app/ingestion/fastf1_ingestor.py:1088-1093`, used at `:1043-1045`.
+
+For a string event it returns `{year}-{slug}-{code}`, but real session ids are
+`{year}-{round:02d}-{code}`. The existence pre-check therefore never matches for
+name-based events (`--event "Monaco Grand Prix"`, the form used in
+`README.md:168` and `generate-artifacts.yml`), so FastF1 is reloaded every time.
+Harmless — a second check follows normalization at `:1050` — but it discards the
+optimisation exactly where a network round trip is most expensive.
+
+**Effort** S.
+
+---
+
+### F-25 — `isEmptyState` also matches `LiveDisabledResponse`
+
+**Severity** Low · **Confirmed (latent)** · Location:
+`frontend/src/lib/static-api-core.ts:365-367`.
+
+```ts
+export function isEmptyState(value: unknown): value is EmptyStateResponse {
+  return Boolean(value && typeof value === "object" && "reason" in value);
+}
+```
+
+`LiveDisabledResponse` (`:398-407`) also carries `reason`, so the type predicate
+is unsound. **Audited all six call sites** —
+`telemetry/page.tsx:61`, `SessionTabs.tsx:265,277`,
+`TelemetryComparePanel.tsx:65`, `static-api-core.ts:294,308` — every one is
+passed a telemetry-comparison or position-replay value. No live response reaches
+it, so this is latent type unsoundness rather than a current user-facing bug.
+
+**Recommended direction** Discriminate on a literal tag, or check
+`!("enabled" in value)`.
+
+**Effort** S.
+
+---
+
+### F-26 — NaN team colour renders as `"#nan"`
+
+**Severity** Low · **Confirmed (latent)** · Location:
+`backend/app/ingestion/normalizer.py:258`.
+
+```python
+"color": f"#{color}" if color and not str(color).startswith("#") else color,
+```
+
+`float('nan')` is truthy in Python, so a NaN `TeamColor` from FastF1 produces the
+literal string `"#nan"`, which flows into `Team.color` and then into inline
+`style={{ backgroundColor: ... }}` (`standings/page.tsx:107`). Measured: no
+committed driver record has a null or NaN team, so this is latent.
+
+**Recommended direction** Route through the existing `_is_missing` helper.
+
+**Effort** S.
+
+---
+
+### F-27 — `seriesToRows` is quadratic
+
+**Severity** Low · **Confirmed** · Location:
+`frontend/src/lib/chart-utils.ts:5-18`.
+
+A `findIndex` runs per series per lap. At current scale (~20 drivers × ~70 laps)
+this is a few tens of thousands of comparisons per render — measurable but not
+user-visible. Building one `Map` keyed by `x` per series would make it linear.
+Style, not urgency.
+
+**Effort** S.
+
+---
+
+### F-28 — Falsy-zero guards on pace gaps
+
+**Severity** Low · **Confirmed (unreachable in practice)** · Locations:
+`backend/app/analysis/advanced.py:327,353`.
+
+```python
+row["gap_to_best_ms"] = round(row["estimated_race_pace_ms"] - best, 1) if best else None
+```
+
+`if best` treats a best pace of exactly `0.0` as missing. A lap time of zero
+milliseconds is not physically realisable, so this is cleanup rather than a
+defect. Prefer `if best is not None`.
+
+**Effort** S.
+
+---
+
+## 4. Corrections to the previous report
+
+### Retained essentially unchanged
+
+| Previous | Now | Note |
 | --- | --- | --- |
-| `clean_laps` | `analysis/common.py:19` | `precompute.py:339` |
-| `grouped` | `analysis/common.py:38` | `precompute.py:359` |
-| `trimmed_mean` | `analysis/common.py:47` | `precompute.py:367` |
-| `most_common` | `analysis/common.py:55` | `precompute.py:376` |
-| `lap_statistics` | `analysis/common.py:62` | `precompute.py:383` |
-| `calculate_race_pace` | `analysis/race_pace.py:7` | `precompute.py:88` |
-| `calculate_strategy` | `analysis/strategy.py:5` | `precompute.py:137` |
-| `calculate_ideal_laps` | `analysis/ideal_laps.py:5` | `precompute.py:185` |
-| `calculate_teammate_comparison` | `analysis/teammate_comparison.py:8` | `precompute.py:213` |
-| `build_position_replay` | `analysis/position_replay.py:8` | `precompute.py:257` |
+| H3 | F-03 | High confirmed; reproduction added |
+| M1 | F-09 | Medium confirmed |
+| M3 | F-17 | Low; reachability clarified as none |
+| M5 | F-13 | Medium confirmed |
+| L1, L2, L3, L8, L12 | F-21, F-22, F-23, F-24, F-27 | Low, unchanged |
+| L4 | F-20 | Low; reproduction added |
+| L7 | F-26 | Low; confirmed latent |
 
-`backend/app/analysis/advanced.py:622` adds a **third** copy of `clean_laps`
-(`_clean_laps`).
+### Reworded or reclassified
 
-The duplication is unforced: `pipeline/artifacts.py:12` already does
-`from backend.app.ingestion.result_validation import ...`, proving the pipeline
-can import backend modules directly.
+| Previous | Now | Change |
+| --- | --- | --- |
+| H1 | F-01 | Severity retained. Removed the false claim that the stale-job message blames FastF1 — it is generic. Added GitHub's `concurrency.queue: max`, which changes the recommended fix; noted the 100-pending ceiling and the `max_batch_size: 10` amplifier. |
+| H2 | F-06 | **High → Medium.** The claim that the reuse path is taken for "all 33 committed sessions" was wrong: `resolveSessionStatus` returns `ready` and no job is queued, and `force` routes to the fresh branch. Reachability rewritten around the manual-Pages-deploy window. |
+| H4 | F-05 | **High → Medium.** "Indefinitely" removed; staleness is bounded by browser eviction. Added the sequencing hazard with F-07. |
+| M2 | F-07 | **Corrected.** 206 is *not* affected. 304 **and 416** are — 416 was missed previously. Probe table added. |
+| M4 | F-14 | **Medium → Low.** The file is not dead; it passes in aggregate. The real defect is a cross-file `sys.path` ordering dependency, and `python -m pytest` masks it. |
+| M6 | F-18 | **Medium → Low.** "Live drift" was wrong — the 300-sample upstream cap makes the divergence unreachable; both implementations agree on every reachable input. |
+| M7 | F-19 | **Medium → Low.** The normalizer cannot emit `None` (`_safe_int(..., default=0)` → `0`). Reframed as a defensive gap with no current producer. |
+| M8 | F-12 | Medium retained. "Verbatim" removed; Pydantic return types and dual import roots documented as real consolidation obstacles; dual-module exception identity marked a hazard with no demonstrated failing boundary. |
+| L5 | F-10 | **Low → Medium**, but the Cloudflare Access premise was **removed as unsupported** (`docs/production-ingestion-setup.md:178,206` scope Access to `/api/ingestion/*` and state status checks are public). The confirmed defect is the fail-fast abort, now reproduced. |
+| L10 | F-25 | Retained Low, reframed as latent type unsoundness after auditing all six call sites. |
+| L11 | F-11 | **Low → Medium**, split into team attribution (confirmed defect, latent for the rendered year) and sprint labelling (latent — no `S` sessions committed). Data evidence added. |
+| L9 | F-28 | Retained Low, explicitly reclassified as cleanup. |
 
-**Secondary hazard — dual module identity.** `result_validation` is loaded under
-two distinct module names:
+### Removed as unsupported
 
-- `app.ingestion.result_validation` (`backend/app/ingestion/normalizer.py:5`)
-- `backend.app.ingestion.result_validation` (`pipeline/artifacts.py:12`)
+| Previous | Reason |
+| --- | --- |
+| **L6** — "Inconsistent pandas-optional handling" | Not a defect. The `except ImportError` comment at `normalizer.py:13` scopes the fallback to *"metadata helpers"*. Every direct `pd.*` call (`:288-289, 611, 619`) sits inside a function that consumes a DataFrame and therefore requires pandas regardless, while `_is_missing` (`:674-682`) — the helper actually used by the pandas-free metadata functions — does guard `pd is None`. `test_session_metadata.py:63,70,111` skips exactly the pandas-dependent tests, confirming the intended boundary. The design is coherent. |
+| **L13** — "Cloudflare identifiers committed in plaintext" | Unsupported. Cloudflare's Wrangler configuration documentation states it is *"best practice to treat Wrangler's configuration file as the source of truth"* and that it should be committed; `account_id` and D1 `database_id` are ordinary configuration identifiers, not credentials. Real secrets are supplied via `wrangler secret` / `.dev.vars`, and the repository already does this correctly — `wrangler.jsonc` contains no tokens, and `.dev.vars`/`.env` are excluded. |
 
-Python treats these as two separate modules, so there are two distinct
-`InvalidSessionResultsError` classes. Any cross-boundary `except` or `isinstance`
-will silently fail to match.
+### Newly added
 
-**Direction:** have the pipeline import the backend analysis functions rather
-than restate them, and settle on a single import root for `backend`.
-
----
-
-## Low severity and cleanup
-
-### L1. `body.txt` is a committed debug artifact
-
-Repository root. Contents are a Cloudflare `302 Found` HTML error page. Delete.
-
-### L2. `frontend/.env.example` is stale
-
-Documents only `NEXT_PUBLIC_API_BASE_URL`, which no longer appears anywhere in
-the code. The frontend reads `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` and
-`NEXT_PUBLIC_DYNAMIC_API_BASE_URL` (`frontend/src/lib/api.ts:26,32`).
-
-### L3. `npm start` runs the dev server
-
-`frontend/package.json`: `"start": "next dev --hostname 0.0.0.0 --port 3000"`.
-With `output: "export"` there is no `next start`; the script should serve `out/`
-(for example via `npx serve out`) or be removed to avoid implying otherwise.
-
-### L4. A single null `start_date` crashes the whole scheduler
-
-`pipeline/schedule_ingestion.py:94`:
-`date.fromisoformat(str(meeting["start_date"])[:10])` raises on a null or missing
-value. `normalizer._event_date` (`backend/app/ingestion/normalizer.py:588`) can
-return `None`. Currently latent: 0 of 46 committed meetings are affected.
-
-### L5. Cloudflare Access headers are stripped from the status check
-
-`pipeline/schedule_ingestion.py:145-150` removes `CF-Access-Client-Id` and
-`CF-Access-Client-Secret` from the `GET /api/session-status` request, while
-`post_json` keeps them. If the Worker route is behind Cloudflare Access — which
-`wrangler.jsonc` explicitly assumes whenever `REQUIRE_INGESTION_REQUEST_AUTH` is
-`"false"` — the status check receives an Access login page and raises.
-
-Also at `pipeline/schedule_ingestion.py:158-166`: `post_json` has no error
-handling, so a single failed POST aborts the remaining queue.
-
-### L6. Inconsistent pandas-optional handling in the normalizer
-
-`backend/app/ingestion/normalizer.py:611,619` (`_timedelta_ms`, `_float_or_none`)
-and `:288-289` (`pd.notna`) call pandas unguarded, while `_is_missing` at `:674`
-carefully handles `pd is None`. Either the optional-pandas path is supported or
-it is not.
-
-### L7. NaN team colour becomes `"#nan"`
-
-`backend/app/ingestion/normalizer.py:258`:
-`f"#{color}" if color and not str(color).startswith("#") else color`.
-`float('nan')` is truthy in Python, so a NaN `TeamColor` produces the literal
-string `"#nan"`.
-
-### L8. `_guess_session_id` cannot match name-based events
-
-`backend/app/ingestion/fastf1_ingestor.py:1088-1093` returns
-`{year}-{slug}-{code}` for string events, but real session IDs are
-`{year}-{round:02d}-{code}`. The existence pre-check at line 1044 therefore never
-hits for name-based events and FastF1 is reloaded every time. Harmless (a second
-check follows normalization) but wasteful.
-
-### L9. Falsy-zero guards on pace gaps
-
-`backend/app/analysis/advanced.py:327` and `:353` use `if best else None` /
-`if team_best else None`, which treat a pace of exactly 0 as missing. Should be
-`is not None`.
-
-### L10. `isEmptyState` also matches `LiveDisabledResponse`
-
-`frontend/src/lib/static-api-core.ts:365-367` tests only for the presence of
-`"reason"`, which `LiveDisabledResponse` (`:398-407`) also carries.
-
-### L11. Standings freeze a driver's team and conflate sprint results
-
-`frontend/src/app/standings/page.tsx:32-38`: `if (!driverMap.has(d.code))` keeps
-whichever session was read first, so mid-season team changes are misattributed.
-Lines 44-52 also count sprint finishes toward `podiums` and `starts` without
-saying so in the UI copy.
-
-### L12. `seriesToRows` is quadratic
-
-`frontend/src/lib/chart-utils.ts:11-14` runs a `findIndex` per series per lap. A
-`Map` keyed by `x` built once per series would make it linear. Current scale
-(~20 drivers × ~70 laps) keeps this cheap, so this is style, not urgency.
-
-### L13. Cloudflare identifiers committed in plaintext
-
-`wrangler.jsonc:3` (`account_id`) and `:52` (`database_id`).
+| New | Summary |
+| --- | --- |
+| **F-02** | Non-atomic R2 refresh corrupts a published session; no read-path checksum verification exists anywhere. High. |
+| **F-04** | On-demand ingestion renders a degraded dashboard — eight props missing, including a `telemetryIndex` that is fetched and then discarded. High. |
+| **F-08** | FastF1 cache churn plus re-runs that are pinned to the first attempt's partial cache, undercutting the intent of commit `fc5203e`. Medium. |
+| **F-15** | Two tests assert 10–20 ms spacing against `time.monotonic()`, which has 15.625 ms resolution on Windows; deterministic failure on the maintainer's own platform. Low. |
+| **F-16** | Zero Worker tests exercise the real D1 repository, leaving migration 0002's duplicate-job protection and its recovery branch unverified. Low. |
 
 ---
 
-## What is working well
+## 5. What is working well
 
-Recorded so it does not get lost in a future refactor:
+Verified at the cited locations during this review.
 
-- **Worker input validation is genuinely careful.** Bounded JSON streaming with
-  a `content-length` pre-check (`worker/src/index.mjs:991`), constant-time token
-  comparison with a Node fallback for the missing
-  `crypto.subtle.timingSafeEqual` (`:679`), artifact-path sanitization shared
-  between the Worker (`session-utils.mjs:53`) and its Python port in the
-  workflow, and artifact-ownership checks bound to the job's session
-  (`:900-913`).
-- **Publication is checksum-verified before any status flips to `ready`**
-  (`index.mjs:303-333` → `artifact-store.mjs:66-90`).
-- **The job lifecycle was designed, not accreted.** The `transitionJobAndSession`
-  D1 batch (`repository.mjs:144`), the partial unique index in migration 0002,
-  and the queue-send compensation in `session-status.mjs:193-216` all cover real
-  failure modes.
-- **`_RequestPacer` (`local_queue_worker.py:423`) and the split cache
-  restore/save in the workflows carry comments explaining *why*,** including the
-  measurements behind the chosen defaults. That made this review substantially
-  faster.
+- **Worker input validation is genuinely careful.** Bounded JSON streaming with a
+  `content-length` pre-check and a running byte cap
+  (`worker/src/index.mjs:991-1034`); constant-time token comparison with a
+  documented fallback for the missing `crypto.subtle.timingSafeEqual`
+  (`:679-698`); artifact ownership bound to the job's session (`:900-913`);
+  a strict public-path allowlist (`:190-192`), covered by the test
+  *"private source datasets are not exposed through the public data route"*.
+- **Path sanitisation is mirrored, not reimplemented by guesswork.**
+  `sanitizeArtifactPath` (`session-utils.mjs:53-78`) has a deliberate Python port
+  in `process-ingestion-job.yml`, explicitly labelled a diagnostic aid with the
+  Worker named as the authority.
+- **Manifest publication is checksum-verified before any status reaches `ready`**
+  (`index.mjs:303-333` → `artifact-store.mjs:66-90`), and a verification failure
+  compensates the job and session together rather than leaving a half-state.
+  (F-02 concerns the *section* artifacts, which this does not cover.)
+- **The job lifecycle was designed rather than accreted.** The
+  `transitionJobAndSession` D1 batch (`repository.mjs:144-184`), the partial
+  unique index in `migrations/0002_prevent_duplicate_active_jobs.sql` — including
+  its backfill of pre-existing duplicates — and the queue-send compensation in
+  `session-status.mjs:193-216` each address a real failure mode.
+- **`sessionMatches` (`session-status.mjs:250-268`) avoids redundant D1 writes**
+  on every status poll, and there is a test asserting exactly that.
+- **Load-bearing comments explain *why*, with measurements.** `_RequestPacer`
+  (`local_queue_worker.py:423-453`) documents R2's per-account rate limit and why
+  worker count alone does not bound request rate; the split cache restore/save
+  records that `actions/cache` declares `post-if: success()`; the concurrent
+  upload block states the 28-minute serial baseline that motivated it — and
+  honestly documents its own residual weakness, which is what made F-02
+  straightforward to characterise.
+- **The frontend build is clean.** `npm run lint` produces no output and
+  `npm run build` generates 290 static pages with no TypeScript errors.
