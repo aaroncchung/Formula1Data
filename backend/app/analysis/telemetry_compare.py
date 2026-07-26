@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 from app.models.domain import TelemetryComparison, TelemetryDriverMeta
@@ -30,7 +31,11 @@ def compare_telemetry(
     if not samples_a or not samples_b:
         return None
 
-    step = max(1, len(samples_a) // 300)
+    # ceil, not floor: floor division only caps the output at 300 samples when
+    # the input is an exact multiple, so 301 in yielded 301 out. This matches
+    # the frontend's downsampling and holds the 300-sample contract on its own,
+    # independently of the 300-samples-per-lap cap applied during ingestion.
+    step = max(1, math.ceil(len(samples_a) / 300))
     aligned_a = samples_a[::step]
     aligned_b = [_nearest_by_distance(samples_b, sample["distance_m"]) for sample in aligned_a]
     distance = [float(sample.get("distance_m", 0)) for sample in aligned_a]

@@ -172,6 +172,15 @@ def process_message(
                 r2_prefix,
                 session_id,
             )
+            # The indexes are the commit markers readers use to discover a
+            # session, so the reuse path has to merge and republish them too;
+            # omitting them left the session uploaded but uncatalogued.
+            publish_indexes_to_r2(
+                publication_dir,
+                required_value(r2_bucket, "--r2-bucket"),
+                r2_prefix,
+                int(required(message, "year")),
+            )
 
         payload = build_success_payload(publication_dir, session_id, summary["generated_at"])
         write_success_payload(success_payload_file, payload)
@@ -364,6 +373,33 @@ def sync_artifacts_to_r2(
             upload_r2_object(path, bucket, object_key(path))
 
 
+def publish_indexes_to_r2(source_dir: Path, bucket: str, prefix: str, year: int) -> None:
+    """Merge the local season/catalog indexes into R2's and republish them.
+
+    The fresh-ingestion path gets this from `merge_incremental_indexes` plus
+    `include_indexes=True`. Sessions reused from the runner's checkout publish
+    their own files only, so their indexes are merged here instead. The merge
+    happens in a temporary directory because `source_dir` is the committed
+    artifact tree, which must not be rewritten.
+    """
+    relative_paths = [Path("seasons") / f"{year}.json", Path("catalog.json")]
+    with tempfile.TemporaryDirectory(prefix="f1-index-merge-") as temporary_directory:
+        existing_dir = Path(temporary_directory) / "existing"
+        publication_dir = Path(temporary_directory) / "data"
+        hydrate_r2_indexes(existing_dir, bucket, prefix, year)
+        for relative in relative_paths:
+            source = source_dir / relative
+            if source.is_file():
+                destination = publication_dir / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+        merge_incremental_indexes(existing_dir, publication_dir, year)
+        for relative in relative_paths:
+            path = publication_dir / relative
+            if path.is_file():
+                upload_r2_object(path, bucket, object_key(prefix, relative.as_posix()))
+
+
 def publish_artifacts(
     publication_dir: Path,
     output_dir: Path,
@@ -499,14 +535,22 @@ def upload_r2_object(path: Path, bucket: str, key: str) -> None:
 
 def hydrate_r2_indexes(destination: Path, bucket: str, prefix: str, year: int) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    download_r2_object(
+    # An absent catalog is the empty-bucket bootstrap case, not a failure: the
+    # first ingestion into a fresh bucket has nothing to merge against, and
+    # merge_incremental_indexes already no-ops when the hydrated file is
+    # missing, so the freshly built catalog is published as-is.
+    catalog_exists = download_r2_object(
         bucket,
         object_key(prefix, "catalog.json"),
         destination / "catalog.json",
-        required=True,
+        required=False,
     )
-    catalog = read_json(destination / "catalog.json")
-    season_exists = any(int(row.get("year") or 0) == year for row in catalog.get("seasons", []))
+    season_exists = False
+    if catalog_exists:
+        catalog = read_json(destination / "catalog.json")
+        season_exists = any(
+            int(row.get("year") or 0) == year for row in catalog.get("seasons", [])
+        )
     download_r2_object(
         bucket,
         object_key(prefix, f"seasons/{year}.json"),

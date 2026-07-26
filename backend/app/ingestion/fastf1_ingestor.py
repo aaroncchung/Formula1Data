@@ -1,4 +1,5 @@
 from app.ingestion.normalizer import (
+    _slug,
     normalize_fastf1_schedule,
     normalize_fastf1_session,
     selected_session_codes,
@@ -17,7 +18,11 @@ class FastF1Ingestor:
 
     def ingest_session(self, year: int, event: str | int, session_name: str, force: bool = False) -> str:
         existing_id = self._guess_session_id(year, event, session_name)
-        if not force and self.storage.exists(f"processed/sessions/{existing_id}/dataset.json"):
+        if (
+            existing_id
+            and not force
+            and self.storage.exists(f"processed/sessions/{existing_id}/dataset.json")
+        ):
             return existing_id
 
         session = self.fastf1.load_session(year, event, session_name)
@@ -61,10 +66,36 @@ class FastF1Ingestor:
                     count += 1
         return count
 
-    def _guess_session_id(self, year: int, event: str | int, session_name: str) -> str:
+    def _guess_session_id(self, year: int, event: str | int, session_name: str) -> str | None:
         code = session_code_for_name(session_name).lower()
         if isinstance(event, int) or str(event).isdigit():
             return f"{year}-{int(event):02d}-{code}"
-        slug = "".join(char.lower() if char.isalnum() else "-" for char in str(event)).strip("-")
-        return f"{year}-{slug}-{code}"
+        # Session ids are round-numbered, so a slug of the event name never
+        # matched one and the pre-check was dead for `--event "Monaco Grand
+        # Prix"`. Resolve the round from the stored schedule instead, which is
+        # local and avoids reloading the session over the network.
+        round_number = self._round_for_event_name(year, str(event))
+        if round_number is None:
+            return None
+        return f"{year}-{round_number:02d}-{code}"
+
+    def _round_for_event_name(self, year: int, event: str) -> int | None:
+        artifact = f"processed/seasons/{year}/dataset.json"
+        if not self.storage.exists(artifact):
+            return None
+        slug = _slug(event)
+        if not slug:
+            return None
+        for meeting in self.storage.read_json(artifact).get("meetings", []):
+            if int(meeting.get("year") or 0) != year:
+                continue
+            names = [str(meeting.get("name") or ""), str(meeting.get("official_name") or "")]
+            if slug not in {_slug(name) for name in names if name}:
+                continue
+            try:
+                round_number = int(meeting.get("round"))
+            except (TypeError, ValueError):
+                return None
+            return round_number if round_number > 0 else None
+        return None
 

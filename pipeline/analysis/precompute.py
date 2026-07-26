@@ -150,13 +150,23 @@ def calculate_strategy(
 
     undercut_overcut = []
     for driver, stops in by_driver.items():
-        first_stop = min(stops, key=lambda stop: stop.get("lap_number", 999))
-        before = nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), -1)
-        after = nearest_clean_lap_time(laps, driver, int(first_stop["lap_number"]), 1)
+        # dict.get(key, default) only substitutes the default when the key is
+        # absent, so a present-but-null lap number used to reach min() and
+        # int() unguarded. Drop stops with no usable lap number instead.
+        stop_laps = [
+            lap_number
+            for lap_number in (stop_lap_number(stop) for stop in stops)
+            if lap_number is not None
+        ]
+        if not stop_laps:
+            continue
+        first_stop_lap = min(stop_laps)
+        before = nearest_clean_lap_time(laps, driver, first_stop_lap, -1)
+        after = nearest_clean_lap_time(laps, driver, first_stop_lap, 1)
         undercut_overcut.append(
             {
                 "driver_code": driver,
-                "stop_lap": first_stop["lap_number"],
+                "stop_lap": first_stop_lap,
                 "first_clean_lap_gain_ms": before - after
                 if before is not None and after is not None
                 else None,
@@ -417,6 +427,16 @@ def linear_fit(samples: list[tuple[int | float, int | float]]) -> tuple[float, f
     total = sum((y - y_mean) ** 2 for y in y_values)
     r_squared = 1 - residual / total if total else None
     return float(slope), float(r_squared) if r_squared is not None else None
+
+
+def stop_lap_number(stop: dict[str, Any]) -> int | None:
+    value = stop.get("lap_number")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def nearest_clean_lap_time(

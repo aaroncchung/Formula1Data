@@ -324,7 +324,9 @@ def calculate_pace_prediction(
         )
     best = min((row["estimated_race_pace_ms"] for row in rows), default=None)
     for row in rows:
-        row["gap_to_best_ms"] = round(row["estimated_race_pace_ms"] - best, 1) if best else None
+        row["gap_to_best_ms"] = (
+            round(row["estimated_race_pace_ms"] - best, 1) if best is not None else None
+        )
     rows.sort(key=lambda row: (row["gap_to_best_ms"] is None, row["gap_to_best_ms"] or 0))
 
     team_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -350,7 +352,7 @@ def calculate_pace_prediction(
     team_best = min((row["estimated_race_pace_ms"] for row in teams), default=None)
     for row in teams:
         row["gap_to_best_ms"] = (
-            round(row["estimated_race_pace_ms"] - team_best, 1) if team_best else None
+            round(row["estimated_race_pace_ms"] - team_best, 1) if team_best is not None else None
         )
     teams.sort(key=lambda row: (row["gap_to_best_ms"] is None, row["gap_to_best_ms"] or 0))
     if not rows:

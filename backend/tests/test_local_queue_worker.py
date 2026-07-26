@@ -18,14 +18,16 @@ from pipeline.local_queue_worker import (
     expected_session_id,
     hydrate_r2_indexes,
     merge_catalog,
+    merge_incremental_indexes,
     merge_season,
+    process_message,
     session_artifacts_exist,
     sync_artifacts_to_r2,
     upload_r2_object,
     verify_remote_manifest,
 )
 from pipeline import local_queue_worker
-from pipeline.artifacts import checksum_file, write_json
+from pipeline.artifacts import checksum_file, read_json, write_json
 
 
 class LocalQueueWorkerTests(unittest.TestCase):
@@ -374,16 +376,139 @@ class LocalQueueWorkerTests(unittest.TestCase):
         self.assertEqual(merged["season"]["meeting_count"], 2)
         self.assertEqual(merged["season"]["ingested_meeting_count"], 2)
 
-    def test_r2_hydration_requires_the_current_catalog(self):
+    def test_r2_hydration_bootstraps_a_bucket_with_no_catalog(self):
+        """The first ingestion into a fresh bucket has nothing to hydrate."""
         with tempfile.TemporaryDirectory() as temporary_directory:
-            destination = Path(temporary_directory)
+            root = Path(temporary_directory)
+            destination = root / "existing"
             with patch("pipeline.local_queue_worker.subprocess.run") as run:
                 run.return_value.returncode = 1
-                run.return_value.stderr = "object not found"
+                run.return_value.stderr = "The specified key does not exist."
                 run.return_value.stdout = ""
 
-                with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
+                hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+
+            self.assertFalse((destination / "catalog.json").exists())
+
+            # The merge then no-ops, so the freshly built catalog is published
+            # exactly as built: one season, one session.
+            publication_dir = root / "data"
+            catalog = {
+                "schema_version": 1,
+                "seasons": [{"year": 2026}],
+                "meetings": [{"meeting_id": "2026-09-x", "year": 2026, "round": 9}],
+                "sessions": [{"session_id": "2026-09-r", "year": 2026, "round": 9, "type": "R"}],
+            }
+            write_json(publication_dir / "catalog.json", catalog)
+            merge_incremental_indexes(destination, publication_dir, 2026)
+
+            self.assertEqual(read_json(publication_dir / "catalog.json"), catalog)
+
+    def test_r2_hydration_still_requires_a_season_index_the_catalog_claims(self):
+        """Bootstrap tolerance must not extend to an index known to exist."""
+        from types import SimpleNamespace
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "existing"
+
+            def fake_run(args, **kwargs):
+                if args[4].endswith("catalog.json"):
+                    write_json(Path(args[6]), {"seasons": [{"year": 2026}]})
+                    return SimpleNamespace(returncode=0, stdout="", stderr="")
+                return SimpleNamespace(returncode=1, stdout="", stderr="object not found")
+
+            with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+                with self.assertRaisesRegex(RuntimeError, "required R2 index seasons/2026.json"):
                     hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+
+    def test_reused_session_publishes_merged_r2_indexes(self):
+        """Reuse uploads the session; without the indexes nothing can find it."""
+        session_id = "2026-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory) / "data"
+            session_dir = output_dir / "sessions" / session_id
+            summary_path = session_dir / "summary.json"
+            write_json(summary_path, {"session_id": session_id})
+            write_json(
+                session_dir / "manifest.json",
+                {
+                    "session_id": session_id,
+                    "generated_at": "2026-07-13T12:00:00Z",
+                    "sections": [
+                        {
+                            "kind": "summary",
+                            "path": f"sessions/{session_id}/summary.json",
+                            "size_bytes": summary_path.stat().st_size,
+                            "checksum": checksum_file(summary_path),
+                        }
+                    ],
+                },
+            )
+            local_rows = {
+                "meetings": [{"meeting_id": "2026-09-x", "year": 2026, "round": 9}],
+                "sessions": [{"session_id": session_id, "year": 2026, "round": 9, "type": "R"}],
+            }
+            write_json(
+                output_dir / "catalog.json",
+                {"schema_version": 1, "seasons": [{"year": 2026}], **local_rows},
+            )
+            write_json(
+                output_dir / "seasons" / "2026.json",
+                {"schema_version": 1, "season": {"year": 2026}, **local_rows},
+            )
+
+            remote_rows = {
+                "meetings": [{"meeting_id": "2026-08-w", "year": 2026, "round": 8}],
+                "sessions": [{"session_id": "2026-08-r", "year": 2026, "round": 8, "type": "R"}],
+            }
+            remote_catalog = {"schema_version": 1, "seasons": [{"year": 2026}], **remote_rows}
+            remote_season = {"schema_version": 1, "season": {"year": 2026}, **remote_rows}
+
+            def fake_download(_bucket, key, destination, **_kwargs):
+                write_json(destination, remote_catalog if "catalog" in key else remote_season)
+                return True
+
+            uploaded: dict[str, object] = {}
+
+            def fake_upload(path, _bucket, key):
+                uploaded[key] = read_json(path)
+
+            with (
+                patch.dict(os.environ, {}),
+                patch(
+                    "pipeline.local_queue_worker.download_r2_object", side_effect=fake_download
+                ),
+                patch("pipeline.local_queue_worker.upload_r2_object", side_effect=fake_upload),
+                patch("pipeline.local_queue_worker.verify_remote_manifest"),
+            ):
+                result = process_message(
+                    {
+                        "job_id": "job-1",
+                        "kind": "ingest_session",
+                        "year": 2026,
+                        "round": 9,
+                        "session": "R",
+                    },
+                    data_dir=Path(temporary_directory) / "backend-data",
+                    output_dir=output_dir,
+                    artifact_destination="r2",
+                    r2_bucket="test-bucket",
+                )
+
+            self.assertEqual(result["session_id"], session_id)
+            self.assertIn(f"sessions/{session_id}/manifest.json", uploaded)
+            self.assertIn("catalog.json", uploaded)
+            self.assertIn("seasons/2026.json", uploaded)
+            # The republished indexes carry both the reused session and the
+            # sessions R2 already knew about.
+            self.assertEqual(
+                {row["session_id"] for row in uploaded["catalog.json"]["sessions"]},
+                {"2026-08-r", session_id},
+            )
+            self.assertEqual(
+                {row["session_id"] for row in uploaded["seasons/2026.json"]["sessions"]},
+                {"2026-08-r", session_id},
+            )
 
     def test_hundreds_of_telemetry_laps_use_a_compact_manifest_callback(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
