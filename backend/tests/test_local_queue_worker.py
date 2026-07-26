@@ -518,6 +518,265 @@ class LocalQueueWorkerTests(unittest.TestCase):
             # The whole remotely visible object set, not just the old keys.
             self.assertEqual(remote, before)
 
+    def _catalog(self, years):
+        return json.dumps({"seasons": [{"year": year} for year in years]}).encode("utf-8")
+
+    def _urlopen_status(self, status):
+        """A stand-in for the Worker's HEAD /data/... existence probe."""
+        import urllib.error
+
+        def fake_urlopen(request, timeout=None):
+            if status == 404:
+                raise urllib.error.HTTPError(
+                    request.full_url, 404, "Not Found", {}, None
+                )
+            if status >= 500:
+                raise urllib.error.HTTPError(
+                    request.full_url, status, "Server Error", {}, None
+                )
+            response = MagicMock()
+            response.status = status
+            response.__enter__.return_value = response
+            return response
+
+        return fake_urlopen
+
+    def test_a_published_manifest_is_not_overwritten_when_the_season_marker_lagged(self):
+        """Case A: the manifest is live but the season index never listed it.
+
+        A run that published bodies and the manifest and then failed on the
+        season index leaves exactly this state. Reading "not in the index" as
+        "never published" here would overwrite a live generation with no backup.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            remote["catalog.json"] = self._catalog([2025])
+            # The marker that never landed: the session is missing from it.
+            remote["seasons/2025.json"] = self._season_index(["2025-08-r"])
+            before = dict(remote)
+
+            fake_run, calls = self._fake_r2(
+                remote, get_fails=lambda key, seen: key.endswith(f"{session_id}/manifest.json")
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+                patch(
+                    "pipeline.local_queue_worker.urllib.request.urlopen",
+                    side_effect=self._urlopen_status(200),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "manifest"):
+                    sync_artifacts_to_r2(
+                        new_dir,
+                        "test-bucket",
+                        session_id=session_id,
+                        year=2025,
+                        probe_base_url="https://worker.example",
+                    )
+
+            self.assertEqual([key for verb, key in calls if verb == "put"], [])
+            self.assertEqual(remote, before)
+
+    def test_a_published_manifest_is_not_overwritten_when_the_catalog_marker_lagged(self):
+        """Case B: first session of a new year whose catalog PUT never landed.
+
+        The season index carries the session, so consulting it is what keeps the
+        catalog's silence about the year from being read as proof of absence.
+        """
+        session_id = "2026-01-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            # The catalog reads cleanly and simply has not heard of 2026 yet.
+            remote["catalog.json"] = self._catalog([2025])
+            remote["seasons/2026.json"] = self._season_index([session_id])
+            before = dict(remote)
+
+            fake_run, calls = self._fake_r2(
+                remote, get_fails=lambda key, seen: key.endswith(f"{session_id}/manifest.json")
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "manifest"):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2026
+                    )
+
+            self.assertEqual([key for verb, key in calls if verb == "put"], [])
+            self.assertEqual(remote, before)
+
+    def test_a_failed_commit_marker_withdraws_the_manifest_it_just_published(self):
+        """A live manifest the indexes do not list defeats existence detection.
+
+        Leaving it is what creates Case A, so a marker failure takes it back
+        and keeps "absent from the indexes" and "no live generation" the same
+        statement.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            new_dir = Path(temporary_directory) / "new"
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {
+                "catalog.json": self._catalog([2025]),
+                "seasons/2025.json": self._season_index(["2025-08-r"]),
+            }
+
+            fake_run, calls = self._fake_r2(
+                remote, put_fails=lambda key, seen: key == "seasons/2025.json"
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaises(RuntimeError):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+            manifest_key = f"sessions/{session_id}/manifest.json"
+            self.assertIn(manifest_key, [key for verb, key in calls if verb == "put"])
+            # Published, then taken back: nothing claims the bodies now.
+            self.assertIn(manifest_key, [key for verb, key in calls if verb == "delete"])
+            self.assertNotIn(manifest_key, remote)
+
+    def test_an_unreadable_season_index_is_not_proof_the_session_is_absent(self):
+        """An index that will not read cannot corroborate anything."""
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            new_dir = root / "new"
+            old_dir = root / "old"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            remote["catalog.json"] = self._catalog([2025])
+            remote["seasons/2025.json"] = self._season_index(["2025-08-r"])
+
+            fake_run, calls = self._fake_r2(
+                remote,
+                get_fails=lambda key, seen: key.endswith(f"{session_id}/manifest.json")
+                or key == "seasons/2025.json",
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaises(RuntimeError):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+            self.assertEqual([key for verb, key in calls if verb == "put"], [])
+
+    def test_the_first_session_of_a_new_year_still_publishes(self):
+        """The legitimate shape of Case B: nothing for this year exists yet."""
+        session_id = "2026-01-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            new_dir = Path(temporary_directory) / "new"
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {"catalog.json": self._catalog([2025])}
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2026)
+
+            self.assertIn(f"sessions/{session_id}/manifest.json", remote)
+            self.assertEqual([key for verb, key in calls if verb == "delete"], [])
+
+    def test_a_probe_that_reports_the_manifest_absent_permits_a_first_publication(self):
+        """A 404 is the positive proof of absence the indexes cannot give."""
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            new_dir = Path(temporary_directory) / "new"
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {
+                "catalog.json": self._catalog([2025]),
+                "seasons/2025.json": self._season_index(["2025-08-r"]),
+            }
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+                patch(
+                    "pipeline.local_queue_worker.urllib.request.urlopen",
+                    side_effect=self._urlopen_status(404),
+                ),
+            ):
+                sync_artifacts_to_r2(
+                    new_dir,
+                    "test-bucket",
+                    session_id=session_id,
+                    year=2025,
+                    probe_base_url="https://worker.example",
+                )
+
+            self.assertIn(f"sessions/{session_id}/manifest.json", remote)
+            # A definitive 404 settles it without reading the indexes at all.
+            self.assertNotIn("catalog.json", [key for verb, key in calls if verb == "get"])
+
+    def test_a_successful_refresh_removes_a_section_the_new_generation_dropped(self):
+        """A dropped section is served from the old generation until it is gone.
+
+        `build_static_artifacts` writes a section only when the bundle carries
+        it, and the frontend reads every section from a fixed path rather than
+        through the manifest, so a leftover is read as current data.
+        """
+        session_id = "2025-09-r"
+        dropped = "weather.json"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 3, "old", extra=[dropped])
+            # The refresh no longer produces weather.json.
+            self._write_generation(new_dir, session_id, 3, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2025)
+
+            dropped_key = f"sessions/{session_id}/{dropped}"
+            self.assertIn(dropped_key, [key for verb, key in calls if verb == "delete"])
+            self.assertNotIn(dropped_key, remote)
+            # Only the superseded object went: everything this build wrote stays.
+            for key in [f"sessions/{session_id}/telemetry/ver-lap-{i}.json" for i in range(3)]:
+                self.assertEqual(remote[key], (new_dir / key).read_bytes())
+            self.assertIn(f"sessions/{session_id}/manifest.json", remote)
+            # And the removal happens only after the new generation is committed.
+            operations = [(verb, key) for verb, key in calls if verb in {"put", "delete"}]
+            self.assertLess(
+                operations.index(("put", "catalog.json")),
+                operations.index(("delete", dropped_key)),
+            )
+
     def test_a_failed_rollback_names_the_session_it_may_have_left_inconsistent(self):
         """The one thing worse than a failed refresh is a silent failed rollback."""
         session_id = "2025-09-r"

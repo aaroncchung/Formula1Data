@@ -152,6 +152,7 @@ def process_message(
                         data_dir / "processed" / "sessions" / session_id / "dataset.json"
                     ),
                     allow_missing_catalog=allow_missing_catalog,
+                    probe_base_url=callback_url,
                 )
                 if artifact_destination == "r2":
                     verify_remote_manifest(
@@ -178,6 +179,7 @@ def process_message(
                 year=int(required(message, "year")),
                 include_indexes=False,
                 allow_missing_catalog=allow_missing_catalog,
+                probe_base_url=callback_url,
             )
             verify_remote_manifest(
                 publication_dir,
@@ -335,6 +337,7 @@ def sync_artifacts_to_r2(
     year: int,
     include_indexes: bool = True,
     allow_missing_catalog: bool = False,
+    probe_base_url: str | None = None,
 ) -> None:
     """Upload a session first and publish its indexes last.
 
@@ -375,13 +378,22 @@ def sync_artifacts_to_r2(
     # while still cutting the wall clock by about 4x.
     max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "4")))
 
-    def upload_markers() -> None:
+    def upload_markers(has_previous_generation: bool) -> None:
+        manifest_published = False
         for path in markers:
-            if path.is_file():
+            if not path.is_file():
+                continue
+            try:
                 upload_r2_object(path, bucket, remote_key(path))
+            except Exception as marker_error:
+                if manifest_published and not has_previous_generation:
+                    withdraw_manifest(bucket, remote_key(manifest), session_id, marker_error)
+                raise
+            if path == manifest:
+                manifest_published = True
 
     if not bodies:
-        upload_markers()
+        upload_markers(has_previous_generation=False)
         return
 
     # Bodies are overwritten in place over the live session, so a failure
@@ -389,6 +401,7 @@ def sync_artifacts_to_r2(
     # new files -- and nothing on the read path checksums a section, so the
     # mixture is served silently. Guard the overwrite: copy whatever is live
     # now, and put it back if the refresh does not complete.
+    body_keys = {remote_key(path): path.relative_to(output_dir) for path in bodies}
     with tempfile.TemporaryDirectory(prefix="f1-r2-rollback-") as rollback_root:
         backup = back_up_published_session(
             Path(rollback_root),
@@ -396,9 +409,10 @@ def sync_artifacts_to_r2(
             prefix,
             session_id=session_id,
             year=year,
-            bodies={remote_key(path): path.relative_to(output_dir) for path in bodies},
+            bodies=body_keys,
             max_workers=max_workers,
             allow_missing_catalog=allow_missing_catalog,
+            probe_base_url=probe_base_url,
         )
         upload_error: BaseException | None = None
         # Recorded before the PUT rather than after it: a rollback has to be
@@ -431,7 +445,10 @@ def sync_artifacts_to_r2(
             raise_after_rollback(backup, session_id, upload_error, attempted)
 
         # Only now, with every body landed, do the commit markers go up.
-        upload_markers()
+        upload_markers(has_previous_generation=backup.published)
+        remove_superseded_objects(
+            backup, set(body_keys), remote_key(manifest), session_id
+        )
 
 
 class PublishedSessionBackup:
@@ -497,6 +514,7 @@ def back_up_published_session(
     bodies: dict[str, Path],
     max_workers: int,
     allow_missing_catalog: bool = False,
+    probe_base_url: str | None = None,
 ) -> PublishedSessionBackup:
     """Copy the currently published bodies of `session_id` out of R2.
 
@@ -523,6 +541,7 @@ def back_up_published_session(
             session_id=session_id,
             year=year,
             allow_missing_catalog=allow_missing_catalog,
+            probe_base_url=probe_base_url,
         )
         return PublishedSessionBackup(bucket, {})
 
@@ -555,6 +574,76 @@ def back_up_published_session(
     )
 
 
+def remove_superseded_objects(
+    backup: PublishedSessionBackup,
+    published_keys: set[str],
+    manifest_key: str,
+    session_id: str,
+) -> None:
+    """Delete objects the previous generation owned and this one does not.
+
+    Overwriting only covers keys both generations share. A section the build no
+    longer produces is simply left behind -- and because the read path fetches
+    artifacts by fixed path rather than through the manifest
+    (`readOptionalSessionArtifact`, and every required section too), that
+    leftover keeps being served next to the new generation. `build_static_artifacts`
+    writes a section only when the bundle carries it
+    (`pipeline/artifacts.py:186-188`), so a refresh whose source data lost a
+    section really can produce this.
+
+    Runs only after the commit markers are up, so nothing is removed until the
+    generation that replaces it is the published one.
+    """
+    if not backup.published:
+        return
+    # `- published_keys` is what makes this safe: only keys this build did not
+    # write are candidates. The manifest is excluded belt-and-braces; it is a
+    # marker, and a manifest never lists itself among its own sections.
+    superseded = sorted(backup.previous_keys - published_keys - {manifest_key})
+    if not superseded:
+        return
+    try:
+        for key in superseded:
+            delete_r2_object(backup.bucket, key)
+    except Exception as delete_error:
+        raise RuntimeError(
+            f"{session_id} published successfully, but {len(superseded)} object(s) "
+            f"its previous generation owned could not be removed: "
+            f"{', '.join(superseded)}. Until they are deleted the read path will "
+            f"serve them alongside the new generation. Original failure: "
+            f"{delete_error}"
+        ) from delete_error
+
+
+def withdraw_manifest(
+    bucket: str, key: str, session_id: str, marker_error: BaseException
+) -> None:
+    """Take the manifest back when a later commit marker fails.
+
+    A live manifest whose session no index lists is the one state that makes
+    index absence unreliable evidence: a later run that cannot read that
+    manifest would ask the indexes, be told the session was never published,
+    and overwrite it with no backup. Withdrawing it keeps "absent from the
+    indexes" and "no live generation" the same statement.
+
+    Only for a session with no previous generation. A refresh leaves its new
+    manifest in place -- the session is already indexed, so it is already
+    discoverable, and the new manifest correctly describes the bodies that just
+    landed.
+    """
+    try:
+        delete_r2_object(bucket, key)
+    except Exception as delete_error:
+        raise RuntimeError(
+            f"Publishing {session_id} failed at a commit marker, and the "
+            f"manifest published moments earlier could not be withdrawn. "
+            f"{session_id} now has a live manifest that no index lists, which "
+            f"a later run may not detect; delete {key} or republish "
+            f"{session_id} before trusting it. Original marker failure: "
+            f"{marker_error}"
+        ) from delete_error
+
+
 def published_object_keys(manifest_path: Path, prefix: str, session_id: str) -> set[str]:
     """The object keys the published manifest says its generation owns.
 
@@ -585,15 +674,41 @@ def confirm_session_is_unpublished(
     session_id: str,
     year: int,
     allow_missing_catalog: bool,
+    probe_base_url: str | None = None,
 ) -> None:
-    """Corroborate an unreadable manifest against the published indexes.
+    """Establish that there is no live generation, or stop the refresh.
 
     A manifest that cannot be read is not the same thing as a session that was
     never published, and wrangler's stderr is not a stable enough contract to
-    tell the two apart. So the claim is checked against an index that did read
-    successfully: only that can turn "no manifest came back" into "there is
-    nothing here to protect". Anything less certain stops the refresh.
+    tell the two apart. Two things can settle it, in order of authority:
+
+    1. A direct existence probe through the Worker, which answers 404 or does
+       not answer at all. This is the only positive proof of absence available,
+       so it is preferred whenever it can be reached.
+    2. Failing that, the published indexes -- but only ever as corroboration.
+       An index is a weaker witness than the object itself: the manifest is
+       uploaded before the indexes, so a run that died in between leaves a live
+       manifest no index mentions. `upload_markers` withdraws the manifest in
+       exactly that case to keep this inference sound, which leaves only a
+       hard-killed runner able to produce the state.
+
+    Anything less certain than these stops the refresh.
     """
+    manifest_key = object_key(prefix, f"sessions/{session_id}/manifest.json")
+    if probe_base_url and not prefix.strip("/"):
+        # Only without a prefix: the Worker resolves /data/<path> to <path> in
+        # its own bucket and has no notion of the publication prefix, so under
+        # one the probe would be asking about a different key.
+        exists = remote_object_exists(probe_base_url, manifest_key)
+        if exists is True:
+            raise RuntimeError(
+                f"{session_id} has a published manifest, but it could not be "
+                f"read, so the generation that is live now cannot be copied "
+                f"before being overwritten. Refusing to refresh {session_id}; "
+                f"re-run once R2 reads succeed."
+            )
+        if exists is False:
+            return
     indexes = rollback_root / "indexes"
     catalog_path = indexes / "catalog.json"
     if not download_r2_object(
@@ -615,18 +730,27 @@ def confirm_session_is_unpublished(
             f"or pass --allow-missing-catalog if the bucket really is empty."
         )
     catalog = read_json(catalog_path)
-    if not any(int(row.get("year") or 0) == year for row in catalog.get("seasons", [])):
-        # The catalog read cleanly and has never carried this year, so no
-        # session of it -- this one included -- has ever been published.
-        return
+    year_in_catalog = any(
+        int(row.get("year") or 0) == year for row in catalog.get("seasons", [])
+    )
+    # The season index is consulted even when the catalog has not heard of the
+    # year. The catalog is the last marker published, so it is the one most
+    # likely to be the missing one, and the season index it lags can already
+    # carry the session. Its absence is only expected when the year is new,
+    # which is what decides whether the read may fail.
     season_path = indexes / "seasons" / f"{year}.json"
-    download_r2_object(
+    season_published = download_r2_object(
         bucket,
         object_key(prefix, f"seasons/{year}.json"),
         season_path,
-        required=True,
+        required=year_in_catalog,
         error_context="R2 season index",
     )
+    if not season_published:
+        # No catalog entry for the year and no season index for it either: two
+        # clean reads agreeing that nothing of this year has ever been
+        # published, so this session cannot have been either.
+        return
     season = read_json(season_path)
     if any(row.get("session_id") == session_id for row in season.get("sessions", [])):
         raise RuntimeError(
@@ -706,6 +830,7 @@ def publish_artifacts(
     year: int,
     source_dataset: Path,
     allow_missing_catalog: bool = False,
+    probe_base_url: str | None = None,
 ) -> None:
     if artifact_destination == "r2":
         bucket = required_value(r2_bucket, "--r2-bucket")
@@ -722,6 +847,7 @@ def publish_artifacts(
             session_id=session_id,
             year=year,
             allow_missing_catalog=allow_missing_catalog,
+            probe_base_url=probe_base_url,
         )
         return
     publish_artifacts_locally(publication_dir, output_dir, session_id=session_id, year=year)
@@ -843,6 +969,45 @@ def upload_r2_object(path: Path, bucket: str, key: str) -> None:
                 f"(exit {result.returncode}):\n{detail}"
             )
         _sleep_before_retry(attempt, detail)
+
+
+def remote_object_exists(base_url: str, key: str) -> bool | None:
+    """Ask the Worker whether an object is there, over a channel that can say no.
+
+    Wrangler cannot distinguish "not found" from "the read failed", which is the
+    whole difficulty: absence has to be established positively, and inferring it
+    from a failed read is what lets a live generation be overwritten. HTTP does
+    distinguish -- 404 is an answer, a 5xx or a dropped connection is not -- and
+    the Worker already serves `/data/...` straight from its R2 binding
+    (`worker/src/index.mjs` -> `artifact-store.mjs`), including HEAD.
+
+    Returns True (present), False (positively absent), or None (no answer), and
+    None is never treated as absence by the caller.
+    """
+    # The query string only exists to keep an edge cache from answering with a
+    # negative it stored before this session was published. The Worker routes on
+    # the path alone, so it is ignored server side.
+    endpoint = f"{base_url.rstrip('/')}/data/{urllib.parse.quote(key)}?probe={time.time_ns()}"
+    headers = {
+        "Accept": "application/json",
+        "Cache-Control": "no-cache",
+        "User-Agent": "Formula1Data-IngestionRunner/1.0",
+    }
+    access_client_id = os.getenv("CF_ACCESS_CLIENT_ID")
+    access_client_secret = os.getenv("CF_ACCESS_CLIENT_SECRET")
+    if access_client_id and access_client_secret:
+        headers["CF-Access-Client-Id"] = access_client_id
+        headers["CF-Access-Client-Secret"] = access_client_secret
+    request = urllib.request.Request(endpoint, headers=headers, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return 200 <= response.status < 300
+    except urllib.error.HTTPError as error:
+        # Only a 404 is an answer. A 401, 403 or 5xx says the probe itself did
+        # not work, which is not evidence about the object.
+        return False if error.code == 404 else None
+    except Exception:
+        return None
 
 
 def delete_r2_object(bucket: str, key: str) -> None:

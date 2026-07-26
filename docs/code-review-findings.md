@@ -114,13 +114,14 @@ finding's own **Status** row records whether it is still open.
 | F-12 | analysis-layer deduplication | **Resolved** |
 | F-30, F-31 | found while fixing F-12 | **Resolved** |
 | F-32 | complete backup before a refresh overwrites | **Resolved** |
+| F-33 | positive proof of absence, and no lagging markers | **Resolved** |
 
-**All 32 findings are resolved.** Twenty-nine came from the review itself; F-29
+**All 33 findings are resolved.** Twenty-nine came from the review itself; F-29
 was introduced by the review's own F-03 fix, F-30/F-31 were found while
-resolving F-12, and F-32 came from review feedback on PR #6 against the F-02
-fix — the guard could skip or half-fill its backup and still overwrite.
+resolving F-12, and F-32 and F-33 came from successive rounds of review feedback
+on PR #6 — each against the fix the round before it, on the same refresh path.
 
-The Python suite is 79/79 and the Worker suite 55/55, both run by
+The Python suite is 86/86 and the Worker suite 56/56, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
 
@@ -1723,6 +1724,78 @@ whose index publication never completed is not in the catalog, so an unreadable
 manifest for it is corroborated as absent and it may be overwritten. Reaching
 that requires a previous run to have died between its manifest and its indexes
 *and* the manifest to be unreadable now.
+
+**Effort** M.
+
+---
+
+### F-33 — A manifest published without its indexes defeated the F-32 existence check
+
+| | |
+| --- | --- |
+| **Category** | Data integrity |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | **Resolved** |
+
+**Resolution** Raised as merge-blocking review feedback on PR #6 against the
+F-32 fix. Two of the three reported cases reproduced; the third does not exist.
+
+**Location** `sync_artifacts_to_r2`, `upload_markers`,
+`confirm_session_is_unpublished` (`pipeline/local_queue_worker.py:327-700`).
+
+F-32 made an unreadable manifest safe by corroborating it against the published
+indexes. But the commit markers go up in the order manifest → season → catalog,
+and a failure between them was not rolled back, so a run could leave a *live
+manifest that no index lists* — and the corroboration would then read that
+silence as proof the session was never published.
+
+- **Case A (valid).** Bodies and manifest land, the season-index PUT fails. On a
+  retry whose manifest GET fails operationally, the season index reads cleanly
+  and does not list the session, so the guard concluded "unpublished" and
+  overwrote the live bodies with no backup. No exception was raised.
+- **Case B (valid).** Same shape for the first session of a new year: season
+  index lands, catalog PUT fails. `confirm_session_is_unpublished` returned as
+  soon as the catalog did not carry the year, without ever consulting the
+  season index that *did* list the session.
+- **Case C (invalid).** For a session already in the indexes, neither case is
+  reachable: the indexes still list it, so the guard raises. The exposure was
+  always limited to sessions not yet indexed — first publications, and the
+  first session of a new year.
+
+Three changes, each pinned by a test that fails without it:
+
+1. **A structured existence probe.** Absence is now established positively
+   rather than inferred: `remote_object_exists` sends `HEAD /data/<key>` to the
+   Worker, which serves straight from its R2 binding. 404 is an answer, a 5xx
+   or a dropped connection is not, and only a 404 permits skipping the backup.
+   The Worker's side of that contract is asserted in `worker/tests/worker-http.test.mjs`.
+2. **Marker withdrawal.** If a marker fails after the manifest has landed and
+   there was no previous generation, the manifest is deleted again — so
+   "absent from the indexes" and "no live generation" stay the same statement,
+   which is what the index fallback needs in order to be sound.
+3. **The season index is consulted even when the catalog lacks the year**,
+   closing Case B. The catalog is the last marker published and so the most
+   likely to be missing.
+
+**Secondary item — stale objects after a *successful* refresh: valid, fixed.**
+Overwriting only covers keys both generations share. The analysis artifacts are
+a fixed set of ten, so they cannot go stale, but `build_static_artifacts` writes
+a section only when the bundle carries it (`pipeline/artifacts.py:186-188`), so
+a refresh whose source data lost a section left the old copy live — and the
+frontend reads every section from a fixed path, not through the manifest, so it
+would be served as current. `remove_superseded_objects` now deletes what the
+previous manifest owned and the new generation did not write, after the commit
+markers are up. Stale telemetry laps were already unreachable through the
+application because `telemetry/index.json` gates which laps are requested, but
+they are removed by the same pass.
+
+**Residual window** A runner hard-killed between the manifest PUT and the
+withdrawal still leaves the Case A state; the existence probe is what covers it,
+and the probe needs the Worker reachable and no publication prefix (it resolves
+`/data/<path>` to `<path>` in its own bucket). With neither available, the guard
+falls back to index corroboration, which is sound for completed runs but not for
+a hard kill. Production has both.
 
 **Effort** M.
 
