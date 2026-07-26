@@ -378,10 +378,22 @@ manifest, season index, then catalog in that order. The Worker only exposes `cat
 `seasons/*`, and `sessions/*` through `/data`, so normalized source datasets remain private.
 Keep direct R2 public access disabled; the Worker allowlist is the intended read boundary.
 
-The current R2 `catalog.json` must exist before queue-driven ingestion begins. Seed the initial
-catalog and season files from `frontend/public/data` during first deployment. Requiring the current
-catalog prevents a transient R2 or credential failure from replacing production indexes with a
-partial local view.
+The current R2 `catalog.json` must be readable before queue-driven ingestion publishes anything, and
+a run that cannot read it fails. Wrangler exits non-zero for both "no such object" and "that read
+failed", so tolerating an unreadable catalog would let one transient failure republish an index
+containing only the session just ingested, hiding every other session from clients. The download is
+retried with backoff first; a persistent failure is then an error rather than a guess.
+
+Seed the initial catalog and season files from `frontend/public/data` during first deployment (see
+`docs/production-ingestion-setup.md`, section 5). If instead you want the first ingestion itself to
+create the indexes in a genuinely empty bucket, pass `--allow-missing-catalog` for that one run:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json --artifact-destination r2 --r2-bucket formula-1-data-artifacts --allow-missing-catalog
+```
+
+That flag is for bootstrap only. Leave it off everywhere else, including the ingestion workflow: on a
+bucket that already has a catalog it converts a failed read into a silent index overwrite.
 
 ### Scheduling and recovery
 

@@ -107,6 +107,15 @@ def main(argv: list[str] | None = None) -> None:
     )
     process_queue.add_argument("--success-payload-file", type=Path)
     process_queue.add_argument("--force", action="store_true", help="Force FastF1 reingestion.")
+    process_queue.add_argument(
+        "--allow-missing-catalog",
+        action="store_true",
+        help=(
+            "Bootstrap only: treat an unreadable R2 catalog.json as an empty bucket. "
+            "Without this a run that cannot read the catalog fails instead of "
+            "republishing an index containing only the session it just ingested."
+        ),
+    )
     process_queue.set_defaults(func=process_queue_messages)
 
     args = parser.parse_args(argv)
@@ -198,6 +207,7 @@ def process_queue_messages(args: argparse.Namespace) -> None:
             force=args.force,
             defer_terminal_callbacks=args.defer_terminal_callbacks,
             success_payload_file=args.success_payload_file,
+            allow_missing_catalog=args.allow_missing_catalog,
         )
         print(f"Processed {result['job_id']} for {result['session_id']} ({result['artifacts']} artifacts).")
 

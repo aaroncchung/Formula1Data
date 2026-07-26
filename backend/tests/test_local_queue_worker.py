@@ -160,12 +160,17 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
             with patch.dict(os.environ, {"R2_UPLOAD_CONCURRENCY": str(workers)}):
                 with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
+                    # First publication: no remote manifest, so no rollback
+                    # backup is taken and every wrangler call here is an upload.
                     with patch(
-                        "pipeline.local_queue_worker.subprocess.run", side_effect=fake_run
+                        "pipeline.local_queue_worker.download_r2_object", return_value=False
                     ):
-                        sync_artifacts_to_r2(
-                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
-                        )
+                        with patch(
+                            "pipeline.local_queue_worker.subprocess.run", side_effect=fake_run
+                        ):
+                            sync_artifacts_to_r2(
+                                output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                            )
 
     def test_r2_sync_finishes_every_body_before_starting_any_commit_marker(self):
         """Markers must follow body completion, not merely body submission."""
@@ -192,10 +197,13 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
 
             with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
-                with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
-                    sync_artifacts_to_r2(
-                        output_dir, "test-bucket", session_id="2025-09-r", year=2025
-                    )
+                # First publication, so the rollback backup is skipped and the
+                # only wrangler calls are the uploads this test times.
+                with patch("pipeline.local_queue_worker.download_r2_object", return_value=False):
+                    with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+                        sync_artifacts_to_r2(
+                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                        )
 
             self.assertEqual(len(body_finished), 12)
             self.assertEqual([key for _, key in marker_started], self.MARKER_KEYS)
@@ -225,14 +233,196 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 # slots without ever waiting, mutating shared module state and
                 # making this test order-dependent.
                 with patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"):
-                    with patch("pipeline.local_queue_worker.time.sleep"):
-                        with self.assertRaises(RuntimeError):
-                            sync_artifacts_to_r2(
-                                output_dir, "test-bucket", session_id="2025-09-r", year=2025
-                            )
+                    # First publication: nothing published yet, so nothing is
+                    # backed up and nothing is rolled back. The refresh case is
+                    # covered by the rollback tests below.
+                    with patch(
+                        "pipeline.local_queue_worker.download_r2_object", return_value=False
+                    ):
+                        with patch("pipeline.local_queue_worker.time.sleep"):
+                            with self.assertRaises(RuntimeError):
+                                sync_artifacts_to_r2(
+                                    output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                                )
 
             for marker in self.MARKER_KEYS:
                 self.assertNotIn(marker, attempted)
+
+    def _write_generation(self, output_dir, session_id, body_count, tag):
+        """Write one whole generation of a session and return its object keys."""
+        session_dir = output_dir / "sessions" / session_id
+        (session_dir / "telemetry").mkdir(parents=True, exist_ok=True)
+        keys = []
+        for index in range(body_count):
+            key = f"sessions/{session_id}/telemetry/ver-lap-{index}.json"
+            (output_dir / key).write_text(
+                f'{{"generation": "{tag}", "lap": {index}}}', encoding="utf-8"
+            )
+            keys.append(key)
+        manifest_key = f"sessions/{session_id}/manifest.json"
+        (output_dir / manifest_key).write_text(f'{{"generation": "{tag}"}}', encoding="utf-8")
+        (output_dir / "seasons").mkdir(parents=True, exist_ok=True)
+        (output_dir / "seasons" / "2025.json").write_text(
+            f'{{"generation": "{tag}"}}', encoding="utf-8"
+        )
+        (output_dir / "catalog.json").write_text(f'{{"generation": "{tag}"}}', encoding="utf-8")
+        return keys + [manifest_key]
+
+    def _fake_r2(self, remote, put_fails=None):
+        """A stand-in bucket: `remote` maps object key to stored bytes.
+
+        Returns the `subprocess.run` side effect and the list of (verb, key)
+        wrangler calls it saw, so tests can assert on operation counts as well
+        as on the bucket's final contents.
+        """
+        import threading
+        from types import SimpleNamespace
+
+        calls = []
+        lock = threading.Lock()
+
+        def fake_run(args, **kwargs):
+            verb = args[3]
+            key = args[4].split("/", 1)[1]
+            file_path = Path(args[6])
+            with lock:
+                calls.append((verb, key))
+                seen = sum(1 for call in calls if call == (verb, key))
+            if verb == "put":
+                if put_fails and put_fails(key, seen):
+                    return SimpleNamespace(returncode=1, stdout="", stderr="upload failed")
+                with lock:
+                    remote[key] = file_path.read_bytes()
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            with lock:
+                body = remote.get(key)
+            if body is None:
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr="The specified key does not exist."
+                )
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(body)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        return fake_run, calls
+
+    def test_a_failed_refresh_restores_the_previously_published_bodies(self):
+        """F-02: a part-way failure must not leave a mix of two generations live.
+
+        Bodies go to the same keys as the live generation, and nothing on the
+        read path checksums a section, so an unrestored mixture is served
+        silently under a manifest that no longer describes it.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 6, "old")
+            self._write_generation(new_dir, session_id, 6, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            before = dict(remote)
+
+            def put_fails(key, seen):
+                # Three PUTs of this key is the whole retry budget, so the
+                # refresh gives up on it. The fourth is the rollback putting the
+                # old bytes back, and that one is allowed through -- the point of
+                # this test is the rollback's effect, not its error path.
+                return key.endswith("ver-lap-3.json") and seen <= 3
+
+            fake_run, _calls = self._fake_r2(remote, put_fails)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaises(RuntimeError):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+            # Byte-for-byte what was live before the refresh started.
+            self.assertEqual(remote, before)
+            self.assertNotIn("seasons/2025.json", remote)
+            self.assertNotIn("catalog.json", remote)
+
+    def test_a_failed_rollback_names_the_session_it_may_have_left_inconsistent(self):
+        """The one thing worse than a failed refresh is a silent failed rollback."""
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+
+            fake_run, _calls = self._fake_r2(
+                remote, lambda key, seen: key.endswith("ver-lap-2.json")
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "2025-09-r may now be inconsistent"):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+    def test_a_first_publication_does_not_pay_for_a_backup(self):
+        """Nothing is published yet, so there is nothing to protect."""
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            new_dir = Path(temporary_directory) / "new"
+            self._write_generation(new_dir, session_id, 6, "new")
+            remote: dict[str, bytes] = {}
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2025)
+
+            gets = [key for verb, key in calls if verb == "get"]
+            # The manifest probe and nothing else: no body was downloaded.
+            self.assertEqual(set(gets), {f"sessions/{session_id}/manifest.json"})
+            # Retried to its budget before absence is believed, per F-03's fix.
+            self.assertEqual(len(gets), 3)
+            self.assertEqual(len([key for verb, key in calls if verb == "put"]), 9)
+            self.assertIn("catalog.json", remote)
+
+    def test_a_successful_refresh_commits_the_new_generation_without_rolling_back(self):
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 6, "old")
+            self._write_generation(new_dir, session_id, 6, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2025)
+
+            for key in published:
+                self.assertEqual(remote[key], (new_dir / key).read_bytes())
+            # Commit markers published as before.
+            self.assertIn("seasons/2025.json", remote)
+            self.assertIn("catalog.json", remote)
+            put_keys = [key for verb, key in calls if verb == "put"]
+            # One PUT per object: a rollback would have re-uploaded the bodies.
+            self.assertEqual(len(put_keys), 9)
+            self.assertEqual(len(put_keys), len(set(put_keys)))
+            # The backup itself costs one GET per body plus the manifest probe.
+            self.assertEqual(len([key for verb, key in calls if verb == "get"]), 7)
 
     def test_upload_retries_with_backoff_then_succeeds(self):
         from types import SimpleNamespace
@@ -378,17 +568,27 @@ class LocalQueueWorkerTests(unittest.TestCase):
         self.assertEqual(merged["season"]["meeting_count"], 2)
         self.assertEqual(merged["season"]["ingested_meeting_count"], 2)
 
-    def test_r2_hydration_bootstraps_a_bucket_with_no_catalog(self):
-        """The first ingestion into a fresh bucket has nothing to hydrate."""
+    def test_r2_hydration_bootstraps_a_bucket_with_no_catalog_when_opted_in(self):
+        """The first ingestion into a fresh bucket has nothing to hydrate.
+
+        Bootstrap is reachable, but only deliberately: an absent catalog is
+        tolerated under --allow-missing-catalog and nowhere else.
+        """
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             destination = root / "existing"
-            with patch("pipeline.local_queue_worker.subprocess.run") as run:
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run") as run,
+            ):
                 run.return_value.returncode = 1
                 run.return_value.stderr = "The specified key does not exist."
                 run.return_value.stdout = ""
 
-                hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+                hydrate_r2_indexes(
+                    destination, "test-bucket", "", 2026, allow_missing_catalog=True
+                )
 
             self.assertFalse((destination / "catalog.json").exists())
 
@@ -406,6 +606,86 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
             self.assertEqual(read_json(publication_dir / "catalog.json"), catalog)
 
+    def test_r2_hydration_fails_loudly_when_the_catalog_cannot_be_read(self):
+        """Without the opt-in, an unreadable catalog is an error, not a bootstrap.
+
+        Wrangler exits non-zero for both "no such object" and "that read
+        failed", so tolerating absence by default would let one transient
+        failure republish a catalog holding only the session just ingested.
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "existing"
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run") as run,
+            ):
+                run.return_value.returncode = 1
+                run.return_value.stderr = "The specified key does not exist."
+                run.return_value.stdout = ""
+
+                with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
+                    hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+
+    def test_a_transient_catalog_read_is_retried_before_it_counts_as_absence(self):
+        """A blip on the catalog read must not erase the sessions R2 knows about."""
+        from types import SimpleNamespace
+
+        remote_rows = {
+            "meetings": [{"meeting_id": "2026-08-w", "year": 2026, "round": 8}],
+            "sessions": [{"session_id": "2026-08-r", "year": 2026, "round": 8, "type": "R"}],
+        }
+        remote_catalog = {"schema_version": 1, "seasons": [{"year": 2026}], **remote_rows}
+        remote_season = {"schema_version": 1, "season": {"year": 2026}, **remote_rows}
+        attempted: list[str] = []
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            destination = root / "existing"
+
+            def fake_run(args, **kwargs):
+                key = args[4]
+                attempted.append(key)
+                if key.endswith("catalog.json") and attempted.count(key) == 1:
+                    return SimpleNamespace(returncode=1, stdout="", stderr="connection reset")
+                body = remote_catalog if key.endswith("catalog.json") else remote_season
+                write_json(Path(args[6]), body)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep") as sleep,
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                hydrate_r2_indexes(destination, "test-bucket", "", 2026)
+
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [2])
+            self.assertEqual(read_json(destination / "catalog.json"), remote_catalog)
+
+            # The retry is what keeps the merge from no-opping, so assert the
+            # published catalog still carries the pre-existing session.
+            publication_dir = root / "data"
+            write_json(
+                publication_dir / "catalog.json",
+                {
+                    "schema_version": 1,
+                    "seasons": [{"year": 2026}],
+                    "meetings": [{"meeting_id": "2026-09-x", "year": 2026, "round": 9}],
+                    "sessions": [
+                        {"session_id": "2026-09-r", "year": 2026, "round": 9, "type": "R"}
+                    ],
+                },
+            )
+            merge_incremental_indexes(destination, publication_dir, 2026)
+
+            self.assertEqual(
+                {
+                    row["session_id"]
+                    for row in read_json(publication_dir / "catalog.json")["sessions"]
+                },
+                {"2026-08-r", "2026-09-r"},
+            )
+
     def test_r2_hydration_still_requires_a_season_index_the_catalog_claims(self):
         """Bootstrap tolerance must not extend to an index known to exist."""
         from types import SimpleNamespace
@@ -419,7 +699,11 @@ class LocalQueueWorkerTests(unittest.TestCase):
                     return SimpleNamespace(returncode=0, stdout="", stderr="")
                 return SimpleNamespace(returncode=1, stdout="", stderr="object not found")
 
-            with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
                 with self.assertRaisesRegex(RuntimeError, "required R2 index seasons/2026.json"):
                     hydrate_r2_indexes(destination, "test-bucket", "", 2026)
 
@@ -511,6 +795,85 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 {row["session_id"] for row in uploaded["seasons/2026.json"]["sessions"]},
                 {"2026-08-r", session_id},
             )
+
+    def test_an_unreadable_catalog_aborts_instead_of_republishing_one_session(self):
+        """The failure mode this guards: a one-session catalog over a full one.
+
+        The bucket does have a catalog; the read just fails. Treating that as
+        an empty bucket would publish an index holding only this session and
+        hide every other one from clients, silently, on every ingestion.
+        """
+        from types import SimpleNamespace
+
+        session_id = "2026-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output_dir = Path(temporary_directory) / "data"
+            session_dir = output_dir / "sessions" / session_id
+            summary_path = session_dir / "summary.json"
+            write_json(summary_path, {"session_id": session_id})
+            write_json(
+                session_dir / "manifest.json",
+                {
+                    "session_id": session_id,
+                    "generated_at": "2026-07-13T12:00:00Z",
+                    "sections": [
+                        {
+                            "kind": "summary",
+                            "path": f"sessions/{session_id}/summary.json",
+                            "size_bytes": summary_path.stat().st_size,
+                            "checksum": checksum_file(summary_path),
+                        }
+                    ],
+                },
+            )
+            local_rows = {
+                "meetings": [{"meeting_id": "2026-09-x", "year": 2026, "round": 9}],
+                "sessions": [{"session_id": session_id, "year": 2026, "round": 9, "type": "R"}],
+            }
+            write_json(
+                output_dir / "catalog.json",
+                {"schema_version": 1, "seasons": [{"year": 2026}], **local_rows},
+            )
+            write_json(
+                output_dir / "seasons" / "2026.json",
+                {"schema_version": 1, "season": {"year": 2026}, **local_rows},
+            )
+
+            def fake_run(args, **kwargs):
+                # Only downloads reach subprocess.run here; uploads are stubbed.
+                return SimpleNamespace(returncode=1, stdout="", stderr="connection reset by peer")
+
+            uploaded: dict[str, object] = {}
+
+            def fake_upload(path, _bucket, key):
+                uploaded[key] = read_json(path)
+
+            with (
+                patch.dict(os.environ, {}),
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+                patch("pipeline.local_queue_worker.upload_r2_object", side_effect=fake_upload),
+                patch("pipeline.local_queue_worker.verify_remote_manifest"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
+                    process_message(
+                        {
+                            "job_id": "job-1",
+                            "kind": "ingest_session",
+                            "year": 2026,
+                            "round": 9,
+                            "session": "R",
+                        },
+                        data_dir=Path(temporary_directory) / "backend-data",
+                        output_dir=output_dir,
+                        artifact_destination="r2",
+                        r2_bucket="test-bucket",
+                    )
+
+            # The session body may already be up, but no index was rewritten.
+            self.assertNotIn("catalog.json", uploaded)
+            self.assertNotIn("seasons/2026.json", uploaded)
 
     def test_hundreds_of_telemetry_laps_use_a_compact_manifest_callback(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
