@@ -112,12 +112,13 @@ finding's own **Status** row records whether it is still open.
 | F-29 | fail-loud catalog read + download retry | **Resolved** |
 | F-02 | guarded refresh with rollback | **Resolved** |
 | F-12 | analysis-layer deduplication | **Resolved** |
-| — | **F-30, F-31** (found while fixing F-12) | Open |
+| F-30, F-31 | found while fixing F-12 | **Resolved** |
 
-All 29 findings from this review are resolved. Two new ones were opened during
-the work and are recorded below.
+**All 31 findings are resolved.** Twenty-nine came from the review itself; F-29
+was introduced by the review's own F-03 fix and F-30/F-31 were found while
+resolving F-12.
 
-The Python suite is 73/73 and the Worker suite 55/55, both run by
+The Python suite is 75/75 and the Worker suite 55/55, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
 
@@ -1596,7 +1597,11 @@ still contains the pre-existing sessions.
 | **Category** | Maintainability |
 | **Severity** | Low |
 | **Confidence** | High |
-| **Status** | Confirmed — found while resolving F-12 |
+| **Status** | **Resolved** |
+
+**Resolution** **Correction first:** the report that the two implementations differ in output was wrong. `ChartSeries` declares `metadata` with a `default_factory`, so the serialised route response already carried `metadata: {}`; both sides produce identical output. The only genuine difference was the missing `if driver.get("code")` guard, which made the route raise `KeyError` on a driver record without a code while the pipeline skipped it. This was therefore a pure move plus adopting the safer guard, not the design decision it was filed as.
+
+The pivot now lives in `backend/app/analysis/lap_times.py`, returns dicts like the rest of the shared package, and the route wraps it in `ChartSeries` at its boundary. The parity guard covers the eleventh pair alongside the other ten, and two regression tests cover the guard and the `metadata` key. Sample artifacts regenerate byte-identically.
 
 **Locations** `backend/app/api/routes/analysis.py:32-48` inlines the same pivot
 as `pipeline/analysis/precompute.py::lap_time_series`.
@@ -1624,7 +1629,11 @@ route wrap the result in `ChartSeries` at its boundary as `race_pace` and
 | **Category** | Cleanup |
 | **Severity** | Low |
 | **Confidence** | High |
-| **Status** | Confirmed — found while resolving F-12 |
+| **Status** | **Resolved** |
+
+**Resolution** `pipeline.analysis.precompute.calculate_tyre_degradation` removed -- nothing called it, and `precompute_session_analysis` goes straight to `calculate_fuel_adjusted_tyre_degradation`. `precompute.py` is now 92 lines, from 468 before deduplication began.
+
+The `tyre_degradation` Pydantic wrapper deliberately stays inside the analysis package rather than moving to the route: it is API-only, the pipeline never imports it, and `backend/app/analysis/__init__.py` already records it as an intentional exception alongside `qualifying_delta` and `telemetry_compare`.
 
 **Location** `pipeline/analysis/precompute.py::calculate_tyre_degradation`.
 
