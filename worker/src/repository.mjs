@@ -276,7 +276,16 @@ export function createD1Repository(db) {
   };
 }
 
-export function createMemoryRepository(state = memoryState) {
+function createMemoryState() {
+  return {
+    sessions: new Map(),
+    jobs: new Map(),
+    artifacts: new Map(),
+    liveSnapshots: new Map()
+  };
+}
+
+export function createMemoryRepository(state = createMemoryState()) {
   return {
     async getSession(sessionId) {
       return state.sessions.get(sessionId) || null;
