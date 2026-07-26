@@ -299,11 +299,13 @@ class LocalQueueWorkerTests(unittest.TestCase):
         self.assertEqual(len(starts), calls)
         starts.sort()
         gaps = [later - earlier for earlier, later in zip(starts, starts[1:])]
-        # perf_counter, not monotonic: this asserts a 10ms spacing, and
-        # time.monotonic() is GetTickCount64() on Windows with a 15.625ms
-        # resolution -- coarser than the interval being measured, so
-        # concurrent starts read as identical and min(gaps) is 0.0.
-        # perf_counter is QueryPerformanceCounter there (~100ns).
+        # perf_counter on both sides, deliberately. This asserts a 10ms
+        # spacing, and time.monotonic() is GetTickCount64() on Windows with a
+        # 15.625ms resolution. Measuring with it made concurrent starts read as
+        # identical; scheduling with it made them genuinely cluster, because a
+        # stale `now` shrinks the delay the pacer computes. The pacer therefore
+        # reads perf_counter too -- with monotonic this assertion failed about
+        # one run in six at 4.2ms.
         #
         # Generous factors: this asserts starts are spaced at all, without
         # becoming flaky when a loaded CI runner deschedules a thread.
