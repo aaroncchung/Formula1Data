@@ -45,7 +45,9 @@ export function LiveDataPanel() {
         payloads: { current, timing, raceControl, positions, weather },
         updatedAt: new Date().toLocaleTimeString()
       });
-      return true;
+      // Live mode disabled renders a static message; polling it is pure waste.
+      // The manual "Refresh" button covers recovery if it is turned back on.
+      return ![current, timing, raceControl, positions, weather].every(isLiveDisabled);
     } catch (error) {
       if (isDynamicApiRouteMissing(error)) {
         setState({
@@ -66,20 +68,28 @@ export function LiveDataPanel() {
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
+    const stop = () => {
+      if (timer !== undefined) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+    };
     const start = async () => {
       const shouldPoll = await load();
       if (!cancelled && shouldPoll) {
         timer = window.setInterval(() => {
-          void load();
+          void load().then((keepPolling) => {
+            if (!keepPolling) {
+              stop();
+            }
+          });
         }, 4000);
       }
     };
     void start();
     return () => {
       cancelled = true;
-      if (timer) {
-        window.clearInterval(timer);
-      }
+      stop();
     };
   }, [load]);
 

@@ -2,14 +2,24 @@ import type { ChartSeries, TelemetryComparison } from "@/types/domain";
 
 export function seriesToRows(series: ChartSeries[]): Array<Record<string, number | string | null>> {
   const lapNumbers = new Set<string | number>();
-  series.forEach((item) => item.x.forEach((x) => lapNumbers.add(x)));
+  // One lookup table per series keeps the pivot linear in the number of points
+  // instead of scanning every series for every lap.
+  const indexed = series.map((item) => {
+    const byX = new Map<string | number, number | string | null>();
+    item.x.forEach((x, index) => {
+      lapNumbers.add(x);
+      if (!byX.has(x)) {
+        byX.set(x, item.y[index] ?? null);
+      }
+    });
+    return { name: item.name, byX };
+  });
   return Array.from(lapNumbers)
     .sort((a, b) => Number(a) - Number(b))
     .map((lap) => {
       const row: Record<string, number | string | null> = { lap };
-      series.forEach((item) => {
-        const index = item.x.findIndex((x) => x === lap);
-        row[item.name] = index >= 0 ? item.y[index] : null;
+      indexed.forEach((item) => {
+        row[item.name] = item.byX.get(lap) ?? null;
       });
       return row;
     });

@@ -3,7 +3,7 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { DriverBadge } from "@/components/session/Badges";
 import { api, safeApi } from "@/lib/api-server";
-import type { Driver } from "@/types/domain";
+import type { Driver, Team } from "@/types/domain";
 
 export default async function StandingsPage() {
   const primarySession = await safeApi(() => api.primarySession());
@@ -24,30 +24,49 @@ export default async function StandingsPage() {
   const resultsResponses = await Promise.all(pointSessions.map((s) => safeApi(() => api.results(s.session_id))));
   const driversResponses = await Promise.all(pointSessions.map((s) => safeApi(() => api.drivers(s.session_id))));
 
+  // Sessions are catalog-ordered by (year, round, type), so the last entry seen
+  // for a driver is their most recent team. Points are attributed to the team
+  // recorded for the session they were scored in, not to a frozen team.
   const driverMap = new Map<string, Driver>();
-  for (const resp of driversResponses) {
-    if (resp.ok) {
-      for (const d of resp.data) {
-        if (!driverMap.has(d.code)) {
-          driverMap.set(d.code, d);
-        }
-      }
-    }
-  }
-
   const pointsMap = new Map<string, { points: number; wins: number; podiums: number; starts: number }>();
-  for (const resp of resultsResponses) {
-    if (resp.ok) {
-      for (const r of resp.data) {
-        const aggregate = pointsMap.get(r.driver_code) || { points: 0, wins: 0, podiums: 0, starts: 0 };
-        aggregate.points += r.points || 0;
-        aggregate.wins += r.position === 1 ? 1 : 0;
-        aggregate.podiums += r.position <= 3 ? 1 : 0;
-        aggregate.starts += 1;
-        pointsMap.set(r.driver_code, aggregate);
+  const teamMap = new Map<string, { team: Team; points: number; wins: number }>();
+
+  pointSessions.forEach((session, index) => {
+    const driversResponse = driversResponses[index];
+    const resultsResponse = resultsResponses[index];
+    const sessionTeams = new Map<string, Team>();
+    if (driversResponse.ok) {
+      for (const d of driversResponse.data) {
+        sessionTeams.set(d.code, d.team);
+        driverMap.set(d.code, d);
       }
     }
-  }
+    if (!resultsResponse.ok) {
+      return;
+    }
+    // Sprints award championship points, but their finishes are not race wins,
+    // podiums or starts, so only `R` sessions feed those columns.
+    const isRace = session.type.toUpperCase() === "R";
+    for (const r of resultsResponse.data) {
+      const points = r.points || 0;
+      const win = isRace && r.position === 1 ? 1 : 0;
+      const aggregate = pointsMap.get(r.driver_code) || { points: 0, wins: 0, podiums: 0, starts: 0 };
+      aggregate.points += points;
+      aggregate.wins += win;
+      aggregate.podiums += isRace && r.position <= 3 ? 1 : 0;
+      aggregate.starts += isRace ? 1 : 0;
+      pointsMap.set(r.driver_code, aggregate);
+
+      const team = sessionTeams.get(r.driver_code);
+      if (team) {
+        const constructor = teamMap.get(team.team_id) || { team, points: 0, wins: 0 };
+        constructor.team = team;
+        constructor.points += points;
+        constructor.wins += win;
+        teamMap.set(team.team_id, constructor);
+      }
+    }
+  });
 
   const standings = Array.from(driverMap.values())
     .map((d) => ({
@@ -61,11 +80,13 @@ export default async function StandingsPage() {
     .sort((a, b) => b.points - a.points || b.wins - a.wins || b.podiums - a.podiums)
     .map((row, index) => ({ ...row, position: index + 1 }));
 
+  const constructors = Array.from(teamMap.values()).sort((a, b) => b.points - a.points || b.wins - a.wins);
+
   const colors = Object.fromEntries(Array.from(driverMap.values()).map((d) => [d.code, d.team.color]));
 
   return (
     <div>
-      <PageHeader title={`${year} Season Standings`} description={`Cumulative points across ${pointSessions.length} available race and sprint sessions. Ties sort by wins, then podiums.`} />
+      <PageHeader title={`${year} Season Standings`} description={`Cumulative points across ${pointSessions.length} available race and sprint sessions; wins, podiums and starts count races only. Ties sort by wins, then podiums.`} />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
         <DataTable
           rows={standings}
@@ -79,20 +100,13 @@ export default async function StandingsPage() {
             { key: "points", header: "Pts", align: "right", render: (row) => <span className="font-mono font-black text-white">{row.points}</span> }
           ]}
         />
-        <ConstructorStandings standings={standings} />
+        <ConstructorStandings teams={constructors} />
       </div>
     </div>
   );
 }
 
-function ConstructorStandings({ standings }: { standings: Array<{ team: Driver["team"]; points: number; wins: number }> }) {
-  const teams = Array.from(standings.reduce((map, row) => {
-    const team = map.get(row.team.team_id) || { team: row.team, points: 0, wins: 0 };
-    team.points += row.points;
-    team.wins += row.wins;
-    map.set(row.team.team_id, team);
-    return map;
-  }, new Map<string, { team: Driver["team"]; points: number; wins: number }>()).values()).sort((a, b) => b.points - a.points || b.wins - a.wins);
+function ConstructorStandings({ teams }: { teams: Array<{ team: Team; points: number; wins: number }> }) {
   return (
     <section className="surface self-start overflow-hidden">
       <div className="border-b border-line/70 p-4"><h2 className="font-bold text-white">Constructors</h2><p className="mt-1 text-xs text-slate-500">Derived from available result artifacts.</p></div>

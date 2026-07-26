@@ -71,15 +71,15 @@ export type SessionTabsProps = {
   raceControl: RaceControlMessage[];
   results: Result[];
   telemetryComparison: TelemetryComparison | EmptyStateResponse;
-  telemetryIndex?: TelemetryIndex | null;
+  telemetryIndex: TelemetryIndex | null;
   positionReplay: PositionReplayFrame[] | EmptyStateResponse;
-  idealLaps?: IdealLapsResult | null;
-  teammateComparison?: TeammateComparisonResult | null;
-  strategy?: StrategyResult | null;
-  trackDominance?: TrackDominanceResult | null;
-  cornerAnalysis?: CornerAnalysisResult | null;
-  carPerformance?: CarPerformanceResult | null;
-  pacePrediction?: PacePredictionResult | null;
+  idealLaps: IdealLapsResult | null;
+  teammateComparison: TeammateComparisonResult | null;
+  strategy: StrategyResult | null;
+  trackDominance: TrackDominanceResult | null;
+  cornerAnalysis: CornerAnalysisResult | null;
+  carPerformance: CarPerformanceResult | null;
+  pacePrediction: PacePredictionResult | null;
 };
 
 export function SessionTabs(props: SessionTabsProps) {

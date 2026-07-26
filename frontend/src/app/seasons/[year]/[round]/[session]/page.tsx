@@ -2,8 +2,8 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionIngestionPanel } from "@/components/session/SessionIngestionPanel";
 import { SessionTabs } from "@/components/session/SessionTabs";
-import { api, isApiFailure, safeApi } from "@/lib/api-server";
-import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
+import { api, safeApi } from "@/lib/api-server";
+import { loadSessionDashboard } from "@/lib/session-dashboard";
 
 export const dynamicParams = false;
 
@@ -18,67 +18,18 @@ export default async function SessionPage({
 }) {
   const routeParams = await params;
   const sessionId = sessionIdFromParams(routeParams.year, routeParams.round, routeParams.session);
-  const [
-    summary,
-    drivers,
-    laps,
-    lapTimes,
-    racePace,
-    tyreDegradation,
-    stints,
-    pitStops,
-    weather,
-    raceControl,
-    results,
-    telemetryIndex,
-    positionReplay,
-    idealLaps,
-    teammateComparison,
-    strategy,
-    trackDominance,
-    cornerAnalysis,
-    carPerformance,
-    pacePrediction
-  ] = await Promise.all([
-    safeApi(() => api.summary(sessionId)),
-    safeApi(() => api.drivers(sessionId)),
-    safeApi(() => api.laps(sessionId)),
-    safeApi(() => api.lapTimes(sessionId)),
-    safeApi(() => api.racePace(sessionId)),
-    safeApi(() => api.tyreDegradation(sessionId)),
-    safeApi(() => api.stints(sessionId)),
-    safeApi(() => api.pitStops(sessionId)),
-    safeApi(() => api.weather(sessionId)),
-    safeApi(() => api.raceControl(sessionId)),
-    safeApi(() => api.results(sessionId)),
-    safeApi(() => api.telemetryIndex(sessionId)),
-    safeApi(() => api.positionReplay(sessionId)),
-    safeApi(() => api.idealLaps(sessionId)),
-    safeApi(() => api.teammateComparison(sessionId)),
-    safeApi(() => api.strategy(sessionId)),
-    safeApi(() => api.trackDominance(sessionId)),
-    safeApi(() => api.cornerAnalysis(sessionId)),
-    safeApi(() => api.carPerformance(sessionId)),
-    safeApi(() => api.pacePrediction(sessionId))
-  ]);
+  const dashboard = await loadSessionDashboard(api, sessionId);
 
-  const all = [
-    summary,
-    drivers,
-    laps,
-    lapTimes,
-    racePace,
-    tyreDegradation,
-    stints,
-    pitStops,
-    weather,
-    raceControl,
-    results,
-    telemetryIndex,
-    positionReplay
-  ];
-  const failed = all.find(isApiFailure);
-  if (failed) {
+  if (!dashboard.ok && dashboard.stage === "telemetry") {
+    return (
+      <ErrorState
+        title="Could not load telemetry"
+        detail={`${dashboard.failure.error.message}: ${dashboard.failure.apiBaseUrl}`}
+      />
+    );
+  }
+
+  if (!dashboard.ok) {
     const year = Number(routeParams.year);
     const round = Number(routeParams.round);
     const meetings = await safeApi(() => api.meetings(year));
@@ -88,7 +39,10 @@ export default async function SessionPage({
     }" --session ${routeParams.session}`;
     return (
       <div className="space-y-5">
-        <ErrorState title="Session is not available" detail={`${failed.error.message}: ${failed.apiBaseUrl}`} />
+        <ErrorState
+          title="Session is not available"
+          detail={`${dashboard.failure.error.message}: ${dashboard.failure.apiBaseUrl}`}
+        />
         <SessionIngestionPanel
           year={year}
           round={round}
@@ -102,59 +56,15 @@ export default async function SessionPage({
     );
   }
 
-  if (
-    !summary.ok ||
-    !drivers.ok ||
-    !laps.ok ||
-    !lapTimes.ok ||
-    !racePace.ok ||
-    !tyreDegradation.ok ||
-    !stints.ok ||
-    !pitStops.ok ||
-    !weather.ok ||
-    !raceControl.ok ||
-    !results.ok ||
-    !telemetryIndex.ok ||
-    !positionReplay.ok
-  ) {
-    return null;
-  }
-
-  const telemetryComparison = await initialTelemetryComparison(sessionId, telemetryIndex.data);
-  if (!telemetryComparison.ok) {
-    return <ErrorState title="Could not load telemetry" detail={`${telemetryComparison.error.message}: ${telemetryComparison.apiBaseUrl}`} />;
-  }
-
+  const summary = dashboard.data.summary;
   return (
     <div>
       <PageHeader
-        eyebrow={`${summary.data.year} Round ${summary.data.round}`}
-        title={`${summary.data.meeting} - ${summary.data.session}`}
-        description={`${summary.data.circuit}, ${summary.data.country}. ${summary.data.weather_summary}.`}
+        eyebrow={`${summary.year} Round ${summary.round}`}
+        title={`${summary.meeting} - ${summary.session}`}
+        description={`${summary.circuit}, ${summary.country}. ${summary.weather_summary}.`}
       />
-      <SessionTabs
-        summary={summary.data}
-        drivers={drivers.data}
-        laps={laps.data}
-        lapTimes={lapTimes.data}
-        racePace={racePace.data}
-        tyreDegradation={tyreDegradation.data}
-        stints={stints.data}
-        pitStops={pitStops.data}
-        weather={weather.data}
-        raceControl={raceControl.data}
-        results={results.data}
-        telemetryComparison={telemetryComparison.data}
-        telemetryIndex={telemetryIndex.data}
-        positionReplay={positionReplay.data}
-        idealLaps={idealLaps.ok ? idealLaps.data : null}
-        teammateComparison={teammateComparison.ok ? teammateComparison.data : null}
-        strategy={strategy.ok ? strategy.data : null}
-        trackDominance={trackDominance.ok ? trackDominance.data : null}
-        cornerAnalysis={cornerAnalysis.ok ? cornerAnalysis.data : null}
-        carPerformance={carPerformance.ok ? carPerformance.data : null}
-        pacePrediction={pacePrediction.ok ? pacePrediction.data : null}
-      />
+      <SessionTabs {...dashboard.data} />
     </div>
   );
 }
@@ -179,51 +89,4 @@ export async function generateStaticParams() {
     }
   }
   return Array.from(params.values());
-}
-
-async function initialTelemetryComparison(
-  sessionId: string,
-  telemetryIndex: Awaited<ReturnType<typeof api.telemetryIndex>>
-) {
-  if (!telemetryIndex?.laps.length) {
-    return {
-      ok: true as const,
-      data: telemetryUnavailableState()
-    };
-  }
-
-  const firstLap = telemetryIndex.laps[0];
-  const secondLap =
-    telemetryIndex.laps.find((lap) => lap.driver_code !== firstLap.driver_code) ||
-    telemetryIndex.laps[1] ||
-    null;
-
-  if (!secondLap) {
-    return {
-      ok: true as const,
-      data: {
-        reason: "Only one telemetry lap artifact is available for this session.",
-        action: "Generate at least two telemetry lap artifacts to enable comparison.",
-        details: {}
-      } satisfies EmptyStateResponse
-    };
-  }
-
-  return safeApi<TelemetryComparison | EmptyStateResponse>(() =>
-    api.telemetryCompare(
-      sessionId,
-      firstLap.driver_code,
-      firstLap.lap_number,
-      secondLap.driver_code,
-      secondLap.lap_number
-    )
-  );
-}
-
-function telemetryUnavailableState(): EmptyStateResponse {
-  return {
-    reason: "No telemetry lap artifacts are available for this session.",
-    action: "Generate telemetry artifacts to enable driver and lap comparisons.",
-    details: {}
-  };
 }
