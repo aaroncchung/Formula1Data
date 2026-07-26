@@ -107,9 +107,12 @@ finding's own **Status** row records whether it is still open.
 | 1 — test foundation and CI | F-13, F-14, F-15, F-16 | **Resolved** |
 | P1 — CI and config | F-01, F-08, F-21, F-22, F-23 | **Resolved** |
 | P2 — Worker HTTP | F-05, F-07, F-17 | **Resolved** |
-| — | the remaining 16 | Open |
+| P3 — pipeline and backend | F-03, F-06, F-10, F-18, F-19, F-20, F-24, F-26, F-28 | **Resolved** |
+| P4 — frontend UI | F-04, F-09, F-11, F-25, F-27 | **Resolved** |
+| — | F-02, F-12 (both need a design decision) | Open |
+| — | **F-29, introduced by the F-03 fix** | **Open — read before deploying** |
 
-After batches 1, P1 and P2 the Python suite is 50/50 and the Worker suite
+After batches 1 and P1-P4 the Python suite is 63/63 and the Worker suite
 55/55, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
@@ -341,7 +344,9 @@ success callback rather than the manifest alone.
 | **Category** | Bootstrap / deployment |
 | **Severity** | High |
 | **Confidence** | High |
-| **Status** | Confirmed (reproduced) |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** `hydrate_r2_indexes` now downloads `catalog.json` with `required=False` and only derives `season_exists` when the catalog was actually hydrated; the season index keeps its conditional `required`. Empty-bucket bootstrap succeeds and `merge_incremental_indexes` no-ops through its existing `is_file()` guards. **This fix introduced F-29 — read that before deploying.** `test_r2_hydration_requires_the_current_catalog` was replaced rather than weakened: it asserted the defect itself. Its remaining value is now `test_r2_hydration_still_requires_a_season_index_the_catalog_claims`.
 
 **Locations**
 
@@ -542,7 +547,9 @@ changes on the origin returns the new payload.
 | **Category** | Data consistency |
 | **Severity** | Medium (**downgraded from High**) |
 | **Confidence** | High |
-| **Status** | Confirmed defect; narrow reachability |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** The reuse branch now calls a new `publish_indexes_to_r2()`, which hydrates R2's indexes into a temp directory, merges the local `catalog.json` and `seasons/<year>.json` in, and uploads season-then-catalog. A temp directory is used because `output_dir` is the committed artifact tree. `sync_artifacts_to_r2` and its `include_indexes` contract are untouched, so F-02 is not pre-empted. Note the merge carries the whole committed local catalog into R2's, not only the reused session -- consistent with the Worker's Pages fallback, but broader than "add one session".
 
 **Locations**
 
@@ -784,7 +791,9 @@ payloads report `enabled: false`.
 | **Category** | Reliability |
 | **Severity** | Medium (**upgraded from Low**) |
 | **Confidence** | High |
-| **Status** | Confirmed (reproduced) |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** Each candidate in `pipeline/schedule_ingestion.py` is now wrapped individually; failures are logged to stderr and counted, the summary reports them, and `main` exits non-zero when any failed. A regression test asserts round 3 is still queued when round 1's status check and round 2's POST both raise.
 
 **Locations** `pipeline/schedule_ingestion.py:106-124` (the loop),
 `:145-166` (`get_status`, `post_json`).
@@ -1066,10 +1075,13 @@ per-file boilerplate.
 `backend/tests/test_local_queue_worker.py` from `time.monotonic()` to
 `time.perf_counter()` (`QueryPerformanceCounter`, ~100 ns on Windows), with a
 comment recording the resolution mismatch that caused the failures. Both tests
-now pass on Windows, verified over three consecutive runs. Production
-`_RequestPacer` still uses `time.monotonic()`: its 333 ms interval is far above
-the clock's resolution, and a coarse `now` reading only makes it over-delay,
-which is the safe direction for rate limiting.
+now pass on Windows, verified over three consecutive runs. **Correction:** the original note here claimed production could keep
+`time.monotonic()` because a coarse reading "only makes it over-delay, which
+is the safe direction for rate limiting". That was wrong, and the assertion
+was consequently flaky (2 failures in 12 runs). `now` is subtracted from the
+accumulated `_next_start`, so a stale reading *shrinks* the computed delay and
+callers cluster: 4.22 ms actual spacing at a 10 ms configured interval. The
+pacer now reads `perf_counter` as well. 20 consecutive runs pass.
 
 **Locations**
 
@@ -1221,7 +1233,9 @@ default so the argument is required.
 | **Category** | Consistency |
 | **Severity** | Low (**downgraded from Medium**) |
 | **Confidence** | High |
-| **Status** | Confirmed defect; unreachable |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** `backend/app/analysis/telemetry_compare.py` now uses `math.ceil`, so the backend caps at 300 samples as the frontend already did. Backend only -- `static-api-core.ts` was untouched.
 
 **Locations** `backend/app/analysis/telemetry_compare.py:33`;
 `frontend/src/lib/static-api-core.ts:210`.
@@ -1271,7 +1285,9 @@ divergence would only appear if either cap were raised.
 | **Category** | Defensive correctness |
 | **Severity** | Low (**downgraded from Medium**) |
 | **Confidence** | High |
-| **Status** | Confirmed defect; no current producer |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** `strategy.py` and its `precompute.py` twin gained a lap-number coercion that returns `None` for unusable values; stops without a usable lap number are dropped, and a driver with only such stops is skipped rather than reaching `min()` and `int(None)`. Deliberately duplicated across both copies rather than deduplicated, to avoid pre-empting F-12.
 
 **Locations** `backend/app/analysis/strategy.py:22-24`; duplicate at
 `pipeline/analysis/precompute.py:153-155`.
@@ -1316,7 +1332,9 @@ usable lap number.
 | **Category** | Robustness |
 | **Severity** | Low |
 | **Confidence** | High |
-| **Status** | Confirmed (reproduced) |
+| **Status** | **Resolved (batch P3)** |
+
+**Resolution** Meetings whose `start_date` will not parse are logged and skipped instead of aborting candidate selection.
 
 **Location** `pipeline/schedule_ingestion.py:94`.
 
@@ -1395,8 +1413,14 @@ production server exists.
 
 ### F-24 — `_guess_session_id` cannot match name-based events
 
-**Severity** Low · **Confirmed** · Location:
+**Severity** Low · **Resolved (batch P3)** · Location:
 `backend/app/ingestion/fastf1_ingestor.py:1088-1093`, used at `:1043-1045`.
+
+**Resolution** `_guess_session_id` now returns `str | None`, resolving a
+name-based event's round through the stored `processed/seasons/<year>/dataset.json`
+and matching on `_slug(name)`/`_slug(official_name)`. `_slug` is imported from
+`normalizer` rather than re-derived, so the rule cannot drift. No network call
+was added.
 
 For a string event it returns `{year}-{slug}-{code}`, but real session ids are
 `{year}-{round:02d}-{code}`. The existence pre-check therefore never matches for
@@ -1436,8 +1460,11 @@ it, so this is latent type unsoundness rather than a current user-facing bug.
 
 ### F-26 — NaN team colour renders as `"#nan"`
 
-**Severity** Low · **Confirmed (latent)** · Location:
+**Severity** Low · **Resolved (batch P3)** · Location:
 `backend/app/ingestion/normalizer.py:258`.
+
+**Resolution** `TeamColor` is routed through `_none_if_missing`, so a NaN
+colour becomes `None` rather than the string `"#nan"`.
 
 ```python
 "color": f"#{color}" if color and not str(color).startswith("#") else color,
@@ -1470,8 +1497,11 @@ Style, not urgency.
 
 ### F-28 — Falsy-zero guards on pace gaps
 
-**Severity** Low · **Confirmed (unreachable in practice)** · Locations:
+**Severity** Low · **Resolved (batch P3)** · Locations:
 `backend/app/analysis/advanced.py:327,353`.
+
+**Resolution** Both pace-gap guards now test `is not None` rather than
+truthiness.
 
 ```python
 row["gap_to_best_ms"] = round(row["estimated_race_pace_ms"] - best, 1) if best else None
@@ -1482,6 +1512,58 @@ milliseconds is not physically realisable, so this is cleanup rather than a
 defect. Prefer `if best is not None`.
 
 **Effort** S.
+
+---
+
+### F-29 — A transient R2 read now silently republishes a catalog containing one session
+
+| | |
+| --- | --- |
+| **Category** | Data integrity |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | Confirmed — **introduced by this review's own F-03 fix** |
+
+**Locations** `pipeline/local_queue_worker.py` — `hydrate_r2_indexes` (catalog
+now `required=False`) and `download_r2_object` (no retry).
+
+**How it got here** F-03 was correct that requiring `catalog.json` blocks the
+first ingestion into an empty bucket, and the fix makes that download optional.
+But `download_r2_object` treats *any* non-zero wrangler exit as absence, and
+unlike `upload_r2_object` it does not retry. "The bucket has no catalog" and
+"this one read failed" are now the same signal.
+
+**Observable impact** On a bucket that does have a catalog, a single transient
+`wrangler r2 object get` failure makes `merge_incremental_indexes` no-op, and
+the run then publishes a catalog containing only the session just ingested —
+overwriting the real index. Every other session disappears from any client
+reading it. The session artifacts themselves survive in R2, so this is
+recoverable by regenerating the index, but it is silent and it recurs on every
+ingestion rather than only at bootstrap. F-03's failure mode was loud and
+one-time; this one is neither.
+
+The same exposure now applies to the F-06 reuse path, which hydrates the
+indexes through the same helper.
+
+**Recommended direction** Do not resolve this by string-matching wrangler's
+stderr — the message is not a stable contract. Two options that are:
+
+1. **Make bootstrap explicit.** Keep `required=True` for the catalog by
+   default and allow absence only under an opt-in (`--allow-missing-catalog`,
+   or an env var the first deploy sets). Bootstrap is a one-time human-initiated
+   event; a normal run should still fail loudly rather than guess.
+2. **Retry first, then treat absence as real.** Give `download_r2_object` the
+   same bounded retry `upload_r2_object` already has. Strictly better than the
+   current state and non-controversial, but it narrows the window rather than
+   closing it — a persistent outage still reads as absence.
+
+(1) closes it; (2) is a cheap partial mitigation and the two compose.
+
+**Effort** S for either.
+
+**Suggested regression test** Patch `subprocess.run` so the catalog read fails
+while the bucket *does* contain a catalog, and assert the published catalog
+still contains the pre-existing sessions.
 
 ---
 
