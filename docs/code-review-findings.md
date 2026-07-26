@@ -113,12 +113,14 @@ finding's own **Status** row records whether it is still open.
 | F-02 | guarded refresh with rollback | **Resolved** |
 | F-12 | analysis-layer deduplication | **Resolved** |
 | F-30, F-31 | found while fixing F-12 | **Resolved** |
+| F-32 | complete backup before a refresh overwrites | **Resolved** |
 
-**All 31 findings are resolved.** Twenty-nine came from the review itself; F-29
-was introduced by the review's own F-03 fix and F-30/F-31 were found while
-resolving F-12.
+**All 32 findings are resolved.** Twenty-nine came from the review itself; F-29
+was introduced by the review's own F-03 fix, F-30/F-31 were found while
+resolving F-12, and F-32 came from review feedback on PR #6 against the F-02
+fix — the guard could skip or half-fill its backup and still overwrite.
 
-The Python suite is 75/75 and the Worker suite 55/55, both run by
+The Python suite is 79/79 and the Worker suite 55/55, both run by
 `.github/workflows/tests.yml` on every pull request and push to `main`. Later
 batches are therefore regression-checked by CI rather than by hand.
 
@@ -1654,6 +1656,75 @@ to the routes. It is documented as an exception in the package docstring.
 accept the documented exception.
 
 **Effort** S.
+
+---
+
+### F-32 — The F-02 rollback could overwrite a generation it had not fully copied
+
+| | |
+| --- | --- |
+| **Category** | Data integrity |
+| **Severity** | High |
+| **Confidence** | High |
+| **Status** | **Resolved** |
+
+**Resolution** Raised as merge-blocking review feedback on PR #6 against the
+F-02 fix itself. All three reported failure modes reproduced; all three are
+fixed in `pipeline/local_queue_worker.py`.
+
+**Location** `sync_artifacts_to_r2`, `back_up_published_session`,
+`PublishedSessionBackup.restore` (`pipeline/local_queue_worker.py:327-560`).
+
+The F-02 guard copied the live generation before overwriting it, but decided
+*what* to copy using `download_r2_object(..., required=False)`, which returns
+the same `False` for an object that is absent and for one whose reads all
+failed. Three consequences, each demonstrated by a test that fails without the
+fix:
+
+1. **An unreadable manifest was read as a first publication.** The backup was
+   skipped entirely and the live bodies were overwritten with nothing held.
+   No exception was raised — the refresh reported success.
+2. **A body whose backup GET exhausted its retries was silently omitted.**
+   The refresh proceeded, so a later rollback restored only part of the old
+   generation — the original F-02 corruption mode, reachable through the guard
+   meant to prevent it.
+3. **Objects only the new generation had survived a rollback.** The old comment
+   called them inert because the restored manifest does not reference them, but
+   the manifest is not a read index: `readOptionalSessionArtifact`
+   (`frontend/src/lib/static-api-core.ts:105-118`) fetches analysis artifacts
+   from fixed paths, and the Worker serves any key that exists
+   (`worker/src/artifact-store.mjs` has no manifest gate). A new-only artifact
+   left behind is served next to the restored generation.
+
+The fix rests on an invariant verified against all 33 committed sessions: a
+manifest's `sections` list names *every* body the generation published,
+telemetry laps included. So the published manifest is a complete index of what
+is live, and the backup can be exact:
+
+- the manifest names the keys the live generation owns, and each of those is
+  re-read with `required=True` — a failed read now stops the refresh before the
+  first byte is overwritten, instead of leaving a hole in the backup;
+- keys the new generation adds are not read at all (each was a guaranteed miss
+  costing a full retry budget), and are deleted on rollback instead;
+- when the manifest itself will not read, absence is no longer inferred from
+  that failure. `confirm_session_is_unpublished` corroborates it against an
+  index that *did* read successfully — the catalog, and the season index when
+  the catalog carries that year. Only a clean read saying the session is not
+  there permits the refresh; anything less certain stops it. This deliberately
+  reuses `hydrate_r2_indexes`'s existing rule that a normal run fails loudly and
+  only the human-initiated first deployment passes `--allow-missing-catalog`.
+
+No Wrangler stderr text is parsed at any point.
+
+**Residual window** The backup still lives in a temporary directory, so a runner
+killed mid-restore still loses it — unchanged from F-02 and still out of scope.
+One case narrows rather than closes: a session whose bodies are published but
+whose index publication never completed is not in the catalog, so an unreadable
+manifest for it is corroborated as absent and it may be overwritten. Reaching
+that requires a previous run to have died between its manifest and its indexes
+*and* the manifest to be unreadable now.
+
+**Effort** M.
 
 ---
 

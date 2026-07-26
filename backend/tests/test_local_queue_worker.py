@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -169,7 +170,11 @@ class LocalQueueWorkerTests(unittest.TestCase):
                             "pipeline.local_queue_worker.subprocess.run", side_effect=fake_run
                         ):
                             sync_artifacts_to_r2(
-                                output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                                output_dir,
+                                "test-bucket",
+                                session_id="2025-09-r",
+                                year=2025,
+                                allow_missing_catalog=True,
                             )
 
     def test_r2_sync_finishes_every_body_before_starting_any_commit_marker(self):
@@ -202,7 +207,11 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 with patch("pipeline.local_queue_worker.download_r2_object", return_value=False):
                     with patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run):
                         sync_artifacts_to_r2(
-                            output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                            output_dir,
+                            "test-bucket",
+                            session_id="2025-09-r",
+                            year=2025,
+                            allow_missing_catalog=True,
                         )
 
             self.assertEqual(len(body_finished), 12)
@@ -242,14 +251,23 @@ class LocalQueueWorkerTests(unittest.TestCase):
                         with patch("pipeline.local_queue_worker.time.sleep"):
                             with self.assertRaises(RuntimeError):
                                 sync_artifacts_to_r2(
-                                    output_dir, "test-bucket", session_id="2025-09-r", year=2025
+                                    output_dir,
+                                    "test-bucket",
+                                    session_id="2025-09-r",
+                                    year=2025,
+                                    allow_missing_catalog=True,
                                 )
 
             for marker in self.MARKER_KEYS:
                 self.assertNotIn(marker, attempted)
 
-    def _write_generation(self, output_dir, session_id, body_count, tag):
-        """Write one whole generation of a session and return its object keys."""
+    def _write_generation(self, output_dir, session_id, body_count, tag, extra=()):
+        """Write one whole generation of a session and return its object keys.
+
+        The manifest enumerates every body in `sections`, exactly as a real one
+        does, because that list is what the rollback guard reads to learn which
+        objects the live generation actually owns.
+        """
         session_dir = output_dir / "sessions" / session_id
         (session_dir / "telemetry").mkdir(parents=True, exist_ok=True)
         keys = []
@@ -259,8 +277,24 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 f'{{"generation": "{tag}", "lap": {index}}}', encoding="utf-8"
             )
             keys.append(key)
+        for relative in extra:
+            key = f"sessions/{session_id}/{relative}"
+            path = output_dir / key
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f'{{"generation": "{tag}"}}', encoding="utf-8")
+            keys.append(key)
         manifest_key = f"sessions/{session_id}/manifest.json"
-        (output_dir / manifest_key).write_text(f'{{"generation": "{tag}"}}', encoding="utf-8")
+        (output_dir / manifest_key).write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "session_id": session_id,
+                    "generation": tag,
+                    "sections": [{"kind": "body", "path": key} for key in sorted(keys)],
+                }
+            ),
+            encoding="utf-8",
+        )
         (output_dir / "seasons").mkdir(parents=True, exist_ok=True)
         (output_dir / "seasons" / "2025.json").write_text(
             f'{{"generation": "{tag}"}}', encoding="utf-8"
@@ -268,12 +302,17 @@ class LocalQueueWorkerTests(unittest.TestCase):
         (output_dir / "catalog.json").write_text(f'{{"generation": "{tag}"}}', encoding="utf-8")
         return keys + [manifest_key]
 
-    def _fake_r2(self, remote, put_fails=None):
+    def _fake_r2(self, remote, put_fails=None, get_fails=None):
         """A stand-in bucket: `remote` maps object key to stored bytes.
 
         Returns the `subprocess.run` side effect and the list of (verb, key)
         wrangler calls it saw, so tests can assert on operation counts as well
         as on the bucket's final contents.
+
+        `get_fails(key, seen)` makes a read of an object that *does* exist fail
+        the way an operational fault does -- a network drop, an expired token, a
+        wrangler crash -- which is the case that must never be mistaken for the
+        object being absent.
         """
         import threading
         from types import SimpleNamespace
@@ -284,16 +323,28 @@ class LocalQueueWorkerTests(unittest.TestCase):
         def fake_run(args, **kwargs):
             verb = args[3]
             key = args[4].split("/", 1)[1]
-            file_path = Path(args[6])
             with lock:
                 calls.append((verb, key))
                 seen = sum(1 for call in calls if call == (verb, key))
+            if verb == "delete":
+                # R2 deletes are idempotent: removing a key that is not there
+                # succeeds, which is what makes the rollback sweep safe.
+                with lock:
+                    remote.pop(key, None)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            file_path = Path(args[6])
             if verb == "put":
                 if put_fails and put_fails(key, seen):
                     return SimpleNamespace(returncode=1, stdout="", stderr="upload failed")
                 with lock:
                     remote[key] = file_path.read_bytes()
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
+            if get_fails and get_fails(key, seen):
+                # Deliberately not a "does not exist" message: wrangler reports
+                # an operational failure with entirely different, unstable text.
+                return SimpleNamespace(
+                    returncode=1, stdout="", stderr="A request to the Cloudflare API failed."
+                )
             with lock:
                 body = remote.get(key)
             if body is None:
@@ -346,6 +397,127 @@ class LocalQueueWorkerTests(unittest.TestCase):
             self.assertNotIn("seasons/2025.json", remote)
             self.assertNotIn("catalog.json", remote)
 
+    def _season_index(self, session_ids):
+        return json.dumps(
+            {"season": 2025, "sessions": [{"session_id": value} for value in session_ids]}
+        ).encode("utf-8")
+
+    def test_a_refresh_stops_when_the_published_manifest_cannot_be_read(self):
+        """An unreadable manifest is not an absent one.
+
+        A GET that exhausts its retries against a live object looks exactly like
+        a GET against a key that was never there. Believing the second reading
+        skips the backup and overwrites a generation that cannot be restored.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            # The indexes read cleanly and say the session is published, so the
+            # unreadable manifest cannot be explained away as a new session.
+            remote["catalog.json"] = json.dumps({"seasons": [{"year": 2025}]}).encode("utf-8")
+            remote["seasons/2025.json"] = self._season_index([session_id])
+            before = dict(remote)
+
+            fake_run, calls = self._fake_r2(
+                remote, get_fails=lambda key, seen: key.endswith(f"{session_id}/manifest.json")
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "manifest"):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+            # Nothing was written at all: the refresh stopped before it could
+            # damage anything, rather than stopping half way through.
+            self.assertEqual(remote, before)
+            self.assertEqual([key for verb, key in calls if verb == "put"], [])
+
+    def test_a_refresh_stops_when_a_published_body_cannot_be_backed_up(self):
+        """A backup missing one live object is not a backup.
+
+        Without every object it is about to overwrite, a rollback can only put
+        part of the old generation back -- which is the mixed generation this
+        whole guard exists to prevent.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {key: (old_dir / key).read_bytes() for key in published}
+            before = dict(remote)
+
+            fake_run, calls = self._fake_r2(
+                remote, get_fails=lambda key, seen: key.endswith("ver-lap-2.json")
+            )
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "ver-lap-2.json"):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", session_id=session_id, year=2025
+                    )
+
+            self.assertEqual(remote, before)
+            self.assertEqual([key for verb, key in calls if verb == "put"], [])
+
+    def test_a_rollback_removes_objects_only_the_new_generation_had(self):
+        """A surviving new-only object is a mixed generation the manifest hides.
+
+        The frontend reads analysis artifacts from fixed paths -- it never
+        consults the manifest as an index -- so an object left behind by a
+        failed refresh is served next to the restored old generation.
+        """
+        session_id = "2025-09-r"
+        new_only = "analysis/pace-prediction.json"
+        # Under a prefix, so the manifest's data-root-relative section paths and
+        # the body keys have to be composed into object keys the same way.
+        prefix = "prod/data"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            old_dir = root / "old"
+            new_dir = root / "new"
+            published = self._write_generation(old_dir, session_id, 4, "old")
+            self._write_generation(new_dir, session_id, 4, "new", extra=[new_only])
+            remote = {f"{prefix}/{key}": (old_dir / key).read_bytes() for key in published}
+            before = dict(remote)
+
+            # Serial uploads so the new-only object is certain to have landed
+            # before the failure: `analysis/` sorts ahead of `telemetry/`.
+            fake_run, calls = self._fake_r2(
+                remote, put_fails=lambda key, seen: key.endswith("ver-lap-3.json") and seen <= 3
+            )
+            with (
+                patch.dict(os.environ, {"R2_UPLOAD_CONCURRENCY": "1"}),
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                with self.assertRaises(RuntimeError):
+                    sync_artifacts_to_r2(
+                        new_dir, "test-bucket", prefix, session_id=session_id, year=2025
+                    )
+
+            new_only_key = f"{prefix}/sessions/{session_id}/{new_only}"
+            uploaded = [key for verb, key in calls if verb == "put"]
+            self.assertIn(new_only_key, uploaded)
+            self.assertIn(new_only_key, [key for verb, key in calls if verb == "delete"])
+            # The whole remotely visible object set, not just the old keys.
+            self.assertEqual(remote, before)
+
     def test_a_failed_rollback_names_the_session_it_may_have_left_inconsistent(self):
         """The one thing worse than a failed refresh is a silent failed rollback."""
         session_id = "2025-09-r"
@@ -370,8 +542,12 @@ class LocalQueueWorkerTests(unittest.TestCase):
                         new_dir, "test-bucket", session_id=session_id, year=2025
                     )
 
-    def test_a_first_publication_does_not_pay_for_a_backup(self):
-        """Nothing is published yet, so there is nothing to protect."""
+    def test_a_first_publication_into_an_empty_bucket_does_not_pay_for_a_backup(self):
+        """Nothing is published yet, so there is nothing to protect.
+
+        An empty bucket is the one case where unreadable indexes may be read as
+        absence, and it is the operator who says so with --allow-missing-catalog.
+        """
         session_id = "2025-09-r"
         with tempfile.TemporaryDirectory() as temporary_directory:
             new_dir = Path(temporary_directory) / "new"
@@ -384,15 +560,55 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 patch("pipeline.local_queue_worker.time.sleep"),
                 patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
             ):
-                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2025)
+                sync_artifacts_to_r2(
+                    new_dir,
+                    "test-bucket",
+                    session_id=session_id,
+                    year=2025,
+                    allow_missing_catalog=True,
+                )
 
             gets = [key for verb, key in calls if verb == "get"]
-            # The manifest probe and nothing else: no body was downloaded.
-            self.assertEqual(set(gets), {f"sessions/{session_id}/manifest.json"})
-            # Retried to its budget before absence is believed, per F-03's fix.
-            self.assertEqual(len(gets), 3)
+            # The manifest probe and the catalog that corroborates it, and no
+            # body: an absent generation costs nothing to protect.
+            self.assertEqual(
+                set(gets), {f"sessions/{session_id}/manifest.json", "catalog.json"}
+            )
+            # Each retried to its budget before absence is believed, per F-03.
+            self.assertEqual(len(gets), 6)
             self.assertEqual(len([key for verb, key in calls if verb == "put"]), 9)
             self.assertIn("catalog.json", remote)
+
+    def test_a_new_session_in_a_populated_bucket_needs_no_flag_and_no_backup(self):
+        """The ordinary case: a bucket full of other sessions, this one new.
+
+        The catalog reads cleanly and does not carry the session, which is what
+        makes the unreadable manifest safe to read as a genuinely new session.
+        """
+        session_id = "2025-09-r"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            new_dir = Path(temporary_directory) / "new"
+            self._write_generation(new_dir, session_id, 4, "new")
+            remote = {
+                "catalog.json": json.dumps({"seasons": [{"year": 2025}]}).encode("utf-8"),
+                "seasons/2025.json": self._season_index(["2025-08-r"]),
+            }
+
+            fake_run, calls = self._fake_r2(remote)
+            with (
+                patch("pipeline.local_queue_worker._REQUEST_PACER.acquire"),
+                patch("pipeline.local_queue_worker.time.sleep"),
+                patch("pipeline.local_queue_worker.subprocess.run", side_effect=fake_run),
+            ):
+                sync_artifacts_to_r2(new_dir, "test-bucket", session_id=session_id, year=2025)
+
+            self.assertEqual(remote[f"sessions/{session_id}/manifest.json"],
+                             (new_dir / f"sessions/{session_id}/manifest.json").read_bytes())
+            # No body was ever downloaded: there was no generation to copy.
+            self.assertEqual(
+                [key for verb, key in calls if verb == "get" and "telemetry" in key], []
+            )
+            self.assertEqual([key for verb, key in calls if verb == "delete"], [])
 
     def test_a_successful_refresh_commits_the_new_generation_without_rolling_back(self):
         session_id = "2025-09-r"
@@ -423,6 +639,16 @@ class LocalQueueWorkerTests(unittest.TestCase):
             self.assertEqual(len(put_keys), len(set(put_keys)))
             # The backup itself costs one GET per body plus the manifest probe.
             self.assertEqual(len([key for verb, key in calls if verb == "get"]), 7)
+            self.assertEqual([key for verb, key in calls if verb == "delete"], [])
+            # Commit markers still land last and in order, after every body.
+            self.assertEqual(
+                put_keys[-3:],
+                [
+                    f"sessions/{session_id}/manifest.json",
+                    "seasons/2025.json",
+                    "catalog.json",
+                ],
+            )
 
     def test_upload_retries_with_backoff_then_succeeds(self):
         from types import SimpleNamespace
@@ -751,6 +977,19 @@ class LocalQueueWorkerTests(unittest.TestCase):
             remote_season = {"schema_version": 1, "season": {"year": 2026}, **remote_rows}
 
             def fake_download(_bucket, key, destination, **_kwargs):
+                if key.endswith("manifest.json"):
+                    # The session is already published, so the refresh reads its
+                    # manifest to learn which objects it has to copy first.
+                    write_json(
+                        destination,
+                        {
+                            "session_id": session_id,
+                            "sections": [
+                                {"kind": "summary", "path": f"sessions/{session_id}/summary.json"}
+                            ],
+                        },
+                    )
+                    return True
                 write_json(destination, remote_catalog if "catalog" in key else remote_season)
                 return True
 
@@ -802,6 +1041,10 @@ class LocalQueueWorkerTests(unittest.TestCase):
         The bucket does have a catalog; the read just fails. Treating that as
         an empty bucket would publish an index holding only this session and
         hide every other one from clients, silently, on every ingestion.
+
+        The same unreadable catalog now also stops the refresh before it writes
+        anything, because a catalog that cannot be read cannot confirm whether
+        this session already has a published generation to protect.
         """
         from types import SimpleNamespace
 
@@ -856,7 +1099,7 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 patch("pipeline.local_queue_worker.upload_r2_object", side_effect=fake_upload),
                 patch("pipeline.local_queue_worker.verify_remote_manifest"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "required R2 index catalog.json"):
+                with self.assertRaisesRegex(RuntimeError, "catalog.json"):
                     process_message(
                         {
                             "job_id": "job-1",
@@ -871,9 +1114,11 @@ class LocalQueueWorkerTests(unittest.TestCase):
                         r2_bucket="test-bucket",
                     )
 
-            # The session body may already be up, but no index was rewritten.
+            # No index was rewritten -- and now nothing was written at all,
+            # because the abort happens before the first body is overwritten.
             self.assertNotIn("catalog.json", uploaded)
             self.assertNotIn("seasons/2026.json", uploaded)
+            self.assertEqual(uploaded, {})
 
     def test_hundreds_of_telemetry_laps_use_a_compact_manifest_callback(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

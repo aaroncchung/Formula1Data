@@ -151,6 +151,7 @@ def process_message(
                     source_dataset=(
                         data_dir / "processed" / "sessions" / session_id / "dataset.json"
                     ),
+                    allow_missing_catalog=allow_missing_catalog,
                 )
                 if artifact_destination == "r2":
                     verify_remote_manifest(
@@ -176,6 +177,7 @@ def process_message(
                 session_id=session_id,
                 year=int(required(message, "year")),
                 include_indexes=False,
+                allow_missing_catalog=allow_missing_catalog,
             )
             verify_remote_manifest(
                 publication_dir,
@@ -332,6 +334,7 @@ def sync_artifacts_to_r2(
     session_id: str,
     year: int,
     include_indexes: bool = True,
+    allow_missing_catalog: bool = False,
 ) -> None:
     """Upload a session first and publish its indexes last.
 
@@ -339,6 +342,11 @@ def sync_artifacts_to_r2(
     (`include_indexes=True`) and a reused checkout directly
     (`include_indexes=False`) -- and both overwrite the live bodies, so the
     rollback guard lives here rather than at either call site.
+
+    `allow_missing_catalog` carries the same meaning it has in
+    `hydrate_r2_indexes`: the operator has declared the bucket empty, which is
+    the only circumstance in which unreadable indexes may be read as an empty
+    bucket rather than as a failure.
     """
     normalized_prefix = prefix.strip("/")
     session_dir = output_dir / "sessions" / session_id
@@ -387,14 +395,26 @@ def sync_artifacts_to_r2(
             bucket,
             prefix,
             session_id=session_id,
+            year=year,
             bodies={remote_key(path): path.relative_to(output_dir) for path in bodies},
             max_workers=max_workers,
+            allow_missing_catalog=allow_missing_catalog,
         )
         upload_error: BaseException | None = None
+        # Recorded before the PUT rather than after it: a rollback has to be
+        # able to delete a new object whose upload reported failure but may
+        # still have landed. Deleting a key that is not there is not an error.
+        attempted: list[str] = []
+        attempted_lock = threading.Lock()
+
+        def upload(path: Path) -> None:
+            key = remote_key(path)
+            with attempted_lock:
+                attempted.append(key)
+            upload_r2_object(path, bucket, key)
+
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [
-                pool.submit(upload_r2_object, path, bucket, remote_key(path)) for path in bodies
-            ]
+            futures = [pool.submit(upload, path) for path in bodies]
             try:
                 for future in as_completed(futures):
                     future.result()
@@ -408,7 +428,7 @@ def sync_artifacts_to_r2(
                     pending.cancel()
                 upload_error = error
         if upload_error is not None:
-            raise_after_rollback(backup, session_id, upload_error)
+            raise_after_rollback(backup, session_id, upload_error, attempted)
 
         # Only now, with every body landed, do the commit markers go up.
         upload_markers()
@@ -421,26 +441,50 @@ class PublishedSessionBackup:
     GETs are paid either way, but a local copy avoids an unconditional second
     set of PUTs on the success path and leaves no orphaned prefix to sweep up.
 
+    `previous_keys` is the whole object set the live generation owns, taken from
+    its published manifest. It is wider than `objects`, which holds only the
+    keys this refresh overwrites, and the difference is what tells a rollback
+    which uploaded objects are new and have to be deleted rather than restored.
+
     This does not survive the runner dying mid-restore -- the backup goes with
     the temporary directory. That is a different failure mode from the one this
     guards (an upload that fails while the process is alive and can react), and
     it is deliberately out of scope here.
     """
 
-    def __init__(self, bucket: str, objects: dict[str, Path]) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        objects: dict[str, Path],
+        *,
+        published: bool = False,
+        previous_keys: Iterable[str] = (),
+    ) -> None:
         self.bucket = bucket
         self.objects = objects
+        self.published = published
+        self.previous_keys = frozenset(previous_keys)
 
     def __bool__(self) -> bool:
-        return bool(self.objects)
+        # Whether a generation is live, not whether any bytes were copied. A
+        # refresh that happens to overwrite none of the previous generation's
+        # keys still has new objects of its own to take back off the bucket.
+        return self.published
 
-    def restore(self) -> None:
+    def restore(self, attempted_keys: Iterable[str] = ()) -> None:
         # Serial on purpose. The restore runs after an upload failure whose
         # most likely cause is R2 throttling, and correctness matters far more
         # than wall clock on a path that only runs when a refresh has already
         # failed. upload_r2_object still retries and paces each request.
         for key in sorted(self.objects):
             upload_r2_object(self.objects[key], self.bucket, key)
+        # Objects only the new generation has cannot be restored -- there are no
+        # old bytes to put back -- so they have to be removed instead. Leaving
+        # them is not harmless: the read path fetches artifacts by fixed path
+        # and never consults the manifest as an index, so one left behind is
+        # served next to the generation just restored.
+        for key in sorted(set(attempted_keys) - self.previous_keys):
+            delete_r2_object(self.bucket, key)
 
 
 def back_up_published_session(
@@ -449,15 +493,19 @@ def back_up_published_session(
     prefix: str,
     *,
     session_id: str,
+    year: int,
     bodies: dict[str, Path],
     max_workers: int,
+    allow_missing_catalog: bool = False,
 ) -> PublishedSessionBackup:
     """Copy the currently published bodies of `session_id` out of R2.
 
-    A first publication has nothing to protect, so the remote manifest is
-    probed first and an absent one skips the download entirely. `required=False`
-    retries before reporting absence, so a transient read failure is not
-    mistaken for a fresh session.
+    A first publication has nothing to protect. Every other refresh must hold a
+    complete copy before a single byte is overwritten, so every read here either
+    succeeds or stops the refresh. `download_r2_object` reports the same `False`
+    for an object that is absent and for one whose reads all failed, so absence
+    is never inferred from a failed read alone: the manifest names the objects
+    the live generation owns, and each of those is then read with `required=True`.
     """
     probe = rollback_root / "probe" / "manifest.json"
     published = download_r2_object(
@@ -468,38 +516,137 @@ def back_up_published_session(
         error_context="R2 manifest",
     )
     if not published:
+        confirm_session_is_unpublished(
+            rollback_root,
+            bucket,
+            prefix,
+            session_id=session_id,
+            year=year,
+            allow_missing_catalog=allow_missing_catalog,
+        )
         return PublishedSessionBackup(bucket, {})
 
+    previous_keys = published_object_keys(probe, prefix, session_id)
     backup_dir = rollback_root / "bodies"
     downloaded: dict[str, Path] = {}
     lock = threading.Lock()
 
     def fetch(key: str, relative: Path) -> None:
         destination = backup_dir / relative
-        # A key the live generation does not have -- a file this build added --
-        # simply has no backup entry. It is left behind on a rollback, but the
-        # restored manifest does not reference it, so it is an inert orphan of
-        # exactly the kind a failed first publication already leaves.
-        if download_r2_object(
-            bucket, key, destination, required=False, error_context="R2 session body"
-        ):
-            with lock:
-                downloaded[key] = destination
+        # required=True: the manifest says the live generation owns this key, so
+        # a read that fails has to stop the refresh rather than quietly leave a
+        # hole in the backup that only shows up as an unrestorable object later.
+        download_r2_object(
+            bucket, key, destination, required=True, error_context="R2 session body"
+        )
+        with lock:
+            downloaded[key] = destination
 
+    # Only the keys this refresh actually overwrites are worth copying. Keys the
+    # new generation adds are not read at all -- each would be a guaranteed miss
+    # costing a full retry budget -- and are handled by deletion on rollback.
+    overwritten = {key: relative for key, relative in bodies.items() if key in previous_keys}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(fetch, key, relative) for key, relative in bodies.items()]
+        futures = [pool.submit(fetch, key, relative) for key, relative in overwritten.items()]
         for future in as_completed(futures):
             future.result()
-    return PublishedSessionBackup(bucket, downloaded)
+    return PublishedSessionBackup(
+        bucket, downloaded, published=True, previous_keys=previous_keys
+    )
+
+
+def published_object_keys(manifest_path: Path, prefix: str, session_id: str) -> set[str]:
+    """The object keys the published manifest says its generation owns.
+
+    Every body a session publishes gets a section, telemetry laps included, so
+    this is a complete index of the live generation rather than a summary.
+    """
+    sections = read_json(manifest_path).get("sections")
+    if not isinstance(sections, list) or not sections:
+        raise RuntimeError(
+            f"The R2 manifest published for {session_id} lists no sections, so "
+            f"the objects its generation owns cannot be determined and it "
+            f"cannot be backed up. Refusing to overwrite a generation that "
+            f"could not be restored; republish {session_id} instead."
+        )
+    keys = set()
+    for section in sections:
+        path = section.get("path") if isinstance(section, dict) else None
+        if path:
+            keys.add(object_key(prefix, str(path)))
+    return keys
+
+
+def confirm_session_is_unpublished(
+    rollback_root: Path,
+    bucket: str,
+    prefix: str,
+    *,
+    session_id: str,
+    year: int,
+    allow_missing_catalog: bool,
+) -> None:
+    """Corroborate an unreadable manifest against the published indexes.
+
+    A manifest that cannot be read is not the same thing as a session that was
+    never published, and wrangler's stderr is not a stable enough contract to
+    tell the two apart. So the claim is checked against an index that did read
+    successfully: only that can turn "no manifest came back" into "there is
+    nothing here to protect". Anything less certain stops the refresh.
+    """
+    indexes = rollback_root / "indexes"
+    catalog_path = indexes / "catalog.json"
+    if not download_r2_object(
+        bucket,
+        object_key(prefix, "catalog.json"),
+        catalog_path,
+        required=False,
+        error_context="R2 catalog",
+    ):
+        if allow_missing_catalog:
+            # The one-time, human-initiated first deployment. The operator has
+            # declared the bucket empty, so there is no live generation at all.
+            return
+        raise RuntimeError(
+            f"The published R2 manifest for {session_id} could not be read, and "
+            f"neither could catalog.json, so whether {session_id} is already "
+            f"published is unknown. Refusing to overwrite a session that may "
+            f"exist and could not be backed up. Re-run once R2 reads succeed, "
+            f"or pass --allow-missing-catalog if the bucket really is empty."
+        )
+    catalog = read_json(catalog_path)
+    if not any(int(row.get("year") or 0) == year for row in catalog.get("seasons", [])):
+        # The catalog read cleanly and has never carried this year, so no
+        # session of it -- this one included -- has ever been published.
+        return
+    season_path = indexes / "seasons" / f"{year}.json"
+    download_r2_object(
+        bucket,
+        object_key(prefix, f"seasons/{year}.json"),
+        season_path,
+        required=True,
+        error_context="R2 season index",
+    )
+    season = read_json(season_path)
+    if any(row.get("session_id") == session_id for row in season.get("sessions", [])):
+        raise RuntimeError(
+            f"{session_id} is published in the R2 season index for {year}, but "
+            f"its manifest could not be read, so the generation that is live "
+            f"now cannot be copied before being overwritten. Refusing to "
+            f"refresh {session_id}; re-run once R2 reads succeed."
+        )
 
 
 def raise_after_rollback(
-    backup: PublishedSessionBackup, session_id: str, upload_error: BaseException
+    backup: PublishedSessionBackup,
+    session_id: str,
+    upload_error: BaseException,
+    attempted_keys: Iterable[str] = (),
 ) -> NoReturn:
     """Put the previous generation back, then re-raise the upload failure."""
     if backup:
         try:
-            backup.restore()
+            backup.restore(attempted_keys)
         except Exception as restore_error:
             raise RuntimeError(
                 f"Uploading {session_id} to R2 failed and the rollback to its "
@@ -558,6 +705,7 @@ def publish_artifacts(
     session_id: str,
     year: int,
     source_dataset: Path,
+    allow_missing_catalog: bool = False,
 ) -> None:
     if artifact_destination == "r2":
         bucket = required_value(r2_bucket, "--r2-bucket")
@@ -573,6 +721,7 @@ def publish_artifacts(
             r2_prefix,
             session_id=session_id,
             year=year,
+            allow_missing_catalog=allow_missing_catalog,
         )
         return
     publish_artifacts_locally(publication_dir, output_dir, session_id=session_id, year=year)
@@ -691,6 +840,30 @@ def upload_r2_object(path: Path, bucket: str, key: str) -> None:
         if attempt == attempts:
             raise RuntimeError(
                 f"wrangler failed to upload {key} after {attempts} attempt(s) "
+                f"(exit {result.returncode}):\n{detail}"
+            )
+        _sleep_before_retry(attempt, detail)
+
+
+def delete_r2_object(bucket: str, key: str) -> None:
+    # Only ever called while rolling a failed refresh back, to take off the
+    # bucket an object that the previous generation did not have. Deleting a key
+    # that is not there succeeds in R2, so this is safe for a key whose upload
+    # failed and may or may not have landed.
+    attempts = max(1, int(os.getenv("R2_UPLOAD_ATTEMPTS", "3")))
+    for attempt in range(1, attempts + 1):
+        _REQUEST_PACER.acquire()
+        result = subprocess.run(
+            ["wrangler", "r2", "object", "delete", f"{bucket}/{key}", "--remote"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+        detail = _wrangler_detail(result)
+        if attempt == attempts:
+            raise RuntimeError(
+                f"wrangler failed to delete {key} after {attempts} attempt(s) "
                 f"(exit {result.returncode}):\n{detail}"
             )
         _sleep_before_retry(attempt, detail)
