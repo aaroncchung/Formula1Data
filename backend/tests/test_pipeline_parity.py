@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +11,14 @@ BACKEND_ROOT = REPOSITORY_ROOT / "backend"
 sys.path.insert(0, str(REPOSITORY_ROOT))
 sys.path.insert(0, str(BACKEND_ROOT))
 
+import app.analysis.advanced as backend_advanced
+import app.analysis.common as backend_common
+import app.analysis.ideal_laps as backend_ideal_laps
+import app.analysis.position_replay as backend_position_replay
+import app.analysis.race_pace as backend_race_pace
+import app.analysis.strategy as backend_strategy
+import app.analysis.teammate_comparison as backend_teammate_comparison
+import pipeline.analysis.precompute as pipeline_precompute
 from app.analysis.advanced import (
     calculate_car_performance,
     calculate_corner_analysis,
@@ -24,6 +33,73 @@ from pipeline.analysis.precompute import (
     clean_laps as clean_pipeline_laps,
     precompute_session_analysis,
 )
+
+
+# The ten functions that F-12 found duplicated between ``backend/app/analysis``
+# and ``pipeline/analysis/precompute.py``. Each entry is
+# (name, backend module, pipeline module).
+DEDUPLICATED_ANALYSIS_FUNCTIONS = [
+    ("clean_laps", backend_common, pipeline_precompute),
+    ("grouped", backend_common, pipeline_precompute),
+    ("trimmed_mean", backend_common, pipeline_precompute),
+    ("most_common", backend_common, pipeline_precompute),
+    ("lap_statistics", backend_common, pipeline_precompute),
+    ("calculate_race_pace", backend_race_pace, pipeline_precompute),
+    ("calculate_strategy", backend_strategy, pipeline_precompute),
+    ("calculate_ideal_laps", backend_ideal_laps, pipeline_precompute),
+    ("calculate_teammate_comparison", backend_teammate_comparison, pipeline_precompute),
+    ("build_position_replay", backend_position_replay, pipeline_precompute),
+]
+
+
+class SharedAnalysisSourceTests(unittest.TestCase):
+    """The structural guard that replaces value-by-value parity checking.
+
+    The analysis package is deliberately loaded twice -- as ``app.analysis.*`` by
+    the FastAPI service and as ``backend.app.analysis.*`` by the pipeline -- so
+    the two sides are *not* the same objects and ``is`` comparisons fail. What
+    can be asserted, and what actually rules out drift, is that both names
+    resolve to the same file on disk. If someone reintroduces a private copy in
+    ``precompute.py``, this fails.
+    """
+
+    def test_every_deduplicated_function_resolves_to_one_source_file(self):
+        for name, backend_module, pipeline_module in DEDUPLICATED_ANALYSIS_FUNCTIONS:
+            with self.subTest(function=name):
+                backend_function = getattr(backend_module, name)
+                pipeline_function = getattr(pipeline_module, name)
+                self.assertEqual(
+                    Path(inspect.getsourcefile(backend_function)).resolve(),
+                    Path(inspect.getsourcefile(pipeline_function)).resolve(),
+                )
+                self.assertEqual(
+                    inspect.getsource(backend_function),
+                    inspect.getsource(pipeline_function),
+                )
+
+    def test_advanced_module_uses_the_shared_lap_filter(self):
+        # advanced.py carried a third copy of the filter as ``_clean_laps``.
+        self.assertIs(backend_advanced.clean_laps, backend_common.clean_laps)
+        self.assertFalse(hasattr(backend_advanced, "_clean_laps"))
+
+    def test_shared_analysis_modules_do_not_import_outside_their_package(self):
+        # ``app.models`` only resolves when ``backend/`` is on sys.path, so a
+        # shared module importing it would break ``python -m pipeline`` from the
+        # repository root.
+        shared = [
+            backend_common,
+            backend_advanced,
+            backend_race_pace,
+            backend_strategy,
+            backend_ideal_laps,
+            backend_teammate_comparison,
+            backend_position_replay,
+        ]
+        for module in shared:
+            with self.subTest(module=module.__name__):
+                source = Path(inspect.getsourcefile(module)).read_text(encoding="utf-8")
+                self.assertNotIn("from app.", source)
+                self.assertNotIn("import app.", source)
 
 
 class AdvancedAnalysisTests(unittest.TestCase):
@@ -138,6 +214,11 @@ class AdvancedAnalysisTests(unittest.TestCase):
             self.assertIn("caveats", result[name])
 
     def test_fastf1_numeric_neutralization_codes_are_excluded(self):
+        # Both names now resolve to one implementation (see
+        # SharedAnalysisSourceTests), so this no longer compares two copies. It
+        # is kept because the behaviour it pins down -- FastF1 concatenating
+        # status codes, e.g. "14" for clear+SC -- is the regression that
+        # motivated it, and that behaviour still needs a test.
         clear = _lap("AAA", 2, 90_000)
         safety_car = {**_lap("AAA", 3, 110_000), "track_status": "14"}
 

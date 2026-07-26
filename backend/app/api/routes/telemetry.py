@@ -63,5 +63,5 @@ async def position_replay(session_id: str = Query(...)) -> list[PositionReplayFr
             reason="Position/location data is unavailable for this session.",
             action="Ingest position data through FastF1 or OpenF1.",
         )
-    return frames
+    return [PositionReplayFrame(**frame) for frame in frames]
 

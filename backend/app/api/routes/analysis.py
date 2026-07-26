@@ -23,7 +23,7 @@ router = APIRouter()
 @router.get("/analysis/race-pace", response_model=RacePaceResult)
 async def race_pace(session_id: str = Query(...)) -> RacePaceResult:
     bundle = DatasetService().get_session_bundle(session_id)
-    return calculate_race_pace(session_id, bundle["laps"])
+    return RacePaceResult(**calculate_race_pace(session_id, bundle["laps"]))
 
 
 @router.get("/analysis/lap-times", response_model=list[ChartSeries])

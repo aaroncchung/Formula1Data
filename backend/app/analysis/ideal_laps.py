@@ -1,3 +1,5 @@
+"""Best-sector "ideal lap" per driver. Returns plain dictionaries."""
+
 from collections import defaultdict
 from typing import Any
 

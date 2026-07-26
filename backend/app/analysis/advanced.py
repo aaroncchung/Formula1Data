@@ -12,6 +12,8 @@ import math
 from statistics import mean, median
 from typing import Any
 
+from .common import clean_laps
+
 
 DEFAULT_MINISECTOR_COUNT = 25
 DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP = 55.0
@@ -271,7 +273,7 @@ def calculate_pace_prediction(
             "caveats": caveats + ["Pace prediction is only produced for practice sessions."],
         }
 
-    clean = _clean_laps(laps)
+    clean = clean_laps(laps)
     team_by_driver = {
         str(driver.get("code") or "").upper(): str(driver.get("team", {}).get("name") or "Unknown")
         for driver in drivers
@@ -383,7 +385,7 @@ def calculate_fuel_adjusted_tyre_degradation(
 
     rows = []
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
-    for lap in _clean_laps(laps):
+    for lap in clean_laps(laps):
         groups[(lap.get("driver_code"), lap.get("stint"), lap.get("compound"))].append(lap)
     for (driver, stint, compound), group in groups.items():
         samples = [
@@ -619,24 +621,6 @@ def _interpolate(rows: list[dict[str, Any]], distance: float, field: str) -> flo
         ratio = (distance - left["distance_m"]) / span if span else 0
         return left_value + (right_value - left_value) * ratio
     return None
-
-
-def _clean_laps(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    neutralized = {"SC", "VSC", "RED", "RED FLAG", "SAFETY CAR", "4", "5", "6", "7"}
-    rows = []
-    for lap in laps:
-        if lap.get("lap_time_ms") is None or lap.get("lap_number") == 1:
-            continue
-        if lap.get("is_pit_in_lap") or lap.get("is_pit_out_lap"):
-            continue
-        if lap.get("is_deleted") or lap.get("is_accurate") is False:
-            continue
-        status = str(lap.get("track_status") or "").upper().strip()
-        # FastF1 can concatenate numeric status codes, e.g. "14" for clear+SC.
-        if status in neutralized or any(code in status for code in ("4", "5", "6", "7")):
-            continue
-        rows.append(lap)
-    return rows
 
 
 def _filter_outliers(values: list[float]) -> tuple[list[float], int]:

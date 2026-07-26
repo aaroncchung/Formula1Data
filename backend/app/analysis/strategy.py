@@ -1,3 +1,5 @@
+"""Stint, pit-stop and undercut/overcut summary. Returns plain dictionaries."""
+
 from collections import Counter, defaultdict
 from typing import Any
 
