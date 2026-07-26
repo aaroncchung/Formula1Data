@@ -21,6 +21,16 @@ permissions:
 concurrency:
   group: ingestion
   cancel-in-progress: false
+  # Without `queue: max` GitHub keeps at most one pending run per group and
+  # cancels the previously pending one on every new dispatch. The queue
+  # consumer issues up to ten repository_dispatch calls back to back, so all
+  # but the newest were silently discarded -- and the Worker had already marked
+  # those jobs `running`, so they only surfaced two hours later as timeouts.
+  # `queue: max` allows up to 100 pending runs (a documented ceiling: a full
+  # backfill of 7 session codes x 24 meetings can still exceed it). It is
+  # incompatible with `cancel-in-progress: true`, which this workflow does not
+  # use.
+  queue: max
 
 jobs:
   process:
@@ -63,16 +73,25 @@ jobs:
       # Every ingestion run since 2026-07-12 failed at some step, so the FastF1
       # data each one downloaded was discarded and the next run started cold --
       # a cold fetch being exactly what makes the next failure more likely.
+      #
+      # The key also carries github.run_attempt. run_id is stable across
+      # re-runs and cache entries are immutable, so without run_attempt a
+      # re-run restores attempt 1's possibly-partial cache under an exact
+      # primary-key hit and can never write an improved one -- the save just
+      # fails, silently, under continue-on-error. A re-run is the most natural
+      # response to a failure, so that was exactly the case that could not
+      # help.
       - name: Restore FastF1 cache
         uses: actions/cache/restore@v4
         with:
           path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-
             ${{ runner.os }}-fastf1-
 
       - name: Show FastF1 cache state
+        id: cache-state
         run: |
           if [ -d backend/data/cache/fastf1 ]; then
             CACHE_FILES="$(find backend/data/cache/fastf1 -type f | wc -l)"
@@ -81,6 +100,14 @@ jobs:
           else
             echo "FastF1 cache directory does not exist yet."
           fi
+          # Fingerprint of paths and sizes, taken before ingestion runs, so the
+          # save below can be skipped when nothing was downloaded. An absent
+          # directory hashes to the digest of empty input, which is fine: the
+          # comparison only has to detect a difference.
+          # `|| true` because the runner shell uses `-o pipefail` and find
+          # exits non-zero when the directory does not exist yet.
+          FINGERPRINT="$({ find backend/data/cache/fastf1 -type f -printf '%p %s\n' 2>/dev/null || true; } | sort | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
 
       - name: Write queue message
         id: message
@@ -204,16 +231,35 @@ jobs:
             fi
           done
 
+      # Every save writes a full new immutable entry containing the whole
+      # restored cache plus any delta. Under hourly scheduling that fills the
+      # 10 GB repository budget with near-duplicate multi-hundred-megabyte
+      # snapshots, which then evict each other oldest-access-first. Re-fingerprint
+      # and only save when ingestion actually added or changed something.
+      - name: Check whether the FastF1 cache changed
+        id: cache-diff
+        if: always()
+        run: |
+          FINGERPRINT="$({ find backend/data/cache/fastf1 -type f -printf '%p %s\n' 2>/dev/null || true; } | sort | sha256sum | cut -d' ' -f1)"
+          if [ "$FINGERPRINT" = "${{ steps.cache-state.outputs.fingerprint }}" ]; then
+            echo "FastF1 cache is unchanged since restore; skipping the save."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "FastF1 cache changed since restore; it will be saved."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # Save whatever FastF1 downloaded even when ingestion failed, so a
-      # partially warmed cache still benefits the next attempt. The run_id in
-      # the key makes every save a new entry; restore-keys pick up the newest.
+      # partially warmed cache still benefits the next attempt. run_id plus
+      # run_attempt makes every save a new entry; restore-keys pick up the
+      # newest.
       - name: Save FastF1 cache
-        if: always() && hashFiles('backend/data/cache/fastf1/**') != ''
+        if: always() && steps.cache-diff.outputs.changed == 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify remote R2 manifest
         id: session

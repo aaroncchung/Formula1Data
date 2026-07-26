@@ -525,22 +525,48 @@ async function dispatchGitHubWorkflow(body, env, repository) {
   const repo = String(env.GITHUB_REPO_NAME).trim();
   const eventType = String(env.GITHUB_DISPATCH_EVENT || "ingest_session").trim();
   const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dispatches`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
-      "content-type": "application/json",
-      "user-agent": "formula-1-data-worker",
-      "x-github-api-version": "2022-11-28"
-    },
-    body: JSON.stringify({
-      event_type: eventType,
-      client_payload: {
-        message: body
-      }
-    })
-  });
+
+  // dispatchQueueMessage already moved the job to `running` with a `started_at`.
+  // Whenever the dispatch is not confirmed, that has to be undone: a `running`
+  // job with a `started_at` is indistinguishable from a workflow that started
+  // and hung, so the only thing that ever clears it is the stale-job
+  // reconciler, two hours later, reporting a timeout that never happened.
+  // Reverting to `queued` with no `started_at` keeps "never started" and
+  // "started and hung" as different states in D1.
+  const revertToQueued = async (errorMessage) => {
+    await repository.updateJob(body.job_id, {
+      status: "queued",
+      started_at: null,
+      error_message: errorMessage
+    });
+  };
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${env.GITHUB_DISPATCH_TOKEN}`,
+        "content-type": "application/json",
+        "user-agent": "formula-1-data-worker",
+        "x-github-api-version": "2022-11-28"
+      },
+      body: JSON.stringify({
+        event_type: eventType,
+        client_payload: {
+          message: body
+        }
+      })
+    });
+  } catch (error) {
+    // The request never produced a response, so no workflow run can exist.
+    const errorMessage = `GitHub repository_dispatch request failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+    await revertToQueued(errorMessage);
+    throw new Error(errorMessage);
+  }
 
   if (!response.ok) {
     const errorMessage = `GitHub repository_dispatch returned ${response.status}`;
@@ -548,10 +574,7 @@ async function dispatchGitHubWorkflow(body, env, repository) {
       await failQueueJob(body, repository, errorMessage);
       return;
     }
-    await repository.updateJob(body.job_id, {
-      status: "queued",
-      error_message: errorMessage
-    });
+    await revertToQueued(errorMessage);
     throw new Error(errorMessage);
   }
 }

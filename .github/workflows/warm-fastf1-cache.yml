@@ -56,16 +56,23 @@ jobs:
       # actions/cache declares post-if: success(), so a warm run that failed
       # part-way through saved nothing -- the opposite of this workflow's whole
       # purpose. Split restore/save so partial progress is always kept.
+      #
+      # The key also carries github.run_attempt. run_id is stable across
+      # re-runs and cache entries are immutable, so without run_attempt a
+      # re-run restores the first attempt's possibly-partial cache under an
+      # exact primary-key hit and can never write an improved one -- the save
+      # just fails, silently, under continue-on-error.
       - name: Restore FastF1 cache
         uses: actions/cache/restore@v4
         with:
           path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-
             ${{ runner.os }}-fastf1-
 
       - name: Show FastF1 cache state
+        id: cache-state
         run: |
           if [ -d backend/data/cache/fastf1 ]; then
             CACHE_FILES="$(find backend/data/cache/fastf1 -type f | wc -l)"
@@ -74,6 +81,12 @@ jobs:
           else
             echo "FastF1 cache directory does not exist yet."
           fi
+          # Fingerprint of paths and sizes, taken before warming, so an
+          # unchanged cache is not re-uploaded as a new immutable entry.
+          # `|| true` because the runner shell uses `-o pipefail` and find
+          # exits non-zero when the directory does not exist yet.
+          FINGERPRINT="$({ find backend/data/cache/fastf1 -type f -printf '%p %s\n' 2>/dev/null || true; } | sort | sha256sum | cut -d' ' -f1)"
+          echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
 
       - name: Warm session cache
         run: |
@@ -90,6 +103,7 @@ jobs:
             $FORCE_FLAG
 
       - name: Report warmed cache state
+        id: cache-diff
         if: always()
         run: |
           if [ -d backend/data/cache/fastf1 ]; then
@@ -100,10 +114,22 @@ jobs:
             echo "FastF1 cache directory still does not exist."
           fi
 
+          FINGERPRINT="$({ find backend/data/cache/fastf1 -type f -printf '%p %s\n' 2>/dev/null || true; } | sort | sha256sum | cut -d' ' -f1)"
+          if [ "$FINGERPRINT" = "${{ steps.cache-state.outputs.fingerprint }}" ]; then
+            echo "FastF1 cache is unchanged since restore; skipping the save."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "FastF1 cache changed since restore; it will be saved."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Each save writes a full new immutable entry holding the entire restored
+      # cache, so re-uploading an unchanged one only consumes the 10 GB
+      # repository budget and evicts older snapshots for nothing.
       - name: Save FastF1 cache
-        if: always() && hashFiles('backend/data/cache/fastf1/**') != ''
+        if: always() && steps.cache-diff.outputs.changed == 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: backend/data/cache/fastf1
-          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
