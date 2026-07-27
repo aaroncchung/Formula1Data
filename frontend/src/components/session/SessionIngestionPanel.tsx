@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
 import { api, dynamicApi, dynamicApiSourceLabel, isDynamicApiRouteMissing } from "@/lib/api";
+import { createRequestGenerationGuard } from "@/lib/request-generation";
 import { loadSessionDashboard } from "@/lib/session-dashboard";
 import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
 
@@ -46,13 +47,26 @@ export function SessionIngestionPanel({
   const [dashboardState, setDashboardState] = useState<DashboardState>({ state: "idle" });
   const [isQueueing, setIsQueueing] = useState(false);
 
+  // Status polling and the queue action share one ordering guard: both write
+  // `statusState`, so the newest of the two must win regardless of which
+  // response arrives last. The dashboard load is not part of it -- it is
+  // single-shot and gated on `idle`, and a status poll must not supersede it.
+  const statusRequests = useMemo(() => createRequestGenerationGuard(), []);
+
   const loadStatus = useCallback(async () => {
+    const token = statusRequests.begin();
     setStatusState({ state: "loading" });
     try {
       const status = await dynamicApi.sessionStatus({ year, round, session });
+      if (!statusRequests.isCurrent(token)) {
+        return null;
+      }
       setStatusState({ state: "ready", status });
       return status;
     } catch (error) {
+      if (!statusRequests.isCurrent(token)) {
+        return null;
+      }
       if (isDynamicApiRouteMissing(error)) {
         setStatusState({
           state: "static-only",
@@ -64,7 +78,7 @@ export function SessionIngestionPanel({
       setStatusState({ state: "error", error: apiError(error) });
       return null;
     }
-  }, [round, session, year]);
+  }, [round, session, statusRequests, year]);
 
   const loadDashboard = useCallback(async (sessionId: string) => {
     setDashboardState({ state: "loading" });
@@ -76,12 +90,19 @@ export function SessionIngestionPanel({
     setDashboardState({ state: "ready", data: dashboard.data });
   }, []);
 
+  // `loadStatus` changes identity exactly when year/round/session do, so this
+  // cleanup runs on unmount and on a move to a different session -- retiring
+  // every request made against the previous one, so a late response cannot
+  // describe a session the user has already left.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadStatus();
     }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadStatus]);
+    return () => {
+      window.clearTimeout(timer);
+      statusRequests.invalidate();
+    };
+  }, [loadStatus, statusRequests]);
 
   const status = statusState.state === "ready" ? statusState.status : null;
   useEffect(() => {
@@ -127,6 +148,7 @@ export function SessionIngestionPanel({
       return;
     }
     setIsQueueing(true);
+    const token = statusRequests.begin();
     try {
       const response = await dynamicApi.queueSessionIngestion({
         year,
@@ -137,8 +159,14 @@ export function SessionIngestionPanel({
         scheduled_start: scheduledStart,
         force
       });
+      if (!statusRequests.isCurrent(token)) {
+        return;
+      }
       setStatusState({ state: "ready", status: response.status });
     } catch (error) {
+      if (!statusRequests.isCurrent(token)) {
+        return;
+      }
       setStatusState({ state: "error", error: apiError(error) });
     } finally {
       setIsQueueing(false);
