@@ -23,28 +23,43 @@ function isAcceptableFallback(response) {
 }
 
 export function createArtifactStore(env) {
-  // One resolver per store, not per call: a session page reads twenty artifacts
-  // and a telemetry-heavy one far more, and they all resolve through the same
-  // pointer. Building the resolver inside each method would make its memo
-  // useless and cost an extra R2 GET on every single artifact read.
+  // One resolver per store, so the memo spans a store's lifetime rather than a
+  // single call -- `head()` followed by `get()` on the same session reads the
+  // pointer once.
+  //
+  // Its reach is bounded, and worth being honest about: `index.mjs` builds a
+  // store per request and each artifact is its own request, so a page of twenty
+  // artifacts pays twenty pointer GETs. That is a real cost of resolving
+  // through a pointer, not something this memo removes. Sharing across requests
+  // would mean caching the pointer in the isolate, which trades promptness of
+  // the flip for the saving -- deliberately not done here.
   const resolveKey = createR2KeyResolver(env);
 
   return {
     async head(path) {
       const key = sanitizeArtifactPath(path);
+      const resolved = await resolveKey(key);
+      if (resolved.unresolvable) {
+        return null;
+      }
       if (env.ARTIFACTS_BUCKET?.head) {
-        const storageKey = await resolveKey(key);
-        const object = await env.ARTIFACTS_BUCKET.head(storageKey);
+        const object = await env.ARTIFACTS_BUCKET.head(resolved.key);
         if (object) {
           return {
             key,
-            storage_key: storageKey,
+            storage_key: resolved.key,
             source: "r2",
             size: object.size ?? null,
             etag: object.httpEtag || null,
             uploaded: object.uploaded ? object.uploaded.toISOString() : null
           };
         }
+      }
+      if (resolved.generationBacked) {
+        // The live generation does not have it, so it does not exist. The
+        // static export may still carry a copy; serving that would present a
+        // superseded artifact as current.
+        return null;
       }
 
       // The fallback origin serves the conventional layout, so it is always
@@ -66,17 +81,24 @@ export function createArtifactStore(env) {
     async get(path, request = null) {
       const key = sanitizeArtifactPath(path);
       const method = request?.method === "HEAD" ? "HEAD" : "GET";
+      const resolved = await resolveKey(key);
+      if (resolved.unresolvable) {
+        return null;
+      }
       if (method === "HEAD" && env.ARTIFACTS_BUCKET?.head) {
-        const object = await env.ARTIFACTS_BUCKET.head(await resolveKey(key));
+        const object = await env.ARTIFACTS_BUCKET.head(resolved.key);
         if (object) {
           return r2ObjectResponse(object, key, true, request?.headers);
         }
       } else if (env.ARTIFACTS_BUCKET?.get) {
         const options = r2GetOptions(request?.headers);
-        const object = await env.ARTIFACTS_BUCKET.get(await resolveKey(key), options);
+        const object = await env.ARTIFACTS_BUCKET.get(resolved.key, options);
         if (object) {
           return r2ObjectResponse(object, key, false, request?.headers);
         }
+      }
+      if (resolved.generationBacked) {
+        return null;
       }
 
       const fallback = await fetchFallback(env, key, {
@@ -204,16 +226,24 @@ export function createArtifactStore(env) {
 /**
  * Map a conventional session key onto the key that currently holds its bytes.
  *
- * Fails open, deliberately. A pointer that is absent, oversized or malformed
- * resolves to the conventional key, and that cannot serve the wrong generation:
- * under this layout a generation-published session has no object at its
- * conventional key, so the read simply misses. Legacy sessions published before
- * generations existed are exactly the case where the conventional key is
- * correct. Failing closed instead would take a whole session offline over one
- * unreadable 200-byte object.
+ * Returns `{ key, generationBacked, unresolvable }`, and the distinction
+ * between the last two is the whole point.
  *
- * `verifyManifest` makes the opposite choice, because there a pointer it cannot
- * read is the very thing it exists to check.
+ * An **absent** pointer means the session predates generations, so its
+ * conventional key is the right answer and the old layout still serves it.
+ *
+ * An **unreadable** pointer -- oversized, malformed, or a `schema_version` this
+ * Worker does not know -- is different in kind. Its existence proves the
+ * session *is* generation-published, so the conventional key is stale by
+ * definition. Falling back to it would serve pre-migration bytes at 200, which
+ * is worse than serving nothing: nothing in the publisher removes conventional
+ * keys left by the old layout, and the `STATIC_DATA_BASE_URL` origin serves the
+ * committed checkout indefinitely. So this reports `unresolvable` and callers
+ * answer as a miss.
+ *
+ * A **resolved** pointer suppresses the fallback origin too. If the live
+ * generation does not hold a key -- a section this build stopped producing --
+ * the answer is that it is gone, not the copy the static export still has.
  */
 function createR2KeyResolver(env) {
   const pointers = new Map();
@@ -225,17 +255,36 @@ function createR2KeyResolver(env) {
       match[2].startsWith("generations/") ||
       !env.ARTIFACTS_BUCKET?.get
     ) {
-      return key;
+      return { key, generationBacked: false, unresolvable: false };
     }
     const sessionId = match[1];
     if (!pointers.has(sessionId)) {
       pointers.set(
         sessionId,
-        await loadActivePointer(env, sessionId).catch(() => null)
+        await loadActivePointer(env, sessionId).then(
+          (active) => ({ active, failed: false, error: null }),
+          (error) => ({ active: null, failed: true, error })
+        )
       );
     }
-    const active = pointers.get(sessionId);
-    return active ? `${active.base}/${match[2]}` : key;
+    const { active, failed, error } = pointers.get(sessionId);
+    if (failed) {
+      // Logged rather than swallowed: a session answering 404 because its
+      // pointer will not read is indistinguishable, from the outside, from a
+      // session that was never published.
+      console.warn(
+        JSON.stringify({
+          message: "active generation pointer unreadable",
+          session_id: sessionId,
+          key,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      );
+      return { key, generationBacked: false, unresolvable: true };
+    }
+    return active
+      ? { key: `${active.base}/${match[2]}`, generationBacked: true, unresolvable: false }
+      : { key, generationBacked: false, unresolvable: false };
   };
 }
 

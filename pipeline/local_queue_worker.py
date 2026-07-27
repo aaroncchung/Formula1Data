@@ -384,9 +384,16 @@ def sync_artifacts_to_r2(
 def publication_generation_id(output_dir: Path, session_id: str) -> str:
     """Name a generation by the checksum of the manifest that describes it.
 
-    Content-addressing gives the property that makes a retry safe: a re-run
-    over unchanged data produces the same manifest, so it lands on the same
-    keys and overwrites its own abandoned attempt rather than leaking another.
+    Content-addressing makes the id stable for a given manifest, which the
+    Worker relies on: it re-derives the id from the manifest checksum the
+    pointer carries and rejects a pointer whose two halves disagree.
+
+    It does *not* make retries idempotent, and it is worth being precise about
+    which path is which. `build_static_artifacts` stamps `generated_at` from the
+    clock into every manifest, so a fresh ingestion produces a different id on
+    every attempt even over identical source data -- each failed attempt leaves
+    an orphan generation that no pointer will ever name. Only the reuse path,
+    republishing an unchanged committed manifest, lands on the same keys twice.
     """
     manifest_path = output_dir / "sessions" / session_id / "manifest.json"
     if not manifest_path.is_file():
@@ -439,7 +446,14 @@ def publish_session_generation(
     pointer = publish_active_generation(
         publication_dir, bucket, prefix, session_id, generation_id, replaced=replaced
     )
-    pruned = prune_superseded_generation(bucket, prefix, session_id, replaced)
+    pruned = prune_superseded_generation(
+        bucket,
+        prefix,
+        session_id,
+        replaced,
+        live=generation_id,
+        retained=pointer["previous_generation"],
+    )
     return {"generation_id": generation_id, "pointer": pointer, "pruned": pruned}
 
 
@@ -509,6 +523,16 @@ def publish_active_generation(
     one step further back than the live pointer alone would.
     """
     manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+
+    displaced = (replaced or {}).get("generation_id")
+    if displaced == generation_id:
+        # Republishing unchanged content lands on the same keys, so this
+        # publication displaces nothing -- the generation it "replaced" is
+        # itself. Recording it would make the pointer self-referential, and the
+        # next publication would then read its own live generation as the one
+        # two steps back and delete it. Carry the real predecessor forward.
+        displaced = (replaced or {}).get("previous_generation")
+
     pointer = {
         "schema_version": 1,
         "session_id": session_id,
@@ -518,7 +542,7 @@ def publish_active_generation(
             "size_bytes": manifest_path.stat().st_size,
             "checksum": checksum_file(manifest_path),
         },
-        "previous_generation": (replaced or {}).get("generation_id"),
+        "previous_generation": displaced,
     }
     with tempfile.TemporaryDirectory(prefix="f1-active-generation-") as temporary_directory:
         local_pointer = Path(temporary_directory) / "active.json"
@@ -545,9 +569,26 @@ def publish_active_generation(
 
 
 def prune_superseded_generation(
-    bucket: str, prefix: str, session_id: str, replaced: dict[str, Any] | None
+    bucket: str,
+    prefix: str,
+    session_id: str,
+    replaced: dict[str, Any] | None,
+    *,
+    live: str,
+    retained: str | None,
 ) -> list[str]:
     """Delete the generation two flips back, keeping the live one and its predecessor.
+
+    `live` and `retained` are passed rather than inferred, and are checked
+    against the deletion candidate before anything is removed. Because a
+    generation is named by its content, a chain can legitimately revisit an id
+    it has already used -- republish the same artifacts, or revert to an earlier
+    version -- and the id two steps back is then the id that is live now.
+    Deleting it would leave `active.json` pointing at a generation with no
+    objects: a session both live and completely unreadable, with no rollback
+    left to recover it. This guard is the one thing standing between that
+    coincidence and data loss, so it is enforced here as well as at the point
+    the chain is written.
 
     Wrangler exposes no object listing, so the keys to remove come from the
     doomed generation's own manifest -- which is a complete index of what that
@@ -564,7 +605,7 @@ def prune_superseded_generation(
     storage cost into a false ingestion failure.
     """
     doomed = (replaced or {}).get("previous_generation")
-    if not doomed:
+    if not doomed or doomed == live or doomed == retained:
         return []
     base = f"sessions/{session_id}/generations/{doomed}"
     try:

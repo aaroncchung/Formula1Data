@@ -407,6 +407,153 @@ class LocalQueueWorkerTests(unittest.TestCase):
 
         self.assertIn("active generation mismatch", str(raised.exception))
 
+    def _publication_chain(self, contents):
+        """Publish each content in turn into one fake bucket, return the trace.
+
+        Drives the real `publish_session_generation`, so the pointer chain and
+        the pruning decisions are the ones production would make. Returns, per
+        step, the live generation and whether its objects survived -- which is
+        the only thing that actually matters to a reader.
+        """
+        objects: dict[str, str] = {}
+        trace = []
+
+        def fake_upload(path, _bucket, key):
+            objects[key] = Path(path).read_text(encoding="utf-8")
+
+        def fake_download(_bucket, key, destination, **_kwargs):
+            if key not in objects:
+                return False
+            Path(destination).write_text(objects[key], encoding="utf-8")
+            return True
+
+        def fake_delete(_bucket, key):
+            objects.pop(key, None)
+
+        for content in contents:
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                output_dir = Path(temporary_directory)
+                session_dir = output_dir / "sessions" / "2025-09-r"
+                summary_path = session_dir / "summary.json"
+                write_json(summary_path, {"content": content})
+                write_json(
+                    session_dir / "manifest.json",
+                    {
+                        "session_id": "2025-09-r",
+                        "generated_at": "2026-07-27T00:00:00+00:00",
+                        "sections": [
+                            {
+                                "kind": "summary",
+                                "path": "sessions/2025-09-r/summary.json",
+                                "size_bytes": summary_path.stat().st_size,
+                                "checksum": checksum_file(summary_path),
+                            }
+                        ],
+                    },
+                )
+                with (
+                    patch(
+                        "pipeline.local_queue_worker.upload_r2_object", side_effect=fake_upload
+                    ),
+                    patch(
+                        "pipeline.local_queue_worker.download_r2_object",
+                        side_effect=fake_download,
+                    ),
+                    patch(
+                        "pipeline.local_queue_worker.delete_r2_object", side_effect=fake_delete
+                    ),
+                    patch("pipeline.local_queue_worker.verify_remote_publication"),
+                ):
+                    result = publish_session_generation(
+                        output_dir,
+                        "test-bucket",
+                        "",
+                        session_id="2025-09-r",
+                        year=2025,
+                    )
+            live = result["generation_id"]
+            live_base = f"sessions/2025-09-r/generations/{live}/"
+            trace.append(
+                {
+                    "live": live,
+                    "previous": result["pointer"]["previous_generation"],
+                    "live_objects": sum(1 for key in objects if key.startswith(live_base)),
+                    "pruned": result["pruned"],
+                }
+            )
+        return trace, objects
+
+    def test_republishing_unchanged_content_never_deletes_the_live_generation(self):
+        """The regression: identical content republishes onto identical keys.
+
+        A generation is named by its manifest checksum, so the third publication
+        of unchanged artifacts used to find its own live generation recorded as
+        the one two steps back, and delete every object in it. `active.json`
+        survived, pointing at nothing -- a session live and unreadable, with the
+        rollback machinery already removed. The reuse path publishes from the
+        committed checkout, so this was reachable on an ordinary re-run.
+        """
+        trace, _ = self._publication_chain(["same", "same", "same", "same"])
+
+        self.assertEqual(len({step["live"] for step in trace}), 1)
+        for index, step in enumerate(trace):
+            self.assertGreater(
+                step["live_objects"], 0, f"publication {index + 1} deleted its own live generation"
+            )
+            self.assertNotEqual(step["previous"], step["live"])
+            self.assertEqual(step["pruned"], [])
+
+    def test_reverting_to_earlier_content_never_deletes_the_live_generation(self):
+        trace, objects = self._publication_chain(["a", "b", "a"])
+
+        self.assertEqual(trace[0]["live"], trace[2]["live"])
+        self.assertGreater(trace[2]["live_objects"], 0)
+        # The revert republishes generation A while A is what the outgoing
+        # pointer names as its predecessor, so A is both the deletion candidate
+        # and the live generation.
+        self.assertEqual(trace[2]["pruned"], [])
+        self.assertIn(
+            f"sessions/2025-09-r/generations/{trace[2]['live']}/summary.json", objects
+        )
+
+    def test_a_normal_chain_still_prunes_the_generation_two_flips_back(self):
+        trace, objects = self._publication_chain(["a", "b", "c"])
+
+        first, second, third = (step["live"] for step in trace)
+        self.assertEqual(len({first, second, third}), 3)
+        # Third publication drops the first and keeps the second.
+        self.assertEqual(
+            trace[2]["pruned"],
+            [
+                f"sessions/2025-09-r/generations/{first}/summary.json",
+                f"sessions/2025-09-r/generations/{first}/manifest.json",
+            ],
+        )
+        self.assertFalse(
+            any(key.startswith(f"sessions/2025-09-r/generations/{first}/") for key in objects)
+        )
+        self.assertTrue(
+            any(key.startswith(f"sessions/2025-09-r/generations/{second}/") for key in objects)
+        )
+
+    def test_a_republish_between_two_changes_keeps_the_real_predecessor(self):
+        """x, y, y again, z -- the republish must not lose x's place in the chain."""
+        trace, objects = self._publication_chain(["x", "y", "y", "z"])
+
+        first = trace[0]["live"]
+        second = trace[1]["live"]
+        # The republish of y displaces nothing, so x stays the predecessor and
+        # survives; only the move to z retires it.
+        self.assertEqual(trace[2]["previous"], first)
+        self.assertEqual(trace[2]["pruned"], [])
+        self.assertEqual(trace[3]["previous"], second)
+        self.assertFalse(
+            any(key.startswith(f"sessions/2025-09-r/generations/{first}/") for key in objects)
+        )
+        self.assertTrue(
+            any(key.startswith(f"sessions/2025-09-r/generations/{second}/") for key in objects)
+        )
+
     def test_pruning_removes_the_generation_two_flips_back(self):
         doomed = "b" * 64
         base = f"sessions/2025-09-r/generations/{doomed}"
@@ -440,6 +587,8 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 "",
                 "2025-09-r",
                 {"generation_id": "c" * 64, "previous_generation": doomed},
+                live="d" * 64,
+                retained="c" * 64,
             )
 
         self.assertEqual(
@@ -458,11 +607,34 @@ class LocalQueueWorkerTests(unittest.TestCase):
         """A reader that resolved the pointer just before a flip is still reading."""
         with patch("pipeline.local_queue_worker.delete_r2_object") as delete:
             # A first publication has nothing behind it at all.
-            self.assertEqual(prune_superseded_generation("b", "", "2025-09-r", None), [])
+            self.assertEqual(
+                prune_superseded_generation(
+                    "b", "", "2025-09-r", None, live="a" * 64, retained=None
+                ),
+                [],
+            )
             # A second still has only the live generation and its predecessor.
             self.assertEqual(
                 prune_superseded_generation(
-                    "b", "", "2025-09-r", {"generation_id": "a" * 64, "previous_generation": None}
+                    "b",
+                    "",
+                    "2025-09-r",
+                    {"generation_id": "a" * 64, "previous_generation": None},
+                    live="b" * 64,
+                    retained="a" * 64,
+                ),
+                [],
+            )
+            # And the guard refuses a candidate that is live or retained, even
+            # when the chain names it -- which is what a content revert produces.
+            self.assertEqual(
+                prune_superseded_generation(
+                    "b",
+                    "",
+                    "2025-09-r",
+                    {"generation_id": "b" * 64, "previous_generation": "a" * 64},
+                    live="a" * 64,
+                    retained="b" * 64,
                 ),
                 [],
             )
@@ -482,6 +654,8 @@ class LocalQueueWorkerTests(unittest.TestCase):
                 "",
                 "2025-09-r",
                 {"generation_id": "c" * 64, "previous_generation": "b" * 64},
+                live="d" * 64,
+                retained="c" * 64,
             )
 
         self.assertEqual(deleted, [])

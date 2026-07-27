@@ -322,9 +322,20 @@ pointer, which is why the frontend needs no knowledge of any of this.
 
 Each flip prunes the generation two steps back, keeping the live one and its immediate predecessor —
 the predecessor because a reader that resolved the pointer moments before a flip is still fetching
-from it. A run that fails between upload and flip leaves an unreferenced generation behind; it is
-inert, and a re-run over unchanged data reuses the same keys because a generation is named by its
-manifest's checksum.
+from it. A generation is never pruned while it is the live one or the retained predecessor, even
+when the chain names it: because ids are content-addressed, republishing unchanged artifacts or
+reverting to an earlier version can legitimately revisit an id the chain already used.
+
+A run that fails between upload and flip leaves an unreferenced generation behind. It is inert — no
+pointer names it, so no read can reach it — but it is not reclaimed: pruning only walks generations
+that were once live. Fresh ingestions leak one generation per failed attempt, because
+`generated_at` is stamped into every manifest from the clock and so each attempt gets a different
+id. Reclaiming them needs an object listing, which wrangler does not expose; use the S3-compatible
+API if the bucket needs sweeping.
+
+If a session is ever left live but unreadable — `active.json` present, its generation missing —
+re-ingest it with `--force`. There is no rollback path; the pointer is the only state that matters,
+and a fresh publication replaces it.
 
 ## Troubleshooting
 

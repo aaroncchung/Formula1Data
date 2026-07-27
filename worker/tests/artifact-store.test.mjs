@@ -19,7 +19,13 @@ function r2Object(body, overrides = {}) {
 test("R2 artifacts are streamed with range and cache metadata", async () => {
   let receivedOptions;
   const bucket = {
-    async get(_key, options) {
+    async get(key, options) {
+      // A session with no generation pointer -- the legacy layout. Answering
+      // this key with a body would claim the session is generation-published
+      // and then fail to parse as a pointer, which is a different test.
+      if (key.endsWith("active.json")) {
+        return null;
+      }
       receivedOptions = options;
       return r2Object(new Blob(["0123"]).stream(), {
         range: { offset: 2, length: 4 }

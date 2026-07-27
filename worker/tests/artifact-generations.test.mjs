@@ -78,19 +78,19 @@ test("a conventional session path is served from the generation the pointer name
   assert.ok(!reads.includes(`sessions/${SESSION}/summary.json`));
 });
 
-test("one pointer lookup serves a whole page of artifacts", async () => {
-  const { bucket, reads, base, objects } = await generationBucket();
-  objects[`${base}/laps.json`] = "[]";
-  objects[`${base}/results.json`] = "[]";
+test("a store reads the pointer once across head and get", async () => {
+  // The memo's actual reach. `index.mjs` builds a store per request and each
+  // artifact is its own request, so this does NOT mean a page of artifacts
+  // costs one pointer GET -- it costs one per artifact. What it does mean is
+  // that a request touching a session twice, as the status path does, pays once.
+  const { bucket, reads } = await generationBucket();
   const store = createArtifactStore({ ARTIFACTS_BUCKET: bucket });
 
+  await store.head(`sessions/${SESSION}/manifest.json`);
   await store.get(`/data/sessions/${SESSION}/summary.json`);
-  await store.get(`/data/sessions/${SESSION}/laps.json`);
-  await store.get(`/data/sessions/${SESSION}/results.json`);
 
-  // Building the resolver per call instead of per store would make this 3.
-  const pointerReads = reads.filter((key) => key.endsWith("active.json"));
-  assert.equal(pointerReads.length, 1);
+  // Building the resolver per call instead of per store would make this 2.
+  assert.equal(reads.filter((key) => key.endsWith("active.json")).length, 1);
 });
 
 test("a session published before generations existed still resolves conventionally", async () => {
@@ -129,18 +129,98 @@ test("the pointer object and generation bodies are addressed directly, not resol
   assert.ok(!reads.some((key) => key.split("generations/").length > 2));
 });
 
-test("a malformed pointer degrades to the conventional key rather than 500ing the session", async () => {
+test("an unreadable pointer does not fall back to pre-migration bytes", async () => {
+  // Nothing in the publisher deletes conventional-layout keys, so a bucket
+  // populated before generations keeps them indefinitely. A pointer that exists
+  // but will not parse proves the session IS generation-published, which makes
+  // the conventional key stale by definition -- serving it would return
+  // pre-migration data at 200, presented as current.
   const { bucket, objects } = await generationBucket();
   objects[`sessions/${SESSION}/active.json`] = "{ this is not json";
-  objects[`sessions/${SESSION}/summary.json`] = '{"conventional":true}';
+  objects[`sessions/${SESSION}/summary.json`] = '{"data":"STALE-pre-migration"}';
   const store = createArtifactStore({ ARTIFACTS_BUCKET: bucket });
 
-  const response = await store.get(`/data/sessions/${SESSION}/summary.json`);
+  assert.equal(await store.get(`/data/sessions/${SESSION}/summary.json`), null);
+  assert.equal(await store.head(`sessions/${SESSION}/summary.json`), null);
+});
 
-  // Failing open cannot serve the wrong generation -- a generation-published
-  // session has nothing at its conventional key, so the read simply misses.
-  assert.equal(response.status, 200);
-  assert.equal(await response.text(), '{"conventional":true}');
+test("an unreadable pointer does not fall back to the static export either", async () => {
+  const bucket = {
+    async get(key) {
+      if (key !== `sessions/${SESSION}/active.json`) return null;
+      const text = "{ truncated";
+      return { body: new Blob([text]).stream(), size: text.length, writeHttpMetadata() {} };
+    }
+  };
+  let fetched = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    fetched = String(url);
+    return new Response('{"data":"STALE-committed-checkout"}', { status: 200 });
+  };
+  try {
+    const store = createArtifactStore({
+      ARTIFACTS_BUCKET: bucket,
+      STATIC_DATA_BASE_URL: "https://formula1data.pages.dev/data"
+    });
+    assert.equal(await store.get(`/data/sessions/${SESSION}/summary.json`), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(fetched, null, `the fallback origin must not be consulted, fetched ${fetched}`);
+});
+
+test("a transient pointer read failure is not mistaken for a legacy session", async () => {
+  // The dangerous version of the same bug: R2 blips, the pointer read throws,
+  // and a resolver that swallowed it would serve the old layout at 200 with no
+  // signal that anything went wrong.
+  const { objects } = await generationBucket();
+  const bucket = {
+    async get(key) {
+      if (key === `sessions/${SESSION}/active.json`) {
+        throw new Error("R2 timeout");
+      }
+      const text = objects[key];
+      return text === undefined
+        ? null
+        : { body: new Blob([text]).stream(), size: text.length, writeHttpMetadata() {} };
+    }
+  };
+  const store = createArtifactStore({ ARTIFACTS_BUCKET: bucket });
+
+  assert.equal(await store.get(`/data/sessions/${SESSION}/summary.json`), null);
+});
+
+test("a pointer schema this Worker does not know is treated as unreadable", async () => {
+  const { bucket, objects } = await generationBucket({ pointerOverrides: { schema_version: 2 } });
+  objects[`sessions/${SESSION}/summary.json`] = '{"data":"STALE-pre-migration"}';
+  const store = createArtifactStore({ ARTIFACTS_BUCKET: bucket });
+
+  assert.equal(await store.get(`/data/sessions/${SESSION}/summary.json`), null);
+});
+
+test("a key the live generation dropped is gone, not served from the old layout", async () => {
+  // A healthy pointer, but this build stopped producing the section. Any
+  // pre-migration R2 object and the static export both still have a copy;
+  // neither is current, and a 200 would present a superseded artifact as live.
+  const { bucket, objects } = await generationBucket();
+  objects[`sessions/${SESSION}/laps.json`] = '{"data":"STALE-dropped-section"}';
+  let fetched = null;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    fetched = String(url);
+    return new Response('{"data":"STALE-committed-checkout"}', { status: 200 });
+  };
+  try {
+    const store = createArtifactStore({
+      ARTIFACTS_BUCKET: bucket,
+      STATIC_DATA_BASE_URL: "https://formula1data.pages.dev/data"
+    });
+    assert.equal(await store.get(`/data/sessions/${SESSION}/laps.json`), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(fetched, null, `the fallback origin must not be consulted, fetched ${fetched}`);
 });
 
 test("an oversized pointer is refused rather than read into memory", async () => {

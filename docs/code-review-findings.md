@@ -271,7 +271,11 @@ The interim mitigation was also not cheap. It required a local backup of every l
 
 **Cost** A publication pays one GET for the previous pointer, one PUT and one GET for the flip, and reads back the manifest plus every non-telemetry-lap section. Telemetry laps are checksummed locally against the manifest but not re-read from R2; re-reading a thousand of them would roughly double an ingestion's R2 operations to re-verify the artifacts with the least structural reach. Storage is bounded by pruning the generation two flips back on every successful flip, keeping the live generation and its immediate predecessor — the predecessor because a reader that resolved the pointer just before a flip is still fetching from it.
 
-**Residual, accepted:** a run that fails between upload and flip leaves an unreferenced generation in the bucket. It is inert — no pointer names it, so no read can reach it — and because a generation is named by its manifest's checksum, a re-run over unchanged data lands on the same keys and overwrites it. Only a re-run whose content differs leaks, and wrangler exposes no object listing to sweep those without the S3 API.
+**Residual, accepted:** a run that fails between upload and flip leaves an unreferenced generation in the bucket. It is inert — no pointer names it, so no read can reach it — but it does accumulate, and pruning cannot reach it: the chain only walks generations that were once live.
+
+The size of that leak is worse than content-addressing first suggests. `build_static_artifacts` stamps `generated_at` from the clock into every manifest, so a **fresh ingestion produces a different generation id on every attempt**, even over byte-identical source data. Each failed attempt therefore leaks a full generation — on the order of a thousand objects for a telemetry-heavy session — rather than overwriting its own previous attempt. Only the reuse path, which republishes an unchanged committed manifest, lands on the same keys twice.
+
+Sweeping them needs an object listing, which wrangler does not expose; it would have to go through the S3-compatible API. Deriving the generation id from a manifest with the volatile fields excluded would make retries idempotent and close this, at the cost of the id no longer being the manifest's own checksum — the invariant the Worker and the ingestion workflow both check. Not attempted here.
 
 **Locations**
 
