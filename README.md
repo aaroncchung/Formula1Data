@@ -328,7 +328,7 @@ The Worker exposes:
 - `POST /api/ingestion/jobs/:jobId/status`
 - `GET /data/*`
 
-Status checks look for `sessions/{session_id}/manifest.json` or `summary.json` in R2, then D1 active jobs. Missing sessions can be queued from the frontend. The Worker creates or reuses an active `ingest_session` job, writes D1 state, and sends the Cloudflare Queue message.
+Status checks look for `sessions/{session_id}/manifest.json` in R2 — resolved through that session's `active.json` generation pointer — then D1 active jobs. Missing sessions can be queued from the frontend. The Worker creates or reuses an active `ingest_session` job, writes D1 state, and sends the Cloudflare Queue message.
 
 Queue message shape:
 

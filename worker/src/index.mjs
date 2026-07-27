@@ -303,7 +303,11 @@ export async function applyIngestionJobUpdate({ repository, artifacts, jobId, pa
   if (status === "succeeded") {
     let verification;
     try {
-      verification = await artifacts.verify(manifest, { r2Only: true });
+      // Not `verify()`: that only asks whether a key holds the promised bytes.
+      // This asks whether the generation the runner says it committed is the
+      // one the active pointer actually names, which is what makes a
+      // "succeeded" callback mean the session is live.
+      verification = await artifacts.verifyManifest(manifest);
     } catch (error) {
       verification = {
         verified: false,

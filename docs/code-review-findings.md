@@ -263,18 +263,22 @@ D1 state distinguishes "never started" from "started and hung".
 | **Confidence** | High |
 | **Status** | **Resolved** |
 
-**Resolution** A refresh now takes a local backup of the live generation before overwriting any body, and restores it if a body upload exhausts its retries. The guard lives inside `sync_artifacts_to_r2`, so the fresh-ingestion and reuse paths both get it unchanged; an existing generation is detected by probing for the remote manifest, which is reliable now that `download_r2_object` retries (F-29). A first publication pays only the probe. The upload error is held rather than propagated so the rollback runs after the executor shuts down -- restoring while a straggler upload was still in flight could re-corrupt the key it had just restored. A failed restore raises naming the session and stating it may be inconsistent.
+**Resolution** Sessions are published as immutable generations under `sessions/<id>/generations/<manifest-sha256>/`, and `sessions/<id>/active.json` is flipped in a single PUT once the generation has been uploaded and verified. The flip is the commit. Nothing is overwritten, so there is no window in which a reader can see a mixture of two generations, and no rollback is required — a generation that fails at any point before the flip is simply never pointed at.
 
-Immutable generation-prefixed keys were considered and rejected: the frontend addresses artifacts by convention (`static-api-core.ts` builds `sessions/<id>/summary.json` from hardcoded filenames, and telemetry paths are relative to the session directory), so that scheme would force every read through the manifest. The key layout is unchanged and neither the frontend nor the Worker was touched. Cost: a refresh roughly doubles its R2 operations; a first publication pays 3 extra GETs.
+**Correction to the previous resolution.** This finding previously recorded that generation-prefixed keys had been "considered and rejected", on the grounds that the frontend addresses artifacts by convention and the scheme "would force every read through the manifest". That reasoning was wrong, and the sentence that gave it away was the one immediately after: *"neither the frontend nor the Worker was touched."* The objection only holds if the Worker is left alone. `createR2KeyResolver` (`worker/src/artifact-store.mjs`) resolves conventional paths through the pointer, so `static-api-core.ts` goes on building `sessions/<id>/summary.json` from hardcoded filenames and never learns generations exist. The frontend is genuinely untouched; the Worker absorbed the whole change.
 
-**Residual, accepted:** the guard covers body uploads only. If every body lands and the manifest PUT then exhausts its retries, the session is a complete new generation described by the old manifest. `verify_remote_manifest` fails, the job is marked failed, and a re-run repairs it -- stale metadata rather than mixed data. Pulling the manifest inside the guarded region would make a rollback re-PUT a marker key, contradicting the existing invariant that markers never follow a failed body upload.
+The interim mitigation was also not cheap. It required a local backup of every live body, `confirm_session_is_unpublished` corroboration against a second index, an invariant that a manifest names every body its generation published, retry-budget reasoning about stragglers — and it still produced two further High-severity findings against itself (F-32, F-33). All of that existed because bodies were overwritten in place. Removing the overwrite removed the class: `PublishedSessionBackup`, `back_up_published_session`, `remove_superseded_objects`, `withdraw_manifest`, `published_object_keys`, `confirm_session_is_unpublished`, `raise_after_rollback` and `remote_object_exists` are all deleted.
+
+**Cost** A publication pays one GET for the previous pointer, one PUT and one GET for the flip, and reads back the manifest plus every non-telemetry-lap section. Telemetry laps are checksummed locally against the manifest but not re-read from R2; re-reading a thousand of them would roughly double an ingestion's R2 operations to re-verify the artifacts with the least structural reach. Storage is bounded by pruning the generation two flips back on every successful flip, keeping the live generation and its immediate predecessor — the predecessor because a reader that resolved the pointer just before a flip is still fetching from it.
+
+**Residual, accepted:** a run that fails between upload and flip leaves an unreferenced generation in the bucket. It is inert — no pointer names it, so no read can reach it — and because a generation is named by its manifest's checksum, a re-run over unchanged data lands on the same keys and overwrites it. Only a re-run whose content differs leaks, and wrangler exposes no object listing to sweep those without the S3 API.
 
 **Locations**
 
-- `pipeline/local_queue_worker.py:306-364` (`sync_artifacts_to_r2`)
-- `pipeline/local_queue_worker.py:347-360` (failure handling)
-- `worker/src/index.mjs:153-176` (`getArtifact` — read path)
-- `worker/src/artifact-store.mjs:66-90` (`verify` — the only checksum check)
+- `pipeline/local_queue_worker.py` (`publish_session_generation`, `publish_active_generation`, `prune_superseded_generation`)
+- `worker/src/artifact-store.mjs` (`createR2KeyResolver`, `loadActivePointer`, `verifyManifest`)
+- `worker/src/index.mjs` (`applyIngestionJobUpdate` — verifies through the pointer)
+- `.github/workflows/process-ingestion-job.yml` (verifies the active generation)
 
 **Reachability**
 
@@ -1662,6 +1666,13 @@ accept the documented exception.
 
 ### F-32 — The F-02 rollback could overwrite a generation it had not fully copied
 
+> **Superseded.** The rollback this hardened no longer exists. F-02 now publishes
+> immutable generations and commits with a pointer flip, so there is no backup to
+> take, no restore to get wrong, and no "absent or merely unreadable?" question to
+> answer. Retained as the record of why the in-place design was abandoned rather
+> than hardened further: two High-severity findings against the guard itself, and
+> a residual window that stayed open.
+
 | | |
 | --- | --- |
 | **Category** | Data integrity |
@@ -1737,6 +1748,11 @@ that requires a previous run to have died between its manifest and its indexes
 | **Severity** | High |
 | **Confidence** | High |
 | **Status** | **Resolved** |
+
+> **Superseded**, with F-32 and for the same reason: `confirm_session_is_unpublished`
+> and the marker-ordering discipline it belonged to are deleted. Nothing now needs
+> to establish whether a session is already published before writing, because
+> writing no longer destroys anything.
 
 **Resolution** Raised as merge-blocking review feedback on PR #6 against the
 F-32 fix. Two of the three reported cases reproduced; the third does not exist.

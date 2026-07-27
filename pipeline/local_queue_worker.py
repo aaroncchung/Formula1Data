@@ -4,6 +4,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -152,15 +153,7 @@ def process_message(
                         data_dir / "processed" / "sessions" / session_id / "dataset.json"
                     ),
                     allow_missing_catalog=allow_missing_catalog,
-                    probe_base_url=callback_url,
                 )
-                if artifact_destination == "r2":
-                    verify_remote_manifest(
-                        publication_dir,
-                        required_value(r2_bucket, "--r2-bucket"),
-                        r2_prefix,
-                        session_id,
-                    )
                 payload = build_success_payload(
                     publication_dir, session_id, summary["generated_at"]
                 )
@@ -171,21 +164,12 @@ def process_message(
                 return {"job_id": job_id, "session_id": session_id, "artifacts": len(artifacts)}
 
         if artifact_destination == "r2":
-            sync_artifacts_to_r2(
+            publish_session_generation(
                 publication_dir,
                 required_value(r2_bucket, "--r2-bucket"),
                 r2_prefix,
                 session_id=session_id,
                 year=int(required(message, "year")),
-                include_indexes=False,
-                allow_missing_catalog=allow_missing_catalog,
-                probe_base_url=callback_url,
-            )
-            verify_remote_manifest(
-                publication_dir,
-                required_value(r2_bucket, "--r2-bucket"),
-                r2_prefix,
-                session_id,
             )
             # The indexes are the commit markers readers use to discover a
             # session, so the reuse path has to merge and republish them too;
@@ -336,38 +320,41 @@ def sync_artifacts_to_r2(
     session_id: str,
     year: int,
     include_indexes: bool = True,
-    allow_missing_catalog: bool = False,
-    probe_base_url: str | None = None,
+    generation_id: str | None = None,
 ) -> None:
-    """Upload a session first and publish its indexes last.
+    """Upload a session's artifacts, under an immutable generation prefix.
 
-    Both call paths land here -- fresh ingestion via `publish_artifacts`
-    (`include_indexes=True`) and a reused checkout directly
-    (`include_indexes=False`) -- and both overwrite the live bodies, so the
-    rollback guard lives here rather than at either call site.
+    With `generation_id` set, every session object lands under
+    `sessions/<id>/generations/<generation_id>/`, which nothing points at yet.
+    That is what removes the commit-marker discipline the in-place layout
+    needed: no reader can reach any of this until `publish_active_generation`
+    flips the pointer, so the order objects arrive in does not matter and a
+    partial upload cannot be observed. A failure here leaves the live
+    generation untouched, because this run never wrote to it.
 
-    `allow_missing_catalog` carries the same meaning it has in
-    `hydrate_r2_indexes`: the operator has declared the bucket empty, which is
-    the only circumstance in which unreadable indexes may be read as an empty
-    bucket rather than as a failure.
+    The manifest is still uploaded after the bodies. Not for safety now, but so
+    that a generation abandoned part-way is missing its manifest and is
+    therefore identifiable as incomplete -- and because the manifest is what
+    `prune_superseded_generation` later reads to discover the generation's keys.
     """
     normalized_prefix = prefix.strip("/")
     session_dir = output_dir / "sessions" / session_id
     session_files = sorted(session_dir.rglob("*.json")) if session_dir.exists() else []
     manifest = session_dir / "manifest.json"
-
-    # The manifest and the season/catalog indexes are commit markers: readers
-    # treat them as the signal that a session is complete, so they must land
-    # only after every file they reference. Bodies upload concurrently; the
-    # markers stay strictly ordered and serial behind them.
-    bodies = [path for path in session_files if path != manifest and path.is_file()]
-    markers = [manifest] if manifest.is_file() else []
-    if include_indexes:
-        markers.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
+    session_prefix = f"sessions/{session_id}/"
 
     def remote_key(path: Path) -> str:
-        key = path.relative_to(output_dir).as_posix()
-        return f"{normalized_prefix}/{key}" if normalized_prefix else key
+        relative = path.relative_to(output_dir).as_posix()
+        if generation_id and relative.startswith(session_prefix):
+            relative = remote_session_artifact_path(
+                session_id, relative[len(session_prefix) :], generation_id
+            )
+        return f"{normalized_prefix}/{relative}" if normalized_prefix else relative
+
+    bodies = [path for path in session_files if path != manifest and path.is_file()]
+    trailing = [manifest] if manifest.is_file() else []
+    if include_indexes:
+        trailing.extend([output_dir / "seasons" / f"{year}.json", output_dir / "catalog.json"])
 
     # One wrangler invocation costs a full Node process start, so a session's
     # ~1k telemetry files took ~28 minutes serially. Overlap them instead.
@@ -377,410 +364,381 @@ def sync_artifacts_to_r2(
     # roughly a second per upload, four in flight stays well inside the budget
     # while still cutting the wall clock by about 4x.
     max_workers = max(1, int(os.getenv("R2_UPLOAD_CONCURRENCY", "4")))
-
-    def upload_markers(has_previous_generation: bool) -> None:
-        manifest_published = False
-        for path in markers:
-            if not path.is_file():
-                continue
-            try:
-                upload_r2_object(path, bucket, remote_key(path))
-            except Exception as marker_error:
-                if manifest_published and not has_previous_generation:
-                    withdraw_manifest(bucket, remote_key(manifest), session_id, marker_error)
-                raise
-            if path == manifest:
-                manifest_published = True
-
-    if not bodies:
-        upload_markers(has_previous_generation=False)
-        return
-
-    # Bodies are overwritten in place over the live session, so a failure
-    # part-way would leave the published manifest pointing at a mix of old and
-    # new files -- and nothing on the read path checksums a section, so the
-    # mixture is served silently. Guard the overwrite: copy whatever is live
-    # now, and put it back if the refresh does not complete.
-    body_keys = {remote_key(path): path.relative_to(output_dir) for path in bodies}
-    with tempfile.TemporaryDirectory(prefix="f1-r2-rollback-") as rollback_root:
-        backup = back_up_published_session(
-            Path(rollback_root),
-            bucket,
-            prefix,
-            session_id=session_id,
-            year=year,
-            bodies=body_keys,
-            max_workers=max_workers,
-            allow_missing_catalog=allow_missing_catalog,
-            probe_base_url=probe_base_url,
-        )
-        upload_error: BaseException | None = None
-        # Recorded before the PUT rather than after it: a rollback has to be
-        # able to delete a new object whose upload reported failure but may
-        # still have landed. Deleting a key that is not there is not an error.
-        attempted: list[str] = []
-        attempted_lock = threading.Lock()
-
-        def upload(path: Path) -> None:
-            key = remote_key(path)
-            with attempted_lock:
-                attempted.append(key)
-            upload_r2_object(path, bucket, key)
-
+    if bodies:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = [pool.submit(upload, path) for path in bodies]
-            try:
-                for future in as_completed(futures):
-                    future.result()
-            except Exception as error:
-                # Cancelling drops uploads that have not started yet; ones
-                # already running still finish, because leaving the executor
-                # shuts it down with wait=True. The failure is therefore held
-                # and re-raised below rather than propagating from here, so the
-                # rollback cannot race an upload that is still writing.
-                for pending in futures:
-                    pending.cancel()
-                upload_error = error
-        if upload_error is not None:
-            raise_after_rollback(backup, session_id, upload_error, attempted)
-
-        # Only now, with every body landed, do the commit markers go up.
-        upload_markers(has_previous_generation=backup.published)
-        remove_superseded_objects(
-            backup, set(body_keys), remote_key(manifest), session_id
-        )
+            futures = [
+                pool.submit(upload_r2_object, path, bucket, remote_key(path)) for path in bodies
+            ]
+            # Leaving the executor shuts it down with wait=True, so uploads
+            # already running still finish before this propagates. That used to
+            # matter a great deal -- a rollback could not be allowed to race a
+            # straggler. It is now merely tidy: the straggler is writing into a
+            # generation nothing will ever point at.
+            for future in as_completed(futures):
+                future.result()
+    for path in trailing:
+        if path.is_file():
+            upload_r2_object(path, bucket, remote_key(path))
 
 
-class PublishedSessionBackup:
-    """The live copies of the R2 objects a refresh is about to overwrite.
+def publication_generation_id(output_dir: Path, session_id: str) -> str:
+    """Name a generation by the checksum of the manifest that describes it.
 
-    Held in a local temporary directory rather than a second R2 prefix: the
-    GETs are paid either way, but a local copy avoids an unconditional second
-    set of PUTs on the success path and leaves no orphaned prefix to sweep up.
-
-    `previous_keys` is the whole object set the live generation owns, taken from
-    its published manifest. It is wider than `objects`, which holds only the
-    keys this refresh overwrites, and the difference is what tells a rollback
-    which uploaded objects are new and have to be deleted rather than restored.
-
-    This does not survive the runner dying mid-restore -- the backup goes with
-    the temporary directory. That is a different failure mode from the one this
-    guards (an upload that fails while the process is alive and can react), and
-    it is deliberately out of scope here.
+    Content-addressing gives the property that makes a retry safe: a re-run
+    over unchanged data produces the same manifest, so it lands on the same
+    keys and overwrites its own abandoned attempt rather than leaking another.
     """
-
-    def __init__(
-        self,
-        bucket: str,
-        objects: dict[str, Path],
-        *,
-        published: bool = False,
-        previous_keys: Iterable[str] = (),
-    ) -> None:
-        self.bucket = bucket
-        self.objects = objects
-        self.published = published
-        self.previous_keys = frozenset(previous_keys)
-
-    def __bool__(self) -> bool:
-        # Whether a generation is live, not whether any bytes were copied. A
-        # refresh that happens to overwrite none of the previous generation's
-        # keys still has new objects of its own to take back off the bucket.
-        return self.published
-
-    def restore(self, attempted_keys: Iterable[str] = ()) -> None:
-        # Serial on purpose. The restore runs after an upload failure whose
-        # most likely cause is R2 throttling, and correctness matters far more
-        # than wall clock on a path that only runs when a refresh has already
-        # failed. upload_r2_object still retries and paces each request.
-        for key in sorted(self.objects):
-            upload_r2_object(self.objects[key], self.bucket, key)
-        # Objects only the new generation has cannot be restored -- there are no
-        # old bytes to put back -- so they have to be removed instead. Leaving
-        # them is not harmless: the read path fetches artifacts by fixed path
-        # and never consults the manifest as an index, so one left behind is
-        # served next to the generation just restored.
-        for key in sorted(set(attempted_keys) - self.previous_keys):
-            delete_r2_object(self.bucket, key)
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    if not manifest_path.is_file():
+        raise RuntimeError(f"Local manifest is missing for {session_id}")
+    return checksum_file(manifest_path).removeprefix("sha256:")
 
 
-def back_up_published_session(
-    rollback_root: Path,
+def remote_session_artifact_path(
+    session_id: str, relative_path: str, generation_id: str | None
+) -> str:
+    if generation_id:
+        return f"sessions/{session_id}/generations/{generation_id}/{relative_path}"
+    return f"sessions/{session_id}/{relative_path}"
+
+
+def publish_session_generation(
+    publication_dir: Path,
     bucket: str,
     prefix: str,
     *,
     session_id: str,
     year: int,
-    bodies: dict[str, Path],
-    max_workers: int,
-    allow_missing_catalog: bool = False,
-    probe_base_url: str | None = None,
-) -> PublishedSessionBackup:
-    """Copy the currently published bodies of `session_id` out of R2.
+) -> dict[str, Any]:
+    """Publish one session as a new immutable generation and make it live.
 
-    A first publication has nothing to protect. Every other refresh must hold a
-    complete copy before a single byte is overwritten, so every read here either
-    succeeds or stops the refresh. `download_r2_object` reports the same `False`
-    for an object that is absent and for one whose reads all failed, so absence
-    is never inferred from a failed read alone: the manifest names the objects
-    the live generation owns, and each of those is then read with `required=True`.
+    The whole ordering argument for the R2 layout is these five lines. Upload
+    into a prefix nothing points at; prove it is readable and intact; then flip
+    a single pointer object. The flip is the commit, and it is one PUT of one
+    small object, so there is no window in which a reader can see a mixture of
+    two generations. Everything before the flip is invisible; everything after
+    it is complete.
+
+    Shared indexes are deliberately not published here -- the two call paths
+    build them differently -- so callers publish them after this returns.
     """
-    probe = rollback_root / "probe" / "manifest.json"
-    published = download_r2_object(
+    generation_id = publication_generation_id(publication_dir, session_id)
+    replaced = read_active_generation(bucket, prefix, session_id)
+    sync_artifacts_to_r2(
+        publication_dir,
         bucket,
-        object_key(prefix, f"sessions/{session_id}/manifest.json"),
-        probe,
-        required=False,
-        error_context="R2 manifest",
+        prefix,
+        session_id=session_id,
+        year=year,
+        include_indexes=False,
+        generation_id=generation_id,
     )
-    if not published:
-        confirm_session_is_unpublished(
-            rollback_root,
+    verify_remote_publication(
+        publication_dir, bucket, prefix, session_id, generation_id=generation_id
+    )
+    pointer = publish_active_generation(
+        publication_dir, bucket, prefix, session_id, generation_id, replaced=replaced
+    )
+    pruned = prune_superseded_generation(bucket, prefix, session_id, replaced)
+    return {"generation_id": generation_id, "pointer": pointer, "pruned": pruned}
+
+
+def read_active_generation(bucket: str, prefix: str, session_id: str) -> dict[str, Any] | None:
+    """Read the pointer that is live now, before it is replaced.
+
+    Absence is the ordinary first-publication case, not an error. A pointer that
+    is present but unreadable or malformed is also reported as absent, and that
+    is safe here in a way it was not under the old layout: the only thing this
+    feeds is which generation may be pruned, and the safe answer to "I cannot
+    tell" is to prune nothing. Nothing about the publication itself depends on
+    it, so an unreadable pointer costs storage rather than correctness.
+    """
+    with tempfile.TemporaryDirectory(prefix="f1-active-read-") as temporary_directory:
+        destination = Path(temporary_directory) / "active.json"
+        found = download_r2_object(
             bucket,
-            prefix,
-            session_id=session_id,
-            year=year,
-            allow_missing_catalog=allow_missing_catalog,
-            probe_base_url=probe_base_url,
+            object_key(prefix, f"sessions/{session_id}/active.json"),
+            destination,
+            required=False,
+            error_context="R2 active generation",
         )
-        return PublishedSessionBackup(bucket, {})
+        if not found:
+            return None
+        try:
+            pointer = read_json(destination)
+        except Exception:
+            return None
 
-    previous_keys = published_object_keys(probe, prefix, session_id)
-    backup_dir = rollback_root / "bodies"
-    downloaded: dict[str, Path] = {}
-    lock = threading.Lock()
-
-    def fetch(key: str, relative: Path) -> None:
-        destination = backup_dir / relative
-        # required=True: the manifest says the live generation owns this key, so
-        # a read that fails has to stop the refresh rather than quietly leave a
-        # hole in the backup that only shows up as an unrestorable object later.
-        download_r2_object(
-            bucket, key, destination, required=True, error_context="R2 session body"
-        )
-        with lock:
-            downloaded[key] = destination
-
-    # Only the keys this refresh actually overwrites are worth copying. Keys the
-    # new generation adds are not read at all -- each would be a guaranteed miss
-    # costing a full retry budget -- and are handled by deletion on rollback.
-    overwritten = {key: relative for key, relative in bodies.items() if key in previous_keys}
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(fetch, key, relative) for key, relative in overwritten.items()]
-        for future in as_completed(futures):
-            future.result()
-    return PublishedSessionBackup(
-        bucket, downloaded, published=True, previous_keys=previous_keys
-    )
+    if not isinstance(pointer, dict):
+        return None
+    generation_id = generation_id_from_pointer(pointer, session_id)
+    if not generation_id:
+        return None
+    return {
+        "generation_id": generation_id,
+        "previous_generation": normalized_generation_id(pointer.get("previous_generation")),
+    }
 
 
-def remove_superseded_objects(
-    backup: PublishedSessionBackup,
-    published_keys: set[str],
-    manifest_key: str,
+def generation_id_from_pointer(pointer: dict[str, Any], session_id: str) -> str | None:
+    base = str(pointer.get("artifact_base_path") or "")
+    expected_prefix = f"sessions/{session_id}/generations/"
+    if not base.startswith(expected_prefix):
+        return None
+    return normalized_generation_id(base[len(expected_prefix) :])
+
+
+def normalized_generation_id(value: Any) -> str | None:
+    text = str(value or "")
+    return text if re.fullmatch(r"[a-f0-9]{64}", text) else None
+
+
+def publish_active_generation(
+    output_dir: Path,
+    bucket: str,
+    prefix: str,
     session_id: str,
-) -> None:
-    """Delete objects the previous generation owned and this one does not.
+    generation_id: str,
+    *,
+    replaced: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Flip the session to a new generation, and read the flip back.
 
-    Overwriting only covers keys both generations share. A section the build no
-    longer produces is simply left behind -- and because the read path fetches
-    artifacts by fixed path rather than through the manifest
-    (`readOptionalSessionArtifact`, and every required section too), that
-    leftover keeps being served next to the new generation. `build_static_artifacts`
-    writes a section only when the bundle carries it
-    (`pipeline/artifacts.py:186-188`), so a refresh whose source data lost a
-    section really can produce this.
-
-    Runs only after the commit markers are up, so nothing is removed until the
-    generation that replaces it is the published one.
+    `previous_generation` is what lets pruning work without an object-listing
+    API: each pointer names the generation it displaced, so the chain reaches
+    one step further back than the live pointer alone would.
     """
-    if not backup.published:
-        return
-    # `- published_keys` is what makes this safe: only keys this build did not
-    # write are candidates. The manifest is excluded belt-and-braces; it is a
-    # marker, and a manifest never lists itself among its own sections.
-    superseded = sorted(backup.previous_keys - published_keys - {manifest_key})
-    if not superseded:
-        return
-    try:
-        for key in superseded:
-            delete_r2_object(backup.bucket, key)
-    except Exception as delete_error:
-        raise RuntimeError(
-            f"{session_id} published successfully, but {len(superseded)} object(s) "
-            f"its previous generation owned could not be removed: "
-            f"{', '.join(superseded)}. Until they are deleted the read path will "
-            f"serve them alongside the new generation. Original failure: "
-            f"{delete_error}"
-        ) from delete_error
-
-
-def withdraw_manifest(
-    bucket: str, key: str, session_id: str, marker_error: BaseException
-) -> None:
-    """Take the manifest back when a later commit marker fails.
-
-    A live manifest whose session no index lists is the one state that makes
-    index absence unreliable evidence: a later run that cannot read that
-    manifest would ask the indexes, be told the session was never published,
-    and overwrite it with no backup. Withdrawing it keeps "absent from the
-    indexes" and "no live generation" the same statement.
-
-    Only for a session with no previous generation. A refresh leaves its new
-    manifest in place -- the session is already indexed, so it is already
-    discoverable, and the new manifest correctly describes the bodies that just
-    landed.
-    """
-    try:
-        delete_r2_object(bucket, key)
-    except Exception as delete_error:
-        raise RuntimeError(
-            f"Publishing {session_id} failed at a commit marker, and the "
-            f"manifest published moments earlier could not be withdrawn. "
-            f"{session_id} now has a live manifest that no index lists, which "
-            f"a later run may not detect; delete {key} or republish "
-            f"{session_id} before trusting it. Original marker failure: "
-            f"{marker_error}"
-        ) from delete_error
-
-
-def published_object_keys(manifest_path: Path, prefix: str, session_id: str) -> set[str]:
-    """The object keys the published manifest says its generation owns.
-
-    Every body a session publishes gets a section, telemetry laps included, so
-    this is a complete index of the live generation rather than a summary.
-    """
-    sections = read_json(manifest_path).get("sections")
-    if not isinstance(sections, list) or not sections:
-        raise RuntimeError(
-            f"The R2 manifest published for {session_id} lists no sections, so "
-            f"the objects its generation owns cannot be determined and it "
-            f"cannot be backed up. Refusing to overwrite a generation that "
-            f"could not be restored; republish {session_id} instead."
+    manifest_path = output_dir / "sessions" / session_id / "manifest.json"
+    pointer = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "artifact_base_path": f"sessions/{session_id}/generations/{generation_id}",
+        "generated_at": read_json(manifest_path).get("generated_at"),
+        "manifest": {
+            "size_bytes": manifest_path.stat().st_size,
+            "checksum": checksum_file(manifest_path),
+        },
+        "previous_generation": (replaced or {}).get("generation_id"),
+    }
+    with tempfile.TemporaryDirectory(prefix="f1-active-generation-") as temporary_directory:
+        local_pointer = Path(temporary_directory) / "active.json"
+        remote_pointer = Path(temporary_directory) / "active-remote.json"
+        write_json(local_pointer, pointer)
+        key = object_key(prefix, f"sessions/{session_id}/active.json")
+        upload_r2_object(local_pointer, bucket, key)
+        # Read the commit back. A pointer that did not land, or landed wrong, is
+        # the one failure this design cannot absorb: it is the only object whose
+        # contents decide what every reader sees.
+        download_r2_object(
+            bucket,
+            key,
+            remote_pointer,
+            required=True,
+            error_context="R2 active generation",
         )
-    keys = set()
-    for section in sections:
-        path = section.get("path") if isinstance(section, dict) else None
-        if path:
-            keys.add(object_key(prefix, str(path)))
+        if (
+            remote_pointer.stat().st_size != local_pointer.stat().st_size
+            or checksum_file(remote_pointer) != checksum_file(local_pointer)
+        ):
+            raise RuntimeError(f"Remote R2 active generation mismatch for {session_id}")
+    return pointer
+
+
+def prune_superseded_generation(
+    bucket: str, prefix: str, session_id: str, replaced: dict[str, Any] | None
+) -> list[str]:
+    """Delete the generation two flips back, keeping the live one and its predecessor.
+
+    Wrangler exposes no object listing, so the keys to remove come from the
+    doomed generation's own manifest -- which is a complete index of what that
+    generation published, telemetry laps included. That invariant is already
+    relied on elsewhere; this is the same property used for cleanup.
+
+    One generation is kept behind the live one deliberately. A reader that
+    resolved the pointer immediately before a flip is still fetching bodies from
+    the generation it named, and deleting those at flip time would turn a
+    half-loaded page into a wall of 404s.
+
+    Never raises. The publication is committed by the time this runs, and
+    failing a succeeded job because cleanup did not finish would convert a
+    storage cost into a false ingestion failure.
+    """
+    doomed = (replaced or {}).get("previous_generation")
+    if not doomed:
+        return []
+    base = f"sessions/{session_id}/generations/{doomed}"
+    try:
+        with tempfile.TemporaryDirectory(prefix="f1-generation-prune-") as temporary_directory:
+            manifest_path = Path(temporary_directory) / "manifest.json"
+            found = download_r2_object(
+                bucket,
+                object_key(prefix, f"{base}/manifest.json"),
+                manifest_path,
+                required=False,
+                error_context="R2 superseded manifest",
+            )
+            if not found:
+                return []
+            keys = superseded_generation_keys(read_json(manifest_path), session_id, base)
+        deleted: list[str] = []
+        for key in keys:
+            delete_r2_object(bucket, object_key(prefix, key))
+            deleted.append(key)
+        return deleted
+    except Exception as error:
+        print(
+            f"Warning: could not prune superseded generation {doomed} for "
+            f"{session_id}: {error}"
+        )
+        return []
+
+
+def superseded_generation_keys(
+    manifest: Any, session_id: str, base: str
+) -> list[str]:
+    """Map a manifest's sections onto the keys its generation owns.
+
+    The manifest goes last so that an interrupted prune leaves a generation that
+    still has one, which keeps a later attempt able to find the rest.
+    """
+    session_prefix = f"sessions/{session_id}/"
+    keys: list[str] = []
+    sections = manifest.get("sections") if isinstance(manifest, dict) else None
+    for section in sections or []:
+        if not isinstance(section, dict):
+            continue
+        path = str(section.get("path") or "")
+        if not path.startswith(session_prefix) or ".." in Path(path).parts:
+            continue
+        keys.append(f"{base}/{path[len(session_prefix) :]}")
+    keys.append(f"{base}/manifest.json")
     return keys
 
 
-def confirm_session_is_unpublished(
-    rollback_root: Path,
+def verify_remote_publication(
+    output_dir: Path,
     bucket: str,
     prefix: str,
-    *,
     session_id: str,
-    year: int,
-    allow_missing_catalog: bool,
-    probe_base_url: str | None = None,
-) -> None:
-    """Establish that there is no live generation, or stop the refresh.
+    generation_id: str | None = None,
+) -> dict[str, Any]:
+    """Prove the uploaded generation is readable and intact before it goes live.
 
-    A manifest that cannot be read is not the same thing as a session that was
-    never published, and wrangler's stderr is not a stable enough contract to
-    tell the two apart. Two things can settle it, in order of authority:
+    This is the gate the flip depends on, and the reason the flip needs no
+    rollback: a generation that fails here is simply never pointed at.
 
-    1. A direct existence probe through the Worker, which answers 404 or does
-       not answer at all. This is the only positive proof of absence available,
-       so it is preferred whenever it can be reached.
-    2. Failing that, the published indexes -- but only ever as corroboration.
-       An index is a weaker witness than the object itself: the manifest is
-       uploaded before the indexes, so a run that died in between leaves a live
-       manifest no index mentions. `upload_markers` withdraws the manifest in
-       exactly that case to keep this inference sound, which leaves only a
-       hard-killed runner able to produce the state.
+    Telemetry lap bodies are checked locally against the manifest but not
+    re-read from R2. A session publishes on the order of a thousand of them, and
+    re-reading each would roughly double an ingestion's R2 operations to
+    re-verify the artifacts with the least structural reach -- a corrupt lap
+    degrades one chart, where a corrupt summary or index breaks the page. Every
+    other section is read back and checksummed.
 
-    Anything less certain than these stops the refresh.
+    Residual, accepted: a telemetry lap whose upload reported success but landed
+    corrupt is not detected here. `upload_r2_object` fails loudly on a non-zero
+    exit after retries, so this covers silent corruption only.
     """
-    manifest_key = object_key(prefix, f"sessions/{session_id}/manifest.json")
-    if probe_base_url and not prefix.strip("/"):
-        # Only without a prefix: the Worker resolves /data/<path> to <path> in
-        # its own bucket and has no notion of the publication prefix, so under
-        # one the probe would be asking about a different key.
-        exists = remote_object_exists(probe_base_url, manifest_key)
-        if exists is True:
-            raise RuntimeError(
-                f"{session_id} has a published manifest, but it could not be "
-                f"read, so the generation that is live now cannot be copied "
-                f"before being overwritten. Refusing to refresh {session_id}; "
-                f"re-run once R2 reads succeed."
+    manifest = verify_remote_manifest(
+        output_dir, bucket, prefix, session_id, generation_id=generation_id
+    )
+    sections = validate_manifest_sections(output_dir, manifest, session_id)
+    verified = [section for section in sections if section.get("kind") != "telemetry-lap"]
+    session_prefix = f"sessions/{session_id}/"
+    with tempfile.TemporaryDirectory(prefix="f1-publication-check-") as temporary_directory:
+        remote_path = Path(temporary_directory) / "artifact.json"
+        for section in verified:
+            if remote_path.exists():
+                remote_path.unlink()
+            download_r2_object(
+                bucket,
+                object_key(
+                    prefix,
+                    remote_session_artifact_path(
+                        session_id,
+                        str(section["path"])[len(session_prefix) :],
+                        generation_id,
+                    ),
+                ),
+                remote_path,
+                required=True,
+                error_context="R2 artifact",
             )
-        if exists is False:
-            return
-    indexes = rollback_root / "indexes"
-    catalog_path = indexes / "catalog.json"
-    if not download_r2_object(
-        bucket,
-        object_key(prefix, "catalog.json"),
-        catalog_path,
-        required=False,
-        error_context="R2 catalog",
-    ):
-        if allow_missing_catalog:
-            # The one-time, human-initiated first deployment. The operator has
-            # declared the bucket empty, so there is no live generation at all.
-            return
-        raise RuntimeError(
-            f"The published R2 manifest for {session_id} could not be read, and "
-            f"neither could catalog.json, so whether {session_id} is already "
-            f"published is unknown. Refusing to overwrite a session that may "
-            f"exist and could not be backed up. Re-run once R2 reads succeed, "
-            f"or pass --allow-missing-catalog if the bucket really is empty."
-        )
-    catalog = read_json(catalog_path)
-    year_in_catalog = any(
-        int(row.get("year") or 0) == year for row in catalog.get("seasons", [])
-    )
-    # The season index is consulted even when the catalog has not heard of the
-    # year. The catalog is the last marker published, so it is the one most
-    # likely to be the missing one, and the season index it lags can already
-    # carry the session. Its absence is only expected when the year is new,
-    # which is what decides whether the read may fail.
-    season_path = indexes / "seasons" / f"{year}.json"
-    season_published = download_r2_object(
-        bucket,
-        object_key(prefix, f"seasons/{year}.json"),
-        season_path,
-        required=year_in_catalog,
-        error_context="R2 season index",
-    )
-    if not season_published:
-        # No catalog entry for the year and no season index for it either: two
-        # clean reads agreeing that nothing of this year has ever been
-        # published, so this session cannot have been either.
-        return
-    season = read_json(season_path)
-    if any(row.get("session_id") == session_id for row in season.get("sessions", [])):
-        raise RuntimeError(
-            f"{session_id} is published in the R2 season index for {year}, but "
-            f"its manifest could not be read, so the generation that is live "
-            f"now cannot be copied before being overwritten. Refusing to "
-            f"refresh {session_id}; re-run once R2 reads succeed."
-        )
+            verify_artifact_file(remote_path, section, "Remote R2")
+    return {
+        "session_id": session_id,
+        "artifact_count": len(sections),
+        "verified_count": len(verified),
+        "verified": True,
+    }
 
 
-def raise_after_rollback(
-    backup: PublishedSessionBackup,
-    session_id: str,
-    upload_error: BaseException,
-    attempted_keys: Iterable[str] = (),
-) -> NoReturn:
-    """Put the previous generation back, then re-raise the upload failure."""
-    if backup:
-        try:
-            backup.restore(attempted_keys)
-        except Exception as restore_error:
+def validate_manifest_sections(
+    output_dir: Path, manifest: dict[str, Any], session_id: str
+) -> list[dict[str, Any]]:
+    """Check a manifest describes this session coherently before trusting it."""
+    if manifest.get("session_id") != session_id or not isinstance(manifest.get("sections"), list):
+        raise RuntimeError(f"Manifest is invalid for {session_id}")
+    expected_prefix = f"sessions/{session_id}/"
+    sections: list[dict[str, Any]] = []
+    paths: set[str] = set()
+    for section in manifest["sections"]:
+        if not isinstance(section, dict):
+            raise RuntimeError(f"Manifest contains an invalid section for {session_id}")
+        path = str(section.get("path") or "")
+        if (
+            not path.startswith(expected_prefix)
+            or ".." in Path(path).parts
+            or path in paths
+            or not isinstance(section.get("size_bytes"), int)
+            or int(section["size_bytes"]) < 0
+            or not str(section.get("checksum") or "").startswith("sha256:")
+        ):
             raise RuntimeError(
-                f"Uploading {session_id} to R2 failed and the rollback to its "
-                f"previously published files also failed. The live session "
-                f"{session_id} may now be inconsistent: some objects are from the "
-                f"new generation while its published manifest describes the old "
-                f"one. Republish {session_id} before trusting it. "
-                f"Original upload failure: {upload_error}"
-            ) from restore_error
-    raise upload_error
+                f"Manifest contains an invalid artifact record for {session_id}: {path}"
+            )
+        paths.add(path)
+        sections.append(section)
+
+    if not any(section.get("kind") == "summary" for section in sections):
+        raise RuntimeError(f"Manifest is missing the core summary artifact for {session_id}")
+
+    telemetry_indexes = [
+        section for section in sections if section.get("kind") == "telemetry-index"
+    ]
+    telemetry_laps = {
+        section["path"] for section in sections if section.get("kind") == "telemetry-lap"
+    }
+    if len(telemetry_indexes) > 1:
+        raise RuntimeError(f"Manifest must not contain two telemetry indexes for {session_id}")
+    if not telemetry_indexes:
+        # A session without telemetry is ordinary -- `build_success_payload`
+        # treats the index as optional. Laps without an index to address them
+        # are not: nothing on the read path could reach them.
+        if telemetry_laps:
+            raise RuntimeError(f"Manifest lists telemetry laps with no index for {session_id}")
+        return sections
+
+    telemetry_index_path = output_dir / telemetry_indexes[0]["path"]
+    if not telemetry_index_path.is_file():
+        raise RuntimeError(f"Local telemetry index is missing for {session_id}")
+    telemetry_index = read_json(telemetry_index_path)
+    indexed_laps = {
+        f"sessions/{session_id}/{lap.get('path')}"
+        for lap in telemetry_index.get("laps", [])
+        if isinstance(lap, dict) and lap.get("path")
+    }
+    if indexed_laps != telemetry_laps:
+        raise RuntimeError(f"Telemetry index and manifest disagree for {session_id}")
+    return sections
+
+
+def verify_artifact_file(path: Path, section: dict[str, Any], source: str) -> None:
+    if not path.is_file():
+        raise RuntimeError(f"{source} artifact is missing: {section['path']}")
+    if path.stat().st_size != int(section["size_bytes"]):
+        raise RuntimeError(f"{source} artifact size mismatch: {section['path']}")
+    if checksum_file(path) != section["checksum"]:
+        raise RuntimeError(f"{source} artifact checksum mismatch: {section['path']}")
 
 
 def publish_indexes_to_r2(
@@ -830,7 +788,6 @@ def publish_artifacts(
     year: int,
     source_dataset: Path,
     allow_missing_catalog: bool = False,
-    probe_base_url: str | None = None,
 ) -> None:
     if artifact_destination == "r2":
         bucket = required_value(r2_bucket, "--r2-bucket")
@@ -840,15 +797,22 @@ def publish_artifacts(
                 bucket,
                 object_key(r2_prefix, f"source/sessions/{session_id}/dataset.json"),
             )
-        sync_artifacts_to_r2(
+        publish_session_generation(
             publication_dir,
             bucket,
             r2_prefix,
             session_id=session_id,
             year=year,
-            allow_missing_catalog=allow_missing_catalog,
-            probe_base_url=probe_base_url,
         )
+        # `merge_incremental_indexes` has already folded R2's indexes into this
+        # tree, so these upload as they stand. The reuse path cannot do that --
+        # it publishes from the committed checkout -- and merges in
+        # `publish_indexes_to_r2` instead.
+        for path in [publication_dir / "seasons" / f"{year}.json", publication_dir / "catalog.json"]:
+            if path.is_file():
+                upload_r2_object(
+                    path, bucket, object_key(r2_prefix, path.relative_to(publication_dir).as_posix())
+                )
         return
     publish_artifacts_locally(publication_dir, output_dir, session_id=session_id, year=year)
 
@@ -969,52 +933,10 @@ def upload_r2_object(path: Path, bucket: str, key: str) -> None:
                 f"(exit {result.returncode}):\n{detail}"
             )
         _sleep_before_retry(attempt, detail)
-
-
-def remote_object_exists(base_url: str, key: str) -> bool | None:
-    """Ask the Worker whether an object is there, over a channel that can say no.
-
-    Wrangler cannot distinguish "not found" from "the read failed", which is the
-    whole difficulty: absence has to be established positively, and inferring it
-    from a failed read is what lets a live generation be overwritten. HTTP does
-    distinguish -- 404 is an answer, a 5xx or a dropped connection is not -- and
-    the Worker already serves `/data/...` straight from its R2 binding
-    (`worker/src/index.mjs` -> `artifact-store.mjs`), including HEAD.
-
-    Returns True (present), False (positively absent), or None (no answer), and
-    None is never treated as absence by the caller.
-    """
-    # The query string only exists to keep an edge cache from answering with a
-    # negative it stored before this session was published. The Worker routes on
-    # the path alone, so it is ignored server side.
-    endpoint = f"{base_url.rstrip('/')}/data/{urllib.parse.quote(key)}?probe={time.time_ns()}"
-    headers = {
-        "Accept": "application/json",
-        "Cache-Control": "no-cache",
-        "User-Agent": "Formula1Data-IngestionRunner/1.0",
-    }
-    access_client_id = os.getenv("CF_ACCESS_CLIENT_ID")
-    access_client_secret = os.getenv("CF_ACCESS_CLIENT_SECRET")
-    if access_client_id and access_client_secret:
-        headers["CF-Access-Client-Id"] = access_client_id
-        headers["CF-Access-Client-Secret"] = access_client_secret
-    request = urllib.request.Request(endpoint, headers=headers, method="HEAD")
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            return 200 <= response.status < 300
-    except urllib.error.HTTPError as error:
-        # Only a 404 is an answer. A 401, 403 or 5xx says the probe itself did
-        # not work, which is not evidence about the object.
-        return False if error.code == 404 else None
-    except Exception:
-        return None
-
-
 def delete_r2_object(bucket: str, key: str) -> None:
-    # Only ever called while rolling a failed refresh back, to take off the
-    # bucket an object that the previous generation did not have. Deleting a key
-    # that is not there succeeds in R2, so this is safe for a key whose upload
-    # failed and may or may not have landed.
+    # Only ever called by `prune_superseded_generation`, against a generation no
+    # pointer names any more. Deleting a key that is not there succeeds in R2, so
+    # a prune that resumes after a partial one is not an error.
     attempts = max(1, int(os.getenv("R2_UPLOAD_ATTEMPTS", "3")))
     for attempt in range(1, attempts + 1):
         _REQUEST_PACER.acquire()
@@ -1125,14 +1047,20 @@ def download_r2_object(
 
 
 def verify_remote_manifest(
-    output_dir: Path, bucket: str, prefix: str, session_id: str
+    output_dir: Path,
+    bucket: str,
+    prefix: str,
+    session_id: str,
+    generation_id: str | None = None,
 ) -> dict[str, Any]:
     local_path = output_dir / "sessions" / session_id / "manifest.json"
     if not local_path.is_file():
         raise RuntimeError(f"Local manifest is missing for {session_id}")
     with tempfile.TemporaryDirectory(prefix="f1-manifest-check-") as temporary_directory:
         remote_path = Path(temporary_directory) / "manifest.json"
-        key = object_key(prefix, f"sessions/{session_id}/manifest.json")
+        key = object_key(
+            prefix, remote_session_artifact_path(session_id, "manifest.json", generation_id)
+        )
         download_r2_object(
             bucket,
             key,

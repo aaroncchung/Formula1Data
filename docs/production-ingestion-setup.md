@@ -292,15 +292,39 @@ Expected progression:
 queued → running → succeeded
 ```
 
-Then verify the session manifest and normalized source dataset:
+Then verify the session manifest and normalized source dataset. Sessions are published as immutable
+generations, so `sessions/SESSION_ID/manifest.json` does not exist: read `active.json` first to learn
+which generation is live, then read the manifest from inside it.
 
 ```powershell
-npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/sessions/SESSION_ID/manifest.json --file "$env:TEMP/session-manifest.json" --remote
+npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/sessions/SESSION_ID/active.json --file "$env:TEMP/session-active.json" --remote
+$base = (Get-Content "$env:TEMP/session-active.json" | ConvertFrom-Json).artifact_base_path
+npx.cmd --yes wrangler@latest r2 object get "formula-1-data-artifacts/$base/manifest.json" --file "$env:TEMP/session-manifest.json" --remote
 npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/source/sessions/SESSION_ID/dataset.json --file "$env:TEMP/session-source.json" --remote
 ```
 
 Replace `SESSION_ID` with a value such as `2026-09-r`. Finally, open the session in the frontend and
 check summary, laps, analysis, and telemetry.
+
+### Artifact layout
+
+```text
+sessions/<session_id>/active.json                              <- the pointer; the only mutable object
+sessions/<session_id>/generations/<manifest-sha256>/manifest.json
+sessions/<session_id>/generations/<manifest-sha256>/summary.json
+sessions/<session_id>/generations/<manifest-sha256>/...
+```
+
+A publication writes a whole generation, verifies it, and then replaces `active.json` in one PUT.
+That single object decides what every reader sees, so there is no window in which a session is
+half-updated. The Worker resolves conventional paths (`sessions/<id>/summary.json`) through the
+pointer, which is why the frontend needs no knowledge of any of this.
+
+Each flip prunes the generation two steps back, keeping the live one and its immediate predecessor —
+the predecessor because a reader that resolved the pointer moments before a flip is still fetching
+from it. A run that fails between upload and flip leaves an unreferenced generation behind; it is
+inert, and a re-run over unchanged data reuses the same keys because a generation is named by its
+manifest's checksum.
 
 ## Troubleshooting
 

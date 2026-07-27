@@ -261,7 +261,12 @@ jobs:
           path: backend/data/cache/fastf1
           key: ${{ runner.os }}-fastf1-${{ hashFiles('backend/requirements.txt') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Verify remote R2 manifest
+      # Reads through the active pointer rather than the conventional key.
+      # Sessions are published as immutable generations, so `manifest.json` no
+      # longer exists at `sessions/<id>/` -- `active.json` is the one object
+      # whose contents decide which generation is live, and checking anything
+      # else would verify a generation that may not be the published one.
+      - name: Verify active R2 generation
         id: session
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -269,9 +274,39 @@ jobs:
         run: |
           SESSION_ID="$(python -c "import json; print(json.load(open('message.json'))['session_id'])")"
           echo "id=$SESSION_ID" >> "$GITHUB_OUTPUT"
-          wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/manifest.json" --remote --file manifest-check.json
+          wrangler r2 object get "$R2_BUCKET/sessions/$SESSION_ID/active.json" --remote --file active-check.json
+          python -m json.tool active-check.json > /dev/null
+          GENERATION_BASE="$(python -c "import json; print(json.load(open('active-check.json'))['artifact_base_path'])")"
+          wrangler r2 object get "$R2_BUCKET/$GENERATION_BASE/manifest.json" --remote --file manifest-check.json
           python -m json.tool manifest-check.json > /dev/null
-          python -c "import json; expected=json.load(open('message.json'))['session_id']; actual=json.load(open('manifest-check.json'))['session_id']; assert actual == expected, f'manifest session_id {actual} does not match {expected}'"
+          python - <<'PY'
+          import hashlib
+          import json
+
+          expected = json.load(open("message.json"))["session_id"]
+          pointer = json.load(open("active-check.json"))
+          manifest = json.load(open("manifest-check.json"))
+
+          assert pointer["session_id"] == expected, (
+              f"active pointer session_id {pointer['session_id']} does not match {expected}"
+          )
+          assert manifest["session_id"] == expected, (
+              f"manifest session_id {manifest['session_id']} does not match {expected}"
+          )
+
+          # The generation is named by its manifest's checksum, so this catches a
+          # pointer that survived its own PUT but names something else -- the one
+          # corruption the flip cannot rule out by construction.
+          digest = "sha256:" + hashlib.sha256(open("manifest-check.json", "rb").read()).hexdigest()
+          assert pointer["manifest"]["checksum"] == digest, (
+              f"active pointer manifest checksum {pointer['manifest']['checksum']} "
+              f"does not match the published manifest {digest}"
+          )
+          assert pointer["artifact_base_path"].endswith(digest.removeprefix("sha256:")), (
+              "active pointer generation id does not match its manifest checksum"
+          )
+          print(f"Verified active generation for {expected}: {pointer['artifact_base_path']}")
+          PY
 
       - name: Summarize callback artifact records
         if: always()
@@ -410,6 +445,7 @@ jobs:
           name: ingestion-diagnostics
           path: |
             message-summary.json
+            active-check.json
             manifest-check.json
             success-callback.json
           if-no-files-found: ignore
