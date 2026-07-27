@@ -29,3 +29,47 @@ export function createRequestGenerationGuard() {
     }
   };
 }
+
+type OrderedHandlers<T> = {
+  onResult: (value: T) => void;
+  onError: (error: unknown) => void;
+};
+
+/**
+ * Run async work so that only the newest call is allowed to write state.
+ *
+ * The guard above is the mechanism; this is the thing components use, and it
+ * exists so the decision lives somewhere a test can drive. Inlining the
+ * `isCurrent` check at each call site meant the ordering rule was only
+ * exercised through React, so inverting it changed nothing any test could see.
+ * Here the interleaving can be reproduced directly: start two calls, resolve
+ * them out of order, and assert which result was committed.
+ *
+ * `retire()` supersedes without issuing a token -- what a teardown wants.
+ */
+export function createOrderedRunner() {
+  const guard = createRequestGenerationGuard();
+
+  return {
+    async run<T>(work: () => Promise<T>, handlers: OrderedHandlers<T>): Promise<T | null> {
+      const token = guard.begin();
+      try {
+        const value = await work();
+        if (!guard.isCurrent(token)) {
+          return null;
+        }
+        handlers.onResult(value);
+        return value;
+      } catch (error) {
+        if (!guard.isCurrent(token)) {
+          return null;
+        }
+        handlers.onError(error);
+        return null;
+      }
+    },
+    retire() {
+      guard.invalidate();
+    }
+  };
+}
