@@ -45,6 +45,32 @@ test("enqueueIngestionJob reuses active jobs for the same session", async () => 
   assert.equal(messages[0].session_id, "2026-08-r");
 });
 
+test("a summary with no manifest is not a published session", async () => {
+  // `summary.json` used to count as evidence of readiness alongside the
+  // manifest. It never should have: it is one section among twenty, written
+  // before the manifest that indexes them. Under generations it is worse --
+  // session objects live under a generation prefix, so anything still answering
+  // at the conventional summary path is a leftover of the old layout.
+  const repository = freshRepository();
+  const artifacts = {
+    head: async (path) =>
+      path.endsWith("summary.json")
+        ? { key: path, storage_key: path, source: "r2", size: 512, uploaded: "2026-07-04T12:00:00Z" }
+        : null
+  };
+
+  const status = await resolveSessionStatus({
+    repository,
+    artifacts,
+    year: 2026,
+    round: 4,
+    session: "R"
+  });
+
+  assert.equal(status.status, "missing");
+  assert.equal(status.artifact_exists, false);
+});
+
 test("resolveSessionStatus reports ready when a manifest artifact exists", async () => {
   const repository = freshRepository();
   const artifacts = {

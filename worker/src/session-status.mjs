@@ -4,8 +4,7 @@ import {
   normalizeSessionCode,
   queueMessageForJob,
   sessionIdFromParts,
-  sessionManifestPath,
-  sessionSummaryPath
+  sessionManifestPath
 } from "./session-utils.mjs";
 
 export const INGEST_SESSION = "ingest_session";
@@ -17,9 +16,13 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
     repository.getSession(sessionId),
     artifacts.head(sessionManifestPath(sessionId))
   ]);
-  const artifact = manifest || (await artifacts.head(sessionSummaryPath(sessionId)));
-
-  if (artifact) {
+  // The manifest alone decides whether a publication completed. `summary.json`
+  // used to count too, which was never sound -- it is one section among twenty,
+  // written before the manifest that indexes them -- and under generations it is
+  // actively wrong: session objects live under a generation prefix, so anything
+  // still answering at the conventional summary path is a leftover of the old
+  // layout or a static-export file, neither of which describes what R2 holds.
+  if (manifest) {
     const readyValues = {
       session_id: sessionId,
       year: Number(year),
@@ -30,17 +33,37 @@ export async function resolveSessionStatus({ repository, artifacts, year, round,
       scheduled_start: sessionRow?.scheduled_start || null,
       status: "ready",
       artifact_base_path: artifactBasePath(sessionId),
-      generated_at: artifact.uploaded || sessionRow?.generated_at || null,
-      source: sessionRow?.source || "r2",
+      generated_at: manifest.uploaded || sessionRow?.generated_at || null,
+      source: sessionRow?.source || (manifest.source === "r2" ? "r2" : "static"),
       quality_json: sessionRow?.quality_json || null
     };
-    const readySession = sessionMatches(sessionRow, readyValues)
-      ? sessionRow
-      : await repository.upsertSession(readyValues);
+
+    // Which manifest this is decides whether D1 may be *written* from it.
+    //
+    // An R2-backed hit is authoritative: reaching the conventional manifest path
+    // in R2 now means a pointer resolved it, and a pointer only exists after a
+    // publication verified and committed. So it is safe to reconcile D1 to it --
+    // including seeding a row that is missing entirely, which is how a session
+    // whose success callback never landed recovers without a re-ingestion.
+    //
+    // A fallback-origin hit is not. It is the committed static export, which
+    // says nothing about the bucket, so it may report readiness but must not
+    // conjure a D1 row that later reads as authoritative history. An existing
+    // row is still updated: something already established that session.
+    const authoritative = manifest.source === "r2";
+    let readySession;
+    if (sessionMatches(sessionRow, readyValues)) {
+      readySession = sessionRow;
+    } else if (authoritative || sessionRow) {
+      readySession = await repository.upsertSession(readyValues);
+    } else {
+      readySession = readyValues;
+    }
+
     return statusResponse(readySession, "ready", {
       artifact_exists: true,
-      artifact_path: artifact.key,
-      size_bytes: artifact.size
+      artifact_path: manifest.key,
+      size_bytes: manifest.size
     });
   }
 

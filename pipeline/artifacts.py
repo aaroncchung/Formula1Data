@@ -363,7 +363,13 @@ def read_json(path: Path) -> Any:
 def write_json(path: Path, data: Any) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = to_jsonable(data)
-    with path.open("w", encoding="utf-8") as handle:
+    # newline="\n" so an artifact's bytes do not depend on the platform that
+    # wrote it. Without it Python translates to CRLF on Windows, and since a
+    # generation is named by its manifest's sha256, the same session published
+    # from Windows and from Linux would land on different generation keys --
+    # defeating the property that a re-run over unchanged data reuses its own
+    # keys rather than leaking another generation.
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
         handle.write("\n")
     return path.stat().st_size

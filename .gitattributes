@@ -1,0 +1,6 @@
+# backend/tests/test_generation_contract.py compares this fixture to the
+# publisher's output byte for byte, so it has to check out identically on every
+# platform. This repo is developed with core.autocrlf=true, which would rewrite
+# it to CRLF on Windows while CI checks out LF -- the comparison would then fail
+# on whichever platform did not generate it.
+worker/tests/fixtures/*.json text eol=lf

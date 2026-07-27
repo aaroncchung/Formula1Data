@@ -1,0 +1,11 @@
+{
+  "session_id": "2026-09-r",
+  "generation_id": "420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6",
+  "objects": {
+    "sessions/2026-09-r/active.json": "{\n  \"schema_version\": 1,\n  \"session_id\": \"2026-09-r\",\n  \"artifact_base_path\": \"sessions/2026-09-r/generations/420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6\",\n  \"generated_at\": \"2026-07-27T00:00:00+00:00\",\n  \"manifest\": {\n    \"size_bytes\": 742,\n    \"checksum\": \"sha256:420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6\"\n  },\n  \"previous_generation\": null\n}\n",
+    "sessions/2026-09-r/generations/420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6/manifest.json": "{\n  \"session_id\": \"2026-09-r\",\n  \"generated_at\": \"2026-07-27T00:00:00+00:00\",\n  \"sections\": [\n    {\n      \"kind\": \"summary\",\n      \"path\": \"sessions/2026-09-r/summary.json\",\n      \"size_bytes\": 60,\n      \"checksum\": \"sha256:e73d972852b3d3c762ca2c2e629ee3ef32b616fb73fc5e17aa4e5afd05f3e514\"\n    },\n    {\n      \"kind\": \"telemetry-index\",\n      \"path\": \"sessions/2026-09-r/telemetry/index.json\",\n      \"size_bytes\": 73,\n      \"checksum\": \"sha256:fbe959c49707f1d65c16e63f28cdf8a45fa873510c84956169c9ed39ba76f2a2\"\n    },\n    {\n      \"kind\": \"telemetry-lap\",\n      \"path\": \"sessions/2026-09-r/telemetry/ver-lap-1.json\",\n      \"size_bytes\": 41,\n      \"checksum\": \"sha256:ed66ecab47bcbdb677d38121ef87ac6152522c0838358e9d735b52428ac1a72e\"\n    }\n  ]\n}\n",
+    "sessions/2026-09-r/generations/420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6/summary.json": "{\n  \"session_id\": \"2026-09-r\",\n  \"meeting\": \"Contract GP\"\n}\n",
+    "sessions/2026-09-r/generations/420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6/telemetry/index.json": "{\n  \"laps\": [\n    {\n      \"path\": \"telemetry/ver-lap-1.json\"\n    }\n  ]\n}\n",
+    "sessions/2026-09-r/generations/420068d8e765b9396f28e2377b6401c3474b2cff0ab1388c979450067949c6c6/telemetry/ver-lap-1.json": "{\n  \"speed\": [\n    1,\n    2,\n    3\n  ]\n}\n"
+  }
+}
