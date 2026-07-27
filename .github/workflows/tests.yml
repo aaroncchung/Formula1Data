@@ -87,3 +87,27 @@ jobs:
       # node:test against the source modules.
       - name: Run test suite
         run: node --test "worker/tests/*.test.mjs"
+
+  frontend:
+    name: Frontend (lib)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Deliberately no `npm ci`: these suites import the `src/lib` modules
+      # directly and those modules pull in nothing from node_modules, so an
+      # install would only add a minute to every run. Add one here the first
+      # time a test needs a dependency -- `npm run` itself does not.
+      #
+      # The .mjs suites import .ts sources, which needs type stripping. Node 24
+      # enables it by default; the flag is kept so the same command works on
+      # the Node 22 line a contributor may have locally.
+      - name: Run test suite
+        working-directory: frontend
+        run: npm test
