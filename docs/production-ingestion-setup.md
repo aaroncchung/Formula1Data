@@ -337,6 +337,10 @@ If a session is ever left live but unreadable — `active.json` present, its gen
 re-ingest it with `--force`. There is no rollback path; the pointer is the only state that matters,
 and a fresh publication replaces it.
 
+Before this layout reaches production, run [the generation validation
+runbook](./r2-generation-validation.md) once against a throwaway bucket. Every R2 path is otherwise
+tested only against a mocked `subprocess.run`.
+
 ## Troubleshooting
 
 | Symptom | Check |
