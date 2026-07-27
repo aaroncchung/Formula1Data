@@ -418,13 +418,19 @@ class LocalQueueWorkerTests(unittest.TestCase):
         objects: dict[str, str] = {}
         trace = []
 
+        # newline="" in both directions. R2 round-trips bytes, and the pointer
+        # read-back compares checksums, so a fake bucket that quietly rewrites
+        # line endings fails the comparison for a reason that has nothing to do
+        # with the code under test.
         def fake_upload(path, _bucket, key):
-            objects[key] = Path(path).read_text(encoding="utf-8")
+            with Path(path).open("r", encoding="utf-8", newline="") as handle:
+                objects[key] = handle.read()
 
         def fake_download(_bucket, key, destination, **_kwargs):
             if key not in objects:
                 return False
-            Path(destination).write_text(objects[key], encoding="utf-8")
+            with Path(destination).open("w", encoding="utf-8", newline="") as handle:
+                handle.write(objects[key])
             return True
 
         def fake_delete(_bucket, key):
