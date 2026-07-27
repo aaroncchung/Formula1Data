@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
 import { api, dynamicApi, dynamicApiSourceLabel, isDynamicApiRouteMissing } from "@/lib/api";
-import { createRequestGenerationGuard } from "@/lib/request-generation";
+import { createOrderedRunner } from "@/lib/request-generation";
 import { loadSessionDashboard } from "@/lib/session-dashboard";
 import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
 
@@ -47,37 +47,28 @@ export function SessionIngestionPanel({
   const [dashboardState, setDashboardState] = useState<DashboardState>({ state: "idle" });
   const [isQueueing, setIsQueueing] = useState(false);
 
-  // Status polling and the queue action share one ordering guard: both write
+  // Status polling and the queue action share one ordering runner: both write
   // `statusState`, so the newest of the two must win regardless of which
   // response arrives last. The dashboard load is not part of it -- it is
   // single-shot and gated on `idle`, and a status poll must not supersede it.
-  const statusRequests = useMemo(() => createRequestGenerationGuard(), []);
+  const statusRequests = useMemo(() => createOrderedRunner(), []);
 
   const loadStatus = useCallback(async () => {
-    const token = statusRequests.begin();
     setStatusState({ state: "loading" });
-    try {
-      const status = await dynamicApi.sessionStatus({ year, round, session });
-      if (!statusRequests.isCurrent(token)) {
-        return null;
+    return statusRequests.run(() => dynamicApi.sessionStatus({ year, round, session }), {
+      onResult: (status) => setStatusState({ state: "ready", status }),
+      onError: (error) => {
+        if (isDynamicApiRouteMissing(error)) {
+          setStatusState({
+            state: "static-only",
+            detail:
+              "This deployment is serving committed static JSON artifacts only. On-demand ingestion requires the Cloudflare Worker API."
+          });
+          return;
+        }
+        setStatusState({ state: "error", error: apiError(error) });
       }
-      setStatusState({ state: "ready", status });
-      return status;
-    } catch (error) {
-      if (!statusRequests.isCurrent(token)) {
-        return null;
-      }
-      if (isDynamicApiRouteMissing(error)) {
-        setStatusState({
-          state: "static-only",
-          detail:
-            "This deployment is serving committed static JSON artifacts only. On-demand ingestion requires the Cloudflare Worker API."
-        });
-        return null;
-      }
-      setStatusState({ state: "error", error: apiError(error) });
-      return null;
-    }
+    });
   }, [round, session, statusRequests, year]);
 
   const loadDashboard = useCallback(async (sessionId: string) => {
@@ -100,7 +91,7 @@ export function SessionIngestionPanel({
     }, 0);
     return () => {
       window.clearTimeout(timer);
-      statusRequests.invalidate();
+      statusRequests.retire();
     };
   }, [loadStatus, statusRequests]);
 
@@ -148,26 +139,23 @@ export function SessionIngestionPanel({
       return;
     }
     setIsQueueing(true);
-    const token = statusRequests.begin();
     try {
-      const response = await dynamicApi.queueSessionIngestion({
-        year,
-        round,
-        session,
-        meeting_id: meetingId,
-        meeting_name: meetingName,
-        scheduled_start: scheduledStart,
-        force
-      });
-      if (!statusRequests.isCurrent(token)) {
-        return;
-      }
-      setStatusState({ state: "ready", status: response.status });
-    } catch (error) {
-      if (!statusRequests.isCurrent(token)) {
-        return;
-      }
-      setStatusState({ state: "error", error: apiError(error) });
+      await statusRequests.run(
+        () =>
+          dynamicApi.queueSessionIngestion({
+            year,
+            round,
+            session,
+            meeting_id: meetingId,
+            meeting_name: meetingName,
+            scheduled_start: scheduledStart,
+            force
+          }),
+        {
+          onResult: (response) => setStatusState({ state: "ready", status: response.status }),
+          onError: (error) => setStatusState({ state: "error", error: apiError(error) })
+        }
+      );
     } finally {
       setIsQueueing(false);
     }
