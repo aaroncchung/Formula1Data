@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SessionTabs, type SessionTabsProps } from "@/components/session/SessionTabs";
-import { api, dynamicApi, dynamicApiSourceLabel, isApiFailure, isDynamicApiRouteMissing, safeApi } from "@/lib/api";
+import { api, dynamicApi, dynamicApiSourceLabel, isDynamicApiRouteMissing } from "@/lib/api";
+import { loadSessionDashboard } from "@/lib/session-dashboard";
 import type { ApiErrorPayload, SessionStatusResponse } from "@/types/api";
 
 type LoadState =
@@ -67,94 +68,12 @@ export function SessionIngestionPanel({
 
   const loadDashboard = useCallback(async (sessionId: string) => {
     setDashboardState({ state: "loading" });
-    const [
-      summary,
-      drivers,
-      laps,
-      lapTimes,
-      racePace,
-      tyreDegradation,
-      stints,
-      pitStops,
-      weather,
-      raceControl,
-      results,
-      telemetryIndex,
-      positionReplay
-    ] = await Promise.all([
-      safeApi(() => api.summary(sessionId)),
-      safeApi(() => api.drivers(sessionId)),
-      safeApi(() => api.laps(sessionId)),
-      safeApi(() => api.lapTimes(sessionId)),
-      safeApi(() => api.racePace(sessionId)),
-      safeApi(() => api.tyreDegradation(sessionId)),
-      safeApi(() => api.stints(sessionId)),
-      safeApi(() => api.pitStops(sessionId)),
-      safeApi(() => api.weather(sessionId)),
-      safeApi(() => api.raceControl(sessionId)),
-      safeApi(() => api.results(sessionId)),
-      safeApi(() => api.telemetryIndex(sessionId)),
-      safeApi(() => api.positionReplay(sessionId))
-    ]);
-    const all = [
-      summary,
-      drivers,
-      laps,
-      lapTimes,
-      racePace,
-      tyreDegradation,
-      stints,
-      pitStops,
-      weather,
-      raceControl,
-      results,
-      telemetryIndex,
-      positionReplay
-    ];
-    const failed = all.find(isApiFailure);
-    if (failed) {
-      setDashboardState({ state: "error", detail: failed.error.message });
+    const dashboard = await loadSessionDashboard(api, sessionId);
+    if (!dashboard.ok) {
+      setDashboardState({ state: "error", detail: dashboard.failure.error.message });
       return;
     }
-    if (
-      summary.ok &&
-      drivers.ok &&
-      laps.ok &&
-      lapTimes.ok &&
-      racePace.ok &&
-      tyreDegradation.ok &&
-      stints.ok &&
-      pitStops.ok &&
-      weather.ok &&
-      raceControl.ok &&
-      results.ok &&
-      telemetryIndex.ok &&
-      positionReplay.ok
-    ) {
-      const telemetryComparison = await initialTelemetryComparison(sessionId, telemetryIndex.data);
-      if (!telemetryComparison.ok) {
-        setDashboardState({ state: "error", detail: telemetryComparison.error.message });
-        return;
-      }
-      setDashboardState({
-        state: "ready",
-        data: {
-          summary: summary.data,
-          drivers: drivers.data,
-          laps: laps.data,
-          lapTimes: lapTimes.data,
-          racePace: racePace.data,
-          tyreDegradation: tyreDegradation.data,
-          stints: stints.data,
-          pitStops: pitStops.data,
-          weather: weather.data,
-          raceControl: raceControl.data,
-          results: results.data,
-          telemetryComparison: telemetryComparison.data,
-          positionReplay: positionReplay.data
-        }
-      });
-    }
+    setDashboardState({ state: "ready", data: dashboard.data });
   }, []);
 
   useEffect(() => {
@@ -360,49 +279,6 @@ function statusLabel(status: SessionStatusResponse["status"]) {
     stale: "Stale"
   };
   return labels[status];
-}
-
-async function initialTelemetryComparison(
-  sessionId: string,
-  telemetryIndex: Awaited<ReturnType<typeof api.telemetryIndex>>
-) {
-  if (!telemetryIndex?.laps.length) {
-    return {
-      ok: true as const,
-      data: {
-        reason: "No telemetry lap artifacts are available for this session.",
-        action: "Generate telemetry artifacts to enable driver and lap comparisons.",
-        details: {}
-      } satisfies SessionTabsProps["telemetryComparison"]
-    };
-  }
-
-  const firstLap = telemetryIndex.laps[0];
-  const secondLap =
-    telemetryIndex.laps.find((lap) => lap.driver_code !== firstLap.driver_code) ||
-    telemetryIndex.laps[1] ||
-    null;
-
-  if (!secondLap) {
-    return {
-      ok: true as const,
-      data: {
-        reason: "Only one telemetry lap artifact is available for this session.",
-        action: "Generate at least two telemetry lap artifacts to enable comparison.",
-        details: {}
-      } satisfies SessionTabsProps["telemetryComparison"]
-    };
-  }
-
-  return safeApi(() =>
-    api.telemetryCompare(
-      sessionId,
-      firstLap.driver_code,
-      firstLap.lap_number,
-      secondLap.driver_code,
-      secondLap.lap_number
-    )
-  );
 }
 
 function apiError(error: unknown): ApiErrorPayload {

@@ -1,3 +1,5 @@
+"""Lap filtering and summary statistics shared by every other analysis module."""
+
 from collections import Counter
 from statistics import mean, median
 from typing import Any

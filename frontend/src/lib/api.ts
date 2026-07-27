@@ -58,7 +58,7 @@ async function readBrowserArtifact<T>(path: string): Promise<T> {
   try {
     const response = await fetch(`${source}/${path}`, {
       signal: controller.signal,
-      cache: "force-cache"
+      cache: "default"
     });
     if (!response.ok) {
       throw new ApiClientError(

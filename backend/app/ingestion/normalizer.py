@@ -245,7 +245,9 @@ def _drivers(session: Any) -> list[dict[str, Any]]:
         if not code:
             continue
         team_name = str(row.get("TeamName") or "Unknown")
-        color = row.get("TeamColor")
+        # float('nan') is truthy, so a NaN TeamColor rendered as the literal
+        # "#nan" and flowed straight into an inline CSS colour.
+        color = _none_if_missing(row.get("TeamColor"))
         drivers.append(
             {
                 "driver_id": code.lower(),

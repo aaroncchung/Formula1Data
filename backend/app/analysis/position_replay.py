@@ -1,13 +1,17 @@
+"""Time-binned position replay frames built from position telemetry.
+
+Returns plain dictionaries; ``app/api/routes/telemetry.py`` wraps each frame in
+``PositionReplayFrame`` and the pipeline writes them straight to JSON.
+"""
+
 from collections import defaultdict
 from typing import Any
-
-from app.models.domain import PositionReplayFrame
 
 REPLAY_INTERVAL_MS = 5000
 MAX_REPLAY_FRAMES = 2000
 
 
-def build_position_replay(session_id: str, telemetry: list[dict[str, Any]]) -> list[PositionReplayFrame]:
+def build_position_replay(session_id: str, telemetry: list[dict[str, Any]]) -> list[dict[str, Any]]:
     with_position = [
         row
         for row in telemetry
@@ -24,9 +28,10 @@ def build_position_replay(session_id: str, telemetry: list[dict[str, Any]]) -> l
     frames = []
     ordered_frames = _bounded_frames(sorted(by_frame.items()))
     for frame_index, (frame_key, positions_by_driver) in enumerate(ordered_frames):
-        positions = []
-        for position in sorted(positions_by_driver.values(), key=lambda row: row["driver_code"]):
-            positions.append({key: value for key, value in position.items() if not key.startswith("_")})
+        positions = [
+            {key: value for key, value in position.items() if not key.startswith("_")}
+            for position in sorted(positions_by_driver.values(), key=lambda row: row["driver_code"])
+        ]
         lap_numbers = {position.get("_lap_number") for position in positions_by_driver.values()}
         lap_number = next(iter(lap_numbers)) if len(lap_numbers) == 1 else None
         if use_session_time:
@@ -39,13 +44,13 @@ def build_position_replay(session_id: str, telemetry: list[dict[str, Any]]) -> l
                     "SessionTime was unavailable; drivers are aligned by lap number and lap-relative time."
                 )
         frames.append(
-            PositionReplayFrame(
-                session_id=session_id,
-                frame_index=frame_index,
-                lap_number=lap_number,
-                timestamp_ms=timestamp_ms,
-                positions=positions,
-            )
+            {
+                "session_id": session_id,
+                "frame_index": frame_index,
+                "lap_number": lap_number,
+                "timestamp_ms": timestamp_ms,
+                "positions": positions,
+            }
         )
     return frames
 
@@ -86,4 +91,3 @@ def _bounded_frames(frames: list[Any]) -> list[Any]:
         frames[round(index * (len(frames) - 1) / (MAX_REPLAY_FRAMES - 1))]
         for index in range(MAX_REPLAY_FRAMES)
     ]
-

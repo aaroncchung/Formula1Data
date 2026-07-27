@@ -138,3 +138,40 @@ test("CORS preflight honors an explicit origin allowlist", async () => {
   assert.equal(denied.status, 403);
   assert.equal(denied.headers.get("access-control-allow-origin"), null);
 });
+
+test("HEAD /data distinguishes a missing artifact from a present one", async () => {
+  // The ingestion runner relies on exactly this to decide whether a session
+  // already has a published generation. Wrangler cannot tell "not found" from
+  // "the read failed"; a 404 here is the positive proof of absence that lets a
+  // first publication proceed, and a 200 is what stops a refresh from
+  // overwriting a generation it could not copy first.
+  const stored = new Map([["sessions/2026-01-r/manifest.json", "{}"]]);
+  const env = {
+    ARTIFACTS_BUCKET: {
+      async head(key) {
+        return stored.has(key) ? { size: stored.get(key).length, uploaded: new Date(0) } : null;
+      },
+      async get(key) {
+        return stored.has(key) ? { body: stored.get(key), uploaded: new Date(0) } : null;
+      }
+    }
+  };
+
+  const present = await worker.fetch(
+    new Request("https://worker.example/data/sessions/2026-01-r/manifest.json?probe=1", {
+      method: "HEAD"
+    }),
+    env,
+    context
+  );
+  const absent = await worker.fetch(
+    new Request("https://worker.example/data/sessions/2026-02-r/manifest.json?probe=1", {
+      method: "HEAD"
+    }),
+    env,
+    context
+  );
+
+  assert.equal(present.status, 200);
+  assert.equal(absent.status, 404);
+});

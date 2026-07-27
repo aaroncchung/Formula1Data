@@ -1,0 +1,4 @@
+# Test-only dependencies. Kept separate from requirements.txt so the backend
+# Docker image does not ship a test runner.
+-r requirements.txt
+pytest==9.1.1

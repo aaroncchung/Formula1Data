@@ -9,6 +9,7 @@ from app.analysis.advanced import (
     calculate_track_dominance,
 )
 from app.analysis.ideal_laps import calculate_ideal_laps
+from app.analysis.lap_times import lap_time_series as calculate_lap_time_series
 from app.analysis.qualifying_delta import calculate_qualifying_delta
 from app.analysis.race_pace import calculate_race_pace
 from app.analysis.strategy import calculate_strategy
@@ -23,29 +24,14 @@ router = APIRouter()
 @router.get("/analysis/race-pace", response_model=RacePaceResult)
 async def race_pace(session_id: str = Query(...)) -> RacePaceResult:
     bundle = DatasetService().get_session_bundle(session_id)
-    return calculate_race_pace(session_id, bundle["laps"])
+    return RacePaceResult(**calculate_race_pace(session_id, bundle["laps"]))
 
 
 @router.get("/analysis/lap-times", response_model=list[ChartSeries])
 async def lap_times(session_id: str = Query(...)) -> list[ChartSeries]:
     bundle = DatasetService().get_session_bundle(session_id)
-    by_driver: dict[str, dict[str, Any]] = {}
-    driver_colors = {
-        driver["code"]: driver.get("team", {}).get("color") for driver in bundle.get("drivers", [])
-    }
-    for lap in bundle["laps"]:
-        if lap.get("lap_time_ms") is None:
-            continue
-        row = by_driver.setdefault(
-            lap["driver_code"],
-            {"x": [], "y": [], "color": driver_colors.get(lap["driver_code"])},
-        )
-        row["x"].append(lap["lap_number"])
-        row["y"].append(lap["lap_time_ms"])
-    return [
-        ChartSeries(name=driver, x=row["x"], y=row["y"], color=row["color"])
-        for driver, row in sorted(by_driver.items())
-    ]
+    series = calculate_lap_time_series(bundle["laps"], bundle.get("drivers", []))
+    return [ChartSeries(**row) for row in series]
 
 
 @router.get("/analysis/stints")

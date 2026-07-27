@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
-from pipeline.schedule_ingestion import get_status, post_json, request_headers, select_candidates
+from pipeline.schedule_ingestion import (
+    get_status,
+    main,
+    post_json,
+    request_headers,
+    select_candidates,
+)
 
 
 class ScheduleIngestionTests(unittest.TestCase):
@@ -104,6 +113,102 @@ class ScheduleIngestionTests(unittest.TestCase):
                 }
             ],
         )
+
+
+    def test_meetings_without_a_usable_start_date_are_skipped(self):
+        catalog = {
+            "meetings": [
+                {
+                    "meeting_id": "2026-08-null",
+                    "year": 2026,
+                    "round": 8,
+                    "start_date": None,
+                    "sessions_available": ["R"],
+                },
+                {
+                    "meeting_id": "2026-09-british-grand-prix",
+                    "year": 2026,
+                    "round": 9,
+                    "start_date": "2026-07-05T00:00:00",
+                    "sessions_available": ["R"],
+                },
+                {
+                    "meeting_id": "2026-10-missing-key",
+                    "year": 2026,
+                    "round": 10,
+                    "sessions_available": ["R"],
+                },
+            ]
+        }
+
+        candidates = select_candidates(
+            catalog,
+            through_date=date(2026, 7, 6),
+            lookback_days=4,
+            years=set(),
+            sessions=set(),
+            races_only=True,
+        )
+
+        self.assertEqual([candidate["round"] for candidate in candidates], [9])
+
+    def test_a_failing_candidate_does_not_starve_the_later_rounds(self):
+        catalog = {
+            "meetings": [
+                {
+                    "meeting_id": f"2026-{round_number:02d}-x",
+                    "year": 2026,
+                    "round": round_number,
+                    "start_date": "2026-07-05T00:00:00",
+                    "sessions_available": ["R"],
+                }
+                for round_number in (1, 2, 3)
+            ]
+        }
+        checked: list[int] = []
+        posted: list[int] = []
+
+        def fake_status(_worker_url, candidate, _headers):
+            checked.append(candidate["round"])
+            if candidate["round"] == 1:
+                raise RuntimeError("Ingestion API returned a non-JSON response")
+            return {"status": "missing"}
+
+        def fake_post(_url, payload, _headers):
+            if payload["round"] == 2:
+                raise RuntimeError("HTTP Error 500")
+            posted.append(payload["round"])
+            return {"action": "queued"}
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            catalog_path = Path(temporary_directory) / "catalog.json"
+            catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+            with (
+                patch("pipeline.schedule_ingestion.get_status", side_effect=fake_status),
+                patch("pipeline.schedule_ingestion.post_json", side_effect=fake_post),
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    main(
+                        [
+                            "--catalog",
+                            str(catalog_path),
+                            "--worker-url",
+                            "https://worker.example",
+                            "--through-date",
+                            "2026-07-06",
+                            "--lookback-days",
+                            "4",
+                            "--races-only",
+                        ]
+                    )
+
+        # Every candidate was attempted, a later round was still queued after
+        # both a failed status check and a failed POST, and the run reports
+        # the failures rather than exiting cleanly.
+        self.assertEqual(checked, [1, 2, 3])
+        self.assertEqual(posted, [3])
+        self.assertIn("2 session(s) could not be queued", str(raised.exception))
 
 
 if __name__ == "__main__":

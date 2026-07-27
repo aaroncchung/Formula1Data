@@ -2,6 +2,16 @@ import { sanitizeArtifactPath } from "./session-utils.mjs";
 
 const MAX_VERIFIED_ARTIFACT_BYTES = 8 * 1024 * 1024;
 
+// A fallback origin answers a conditional or ranged request with a status that is
+// not `ok` but still carries the answer the client asked for. Treating those as a
+// miss turns them into a 404, so both `head()` and `get()` accept the same set.
+const CONDITIONAL_FALLBACK_STATUSES = new Set([304, 416]);
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+function isAcceptableFallback(response) {
+  return Boolean(response) && (response.ok || CONDITIONAL_FALLBACK_STATUSES.has(response.status));
+}
+
 export function createArtifactStore(env) {
   return {
     async head(path) {
@@ -19,7 +29,7 @@ export function createArtifactStore(env) {
       }
 
       const fallback = await fetchFallback(env, key, { method: "HEAD" });
-      if (fallback && (fallback.ok || fallback.status === 304 || fallback.status === 416)) {
+      if (isAcceptableFallback(fallback)) {
         return {
           key,
           size: numberOrNull(fallback.headers.get("content-length")),
@@ -50,11 +60,12 @@ export function createArtifactStore(env) {
         method,
         headers: forwardedRequestHeaders(request?.headers)
       });
-      if (fallback?.ok) {
+      if (isAcceptableFallback(fallback)) {
         const headers = new Headers(fallback.headers);
         headers.set("cache-control", cacheControlForKey(key));
         headers.set("accept-ranges", "bytes");
-        return new Response(fallback.body, {
+        const body = NULL_BODY_STATUSES.has(fallback.status) ? null : fallback.body;
+        return new Response(body, {
           status: fallback.status,
           statusText: fallback.statusText,
           headers

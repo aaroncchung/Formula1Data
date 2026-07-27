@@ -77,8 +77,12 @@ npx.cmd --yes wrangler@latest d1 execute formula-1-data --remote --command "sele
 ## 5. Seed the required R2 indexes
 
 Queue-driven ingestion deliberately refuses to publish unless the current R2 `catalog.json` can be
-downloaded first. This prevents a temporary credential or R2 failure from replacing the production
-catalog with a partial local build.
+downloaded first. The download is retried with backoff, and a persistent failure aborts the run. This
+prevents a temporary credential or R2 failure from replacing the production catalog with a partial
+local build: Wrangler reports "no such object" and "that read failed" the same way, so a runner that
+tolerated an unreadable catalog would republish an index holding only the session it just ingested.
+
+This step is what makes that requirement satisfiable, so do not skip it.
 
 Upload the catalog and all checked-in season indexes:
 
@@ -102,6 +106,21 @@ npx.cmd --yes wrangler@latest r2 object get formula-1-data-artifacts/catalog.jso
 Existing session files may continue to come from the configured Pages fallback. New and refreshed
 sessions will be written to R2. If you want R2 to contain every historical artifact immediately,
 upload the remaining files under `frontend/public/data` while preserving their relative paths.
+
+### Bootstrapping without a seed
+
+If you would rather have the first ingestion create the indexes in a genuinely empty bucket, run that
+one job manually from a machine with Wrangler credentials and add `--allow-missing-catalog`:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json --artifact-destination r2 --r2-bucket formula-1-data-artifacts --allow-missing-catalog
+```
+
+The flag makes an unreadable catalog mean "empty bucket" instead of an error, which is only true
+once. Never set it for the `Process ingestion job` workflow or any routine run: on a populated bucket
+it turns a transient read failure into a silent overwrite of the published index with a
+single-session catalog. Verify the catalog with the `r2 object get` check above before the next run,
+and after that the normal fail-loud path applies.
 
 ## 6. Create the GitHub dispatch token
 
@@ -289,7 +308,7 @@ check summary, laps, analysis, and telemetry.
 |---|---|
 | Job immediately fails with no runner configured | Confirm Worker secret `GITHUB_DISPATCH_TOKEN` and the configured GitHub owner/repository. |
 | GitHub dispatch returns 401/404 | Confirm the fine-grained token is scoped to this repository with Contents write permission. |
-| Runner cannot hydrate `catalog.json` | Confirm the R2 seed exists and GitHub's Cloudflare token has object read/write access. |
+| Runner cannot hydrate `catalog.json` | Confirm the R2 seed exists and GitHub's Cloudflare token has object read/write access. The read is already retried with backoff, so a reported failure is a missing seed or a credential problem, not a blip. Only a genuinely empty bucket warrants `--allow-missing-catalog`. |
 | Callback receives 401 | Confirm `INGESTION_API_TOKEN` matches in Worker and GitHub; if Access is enabled, also confirm both Access secrets and the Service Auth policy. |
 | Browser ingestion receives 401 | Either sign in through Access or verify whether bearer-only mode intentionally disables browser ingestion. |
 | Session succeeds but is absent from navigation | Inspect R2 `catalog.json` and `seasons/{year}.json`; the runner publishes these after the session manifest. |

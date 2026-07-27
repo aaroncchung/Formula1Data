@@ -197,6 +197,56 @@ test("permanent GitHub dispatch failures mark the job and session failed", async
   }
 });
 
+test("an unconfirmed GitHub dispatch leaves the job queued rather than running", async () => {
+  const repository = freshRepository();
+  const artifacts = { head: async () => null };
+  const messages = [];
+  const queue = { send: async (message) => messages.push(message) };
+  const previousFetch = globalThis.fetch;
+
+  for (const [label, stubFetch] of [
+    ["network failure", async () => { throw new TypeError("network error"); }],
+    ["retryable status", async () => new Response(null, { status: 503 })]
+  ]) {
+    globalThis.fetch = stubFetch;
+    try {
+      const result = await enqueueIngestionJob({
+        repository,
+        artifacts,
+        queue,
+        year: 2026,
+        round: messages.length + 10,
+        session: "R",
+        now: new Date("2026-07-04T12:00:00Z")
+      });
+
+      await assert.rejects(
+        dispatchQueueMessage(
+          messages[messages.length - 1],
+          {
+            GITHUB_DISPATCH_TOKEN: "github-token",
+            GITHUB_REPO_OWNER: "Ntrxi",
+            GITHUB_REPO_NAME: "Formula1Data"
+          },
+          repository
+        ),
+        /GitHub repository_dispatch/,
+        label
+      );
+
+      const job = await repository.getJob(result.job.job_id);
+      // `running` with a started_at would be indistinguishable from a workflow
+      // that started and hung, and only the stale-job reconciler would clear
+      // it, two hours later.
+      assert.equal(job.status, "queued", label);
+      assert.equal(job.started_at, null, label);
+      assert.match(job.error_message, /GitHub repository_dispatch/, label);
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  }
+});
+
 test("queue messages cannot dispatch a missing job", async () => {
   const repository = freshRepository();
   await assert.rejects(

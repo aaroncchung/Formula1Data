@@ -148,6 +148,27 @@ npm run build
 
 The Cloudflare Pages output directory is `frontend/out`.
 
+### Tests
+
+Two suites, both run by `tests.yml` in CI. Run them from the repo root:
+
+```powershell
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests -q
+```
+
+```powershell
+node --test "worker/tests/*.test.mjs"
+```
+
+The Python suite covers the pipeline, the ingestion normalizer, and the local
+queue worker; `backend/tests/conftest.py` puts the repo root and `backend/` on
+`sys.path`, so individual files can be run on their own. The Worker suite is
+plain `node:test` with no dependencies to install. `repository-d1.test.mjs`
+exercises the real D1 SQL against `node:sqlite` with `migrations/` applied, and
+skips itself on Node versions where that module is still flagged (Node 22 needs
+`--experimental-sqlite`; Node 24 does not).
+
 ## Pipeline Commands
 
 Offline sample artifacts:
@@ -357,10 +378,22 @@ manifest, season index, then catalog in that order. The Worker only exposes `cat
 `seasons/*`, and `sessions/*` through `/data`, so normalized source datasets remain private.
 Keep direct R2 public access disabled; the Worker allowlist is the intended read boundary.
 
-The current R2 `catalog.json` must exist before queue-driven ingestion begins. Seed the initial
-catalog and season files from `frontend/public/data` during first deployment. Requiring the current
-catalog prevents a transient R2 or credential failure from replacing production indexes with a
-partial local view.
+The current R2 `catalog.json` must be readable before queue-driven ingestion publishes anything, and
+a run that cannot read it fails. Wrangler exits non-zero for both "no such object" and "that read
+failed", so tolerating an unreadable catalog would let one transient failure republish an index
+containing only the session just ingested, hiding every other session from clients. The download is
+retried with backoff first; a persistent failure is then an error rather than a guess.
+
+Seed the initial catalog and season files from `frontend/public/data` during first deployment (see
+`docs/production-ingestion-setup.md`, section 5). If instead you want the first ingestion itself to
+create the indexes in a genuinely empty bucket, pass `--allow-missing-catalog` for that one run:
+
+```powershell
+python -m pipeline process-queue --message-file .\message.json --artifact-destination r2 --r2-bucket formula-1-data-artifacts --allow-missing-catalog
+```
+
+That flag is for bootstrap only. Leave it off everywhere else, including the ingestion workflow: on a
+bucket that already has a catalog it converts a failed read into a silent index overwrite.
 
 ### Scheduling and recovery
 
@@ -421,6 +454,7 @@ Deployment options:
 
 ## GitHub Actions
 
+- `tests.yml`: runs the Python suite (`pytest backend/tests`) and the Cloudflare Worker suite (`node --test`) on every pull request and push to `main`.
 - `frontend-ci.yml`: generates sample artifacts, runs frontend lint, builds the static export, and uploads `frontend/out`.
 - `generate-artifacts.yml`: manually generates sample artifacts, ingests one FastF1 session, or ingests sessions for a full FastF1 season; scheduled runs validate sample artifact generation weekly. Manual runs can optionally commit `frontend/public/data`.
 - `cloudflare-pages.yml`: manual static export deployment to Cloudflare Pages via Wrangler.

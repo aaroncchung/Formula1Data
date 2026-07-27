@@ -65,6 +65,8 @@ export type TelemetryIndex = {
 
 export type ArtifactReader = <T>(path: string) => Promise<T>;
 
+export type StaticApi = ReturnType<typeof createStaticApi>;
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -363,7 +365,9 @@ export function isApiFailure(result: { ok: boolean }): result is ApiFailure {
 }
 
 export function isEmptyState(value: unknown): value is EmptyStateResponse {
-  return Boolean(value && typeof value === "object" && "reason" in value);
+  // `LiveDisabledResponse` also carries `reason`, so exclude anything tagged
+  // with `enabled` to keep the predicate sound.
+  return Boolean(value && typeof value === "object" && "reason" in value && !("enabled" in value));
 }
 
 export function isLiveDisabled(value: unknown): value is LiveDisabledResponse {

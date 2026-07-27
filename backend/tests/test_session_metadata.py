@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.ingestion.normalizer import (
     IncompleteFastF1SessionError,
+    _drivers,
     normalize_fastf1_session,
     pd,
     selected_session_codes,
@@ -141,6 +142,23 @@ class SessionMetadataTests(unittest.TestCase):
             IncompleteFastF1SessionError, "must contain unique positions"
         ):
             normalize_fastf1_session(2026, 4, "R", session)
+
+
+    @unittest.skipIf(pd is None, "pandas is required for FastF1 normalization tests")
+    def test_missing_team_colour_is_null_rather_than_the_string_hash_nan(self):
+        results = pd.DataFrame(
+            [
+                {"Abbreviation": "AAA", "TeamName": "Alpha", "TeamColor": float("nan")},
+                {"Abbreviation": "BBB", "TeamName": "Beta", "TeamColor": "1234FF"},
+                {"Abbreviation": "CCC", "TeamName": "Gamma", "TeamColor": "#4321AA"},
+            ]
+        )
+
+        drivers = {row["code"]: row["team"]["color"] for row in _drivers(FakeFastF1Session(results=results))}
+
+        self.assertIsNone(drivers["AAA"])
+        self.assertEqual(drivers["BBB"], "#1234FF")
+        self.assertEqual(drivers["CCC"], "#4321AA")
 
 
 class FakeFastF1Session:

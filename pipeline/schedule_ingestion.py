@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
 from datetime import date, timedelta
@@ -59,20 +60,37 @@ def main(argv: list[str] | None = None) -> None:
     headers = request_headers()
     queued = 0
     skipped = 0
+    failed = 0
     for candidate in candidates:
-        status = get_status(args.worker_url, candidate, headers)
-        if status.get("status") in {"queued", "ingesting"} or (
-            status.get("status") == "ready" and not args.force
-        ):
-            skipped += 1
-            continue
-        post_json(
-            f"{args.worker_url.rstrip('/')}/api/ingestion/session",
-            {**candidate, "force": args.force},
-            headers,
-        )
-        queued += 1
-    print(f"Queued {queued} session(s); skipped {skipped} already active or ready session(s).")
+        # One transient error must not starve every later candidate: this loop
+        # is the hourly scheduler, and candidates are ordered by meeting, so a
+        # persistent failure on an early round would permanently block the rest.
+        try:
+            status = get_status(args.worker_url, candidate, headers)
+            if status.get("status") in {"queued", "ingesting"} or (
+                status.get("status") == "ready" and not args.force
+            ):
+                skipped += 1
+                continue
+            post_json(
+                f"{args.worker_url.rstrip('/')}/api/ingestion/session",
+                {**candidate, "force": args.force},
+                headers,
+            )
+            queued += 1
+        except Exception as exc:
+            failed += 1
+            print(
+                f"Failed to queue {candidate['year']} round {candidate['round']} "
+                f"{candidate['session']}: {exc}",
+                file=sys.stderr,
+            )
+    print(
+        f"Queued {queued} session(s); skipped {skipped} already active or ready session(s); "
+        f"failed {failed} session(s)."
+    )
+    if failed:
+        raise SystemExit(f"{failed} session(s) could not be queued.")
 
 
 def select_candidates(
@@ -91,7 +109,17 @@ def select_candidates(
     )
     selected = []
     for meeting in catalog.get("meetings", []):
-        meeting_date = date.fromisoformat(str(meeting["start_date"])[:10])
+        meeting_date = meeting_start_date(meeting)
+        if meeting_date is None:
+            # A meeting with no usable date cannot be scheduled, but it must not
+            # take the whole run down with it: normalization can emit a null
+            # start_date whenever FastF1 omits the event dates.
+            print(
+                "Skipping meeting with an unusable start_date: "
+                f"{meeting.get('meeting_id') or meeting.get('name') or meeting!r}",
+                file=sys.stderr,
+            )
+            continue
         year = int(meeting["year"])
         if (
             meeting_date > through_date
@@ -115,6 +143,13 @@ def select_candidates(
                 }
             )
     return selected
+
+
+def meeting_start_date(meeting: dict[str, Any]) -> date | None:
+    try:
+        return date.fromisoformat(str(meeting["start_date"])[:10])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def request_headers() -> dict[str, str]:

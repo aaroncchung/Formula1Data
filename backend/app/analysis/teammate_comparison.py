@@ -1,8 +1,10 @@
+"""Intra-team lap-time comparison. Returns plain dictionaries."""
+
 from collections import defaultdict
 from statistics import mean
 from typing import Any
 
-from app.analysis.common import clean_laps
+from .common import clean_laps
 
 
 def calculate_teammate_comparison(
