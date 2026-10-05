@@ -1437,12 +1437,13 @@ only with passing tests.
 
 ### Done when
 
-The rewrite is finished when all four hold. The thresholds are proposals
-(decision 6).
+The rewrite is finished when all four hold. The thresholds were settled in
+decision 6.
 
 1. **Unattended.** Every in-scope session (decision 5) of three consecutive
    race weekends is on the site and complete, meeting every bar in rule 6,
-   within 24 hours of finishing, with no manual step. A partial publication
+   within 48 hours of finishing if fetching runs on a local machine and
+   within 24 hours otherwise, with no manual step. A partial publication
    does not count. The one exception is a feed F1's archive itself does not
    hold for that session, shown by a fetch from a network F1 answers and
    listed by name with the result. Seven weekends remain in 2026, from Singapore on 2026-10-11 to Abu
@@ -1517,6 +1518,7 @@ carry over:
    Cloudflare Access, and a scheduled job that ingests every completed session
    makes it unnecessary. If it is wanted, a thin Worker endpoint that triggers
    the workflow directly would serve, without the queue or D1.
+   **Decided 2026-10-05: dropped.**
 2. **Where fetching runs.** If step 1 confirms the refusal, the choice is
    between a self-hosted GitHub runner, which keeps the workflow interface, and
    a scheduled task on a local machine, which is simpler. Only the fetch stage
@@ -1524,12 +1526,18 @@ carry over:
    The machine does not have to be on when a session finishes, because the job
    catches up on its next run and F1's archive keeps past sessions. It does
    have to run within the window set in decision 6.
+   **Decided 2026-10-05: a scheduled task on a local machine, if step 1
+   confirms the refusal.**
 3. **PR #8.** Its fate follows from decision 1. If the ingestion panel goes,
    salvage the test runner and the request guard and close the rest; if it
    stays, merge it.
+   **Decided 2026-10-05: salvage the test runner and the request guard into a
+   new pull request and close #8.**
 4. **Scope of live timing and the placeholder pages.** `/live` and `/settings`
    are stubs today; either build them or remove them from the navigation. Live
    timing needs a paid OpenF1 account (AR-19).
+   **Decided 2026-10-05: remove both from the navigation, and remove the live
+   routes in step 6. Revisit live timing after the rewrite.**
 5. **Which session types to ingest.** A meeting has five sessions. Standings
    come from Jolpica under this plan, so no session type is needed for them.
    The analyses are race-oriented, and the qualifying-delta analysis is not
@@ -1537,9 +1545,13 @@ carry over:
    and sprints first, and qualifying and practice once they have a view of
    their own. The answer sets the size of the archive and the scope of the
    first criterion in section 6.
+   **Decided 2026-10-05: races and sprints.**
 6. **The acceptance bar.** Section 6 proposes 24 hours and three consecutive
    weekends. Settle both before step 4, since they decide how often the fetch
    machine has to run.
+   **Decided 2026-10-05: 48 hours if fetching runs on a local machine
+   (decision 2), 24 hours if it runs on a hosted runner. Three consecutive
+   weekends stands.**
 
 ---
 
