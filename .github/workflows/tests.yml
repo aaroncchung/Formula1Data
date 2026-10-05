@@ -40,6 +40,33 @@ jobs:
       - name: Run test suite
         run: python -m pytest backend/tests -q
 
+  f1data:
+    name: Python (f1data)
+    runs-on: ubuntu-latest
+    steps:
+      # frontend/public/data is 1.2 GB and these tests read none of it.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            f1data
+            tests
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        run: python -m pytest tests -q
+
   worker:
     name: Cloudflare Worker
     runs-on: ubuntu-latest

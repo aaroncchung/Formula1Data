@@ -1,0 +1,8 @@
+# Runtime dependencies of the f1data package (fetch, build, publish).
+# FastF1 is pinned exactly: a release that changes its cache version makes the
+# parsed feeds in the source archive unreadable (architecture review, AR-11).
+fastf1==3.8.3
+pandas==2.2.3
+numpy==2.2.1
+pydantic==2.10.4
+boto3==1.43.108
