@@ -69,3 +69,22 @@ def test_stops_recording_on_exit():
 
     _session().get("https://api.jolpi.ca/ergast/f1/2026/8/results.json")
     assert recorder.records == []
+
+
+def test_failure_kinds_collapses_a_session_refused_feed_by_feed():
+    with HttpRecorder() as recorder:
+        for feed in ("SessionInfo", "TimingData", "CarData.z"):
+            _session().get(f"https://livetiming.formula1.com/static/2026/x/{feed}.jsonStream")
+        _session().get("https://api.jolpi.ca/ergast/f1/2026/8/results.json")
+
+    assert recorder.failure_kinds() == [
+        {
+            "method": "GET",
+            "host": "livetiming.formula1.com",
+            "status": 403,
+            "headers": {"server": "cloudflare"},
+            "body_excerpt": "<html>Access denied</html>",
+            "count": 3,
+            "example_path": "/static/2026/x/SessionInfo.jsonStream",
+        }
+    ]

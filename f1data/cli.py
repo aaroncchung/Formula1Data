@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from f1data.coverage import evaluate_coverage
-from f1data.fetch import F1_ARCHIVE_HOSTS, fetch_session
+from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fetch_session
 
 # The feeds whose absence the old loader tolerated or could not see (AR-13, AR-21).
 _RAW_CHECK_FEEDS = (
@@ -46,6 +46,8 @@ def main(argv: list[str] | None = None) -> None:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(name)-14s %(levelname)-7s %(message)s",
     )
+    # FastF1 installs its own handler; without this every line prints twice.
+    logging.getLogger("fastf1").propagate = False
     raise SystemExit(args.func(args))
 
 
@@ -60,6 +62,9 @@ def run_probe(args: argparse.Namespace) -> int:
             fetched = fetch_session(args.year, event, args.session, cache_dir)
         except Exception as exc:
             report["error"] = f"{type(exc).__name__}: {exc}"
+            if isinstance(exc, FetchError) and exc.http is not None:
+                report["requests_by_host"] = exc.http.summary()
+                report["failures"] = exc.http.failure_kinds()
             _print_probe(report)
             _write_report(args.report, report)
             return 1
@@ -71,9 +76,7 @@ def run_probe(args: argparse.Namespace) -> int:
                 "versions": fetched.versions,
                 "attempts": fetched.attempts,
                 "requests_by_host": fetched.http.summary(),
-                "failed_requests": [
-                    record for record in fetched.http.to_json() if _failed(record)
-                ],
+                "failures": fetched.http.failure_kinds(),
                 "raw_check": _raw_check(fetched.identity.archive_path),
                 "coverage": fetched.coverage,
                 "shortfalls": [shortfall.to_json() for shortfall in shortfalls],
@@ -111,15 +114,11 @@ def _raw_check(archive_path: str) -> dict[str, dict[str, Any]]:
     return results
 
 
-def _failed(record: dict[str, Any]) -> bool:
-    status = record.get("status")
-    return status is None or status >= 400
-
-
 def _print_probe(report: dict[str, Any]) -> None:
     print(f"Probe: {report['year']} event={report['event']} session={report['session']}")
     if "error" in report:
         print(f"  FAILED: {report['error']}")
+        _print_requests(report)
         return
     identity = report["identity"]
     print(
@@ -127,12 +126,7 @@ def _print_probe(report: dict[str, Any]) -> None:
         f"{identity['meeting_name']} {identity['session_name']} at {identity['start_time_utc']}"
     )
     print(f"  versions: {report['versions']}, attempts: {report['attempts']}")
-    print("  requests by host and status:")
-    for host, counts in report["requests_by_host"].items():
-        marker = " (F1 archive)" if host in F1_ARCHIVE_HOSTS else ""
-        print(f"    {host}{marker}: {counts}")
-    for record in report["failed_requests"]:
-        print(f"    failed: {json.dumps(record, sort_keys=True)}")
+    _print_requests(report)
     print("  direct requests for the main feeds:")
     for host, statuses in report["raw_check"].items():
         print(f"    {host}: {statuses}")
@@ -152,6 +146,17 @@ def _print_probe(report: dict[str, Any]) -> None:
         print(f"  INCOMPLETE: {len(report['shortfalls'])} shortfall(s)")
         for shortfall in report["shortfalls"]:
             print(f"    {shortfall['bar']} {shortfall['driver'] or 'session'}: {shortfall['detail']}")
+
+
+def _print_requests(report: dict[str, Any]) -> None:
+    if "requests_by_host" not in report:
+        return
+    print("  requests by host and status:")
+    for host, counts in report["requests_by_host"].items():
+        marker = " (F1 archive)" if host in F1_ARCHIVE_HOSTS else ""
+        print(f"    {host}{marker}: {counts}")
+    for kind in report["failures"]:
+        print(f"    failed x{kind['count']}: {json.dumps(kind, sort_keys=True)}")
 
 
 def _write_report(path: Path | None, report: dict[str, Any]) -> None:

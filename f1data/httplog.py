@@ -120,10 +120,28 @@ class HttpRecorder:
         return {host: dict(sorted(by_status.items())) for host, by_status in sorted(counts.items())}
 
     def to_json(self) -> list[dict[str, Any]]:
-        return [
-            {key: value for key, value in asdict(record).items() if value is not None}
-            for record in self.records
-        ]
+        return [_compact(record) for record in self.records]
+
+    def failure_kinds(self) -> list[dict[str, Any]]:
+        """Distinct failures with a count, leaving out the path and the timing.
+
+        A refused session fails every feed the same way; sixty identical lines
+        say no more than one.
+        """
+        kinds: dict[str, dict[str, Any]] = {}
+        for record in self.failures:
+            kind = _compact(record)
+            for varying in ("path", "elapsed_ms", "size_bytes"):
+                kind.pop(varying, None)
+            if isinstance(kind.get("headers"), dict):
+                kind["headers"].pop("cf-ray", None)
+            key = repr(sorted(kind.items(), key=lambda item: item[0]))
+            kinds.setdefault(key, {**kind, "count": 0, "example_path": record.path})["count"] += 1
+        return list(kinds.values())
+
+
+def _compact(record: HttpRecord) -> dict[str, Any]:
+    return {key: value for key, value in asdict(record).items() if value is not None}
 
 
 def _excerpt(response: requests.Response) -> str | None:

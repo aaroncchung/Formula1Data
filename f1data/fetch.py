@@ -36,6 +36,11 @@ _logger = logging.getLogger(__name__)
 class FetchError(RuntimeError):
     """The session could not be fetched in a form worth keeping."""
 
+    def __init__(self, message: str, http: HttpRecorder | None = None) -> None:
+        super().__init__(message)
+        # What F1 answered, for a caller that has to report why nothing arrived.
+        self.http = http
+
 
 @dataclass
 class FetchedSession:
@@ -116,7 +121,8 @@ def fetch_session(
         except Exception as exc:
             raise FetchError(
                 f"F1's session information did not arrive for {year} {event} {code}; "
-                f"requests by host and status: {recorder.summary()}"
+                f"requests by host and status: {recorder.summary()}",
+                http=recorder,
             ) from exc
         coverage = measure_coverage(session, code)
         versions = _versions(fastf1)

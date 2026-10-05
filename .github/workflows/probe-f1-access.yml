@@ -55,8 +55,18 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
+      # FastF1 logs to stderr, so the file holds the probe's own report only.
       - name: Probe
-        run: python -m f1data probe --year "$YEAR" --event "$EVENT" --session "$SESSION" --report probe-report.json
+        run: |
+          set -o pipefail
+          python -m f1data probe --year "$YEAR" --event "$EVENT" --session "$SESSION"             --report probe-report.json | tee probe-output.txt
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -f probe-output.txt ]; then
+            { echo '```'; cat probe-output.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload the report
         if: always()
