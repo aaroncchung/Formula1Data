@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import requests
 
 # Enough to tell a CDN refusal from an origin error without keeping a response.
-_DIAGNOSTIC_HEADERS = ("server", "via", "x-cache", "cf-ray", "cf-mitigated", "x-amz-cf-pop")
+_DIAGNOSTIC_HEADERS = ("server", "x-cache", "x-amz-cf-pop", "cf-mitigated")
 _BODY_EXCERPT_CHARS = 200
 
 
@@ -133,8 +133,6 @@ class HttpRecorder:
             kind = _compact(record)
             for varying in ("path", "elapsed_ms", "size_bytes"):
                 kind.pop(varying, None)
-            if isinstance(kind.get("headers"), dict):
-                kind["headers"].pop("cf-ray", None)
             key = repr(sorted(kind.items(), key=lambda item: item[0]))
             kinds.setdefault(key, {**kind, "count": 0, "example_path": record.path})["count"] += 1
         return list(kinds.values())
