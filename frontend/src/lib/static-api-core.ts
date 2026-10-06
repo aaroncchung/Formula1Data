@@ -130,12 +130,7 @@ export function createStaticApi(readArtifact: ArtifactReader) {
         );
       }
       return frames;
-    },
-    liveCurrentSession: async () => liveDisabled(),
-    liveTiming: async () => liveDisabled(),
-    liveRaceControl: async () => liveDisabled(),
-    livePositions: async () => liveDisabled(),
-    liveWeather: async () => liveDisabled()
+    }
   };
 
   async function readSeason(year: number): Promise<SeasonArtifact> {
@@ -370,6 +365,9 @@ export function isEmptyState(value: unknown): value is EmptyStateResponse {
   return Boolean(value && typeof value === "object" && "reason" in value && !("enabled" in value));
 }
 
+// Nothing calls this since the live page was removed. It stays, with
+// `LiveDisabledResponse`, only because `api-server.ts` still re-exports it;
+// delete both, and the `enabled` check above, when that re-export goes.
 export function isLiveDisabled(value: unknown): value is LiveDisabledResponse {
   return Boolean(value && typeof value === "object" && "enabled" in value && value.enabled === false);
 }
@@ -397,17 +395,6 @@ function telemetryUnavailableState(): EmptyStateResponse {
     "No telemetry lap artifacts are available for this session.",
     "Generate telemetry artifacts to enable driver and lap comparisons."
   );
-}
-
-function liveDisabled(): LiveDisabledResponse {
-  return {
-    enabled: false,
-    reason: "Live mode is not part of the static historical deployment.",
-    setup: [
-      "Historical browsing reads committed JSON artifacts from /data.",
-      "Enable the optional Cloudflare Worker API when dynamic live timing is needed."
-    ]
-  };
 }
 
 function nearestByDistance(rows: TelemetrySample[], distance: number): TelemetrySample {

@@ -8,9 +8,7 @@ export const NAV_ITEMS = [
   { href: "/standings", label: "Standings" },
   { href: "/drivers", label: "Drivers" },
   { href: "/teams", label: "Teams" },
-  { href: "/circuits", label: "Circuits" },
-  { href: "/live", label: "Live" },
-  { href: "/settings", label: "Settings" }
+  { href: "/circuits", label: "Circuits" }
 ];
 
 export const COMPOUND_COLORS: Record<string, string> = {
