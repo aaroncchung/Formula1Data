@@ -23,10 +23,6 @@ export function staticDataBasePath(): string {
   return process.env.NEXT_PUBLIC_STATIC_DATA_BASE_PATH || DEFAULT_STATIC_DATA_BASE_PATH;
 }
 
-export function apiBaseUrl(): string {
-  return staticDataBasePath();
-}
-
 export function dynamicApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_DYNAMIC_API_BASE_URL || DEFAULT_DYNAMIC_API_BASE_PATH;
 }
@@ -102,9 +98,7 @@ export const dynamicApi = {
     readDynamicJson<QueueIngestionResponse>("/api/ingestion/session", {
       method: "POST",
       body: JSON.stringify(payload)
-    }),
-  ingestionJob: (jobId: string) =>
-    readDynamicJson<SessionStatusResponse["job"]>(`/api/ingestion/jobs/${encodeURIComponent(jobId)}`)
+    })
 };
 
 async function readDynamicJson<T>(path: string, init: RequestInit = {}): Promise<T> {

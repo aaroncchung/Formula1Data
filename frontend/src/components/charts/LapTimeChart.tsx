@@ -11,7 +11,7 @@ import {
   YAxis
 } from "recharts";
 
-import { seriesToRows } from "@/lib/chart-utils";
+import { CHART_TOOLTIP_STYLE, seriesToRows } from "@/lib/chart-utils";
 import { formatMs } from "@/lib/format";
 import type { ChartSeries } from "@/types/domain";
 
@@ -25,7 +25,7 @@ export function LapTimeChart({ series }: { series: ChartSeries[] }) {
           <XAxis dataKey="lap" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
           <Tooltip
-            contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
+            contentStyle={CHART_TOOLTIP_STYLE}
             formatter={(value) => formatMs(Number(value))}
           />
           <Legend />

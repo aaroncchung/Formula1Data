@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Scatter, ScatterChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import type { PositionReplayFrame } from "@/types/domain";
 
 export function PositionReplay({ frames }: { frames: PositionReplayFrame[] }) {
@@ -28,7 +29,7 @@ export function PositionReplay({ frames }: { frames: PositionReplayFrame[] }) {
             <XAxis dataKey="x" type="number" stroke="#94a3b8" hide />
             <YAxis dataKey="y" type="number" stroke="#94a3b8" hide />
             <Tooltip
-              contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
+              contentStyle={CHART_TOOLTIP_STYLE}
               cursor={{ strokeDasharray: "3 3" }}
             />
             <Scatter data={data} fill="#f33d3d" name="Cars" />

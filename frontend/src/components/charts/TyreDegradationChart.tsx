@@ -11,6 +11,7 @@ import {
   YAxis
 } from "recharts";
 
+import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import { formatMs } from "@/lib/format";
 import type { Lap, TyreDegradationResult } from "@/types/domain";
 
@@ -39,7 +40,7 @@ export function TyreDegradationChart({
             />
             <Tooltip
               cursor={{ strokeDasharray: "3 3" }}
-              contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
+              contentStyle={CHART_TOOLTIP_STYLE}
               formatter={(value, name) =>
                 name === "lap_time_ms" ? formatMs(Number(value)) : String(value)
               }
