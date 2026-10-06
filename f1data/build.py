@@ -42,6 +42,7 @@ from f1data.identity import SessionIdentity, format_utc, identity_from_fastf1
 from f1data.policy import CLASSIFICATION_DATE_TOLERANCE, CLASSIFICATION_RECHECK_WINDOW
 from f1data.publish import Hold, Inputs, Pointer
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
+from f1data.standings import fetch_standings
 from f1data.store import ObjectStore
 
 _logger = logging.getLogger(__name__)
@@ -163,6 +164,11 @@ class Builder:
             and pointer.pipeline_version == layout.PIPELINE_VERSION
             and self._now() - identity.start_time > CLASSIFICATION_RECHECK_WINDOW
         )
+
+    def standings(self, year: int) -> dict[str, Any] | None:
+        """The championship standings of ``year`` as Jolpica has them now."""
+        with no_requests_to_f1():
+            return fetch_standings(self._fastf1, year)
 
     def build(self, inputs: Inputs) -> tuple[dict[str, bytes], Snapshot]:
         """The generation's files, and the snapshot re-measured from the archive."""

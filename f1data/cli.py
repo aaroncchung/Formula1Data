@@ -244,7 +244,8 @@ def _print_snapshot(snapshot: Snapshot) -> None:
 def run_build(args: argparse.Namespace) -> int:
     # Imported here so that fetching does not need the old normaliser on the path.
     from f1data.build import Builder
-    from f1data.publish import publish_index, publish_session
+    from f1data.publish import publish_index, publish_session, read_published
+    from f1data.standings import publish_standings
 
     store = _store(args.store)
     session_keys = args.session_key or sorted({snapshot.session_key for snapshot in list_snapshots(store)})
@@ -270,6 +271,19 @@ def run_build(args: argparse.Namespace) -> int:
             print(f"index ({layout.index_key()}): {index}")
             if index == "conflict":
                 failed += 1
+
+            seasons = set(args.season or []) | {pointer.identity.year for pointer in read_published(store)}
+            for year in sorted(seasons):
+                try:
+                    standings = publish_standings(store, year, builder.standings)
+                except Exception as exc:
+                    failed += 1
+                    logging.getLogger(__name__).exception("Standings for %s failed", year)
+                    print(f"standings {year}: FAILED: {type(exc).__name__}: {exc}")
+                    continue
+                print(f"standings {year} ({layout.standings_key(year)}): {standings}")
+                if standings == "conflict":
+                    failed += 1
     return 1 if failed else 0
 
 
