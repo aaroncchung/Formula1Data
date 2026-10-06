@@ -10,8 +10,6 @@ import {
   Flag,
   Gauge,
   LineChart,
-  Radio,
-  Settings,
   Trophy,
   Users
 } from "lucide-react";
@@ -28,9 +26,7 @@ const iconMap = {
   Standings: Trophy,
   Drivers: Users,
   Teams: Car,
-  Circuits: CircuitBoard,
-  Live: Radio,
-  Settings: Settings
+  Circuits: CircuitBoard
 };
 
 export function Sidebar() {

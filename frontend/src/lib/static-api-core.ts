@@ -11,7 +11,6 @@ import type {
   Meeting,
   PitStop,
   PositionReplayFrame,
-  QualifyingDeltaResult,
   RaceControlMessage,
   RacePaceResult,
   Result,
@@ -67,13 +66,16 @@ export type ArtifactReader = <T>(path: string) => Promise<T>;
 
 export type StaticApi = ReturnType<typeof createStaticApi>;
 
+// The fields are declared and assigned by hand, not as constructor parameter
+// properties, so Node's type stripping can load this module in the tests.
 export class ApiClientError extends Error {
-  constructor(
-    message: string,
-    public readonly payload: ApiErrorPayload,
-    public readonly apiBaseUrl: string
-  ) {
+  readonly payload: ApiErrorPayload;
+  readonly apiBaseUrl: string;
+
+  constructor(message: string, payload: ApiErrorPayload, apiBaseUrl: string) {
     super(message);
+    this.payload = payload;
+    this.apiBaseUrl = apiBaseUrl;
   }
 }
 
@@ -100,8 +102,6 @@ export function createStaticApi(readArtifact: ArtifactReader) {
       readSessionArtifact<RacePaceResult>(sessionId, "analysis/race-pace.json"),
     tyreDegradation: (sessionId: string) =>
       readSessionArtifact<TyreDegradationResult>(sessionId, "analysis/tyre-degradation.json"),
-    qualifyingDelta: (sessionId: string, driverA: string, driverB: string) =>
-      qualifyingDelta(sessionId, driverA, driverB),
     idealLaps: (sessionId: string) =>
       readOptionalSessionArtifact<IdealLapsResult>(sessionId, "analysis/ideal-laps.json"),
     teammateComparison: (sessionId: string) =>
@@ -116,9 +116,8 @@ export function createStaticApi(readArtifact: ArtifactReader) {
       readOptionalSessionArtifact<CarPerformanceResult>(sessionId, "analysis/car-performance.json"),
     pacePrediction: (sessionId: string) =>
       readOptionalSessionArtifact<PacePredictionResult>(sessionId, "analysis/pace-prediction.json"),
-    telemetryIndex: (sessionId: string) => readTelemetryIndex(sessionId),
-    telemetryLap: (sessionId: string, driver: string, lap: number) =>
-      readTelemetryLap(sessionId, driver, lap),
+    telemetryIndex: (sessionId: string) =>
+      readOptionalSessionArtifact<TelemetryIndex>(sessionId, "telemetry/index.json"),
     telemetryCompare: (sessionId: string, driverA: string, lapA: number, driverB: string, lapB: number) =>
       telemetryCompare(sessionId, driverA, lapA, driverB, lapB),
     positionReplay: async (sessionId: string) => {
@@ -130,12 +129,7 @@ export function createStaticApi(readArtifact: ArtifactReader) {
         );
       }
       return frames;
-    },
-    liveCurrentSession: async () => liveDisabled(),
-    liveTiming: async () => liveDisabled(),
-    liveRaceControl: async () => liveDisabled(),
-    livePositions: async () => liveDisabled(),
-    liveWeather: async () => liveDisabled()
+    }
   };
 
   async function readSeason(year: number): Promise<SeasonArtifact> {
@@ -157,32 +151,6 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     }
   }
 
-  async function readTelemetryIndex(sessionId: string): Promise<TelemetryIndex | null> {
-    try {
-      return await readSessionArtifact<TelemetryIndex>(sessionId, "telemetry/index.json");
-    } catch (error) {
-      if (isArtifactNotFound(error)) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  async function readTelemetryLap(
-    sessionId: string,
-    driver: string,
-    lap: number
-  ): Promise<TelemetrySample[]> {
-    const index = await readTelemetryIndex(sessionId);
-    const entry = index?.laps.find(
-      (item) => item.driver_code === driver.toUpperCase() && item.lap_number === lap
-    );
-    if (!entry) {
-      return [];
-    }
-    return readSessionArtifact<TelemetrySample[]>(sessionId, entry.path);
-  }
-
   async function telemetryCompare(
     sessionId: string,
     driverA: string,
@@ -190,7 +158,7 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     driverB: string,
     lapB: number
   ): Promise<TelemetryComparison | EmptyStateResponse> {
-    const index = await readTelemetryIndex(sessionId);
+    const index = await api.telemetryIndex(sessionId);
     if (!index || !index.laps.length) {
       return telemetryUnavailableState();
     }
@@ -267,62 +235,12 @@ export function createStaticApi(readArtifact: ArtifactReader) {
     return readSessionArtifact<TelemetrySample[]>(sessionId, entry.path);
   }
 
-  async function qualifyingDelta(
-    sessionId: string,
-    driverA: string,
-    driverB: string
-  ): Promise<QualifyingDeltaResult> {
-    const [laps, drivers] = await Promise.all([api.laps(sessionId), api.drivers(sessionId)]);
-    const fastestA = fastestLap(laps, driverA);
-    const fastestB = fastestLap(laps, driverB);
-    if (!fastestA || !fastestB) {
-      return {
-        session_id: sessionId,
-        driver_a: driverA.toUpperCase(),
-        driver_b: driverB.toUpperCase(),
-        sector_delta_ms: {},
-        telemetry: null,
-        caveats: ["A fastest lap could not be found for one or both drivers."]
-      };
-    }
-
-    const telemetry = await telemetryCompare(
-      sessionId,
-      driverA,
-      fastestA.lap_number,
-      driverB,
-      fastestB.lap_number
-    );
-    const caveats = isEmptyState(telemetry)
-      ? ["Telemetry is missing for at least one selected fastest lap."]
-      : [];
-
-    return {
-      session_id: sessionId,
-      driver_a: driverA.toUpperCase(),
-      driver_b: driverB.toUpperCase(),
-      sector_delta_ms: {
-        sector_1: delta(fastestA, fastestB, "sector_1_ms"),
-        sector_2: delta(fastestA, fastestB, "sector_2_ms"),
-        sector_3: delta(fastestA, fastestB, "sector_3_ms"),
-        lap: delta(fastestA, fastestB, "lap_time_ms")
-      },
-      telemetry: isEmptyState(telemetry) ? null : telemetry,
-      caveats
-    };
-  }
-
   return api;
 }
 
 function primarySession(catalog: CatalogArtifact): Session {
   const available = catalog.sessions.filter((session) => session.status !== "missing");
-  const sessions = available.length ? available : catalog.sessions;
-  const selected = [...sessions].sort((left, right) => {
-    const leftRank = sessionSortRank(left);
-    const rightRank = sessionSortRank(right);
-    return leftRank - rightRank;
-  }).at(-1);
+  const selected = latestSession(available.length ? available : catalog.sessions);
   if (!selected) {
     throw new ApiClientError(
       "No session artifacts are available",
@@ -338,9 +256,16 @@ function primarySession(catalog: CatalogArtifact): Session {
   return selected;
 }
 
+/** Where each session type falls within a race weekend. */
+export const SESSION_TYPE_ORDER: Record<string, number> = { FP1: 1, FP2: 2, FP3: 3, SQ: 4, S: 5, Q: 6, R: 7 };
+
+/** The newest session by year, then round, then place in the weekend. */
+export function latestSession(sessions: Session[]): Session | undefined {
+  return [...sessions].sort((left, right) => sessionSortRank(left) - sessionSortRank(right)).at(-1);
+}
+
 function sessionSortRank(session: Session): number {
-  const sessionOrder: Record<string, number> = { FP1: 1, FP2: 2, FP3: 3, SQ: 4, S: 5, Q: 6, R: 7 };
-  return session.year * 10000 + session.round * 10 + (sessionOrder[session.type.toUpperCase()] || 0);
+  return session.year * 10000 + session.round * 10 + (SESSION_TYPE_ORDER[session.type.toUpperCase()] || 0);
 }
 
 export async function safeApi<T>(loader: () => Promise<T>): Promise<ApiResult<T>> {
@@ -370,6 +295,9 @@ export function isEmptyState(value: unknown): value is EmptyStateResponse {
   return Boolean(value && typeof value === "object" && "reason" in value && !("enabled" in value));
 }
 
+// Nothing calls this since the live page was removed. It stays, with
+// `LiveDisabledResponse`, only because `api-server.ts` still re-exports it;
+// delete both, and the `enabled` check above, when that re-export goes.
 export function isLiveDisabled(value: unknown): value is LiveDisabledResponse {
   return Boolean(value && typeof value === "object" && "enabled" in value && value.enabled === false);
 }
@@ -397,17 +325,6 @@ function telemetryUnavailableState(): EmptyStateResponse {
     "No telemetry lap artifacts are available for this session.",
     "Generate telemetry artifacts to enable driver and lap comparisons."
   );
-}
-
-function liveDisabled(): LiveDisabledResponse {
-  return {
-    enabled: false,
-    reason: "Live mode is not part of the static historical deployment.",
-    setup: [
-      "Historical browsing reads committed JSON artifacts from /data.",
-      "Enable the optional Cloudflare Worker API when dynamic live timing is needed."
-    ]
-  };
 }
 
 function nearestByDistance(rows: TelemetrySample[], distance: number): TelemetrySample {
@@ -445,26 +362,6 @@ function driverMeta(driverCode: string, lapNumber: number, laps: Lap[], drivers:
     session: lap?.session_id || null,
     lap_number: lapNumber
   };
-}
-
-function fastestLap(laps: Lap[], driverCode: string): Lap | null {
-  const code = driverCode.toUpperCase();
-  const driverLaps = laps.filter(
-    (lap) => lap.driver_code === code && lap.lap_time_ms != null && !lap.is_deleted
-  );
-  if (!driverLaps.length) {
-    return null;
-  }
-  return driverLaps.reduce((fastest, lap) =>
-    Number(lap.lap_time_ms) < Number(fastest.lap_time_ms) ? lap : fastest
-  );
-}
-
-function delta(lapA: Lap, lapB: Lap, field: "sector_1_ms" | "sector_2_ms" | "sector_3_ms" | "lap_time_ms") {
-  if (lapA[field] == null || lapB[field] == null) {
-    return null;
-  }
-  return Number(lapB[field]) - Number(lapA[field]);
 }
 
 function isMissingFileError(cause: unknown): boolean {

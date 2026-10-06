@@ -1,5 +1,22 @@
 import type { ChartSeries, TelemetryComparison } from "@/types/domain";
 
+/** The Recharts tooltip box, shared so the charts cannot drift apart. */
+export const CHART_TOOLTIP_STYLE = { background: "#111722", border: "1px solid #283246", color: "#e5edf8" };
+
+/** Rows grouped by driver, in the order each driver first appears. */
+export function groupByDriver<T extends { driver_code: string }>(rows: T[]): Array<[string, T[]]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const group = groups.get(row.driver_code);
+    if (group) {
+      group.push(row);
+    } else {
+      groups.set(row.driver_code, [row]);
+    }
+  }
+  return Array.from(groups.entries());
+}
+
 export function seriesToRows(series: ChartSeries[]): Array<Record<string, number | string | null>> {
   const lapNumbers = new Set<string | number>();
   // One lookup table per series keeps the pivot linear in the number of points

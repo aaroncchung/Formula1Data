@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { CatalogArtifact } from "@/lib/static-api-core";
+import { latestSession, SESSION_TYPE_ORDER, type CatalogArtifact } from "@/lib/static-api-core";
 
 export function GlobalSessionPicker() {
   const pathname = usePathname();
@@ -26,7 +26,8 @@ export function GlobalSessionPicker() {
             (item) => item.year === Number(route[1]) && item.round === Number(route[2]) && item.type.toLowerCase() === route[3].toLowerCase() && item.status !== "missing"
           )
         : null;
-      const selected = routeSession || selectLatestSession(nextCatalog);
+      const selected =
+        routeSession || latestSession(nextCatalog.sessions.filter((item) => item.status !== "missing"));
       if (selected) {
         setYear(String(selected.year));
         setMeetingId(selected.meeting_id);
@@ -132,15 +133,8 @@ export function GlobalSessionPicker() {
   );
 }
 
-function selectLatestSession(catalog: CatalogArtifact) {
-  const order: Record<string, number> = { FP1: 1, FP2: 2, FP3: 3, SQ: 4, S: 5, Q: 6, R: 7 };
-  return [...catalog.sessions]
-    .filter((item) => item.status !== "missing")
-    .sort((a, b) => (a.year * 10000 + a.round * 10 + (order[a.type.toUpperCase()] || 0)) - (b.year * 10000 + b.round * 10 + (order[b.type.toUpperCase()] || 0)))
-    .at(-1);
-}
-
+// Unlike `latestSession`, an unknown session type sorts last here: this orders
+// the sessions of one weekend for the picker.
 function sessionOrder(type: string) {
-  const order: Record<string, number> = { FP1: 1, FP2: 2, FP3: 3, SQ: 4, S: 5, Q: 6, R: 7 };
-  return order[type.toUpperCase()] || 99;
+  return SESSION_TYPE_ORDER[type.toUpperCase()] || 99;
 }

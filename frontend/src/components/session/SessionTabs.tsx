@@ -18,6 +18,7 @@ import { WeatherTimeline } from "@/components/session/WeatherTimeline";
 import { PerformanceAnalysis } from "@/components/session/PerformanceAnalysis";
 import { StrategyAnalysis } from "@/components/session/StrategyAnalysis";
 import { TelemetryComparePanel } from "@/components/telemetry/TelemetryComparePanel";
+import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import { isEmptyState } from "@/lib/api";
 import type { TelemetryIndex } from "@/lib/static-api-core";
@@ -121,7 +122,7 @@ export function SessionTabs(props: SessionTabsProps) {
       {active === "Overview" ? <Overview {...props} /> : null}
       {active === "Lap Times" ? (
         <ChartPanel title="Lap Time Evolution" description="All available lap times by driver.">
-          <LapTimeChart series={props.lapTimes} />
+          <LapTimeChart series={props.lapTimes} drivers={props.drivers} />
         </ChartPanel>
       ) : null}
       {active === "Race Pace" ? <RacePaceView {...props} /> : null}
@@ -202,14 +203,14 @@ function Overview({ summary, drivers, laps, racePace, stints, pitStops }: Sessio
   );
 }
 
-function RacePaceView({ racePace, tyreDegradation, laps }: SessionTabsProps) {
+function RacePaceView({ racePace, tyreDegradation, laps, drivers }: SessionTabsProps) {
   return (
     <div className="space-y-5">
       <ChartPanel title="Driver Race Pace" description={racePace.caveats.join(" ")}>
         <RacePaceChart rows={racePace.drivers} />
       </ChartPanel>
-      <ChartPanel title="Tyre Degradation" description="Clean laps plotted by tyre age with fitted slope summaries.">
-        <TyreDegradationChart laps={laps} degradation={tyreDegradation} />
+      <ChartPanel title="Tyre Degradation" description="Lap time against tyre age for every driver, with the fitted slope of each stint.">
+        <TyreDegradationChart laps={laps} degradation={tyreDegradation} drivers={drivers} />
       </ChartPanel>
       <DataTable
         rows={racePace.drivers}
@@ -273,19 +274,19 @@ function TelemetryView({ telemetryComparison, telemetryIndex, summary }: Session
   return <TelemetryComparePanel sessionId={summary.session_id} initialComparison={telemetryComparison} availableLaps={telemetryIndex?.laps || []} />;
 }
 
-function ReplayView({ positionReplay }: SessionTabsProps) {
+function ReplayView({ positionReplay, drivers }: SessionTabsProps) {
   if (isEmptyState(positionReplay)) {
     return <EmptyState title="Position replay unavailable" detail={positionReplay.reason} />;
   }
   return (
     <ChartPanel title="Position Replay" description="Frame-based x/y replay from location telemetry.">
-      <PositionReplay frames={positionReplay} />
+      <PositionReplay frames={positionReplay} drivers={drivers} />
     </ChartPanel>
   );
 }
 
 function ResultsView({ results, drivers }: { results: Result[]; drivers: Driver[] }) {
-  const colors = Object.fromEntries(drivers.map((driver) => [driver.code, driver.team.color]));
+  const colors = teamColorByDriver(drivers);
   return (
     <DataTable
       rows={results}

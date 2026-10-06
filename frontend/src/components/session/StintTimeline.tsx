@@ -1,14 +1,10 @@
+import { groupByDriver } from "@/lib/chart-utils";
 import { COMPOUND_COLORS } from "@/lib/constants";
 import type { Stint } from "@/types/domain";
 
 export function StintTimeline({ stints }: { stints: Stint[] }) {
   const maxLap = Math.max(...stints.map((stint) => stint.end_lap), 1);
-  const drivers = Array.from(stints.reduce((groups, stint) => {
-    const rows = groups.get(stint.driver_code) || [];
-    rows.push(stint);
-    groups.set(stint.driver_code, rows);
-    return groups;
-  }, new Map<string, Stint[]>()).entries());
+  const drivers = groupByDriver(stints);
   return (
     <div className="space-y-3">
       {drivers.map(([driver, driverStints]) => (

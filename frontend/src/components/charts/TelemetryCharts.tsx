@@ -14,10 +14,12 @@ import {
 
 import { telemetryRows } from "@/lib/chart-utils";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
+import { boundsOf, fitBounds, project, type Viewport } from "@/lib/track-map";
 import type { TelemetryComparison } from "@/types/domain";
 
 const DRIVER_A = "#f33d3d";
 const DRIVER_B = "#2de0c8";
+const TRACE_VIEWPORT: Viewport = { width: 300, height: 300, padding: 24 };
 
 type TelemetryChartDef = {
   keyA: string;
@@ -164,7 +166,8 @@ function ComparisonMetric({ label, a, b, footer }: { label: string; a: string; b
 function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
   const points = (comparison.track_x || []).map((x, index) => ({ x, y: comparison.track_y?.[index] ?? null }));
   const valid = points.filter((point): point is { x: number; y: number } => point.x !== null && point.y !== null);
-  if (valid.length < 2) {
+  const bounds = valid.length < 2 ? null : boundsOf(valid);
+  if (!bounds) {
     return (
       <div className="rounded-md border border-dashed border-line bg-carbon/30 p-8 text-center">
         <div className="text-sm font-bold text-white">Track trace unavailable</div>
@@ -172,13 +175,9 @@ function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
       </div>
     );
   }
-  const minX = Math.min(...valid.map((point) => point.x));
-  const maxX = Math.max(...valid.map((point) => point.x));
-  const minY = Math.min(...valid.map((point) => point.y));
-  const maxY = Math.max(...valid.map((point) => point.y));
-  const width = Math.max(maxX - minX, 1);
-  const height = Math.max(maxY - minY, 1);
-  const normalized = valid.map((point) => `${24 + ((point.x - minX) / width) * 252},${276 - ((point.y - minY) / height) * 252}`).join(" ");
+  const projection = fitBounds(bounds, TRACE_VIEWPORT);
+  const placed = valid.map((point) => project(projection, point));
+  const normalized = placed.map((point) => `${point.x},${point.y}`).join(" ");
   return (
     <div className="rounded-md border border-line/70 bg-carbon/45 p-4">
       <div className="mb-3">
@@ -188,7 +187,7 @@ function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
       <svg className="mx-auto aspect-square w-full max-w-[360px]" viewBox="0 0 300 300" role="img" aria-label="Circuit outline from selected telemetry lap">
         <polyline points={normalized} fill="none" stroke="#111827" strokeWidth="11" strokeLinejoin="round" strokeLinecap="round" />
         <polyline points={normalized} fill="none" stroke="#e5edf8" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-        <circle cx={Number(normalized.split(" ")[0].split(",")[0])} cy={Number(normalized.split(" ")[0].split(",")[1])} r="5" fill={DRIVER_A} stroke="#fff" strokeWidth="2" />
+        <circle cx={placed[0].x} cy={placed[0].y} r="5" fill={DRIVER_A} stroke="#fff" strokeWidth="2" />
       </svg>
       <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-500">
         <span className="h-2 w-2 rounded-full bg-redline" /> Start / finish
