@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { DriverBadge } from "@/components/session/Badges";
 import { driverStyle, teamColorByDriver, teamDriverStyles } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
+import { boundsOf, fitBounds, project, type Viewport } from "@/lib/track-map";
 import type {
   CarPerformanceResult,
   CornerAnalysisResult,
@@ -17,6 +18,7 @@ import type {
 
 /** The dash of the second team-mate, scaled up for the thick line of the track map. */
 const TRACK_DASH = "12 7";
+const DOMINANCE_VIEWPORT: Viewport = { width: 600, height: 400, padding: 25 };
 
 type PerformanceAnalysisProps = {
   drivers: Driver[];
@@ -119,21 +121,18 @@ function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult;
   // shared solid/dashed styles here, not just the team colour.
   const styles = teamDriverStyles(drivers);
   const sectors = result.minisectors.filter((sector) => sector.midpoint.x != null && sector.midpoint.y != null && sector.winner_driver_code);
-  if (sectors.length < 2) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
-  const minX = Math.min(...sectors.map((sector) => Number(sector.midpoint.x)));
-  const maxX = Math.max(...sectors.map((sector) => Number(sector.midpoint.x)));
-  const minY = Math.min(...sectors.map((sector) => Number(sector.midpoint.y)));
-  const maxY = Math.max(...sectors.map((sector) => Number(sector.midpoint.y)));
-  const width = Math.max(maxX - minX, 1);
-  const height = Math.max(maxY - minY, 1);
-  const point = (x: number, y: number) => ({ x: 25 + ((x - minX) / width) * 550, y: 375 - ((y - minY) / height) * 350 });
+  const midpoints = sectors.map((sector) => ({ x: Number(sector.midpoint.x), y: Number(sector.midpoint.y) }));
+  const bounds = sectors.length < 2 ? null : boundsOf(midpoints);
+  if (!bounds) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
+  const projection = fitBounds(bounds, DOMINANCE_VIEWPORT);
+  const placed = midpoints.map((midpoint) => project(projection, midpoint));
   const winners = [...new Set(sectors.map((sector) => sector.winner_driver_code).filter((winner): winner is string => Boolean(winner)))];
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
       <svg viewBox="0 0 600 400" className="min-h-[280px] w-full rounded-md border border-line/70 bg-carbon/50 p-3" role="img" aria-label="Track dominance by driver">
         {sectors.slice(1).map((sector, index) => {
-          const from = point(Number(sectors[index].midpoint.x), Number(sectors[index].midpoint.y));
-          const to = point(Number(sector.midpoint.x), Number(sector.midpoint.y));
+          const from = placed[index];
+          const to = placed[index + 1];
           const style = driverStyle(styles, sector.winner_driver_code || "");
           return (
             <line
