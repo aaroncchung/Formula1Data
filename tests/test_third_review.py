@@ -298,7 +298,7 @@ def test_fetch_due_looks_again_at_a_session_published_short(tmp_path, monkeypatc
     monkeypatch.setattr(
         cli_module,
         "fetch_classified_laps",
-        lambda fastf1, year, round_number, session_type: {"1": 11, "2": 10, "3": 10},
+        lambda fastf1, year, round_number, session_type, session_date: {"1": 11, "2": 10, "3": 10},
     )
     arguments = ["fetch-due", "--store", str(tmp_path / "bucket"), "--season", "2026", "--dry-run"]
 

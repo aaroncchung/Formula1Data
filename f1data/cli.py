@@ -206,7 +206,7 @@ def run_fetch_due(args: argparse.Namespace) -> int:
             def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
                 try:
                     return fetch_classified_laps(
-                        fastf1, session.year, session.round, session.session_type
+                        fastf1, session.year, session.round, session.session_type, session.start_time.date()
                     )
                 except ClassificationUnavailable:
                     return None

@@ -25,6 +25,7 @@ from typing import Any
 import pandas as pd
 
 from f1data.coverage import RACE_LIKE_SESSION_TYPES
+from f1data.policy import CLASSIFICATION_DATE_TOLERANCE
 
 # Jolpica's column and the FastF1 result column it replaces. Every column that
 # reaches a build is in the fingerprint, so that a correction to any of them,
@@ -113,7 +114,7 @@ def fetch_classification(
             f"first-lap times for {year} round {round_number}",
             sleep,
         )
-        first_lap_ms = _first_lap_ms(laps, frame)
+        first_lap_ms = _first_lap_ms(laps, frame, _race_date(response))
     return Classification(
         rows=rows,
         fingerprint=fingerprint(rows, first_lap_ms),
@@ -124,17 +125,35 @@ def fetch_classification(
 
 
 def fetch_classified_laps(
-    fastf1: Any, year: int, round_number: int, session_type: str, sleep: Any = time.sleep
+    fastf1: Any,
+    year: int,
+    round_number: int,
+    session_type: str,
+    session_date: date,
+    sleep: Any = time.sleep,
 ) -> dict[str, int]:
     """Driver number to the laps Jolpica classifies the driver with, uncached.
 
     For judging a snapshot. It is the one request of the two that says how
     many laps a driver should have, and the fetch planner asks it of a
     session on every run: it has no use for first-lap times.
+
+    ``session_date`` is the day the session was held. The round asked for
+    comes from a calendar, and Jolpica's numbering can be a step ahead of it
+    or behind: an answer about some other race is no answer.
     """
     ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
-    _, _, rows = _result(fastf1, ergast, year, round_number, session_type.upper(), sleep)
+    response, _, rows = _result(fastf1, ergast, year, round_number, session_type.upper(), sleep)
+    if not is_result_of(_race_date(response), session_date):
+        raise ClassificationUnavailable(
+            f"Jolpica's {year} round {round_number} is not the race of {session_date.isoformat()}"
+        )
     return Classification(rows=rows, fingerprint="").laps_by_number
+
+
+def is_result_of(race_date: date | None, session_date: date) -> bool:
+    """Whether a result dated ``race_date`` can be the result of a session held on ``session_date``."""
+    return race_date is not None and abs(race_date - session_date) <= CLASSIFICATION_DATE_TOLERANCE
 
 
 def _result(
@@ -180,7 +199,7 @@ def _ask(fastf1: Any, request: Any, what: str, sleep: Any) -> Any:
     raise AssertionError("unreachable")
 
 
-def _first_lap_ms(response: Any, results: Any) -> dict[str, int]:
+def _first_lap_ms(response: Any, results: Any, result_date: date | None) -> dict[str, int]:
     """Driver number to first-lap time. Empty when Jolpica has no lap times yet.
 
     Jolpica names the driver of a lap by its own id, and the result is where
@@ -189,6 +208,15 @@ def _first_lap_ms(response: Any, results: Any) -> dict[str, int]:
     frames = getattr(response, "content", None) or []
     if not frames or frames[0].empty or not {"driverId", "number"} <= set(results.columns):
         return {}
+    # The two were asked for one after the other, by round. If the calendar
+    # at Jolpica moved in between, the second answer is about another race,
+    # with most of the same drivers in it. Both say which race they are of.
+    lap_date = _race_date(response)
+    if lap_date is None or lap_date != result_date:
+        raise ClassificationUnavailable(
+            "Jolpica answered with the result of one race and the first-lap times of another: "
+            f"{result_date} and {lap_date}"
+        )
     laps = frames[0]
     if not {"driverId", "time"} <= set(laps.columns):
         return {}

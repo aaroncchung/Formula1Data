@@ -143,13 +143,22 @@ Every reader of the archive is given a corrected snapshot with the corrected
 figures, so the fetch stage, the choice of snapshot and the build always judge
 the same thing.
 
+A correction is written against the one that was read, so a build never
+replaces one it has not seen, and one written by a newer pipeline version is
+left alone, as a newer version's pointer is. A pointer records which figures
+its session was judged by; if they are corrected afterwards the session is
+decided again, and the build that follows measures the feeds once more, so a
+wrong correction does not outlive the next run.
+
 ## When a session is built again
 
-The pointer records what its generation was built from: the snapshot, the
-fingerprint of what Jolpica supplied (the classification and, for a race, each
-driver's first-lap time), the calendar entry (year, round, names and a checksum
-of the whole calendar row, under `also`), and the pipeline version. `build`
-builds a session again when any of them differs from what it would use now.
+The pointer records what its generation was built from: the snapshot and a
+checksum of its record (`record`), the fingerprint of what Jolpica supplied
+(the classification and, for a race, each driver's first-lap time), the
+calendar entry (year, round, names and a checksum of the whole calendar row,
+under `also`), and the pipeline version. `build` builds a session again when
+any of them differs from what it would use now. Jolpica's two answers are used
+together only when both say they are of the same race.
 
 Those are looked up once, after the pointer is read, on every attempt, and the
 calendar again before the index is written: a publisher never decides from

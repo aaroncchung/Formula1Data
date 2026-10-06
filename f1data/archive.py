@@ -38,6 +38,7 @@ from f1data.coverage import (
     apply_classification,
     evaluate_coverage,
     f1_does_not_hold,
+    feed_figures,
     weakest_share,
 )
 from f1data.extras import CIRCUIT_INFO, circuit_corner_count
@@ -69,10 +70,21 @@ class Snapshot:
     requests_by_host: dict[str, dict[str, int]] = field(default_factory=dict)
     # What F1 last answered for each feed it was asked for, by file name.
     feed_status: dict[str, Any] = field(default_factory=dict)
+    # Set when the snapshot is listed, about the correction beside it, if
+    # there is one: the version of that object, and the pipeline version that
+    # wrote it. Neither is part of the snapshot.
+    correction_etag: str | None = field(default=None, compare=False, repr=False)
+    corrected_by: int | None = field(default=None, compare=False, repr=False)
 
     @property
     def session_key(self) -> int:
         return self.identity.session_key
+
+    @property
+    def record_fingerprint(self) -> str:
+        """Of what the record says about the feeds. A pointer keeps it, so a
+        record corrected after a session was published is noticed."""
+        return f"sha256:{hashlib.sha256(dump_json(feed_figures(self.coverage))).hexdigest()}"
 
     def shortfalls(self) -> list[Shortfall]:
         # Judged with the bars in this code, not the ones at fetch time, so a
@@ -248,27 +260,44 @@ def write_remeasurement(
     feeds hold, not what a faulty record claimed (rules 3 and 6).
 
     The figures are a function of the archived feeds and of the code that
-    measures them, so two builds writing here write the same thing.
+    measures them, so two builds of one pipeline version write the same
+    thing. Builds of two versions may not, and then the newer one is right:
+    a correction written by a newer pipeline version is never replaced
+    (``ValueError``; the caller is expected to have looked). And the write is
+    made against the correction this snapshot was listed with, so that one
+    another build has written since is not replaced unread
+    (``PreconditionFailed``).
     """
+    if (snapshot.corrected_by or 0) > layout.PIPELINE_VERSION:
+        raise ValueError(
+            f"Snapshot {snapshot.snapshot_id} was measured by pipeline version {snapshot.corrected_by}"
+        )
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    store.put(
-        f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{layout.REMEASUREMENT_NAME}",
-        dump_json(
-            {
-                "schema_version": SNAPSHOT_SCHEMA_VERSION,
-                "snapshot_id": snapshot.snapshot_id,
-                "session_key": snapshot.session_key,
-                "measured_at": format_utc(now),
-                "pipeline_version": layout.PIPELINE_VERSION,
-                "coverage": coverage,
-            }
-        ),
+    key = f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{layout.REMEASUREMENT_NAME}"
+    data = dump_json(
+        {
+            "schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "snapshot_id": snapshot.snapshot_id,
+            "session_key": snapshot.session_key,
+            "measured_at": format_utc(now),
+            "pipeline_version": layout.PIPELINE_VERSION,
+            "coverage": coverage,
+        }
     )
+    if snapshot.correction_etag is None:
+        store.put(key, data, if_absent=True)
+    else:
+        store.put(key, data, if_match=snapshot.correction_etag)
 
 
 def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot:
     """The snapshot with the figures a build measured from its feeds, if they can be read."""
     found = store.get(key)
+    if found is None:
+        return snapshot
+    # Whatever is there, a build that writes a correction writes it against
+    # this version, and leaves it alone if a newer pipeline version wrote it.
+    snapshot = replace(snapshot, correction_etag=found.etag)
     # A build loads its session with Jolpica out of reach, so what it measured
     # says nothing of the classification. That stays as the fetch recorded it.
     recorded = {
@@ -276,13 +305,12 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         for driver in snapshot.coverage.get("drivers", {}).values()
     }
     try:
-        payload = json.loads(found.data) if found is not None else None
+        payload = json.loads(found.data)
+        if payload["schema_version"] != SNAPSHOT_SCHEMA_VERSION or payload["snapshot_id"] != snapshot.snapshot_id:
+            return snapshot
+        snapshot = replace(snapshot, corrected_by=int(payload["pipeline_version"]))
         coverage = payload["coverage"]
-        if (
-            payload["schema_version"] != SNAPSHOT_SCHEMA_VERSION
-            or payload["snapshot_id"] != snapshot.snapshot_id
-            or coverage["measurement_version"] != MEASUREMENT_VERSION
-        ):
+        if coverage["measurement_version"] != MEASUREMENT_VERSION:
             return snapshot
         drivers = {
             code: {**driver, "classified_laps": recorded.get(str(driver.get("number")))}

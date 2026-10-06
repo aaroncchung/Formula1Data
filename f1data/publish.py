@@ -67,10 +67,16 @@ class Inputs:
     also: Any = None
 
     @property
-    def key(self) -> tuple[str, str | None, Any]:
-        """What a candidate was built from. A candidate built before a lost
-        write is published only if this has not moved."""
-        return (self.snapshot.snapshot_id, self.classification_fingerprint, self.also)
+    def key(self) -> tuple[str, str | None, Any, str]:
+        """What a candidate was built from, and judged by. A candidate built
+        before a lost write is published only if this has not moved.
+
+        The last part is the snapshot's record as judged. It can move with
+        the rest standing still, when a record is corrected in between, and a
+        pointer says whether its session met the bars.
+        """
+        judged_by = hashlib.sha256(dump_json(self.snapshot.coverage)).hexdigest()
+        return (self.snapshot.snapshot_id, self.classification_fingerprint, self.also, judged_by)
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,14 @@ class DecideAgain(RuntimeError):
     """
 
 
+class NewerPipeline(RuntimeError):
+    """Raised by a build that found a newer pipeline version has been at its inputs.
+
+    The same rule as for a pointer a newer version wrote (rule 2): what the
+    newer version did is left alone, and the session is this run's no longer.
+    """
+
+
 @dataclass(frozen=True)
 class Pointer:
     session_key: int
@@ -114,6 +128,9 @@ class Pointer:
     # ``Inputs.also`` of the build this points at. With the snapshot and the
     # classification it is everything the generation was made from.
     also: Any = None
+    # The snapshot's record of its feeds, as it stood when this was written:
+    # ``Snapshot.record_fingerprint``. A record can be corrected afterwards.
+    record: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -127,6 +144,7 @@ class Pointer:
             "snapshot_id": self.snapshot_id,
             "classification_fingerprint": self.classification_fingerprint,
             "also": self.also,
+            "record": self.record,
             "coverage": {"complete": self.complete, "shortfalls": self.shortfalls},
             "published_at": self.published_at,
             "previous_generation": self.previous_generation,
@@ -154,6 +172,7 @@ class Pointer:
                 published_at=str(payload["published_at"]),
                 previous_generation=payload.get("previous_generation"),
                 also=payload.get("also"),
+                record=payload.get("record"),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise PointerError(f"Pointer for session {session_key} is invalid: {exc}") from exc
@@ -173,11 +192,12 @@ class Pointer:
 class Candidate:
     """A generation that has been uploaded and is waiting for its pointer."""
 
-    inputs_key: tuple[str, str | None, Any]
+    inputs_key: tuple[str, str | None, Any, str]
     generation: str
     manifest_size_bytes: int
     complete: bool
     shortfalls: list[dict[str, Any]]
+    record: str
 
 
 @dataclass(frozen=True)
@@ -187,7 +207,8 @@ class Outcome:
     ``published``   the pointer now names a new generation
     ``current``     the published session already matches the inputs
     ``superseded``  another publisher got there first with what was needed
-    ``newer``       a newer pipeline version published it; left alone
+    ``newer``       a newer pipeline version published it, or corrected the
+                    record it would be built from; left alone
     ``waiting``     not publishable yet: no classification, or short of a bar
                     with the retry window still open
     ``no_snapshot`` nothing in the archive to build from
@@ -242,6 +263,10 @@ def rebuild_reason(pointer: Pointer | None, inputs: Inputs) -> str | None:
         # The same snapshot and the same result, built under another calendar
         # entry, is a build with another round or another name in it.
         return "the calendar entry changed"
+    if pointer.record != inputs.snapshot.record_fingerprint:
+        # Someone has corrected the record since. Whether they were right is
+        # for a build to find out, by measuring the feeds again.
+        return "the snapshot's record changed"
     return None
 
 
@@ -365,6 +390,13 @@ def publish_session(
                 _logger.info("Session %s: %s; deciding again", session_key, exc)
                 unsettled = str(exc)
                 continue
+            except NewerPipeline as exc:
+                return Outcome(
+                    "newer",
+                    session_key,
+                    reason=str(exc),
+                    generation=pointer.generation if pointer is not None else None,
+                )
             generation, manifest_size = upload_generation(store, inputs.snapshot.identity, files)
             judged = measured or inputs.snapshot
             candidate = Candidate(
@@ -373,6 +405,7 @@ def publish_session(
                 manifest_size_bytes=manifest_size,
                 complete=judged.complete,
                 shortfalls=[shortfall.to_json() for shortfall in judged.shortfalls()],
+                record=judged.record_fingerprint,
             )
 
         replacement = Pointer(
@@ -390,6 +423,7 @@ def publish_session(
             published_at=format_utc(now()),
             previous_generation=pointer.generation if pointer is not None else None,
             also=inputs.also,
+            record=candidate.record,
         )
         try:
             _conditional_put(store, layout.pointer_key(session_key), dump_json(replacement.to_json()), etag)
