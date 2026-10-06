@@ -1,4 +1,5 @@
 import { createArtifactStore } from "./artifact-store.mjs";
+import { getPublishedData, isPublishedDataKey } from "./published-data.mjs";
 import { createRepository } from "./repository.mjs";
 import { enqueueIngestionJob, resolveSessionStatus } from "./session-status.mjs";
 import {
@@ -158,21 +159,28 @@ async function getArtifact(request, env) {
   } catch (error) {
     throw new HttpError(400, "invalid_artifact_path", error instanceof Error ? error.message : "Invalid path");
   }
+  if (isPublishedDataKey(artifactPath)) {
+    // The versioned layout is decided before the legacy allowlist and never
+    // reaches the artifact store, whose static fallback must not apply to it.
+    const published = await getPublishedData(env, artifactPath, request);
+    return published || artifactNotFound(artifactPath);
+  }
   if (!isPublicArtifactPath(artifactPath)) {
     return json({ code: "artifact_not_found", message: "Artifact was not found" }, 404);
   }
   const artifact = await createArtifactStore(env).get(artifactPath, request);
-  if (!artifact) {
-    return json(
-      {
-        code: "artifact_not_found",
-        message: "Artifact was not found",
-        details: { path: artifactPath }
-      },
-      404
-    );
-  }
-  return artifact;
+  return artifact || artifactNotFound(artifactPath);
+}
+
+function artifactNotFound(artifactPath) {
+  return json(
+    {
+      code: "artifact_not_found",
+      message: "Artifact was not found",
+      details: { path: artifactPath }
+    },
+    404
+  );
 }
 
 export async function reconcileStaleIngestionJobs(env, now = new Date()) {
