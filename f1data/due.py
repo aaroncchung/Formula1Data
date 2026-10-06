@@ -20,10 +20,11 @@ the one a build would publish from, and the two cannot disagree for long.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from f1data import layout
 from f1data.archive import Snapshot, plausible_fetch_time
 from f1data.coverage import CLASSIFICATION_BAR, refetch_could_help
 from f1data.policy import (
@@ -42,6 +43,24 @@ from f1data.schedule import ScheduledSession
 class FetchPlan:
     session: ScheduledSession
     reason: str
+
+    @property
+    def attempt_key(self) -> str:
+        """Where a failed fetch of this session is noted."""
+        return layout.attempt_key(self.session.year, self.session.session_type, self.session.start_time_utc or "")
+
+
+def least_recently_failed_first(plans: list[FetchPlan], failed_at: Mapping[str, datetime]) -> list[FetchPlan]:
+    """The plans in the order a run should take them.
+
+    Sessions whose fetch has not failed come first, oldest first, as planned.
+    After them the ones that failed, the longest ago first. A batch may be
+    cut short, by a limit or because nothing is answering; taken in this
+    order, every session is tried before any is tried a second time, so no
+    session that keeps failing can keep the others from their turn.
+    """
+    never = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(plans, key=lambda plan: failed_at.get(plan.attempt_key, never))
 
 
 def plan_fetches(
@@ -118,14 +137,19 @@ def plan_fetches(
         # stamped with a time that has not come tells nothing, and if none
         # tells anything the session is fetched again now: that fetch gets a
         # stamp from this machine, and the clocks start from it.
-        fetched = [
-            stamp for snapshot in current if (stamp := plausible_fetch_time(snapshot, now)) is not None
+        believable = [
+            (stamp, snapshot)
+            for snapshot in current
+            if (stamp := plausible_fetch_time(snapshot, now)) is not None
         ]
-        if fetched:
+        if believable:
+            fetched = [stamp for stamp, _ in believable]
             if now < min(fetched) + RETRY_WINDOW:
                 interval = RETRY_INTERVAL
             else:
-                latest = max(current, key=lambda snapshot: snapshot.fetched_at)
+                # What F1 answered last, by a stamp that can be believed. A
+                # fetch stamped in the future is nobody's latest word.
+                _, latest = max(believable, key=lambda pair: pair[0])
                 if latest.missing_only_what_f1_does_not_hold():
                     continue
                 interval = SLOW_RETRY_INTERVAL

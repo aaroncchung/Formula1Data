@@ -172,15 +172,18 @@ def f1_is_answering(years: Iterable[int], timeout: float = 30.0) -> bool:
     import requests
     from fastf1 import _api
 
-    for year in years:
-        try:
-            with requests.get(
-                f"{_api.base_url}/static/{year}/Index.json", headers=_api.headers, stream=True, timeout=timeout
-            ) as response:
-                if response.status_code == 200:
-                    return True
-        except requests.RequestException:
-            continue
+    # FastF1 fetches from its mirror when F1 refuses, so the mirror answering
+    # is the archive answering.
+    for base in (_api.base_url, _api.base_url_mirror):
+        for year in years:
+            try:
+                with requests.get(
+                    f"{base}/static/{year}/Index.json", headers=_api.headers, stream=True, timeout=timeout
+                ) as response:
+                    if response.status_code == 200:
+                        return True
+            except requests.RequestException:
+                continue
     return False
 
 

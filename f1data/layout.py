@@ -44,6 +44,9 @@ FORMAT_VERSION = 1
 PIPELINE_VERSION = 5
 
 ARCHIVE_PREFIX = "archive/"
+# Notes of fetches that failed, by calendar entry. Not part of the archive:
+# they order the next run's fetches and nothing else reads them.
+ATTEMPTS_PREFIX = f"{ARCHIVE_PREFIX}attempts/"
 SNAPSHOT_MARKER = "snapshot.json"
 # Beside a snapshot whose record a build found to disagree with its feeds.
 REMEASUREMENT_NAME = "remeasured.json"
@@ -51,6 +54,18 @@ MANIFEST_NAME = "manifest.json"
 
 _GENERATION_ID = re.compile(r"^[a-f0-9]{64}$")
 _SNAPSHOT_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$")
+
+
+def attempt_key(year: int, session_type: str, start_time_utc: str) -> str:
+    """Where a failed fetch of a calendar entry is noted.
+
+    By what the calendar says of the session, since a session that has never
+    been fetched has no session key yet.
+    """
+    start = "".join(character for character in start_time_utc if character.isalnum())
+    if not start or not session_type.isalnum():
+        raise ValueError(f"Not a calendar entry: {session_type!r} at {start_time_utc!r}")
+    return f"{ATTEMPTS_PREFIX}{int(year)}/{start}-{session_type.upper()}.json"
 
 
 def snapshot_from_marker_key(key: str) -> tuple[int, str] | None:
