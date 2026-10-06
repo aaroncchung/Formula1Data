@@ -62,6 +62,17 @@ MAX_SLOPE_RELATIVE_STANDARD_ERROR = 0.25
 # never taken for the corner. Laps disagree about distance by about 1%, which
 # on the longest circuit is 70 m.
 OFFICIAL_CORNER_SEARCH_M = 200.0
+# And the sample has to be at the corner. The corners of the 2026 circuits lie
+# within 20 m of the line a fast lap takes, so a lap whose samples never come
+# this near one did not go through it: it stopped before the corner, or its
+# position data did. Both limits are needed. In the 2026 Monaco race
+# Verstappen's only lap ends at the chicane, 2,107 m into a lap of 3,278 m.
+# Tabac and the swimming pool, which he never reached, are within 50 m of the
+# road out of Sainte Devote and of the grid, where he had been two kilometres
+# of lap earlier.
+OFFICIAL_CORNER_REACH_M = 50.0
+# ``x`` and ``y`` are F1's position data, which is in tenths of a metre.
+POSITION_UNITS_PER_METRE = 10.0
 # A driver who does not brake for a corner still has a slowest point near it.
 # It is looked for this far either side of the corner, and never past the
 # midpoint to the next one.
@@ -178,10 +189,14 @@ def calculate_corner_analysis(
     ``corner_source``. Without them, or when none can be found on any lap,
     corners are inferred from where the drivers brake, as before (AR-17).
     """
-    representatives, samples = representative_telemetry_laps(laps, telemetry)
+    by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
+    representatives, samples = representative_telemetry_laps(laps, by_lap)
     events_by_driver = {driver: _braking_events(driver, rows) for driver, rows in samples.items()}
+    # A driver who retires early is here with whatever lap they managed.
+    usual_end = _usual_lap_end(laps, by_lap)
+    whole = {driver: _runs_a_whole_lap(rows, usual_end) for driver, rows in samples.items()}
     official = _official_corner_rows(
-        _usable_corners(corners), samples, events_by_driver, reference_lap_length_m
+        _usable_corners(corners), samples, events_by_driver, reference_lap_length_m, usual_end, whole
     )
     if official is not None:
         caveats = [
@@ -192,11 +207,20 @@ def calculate_corner_analysis(
             f"speed within {OFFICIAL_CORNER_WINDOW_M:.0f} m of it and the exit speed are given.",
             "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
         ]
-        unplaced = sorted(driver for driver, rows in samples.items() if not _has_position(rows))
+        unplaced = sorted(
+            driver for driver, rows in samples.items() if whole[driver] and not _has_position(rows)
+        )
         if unplaced:
             caveats.append(
                 f"No position data on the lap of: {', '.join(unplaced)}. Their corners are found by "
                 "distance along the lap, which can be tens of metres out."
+            )
+        short = sorted(driver for driver in samples if not whole[driver])
+        if short:
+            caveats.append(
+                f"Not the length of a normal lap (it stops short, or started from the grid): "
+                f"{', '.join(short)}. Corners are found on such a lap by position alone, so one it "
+                "did not reach, or has no position data at, has no figures for that driver."
             )
         return {
             "session_id": session_id,
@@ -307,19 +331,27 @@ def _official_corner_rows(
     samples: dict[str, list[dict[str, Any]]],
     events_by_driver: dict[str, list[dict[str, Any]]],
     reference_lap_length_m: float | None,
+    usual_lap_length_m: float,
+    whole: dict[str, bool],
 ) -> list[dict[str, Any]] | None:
-    """Each official corner with every driver's figures for it, or None if no lap can place one."""
+    """Each official corner with every driver's figures for it, or None if no lap can place one.
+
+    ``whole`` says, by driver, whether the lap is the length of a normal lap,
+    which is ``usual_lap_length_m``.
+    """
     if not corners:
         return None
     by_corner: list[dict[str, dict[str, Any]]] = [{} for _ in corners]
     placed_at: list[list[float]] = [[] for _ in corners]
     for driver, rows in sorted(samples.items()):
-        scale = _lap_length(rows) / reference_lap_length_m if reference_lap_length_m else 1.0
-        found = [
-            (distance, index)
-            for index, corner in enumerate(corners)
-            if (distance := _corner_distance_on_lap(rows, corner, scale)) is not None
-        ]
+        # The official distances are along a lap of the reference length, and
+        # are scaled to this lap's. A lap that stops short, or that started
+        # from the grid, is not a lap long: its corners are about where a
+        # normal lap has them, and its distance alone does not say where.
+        length = _lap_length(rows) if whole[driver] else usual_lap_length_m
+        scale = length / reference_lap_length_m if reference_lap_length_m else 1.0
+        distances = [_corner_distance_on_lap(rows, corner, scale, whole[driver]) for corner in corners]
+        found = [(distance, index) for index, distance in enumerate(distances) if distance is not None]
         # In the order they come round the lap, each corner owns the track
         # from half-way back to the one before to half-way on to the next.
         found.sort()
@@ -364,27 +396,34 @@ def _official_corner_rows(
 
 
 def _corner_distance_on_lap(
-    rows: list[dict[str, Any]], corner: dict[str, Any], scale: float
+    rows: list[dict[str, Any]], corner: dict[str, Any], scale: float, by_distance: bool
 ) -> float | None:
-    """How far round this lap the corner is, by the lap's own distance."""
+    """How far round this lap the corner is, by the lap's own distance. None if the lap does not show it.
+
+    ``scale`` turns the corner's official distance into this lap's.
+    ``by_distance`` says whether that is good enough to place the corner by
+    when the lap has no position data there.
+    """
     expected = corner["distance_m"] * scale if corner["distance_m"] is not None else None
     if corner["x"] is not None and corner["y"] is not None:
-        placed = [row for row in rows if _number(row.get("x")) and _number(row.get("y"))]
-        if expected is not None:
-            placed = [
-                row for row in placed if abs(row["distance_m"] - expected) <= OFFICIAL_CORNER_SEARCH_M
-            ] or placed
-        if placed:
-            nearest = min(
-                placed,
-                key=lambda row: (
-                    (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2,
-                    row["distance_m"],
-                ),
-            )
-            return float(nearest["distance_m"])
-    # A lap with no position data can only be read by distance.
-    return expected
+        reach = (OFFICIAL_CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2
+        # (how far from the corner, how far round the lap) of each sample at the corner.
+        at_corner = []
+        for row in rows:
+            if not (_number(row.get("x")) and _number(row.get("y"))):
+                continue
+            if expected is not None and abs(row["distance_m"] - expected) > OFFICIAL_CORNER_SEARCH_M:
+                continue
+            off = (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2
+            if off <= reach:
+                at_corner.append((off, float(row["distance_m"])))
+        if at_corner:
+            return min(at_corner)[1]
+    # No position data where the corner is. A whole lap can still be read by
+    # distance, as far as its samples run.
+    if by_distance and expected is not None and rows[0]["distance_m"] <= expected <= rows[-1]["distance_m"]:
+        return expected
+    return None
 
 
 def _slowest_point_near(
@@ -885,7 +924,6 @@ def fastest_complete_telemetry_laps(
 
     # (lap time, lap number, lap) per driver: sorts fastest first, earliest on a tie.
     candidates: dict[str, list[tuple[float, int, dict[str, Any]]]] = defaultdict(list)
-    ends = []
     for lap in clean_laps(laps):
         driver = str(lap.get("driver_code") or "").upper()
         number = lap_number(lap) or 0
@@ -893,10 +931,7 @@ def fastest_complete_telemetry_laps(
         if lap_time is None or not by_lap.lap_sample_count((driver, number)):
             continue
         candidates[driver].append((lap_time, number, lap))
-        ends.append(by_lap.lap_end_m((driver, number)))
-    # The length of a normal lap is not an input, so take it from the laps
-    # themselves: most clean laps are complete, and the median ignores the rest.
-    usual_end = float(median(ends)) if ends else 0.0
+    usual_end = _usual_lap_end(laps, by_lap)
 
     representatives = []
     selected: dict[str, list[dict[str, Any]]] = {}
@@ -913,12 +948,33 @@ def fastest_complete_telemetry_laps(
     return representatives, selected, sorted(drivers - set(selected))
 
 
+def _usual_lap_end(laps: list[dict[str, Any]], by_lap: Any) -> float:
+    """How far the telemetry of a normal lap runs, or 0 when no lap says.
+
+    The length of a normal lap is not an input, so it is taken from the laps
+    themselves: most clean laps are complete, and the median ignores the rest.
+    """
+    ends = []
+    for lap in clean_laps(laps):
+        key = (str(lap.get("driver_code") or "").upper(), lap_number(lap) or 0)
+        if _float(lap.get("lap_time_ms")) is not None and by_lap.lap_sample_count(key):
+            ends.append(by_lap.lap_end_m(key))
+    return float(median(ends)) if ends else 0.0
+
+
+def _runs_a_whole_lap(rows: list[dict[str, Any]], usual_end: float) -> bool:
+    """True when prepared telemetry is the length of a normal lap, or there is no telling."""
+    if usual_end <= 0:
+        return True
+    slack = TELEMETRY_LAP_DISTANCE_TOLERANCE * usual_end
+    return rows[0]["distance_m"] <= slack and abs(rows[-1]["distance_m"] - usual_end) <= slack
+
+
 def _covers_lap(rows: list[dict[str, Any]], lap_time_ms: float, usual_end: float) -> bool:
     """True when prepared telemetry runs the whole lap, in distance and on the clock."""
     if len(rows) < 3 or usual_end <= 0 or lap_time_ms <= 0:
         return False
-    slack = TELEMETRY_LAP_DISTANCE_TOLERANCE * usual_end
-    if rows[0]["distance_m"] > slack or abs(rows[-1]["distance_m"] - usual_end) > slack:
+    if not _runs_a_whole_lap(rows, usual_end):
         return False
     if any(_float(row.get("relative_time_ms")) is None for row in (rows[0], rows[-1])):
         # No clock was recorded and ``_prepare_samples`` rebuilt one from

@@ -34,18 +34,23 @@ CORNERS = [
     {"number": 2, "letter": "A", "x": 20_000.0, "y": 0.0, "distance_m": 2_000.0},
     {"number": 3, "letter": "", "x": 30_000.0, "y": 0.0, "distance_m": 3_000.0},
 ]
+# How the result names a lap that stops short or started from the grid.
+SHORT_LAP = "Not the length of a normal lap"
 
 
-def lap_rows(driver, lap_number=5, stretch=1.0, apex_kph=90.0, position=True):
+def lap_rows(
+    driver, lap_number=5, stretch=1.0, apex_kph=90.0, position=True, stops_at=LAP_LENGTH_M, position_until=None
+):
     """A lap along a straight line, sampled every ten metres of track.
 
     ``stretch`` is how much longer the lap's own distance says the track is:
     two laps of one track disagree by a per cent or so. Position is where the
-    car really is, in tenths of a metre.
+    car really is, in tenths of a metre. The car stops ``stops_at`` metres
+    round, and its position data ``position_until`` metres round.
     """
     rows = []
     elapsed = 0.0
-    for step in range(LAP_LENGTH_M // 10 + 1):
+    for step in range(stops_at // 10 + 1):
         place = step * 10.0
         speed, braking = 300.0, False
         for corner in BRAKED:
@@ -70,6 +75,8 @@ def lap_rows(driver, lap_number=5, stretch=1.0, apex_kph=90.0, position=True):
                 "y": 0.0 if position else None,
             }
         )
+        if position_until is not None and place > position_until:
+            rows[-1]["x"] = rows[-1]["y"] = None
     return rows
 
 
@@ -151,6 +158,84 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(third["BBB"]["apex_distance_m"], 3150.0)
         self.assertIsNotNone(third["BBB"]["brake_start_m"])
         self.assertTrue(any("No position data on the lap of: BBB" in caveat for caveat in result["caveats"]))
+
+    def test_a_lap_that_stops_short_has_no_figures_for_the_corners_it_never_reached(self):
+        """The 2026 Monaco race: Verstappen's only lap ends at the chicane. The
+        nearest of its samples to each later corner is somewhere else on the
+        circuit, and was read as that corner."""
+        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
+        telemetry = lap_rows("AAA") + lap_rows("BBB") + lap_rows("CCC", lap_number=1, stops_at=2_500)
+
+        result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
+
+        corners = by_corner(result)
+        self.assertEqual(set(corners[(3, None)]), {"AAA", "BBB"})
+        # The two it drove through are found where they are, not where a lap
+        # 2,500 m long would have them.
+        self.assertEqual(corners[(1, None)]["CCC"]["apex_distance_m"], 1000.0)
+        self.assertEqual(
+            (corners[(2, "A")]["CCC"]["apex_distance_m"], corners[(2, "A")]["CCC"]["apex_speed_kph"]), (2000.0, 260.0)
+        )
+        self.assertTrue(any(SHORT_LAP in caveat and "CCC" in caveat for caveat in result["caveats"]))
+        self.assertFalse(any("No position data" in caveat for caveat in result["caveats"]))
+
+    def test_a_lap_that_stops_short_and_has_no_position_data_is_in_no_corner(self):
+        """Its distance says how far it got, not where the corners are on it."""
+        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
+        short = lap_rows("CCC", lap_number=1, stops_at=2_500, position=False)
+        telemetry = lap_rows("AAA") + lap_rows("BBB") + short
+
+        result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
+
+        self.assertEqual(result["corner_source"], "official")
+        self.assertTrue(all(set(drivers) == {"AAA", "BBB"} for drivers in by_corner(result).values()))
+        self.assertEqual([row["driver_code"] for row in result["representative_laps"]], ["AAA", "BBB", "CCC"])
+        self.assertTrue(any(SHORT_LAP in caveat and "CCC" in caveat for caveat in result["caveats"]))
+
+    def test_where_a_whole_laps_position_data_stops_its_corners_are_found_by_distance(self):
+        """Not by the last sample that had a position, which is nowhere near them."""
+        laps = [lap("AAA"), lap("BBB")]
+        telemetry = lap_rows("AAA") + lap_rows("BBB", position_until=1_500)
+
+        result = calculate_corner_analysis("s", laps, telemetry, CORNERS)
+
+        corners = by_corner(result)
+        self.assertEqual(corners[(1, None)]["BBB"], {**corners[(1, None)]["AAA"], "driver_code": "BBB"})
+        self.assertEqual(
+            (corners[(2, "A")]["BBB"]["apex_distance_m"], corners[(2, "A")]["BBB"]["apex_speed_kph"]), (2000.0, 260.0)
+        )
+        self.assertEqual(corners[(3, None)]["BBB"], {**corners[(3, None)]["AAA"], "driver_code": "BBB"})
+
+    def test_a_stretch_of_track_that_passes_a_corner_it_is_not_is_never_taken_for_it(self):
+        """Monaco again: Tabac and the swimming pool are within 50 m of the road
+        out of Sainte Devote and of the grid. Corner 4 here is 3,500 m round,
+        and its marker is 30 m from the track at 500 m."""
+        nearby = [*CORNERS, {"number": 4, "letter": "", "x": 5_000.0, "y": 300.0, "distance_m": 3_500.0}]
+        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
+        telemetry = lap_rows("AAA") + lap_rows("BBB") + lap_rows("CCC", lap_number=1, stops_at=2_500)
+
+        result = calculate_corner_analysis("s", laps, telemetry, nearby, reference_lap_length_m=LAP_LENGTH_M)
+
+        fourth = by_corner(result)[(4, None)]
+        # The lap that stopped at 2,500 m never reached it.
+        self.assertEqual(set(fourth), {"AAA", "BBB"})
+        # And a whole lap reads it where it is, not where the lap first passed the marker.
+        self.assertEqual(fourth["AAA"]["apex_distance_m"], 3500.0)
+
+    def test_a_corner_is_only_found_where_the_lap_passes_it(self):
+        """A corner a kilometre off the track is on no lap by position. With a
+        distance it is still read by that; with none it is not there at all."""
+        elsewhere = [dict(CORNERS[0]), dict(CORNERS[1], y=10_000.0), dict(CORNERS[2])]
+
+        by_distance = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), elsewhere)
+        unplaced = calculate_corner_analysis(
+            "s", [lap("AAA")], lap_rows("AAA"), [{**corner, "distance_m": None} for corner in elsewhere]
+        )
+
+        self.assertEqual(by_corner(by_distance)[(2, "A")]["AAA"]["apex_distance_m"], 2000.0)
+        self.assertEqual(by_corner(unplaced)[(2, "A")], {})
+        self.assertEqual(unplaced["corners"][1]["distance_m"], None)
+        self.assertEqual(set(by_corner(unplaced)[(1, None)]), {"AAA"})
 
     def test_corners_with_no_distance_are_still_found_by_position(self):
         placed_only = [{**corner, "distance_m": None} for corner in CORNERS]

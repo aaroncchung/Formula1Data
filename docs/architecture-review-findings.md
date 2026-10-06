@@ -1694,6 +1694,20 @@ rewritten.
   two pairs of them at one point of the lap. The build measures this, says so
   in `corners.json` (`fits_track`), and infers that race's corners instead.
   The `circuit_info` bar does not see it: the file arrived and holds corners.
+- **Monaco is the one race whose corners the build has to place.** FastF1
+  places a circuit's corners along the session's fastest lap, which at Monaco
+  has no position data, so the 19 corners are archived without distances. The
+  build places them on the fastest lap that has position data (lap 5), all
+  within 15 m of its line, and the other 21 cars' laps are read by distance:
+  the hairpin at a median of 43 kph, the tunnel at 252.
+- **A lap that stops short was read as going everywhere.** Verstappen's only
+  lap of that race ends at the chicane, 2,107 m into a lap of 3,278 m. Tabac
+  and the swimming pool, which he never reached, are within 50 m of the road
+  out of Sainte Devote and of the grid, where he had been at the start of the
+  lap, so he had figures for both. A corner is now found on a lap only where
+  the lap comes within 50 m of it and within 200 m of where it should be, and
+  a lap that is not the length of a normal lap is never read by distance
+  alone. He has figures for the eleven corners he drove through.
 - **The old format's numbers were off in two more places.** 152 sector times
   of the Austrian race were a millisecond low, cut off instead of rounded.
   Wind speed was published as `wind_speed_kph` in metres a second.

@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from f1data.analyses import POSITION_UNITS_PER_METRE
 from f1data.classification import Classification
 from f1data.coverage import RACE_LIKE_SESSION_TYPES, evaluate_coverage
 from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
@@ -52,8 +53,6 @@ from f1data.telemetry import LapSamples, SessionTelemetry
 
 _NS_PER_MS = 1_000_000
 _METRES_PER_SECOND_IN_KPH = 3.6
-# Position data is in tenths of a metre.
-_POSITION_UNITS_PER_METRE = 10.0
 # A circuit's archived corner positions are taken to be of the track a session
 # drove when they lie on it. Of the 18 races and sprints of 2026 archived with
 # corner positions, 17 have every corner within 20 m of the fastest lap's line,
@@ -553,7 +552,7 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
             length_m=float(lap.distance_m[-1] - lap.distance_m[0]),
         )
         squared = [(lap.x - corner["x"]) ** 2 + (lap.y - corner["y"]) ** 2 for corner in found]
-        off_track = [float(np.sqrt(np.nanmin(each))) / _POSITION_UNITS_PER_METRE for each in squared]
+        off_track = [float(np.sqrt(np.nanmin(each))) / POSITION_UNITS_PER_METRE for each in squared]
         furthest = max(off_track)
         fits = float(np.median(off_track)) <= CORNERS_FIT_WITHIN_MEDIAN_M and furthest <= CORNERS_FIT_WITHIN_M
     if found and all(corner["distance_m"] is not None for corner in found):

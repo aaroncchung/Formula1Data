@@ -54,6 +54,7 @@ if str(_REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPOSITORY_ROOT))
 
 from backend.app.analysis.advanced import (  # noqa: E402
+    POSITION_UNITS_PER_METRE,  # noqa: F401  (f1data/normalize.py measures with it too)
     calculate_car_performance,
     calculate_corner_analysis,
     calculate_fuel_adjusted_tyre_degradation,
