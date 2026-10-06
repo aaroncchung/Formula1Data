@@ -76,6 +76,36 @@ R2_SECRET_ACCESS_KEY=<from the same token>
 `CLOUDFLARE_API_TOKEN` works in place of the key pair, which is how the
 workflows publish with the secret the repository already has.
 
+## Running on a schedule
+
+Fetching has to run on a machine F1 answers, which rules out hosted runners
+(decision 2 of the plan: a scheduled task on a local machine). With the
+credentials above in `.env`, `python -m f1data run` is the whole job, and it is
+safe to run as often as you like: it fetches only what is due and builds only
+what changed. Every three hours is plenty for the 48-hour bar.
+
+On Windows, from PowerShell, with the two paths set to yours:
+
+```powershell
+$repo   = "C:\path\to\Formula1Data"
+$python = "C:\path\to\venv\Scripts\python.exe"
+$log    = "$env:LOCALAPPDATA\f1data\run.log"
+New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
+
+$action   = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $repo `
+              -Argument "/c `"`"$python`" -m f1data run >> `"$log`" 2>&1`""
+$trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+              -RepetitionInterval (New-TimeSpan -Hours 3)
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
+              -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+Register-ScheduledTask -TaskName "Formula1Data run" -Action $action -Trigger $trigger -Settings $settings
+```
+
+`-StartWhenAvailable` runs a missed start when the machine comes back on, and
+the job catches up on anything it missed, because F1's archive keeps past
+sessions. The machine does not have to be on when a session finishes. Nothing
+has registered this task yet.
+
 ## When a session counts as complete
 
 `fetch` measures what arrived, per driver and per feed, and stores the figures

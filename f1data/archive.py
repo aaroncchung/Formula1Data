@@ -31,6 +31,7 @@ from typing import Any
 from f1data import layout
 from f1data.coverage import (
     CLASSIFICATION_BAR,
+    MEASUREMENT_VERSION,
     Shortfall,
     apply_classification,
     evaluate_coverage,
@@ -97,15 +98,27 @@ class Snapshot:
         """
         return replace(self, coverage=apply_classification(self.coverage, classified_laps))
 
-    def rank(self) -> tuple[bool, int, float, str]:
+    @property
+    def measured_in_full(self) -> bool:
+        """Whether the fetch collected everything today's bars ask about."""
+        return self.coverage.get("measurement_version") == MEASUREMENT_VERSION
+
+    def rank(self) -> tuple[bool, bool, int, float, str]:
         """Higher is better. The order in which build picks a snapshot (rule 6).
 
         A snapshot that meets every bar beats one that does not. Among those
-        that fall short, fewer shortfalls wins, then the higher weakest share.
-        Only then does the later fetch win, so a retry that does worse changes
-        nothing.
+        that fall short, one that was measured in full beats one from before a
+        feed was collected, whose shortfalls cannot be counted. Then fewer
+        shortfalls wins, then the higher weakest share. Only then does the
+        later fetch win, so a retry that does worse changes nothing.
         """
-        return (self.complete, -len(self.shortfalls()), weakest_share(self.coverage), self.fetched_at)
+        return (
+            self.complete,
+            self.measured_in_full,
+            -len(self.shortfalls()),
+            weakest_share(self.coverage),
+            self.fetched_at,
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -219,9 +232,12 @@ def partial_publication_time(snapshots: list[Snapshot]) -> datetime:
     """When a session still short of a bar may be published as partial (rule 6).
 
     Until then later fetches may still do better, and a partial publication is
-    not what anyone is waiting for.
+    not what anyone is waiting for. The window runs from the first fetch that
+    was measured in full, the same clock the fetch planner retries by; before
+    there is one, from the first fetch of any kind.
     """
-    return min(parse_utc(snapshot.fetched_at) for snapshot in snapshots) + RETRY_WINDOW
+    counted = [snapshot for snapshot in snapshots if snapshot.measured_in_full] or snapshots
+    return min(parse_utc(snapshot.fetched_at) for snapshot in counted) + RETRY_WINDOW
 
 
 def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:

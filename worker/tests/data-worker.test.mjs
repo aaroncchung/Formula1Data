@@ -281,3 +281,44 @@ test("a range is honoured only while the object is the version the client holds"
   const plain = await fetchFrom(bucket, "/data/v1/index.json", { headers: { range: "bytes=2-5" } });
   assert.equal(plain.status, 206);
 });
+
+// --- found in the second review ------------------------------------------------
+
+test("If-Range is checked against the object the range was read from, not a look beforehand", async () => {
+  // A publication lands between any earlier look at the index and the read:
+  // `head` still describes version A, `get` returns version B.
+  const versionB = new TextEncoder().encode('{"version":"B, the whole of it"}');
+  const calls = [];
+  const describe = (httpEtag) => ({
+    size: versionB.byteLength,
+    httpEtag,
+    uploaded: new Date("2026-10-05T20:00:00Z"),
+    writeHttpMetadata() {}
+  });
+  const bucket = {
+    async head() {
+      calls.push("head");
+      return describe('"A"');
+    },
+    async get(_key, options) {
+      const ranged = Boolean(options?.range);
+      calls.push(ranged ? "get range" : "get whole");
+      const bytes = ranged ? versionB.subarray(2, 6) : versionB;
+      return {
+        ...describe('"B"'),
+        range: ranged ? { offset: 2, length: 4 } : { offset: 0, length: versionB.byteLength },
+        body: new Blob([bytes]).stream()
+      };
+    }
+  };
+
+  const response = await fetchFrom(bucket, "/data/v1/index.json", {
+    headers: { range: "bytes=2-5", "if-range": '"A"' }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("etag"), '"B"');
+  assert.equal(response.headers.get("content-range"), null);
+  assert.equal(await response.text(), '{"version":"B, the whole of it"}');
+  assert.deepEqual(calls, ["get range", "get whole"]);
+});

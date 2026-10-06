@@ -1636,7 +1636,8 @@ rewritten.
 | 3 | `tests/test_store.py` against the real bucket through R2's S3 API, with the repository's Cloudflare token (run 37391255736 and later) | All cases pass. Of six writers racing on one version with `If-Match`, and six with `If-None-Match: *`, exactly one wins each time |
 | 4 | Build of the 2026 Austrian GP race on a hosted runner from the R2 archive (run 37392847582) | Built and published without a request to F1. Requests to F1's hosts are refused during a build, so this holds by construction |
 | 5 | The published session through the new Worker | Pointer and index answer 200 with a 30-second cache life, generation paths 200 and immutable, the archive 404 |
-| 6 | `/session?year=2026&round=8&session=R` in headless Edge against the real Worker | Five requests on load (index, pointer, manifest, results, drivers). The lap-times artifact is requested only when its tab is opened. Not yet looked at in a browser on the deployed site |
+| 6 | `/session?year=2026&round=8&session=R` in headless Edge against the real Worker | Five requests on load (index, pointer, manifest, results, drivers). The lap-times artifact is requested only when its tab is opened |
+| 6a | The same page on the Pages preview of the branch, in headless Edge | Rendered the session header, "Complete data" and the 22-row classification, loaded at runtime from the Worker |
 | 7 | F1's session key for the 21 races and sprints of 2026 | Present for all 21 |
 | 8 | The same snapshot built on Windows and on Linux | Different generations: 1,324 of 1,342 files differ, by float noise of about 1e-12 in telemetry distance and position. Rounding in the new format (step 3) should remove it |
 
