@@ -22,7 +22,7 @@ import logging
 import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -139,24 +139,51 @@ class Builder:
         snapshots = list_snapshots(self._store, session_key)
         if not snapshots:
             return None
-        identity = snapshots[0].identity
-
-        scheduled = find_scheduled_session(self.schedule(identity.year), identity)
+        # Each fetch recorded the start time the calendar gave on its day. If
+        # the calendar has since been corrected by more than the tolerance,
+        # the fetches before the correction no longer match their entry and
+        # the ones after it do. The session is the same session: its entry is
+        # the one any of its fetches finds, the latest fetch asked first.
+        newest_first = sorted(snapshots, key=lambda snapshot: snapshot.fetched_at, reverse=True)
+        schedule = self.schedule(newest_first[0].identity.year)
+        identity, scheduled = newest_first[0].identity, None
+        for snapshot in newest_first:
+            scheduled = find_scheduled_session(schedule, snapshot.identity)
+            if scheduled is not None:
+                identity = snapshot.identity
+                break
         if scheduled is None:
             raise BuildError(
                 f"No calendar entry for session {session_key} "
                 f"({identity.meeting_name} {identity.session_name}, {identity.start_time_utc})"
             )
-        # Nothing else. In format 2 no artifact carries anything from the
-        # calendar: what a session is comes from F1's own session information,
-        # and pages look the round up in the index. The calendar row is still
-        # what the build makes its FastF1 session from and what says which
-        # round to ask Jolpica about, but neither reaches a generation: the
-        # feeds are read from the snapshot's own path with the network refused,
-        # and what Jolpica answered is tied to the session by its date and
-        # recorded by its fingerprint. A build made while the calendar said
-        # another round is therefore the same build.
-        also = None
+        # A fetch from before the correction is published, if it is the one
+        # chosen, as the session the calendar now has: under its old start
+        # time the index could not place it.
+        snapshots = [
+            snapshot
+            if find_scheduled_session([scheduled], snapshot.identity) is not None
+            else replace(snapshot, identity=identity)
+            for snapshot in snapshots
+        ]
+        # The calendar entry reaches what is published, so a build made under
+        # another entry is not this build. In format 2 no artifact carries the
+        # round or the calendar's names, but the manifest and the pointer
+        # carry the session's identity, whose start time and round are the
+        # calendar's, and which the lines above can take from another fetch.
+        # A session built again for a change that does not reach its files is
+        # the same generation, since a generation is named by its content.
+        # The four fields are there to be read; the checksum covers the whole
+        # row.
+        also = {
+            "calendar": {
+                "year": scheduled.year,
+                "round": scheduled.round,
+                "meeting_name": scheduled.meeting_name,
+                "session_name": scheduled.session_name,
+                "row": scheduled.row_fingerprint,
+            }
+        }
 
         # After a lost write nothing is taken on trust, the shortcut included.
         if not retry and self._is_settled(pointer, identity):
@@ -179,7 +206,7 @@ class Builder:
                     also=also,
                 )
 
-        publishable_from = partial_publication_time(snapshots)
+        publishable_from = partial_publication_time(snapshots, now=self._now())
         classification = None
         if is_classified_session(identity.session_type):
             try:

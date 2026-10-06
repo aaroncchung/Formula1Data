@@ -36,6 +36,11 @@ v2/index.json                                     the calendar, with published s
 v2/standings/<year>.json
 ```
 
+A snapshot's marker has to describe the snapshot it is filed as: the session
+key and the snapshot id in its key. One that does not, or that cannot be read,
+is passed over with an error in the log, like an upload that never finished,
+and the rest of the archive is read as usual.
+
 A session is named by F1's session key, not by its round: rounds move when the
 calendar changes. `v2` is the artifact format; a new format is published under
 a new prefix before the site that reads it is deployed. What was published
@@ -70,8 +75,11 @@ What holds for all of them:
   precision its field states. With keys sorted and one newline at the end,
   that makes two builds of one snapshot and one classification the same bytes
   on any machine, and so the same generation.
-- Nothing comes from the calendar. A session is described in F1's own words,
-  and its round is looked up in the index.
+- No artifact takes anything from the calendar. A session is described in
+  F1's own words, and its round is looked up in the index. The manifest and
+  the pointer carry the session's identity, and two things in that are the
+  calendar's: the start time, and the round as it was when the session was
+  fetched.
 - Telemetry is published at up to 300 samples a lap. The analyses read every
   sample.
 
@@ -115,9 +123,15 @@ a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
 One session failing to fetch does not stop the others. After two failures in
-a row `fetch-due` asks F1's archive for the season's index: if that answers,
-the fault is with those sessions and the batch carries on; if it does not,
-nothing can be fetched and the batch stops until the next run.
+a row `fetch-due` asks F1's archive for this season's index, and last
+season's: if either answers, the fault is with those sessions and the batch
+carries on; if neither does, nothing can be fetched and the batch stops until
+the next run.
+
+Retries are timed from when a session was last fetched, by the stamp of the
+machine that fetched it. A stamp more than an hour ahead of this machine's
+clock is not believed, and a session with no believable stamp is fetched again
+at once.
 
 ## Credentials
 
@@ -189,7 +203,9 @@ answering. A feed that arrived and is short is always fetched again. The limits
 are in `f1data/policy.py`.
 
 A snapshot is judged against the classification of the day, which is the whole
-answer: a driver it leaves out has no result and no laps to account for. A
+answer: a driver it leaves out has no result and no laps to account for. An
+answer from Jolpica is used only if it is whole and gives every driver a number
+and a lap count; otherwise the session waits. A
 session published short stays on the fetch stage's list however old it is,
 because a result corrected months later can be what left it short.
 
@@ -212,13 +228,19 @@ wrong correction does not outlive the next run.
 
 The pointer records what its generation was built from: the snapshot and a
 checksum of its record (`record`), the fingerprint of what Jolpica supplied
-(the classification and, for a race, each driver's first-lap time), anything
-else from outside the archive (under `also`), and the pipeline version. `build`
-builds a session again when any of them differs from what it would use now.
-Jolpica's two answers are used together only when both say they are of the same
-race. In format 2 `also` is null: no artifact carries anything from the
-calendar, so a renumbered calendar moves the index and leaves the session's
-generation alone.
+(the classification and, for a race, each driver's first-lap time), the
+calendar entry (year, round, names and a checksum of the whole calendar row,
+under `also`), and the pipeline version. `build` builds a session again when
+any of them differs from what it would use now. Jolpica's two answers are used
+together only when both say they are of the same race.
+
+In format 2 no artifact carries the round or the calendar's names: a page
+takes them from the index. The calendar still reaches what is published
+through the session's identity, which is in the manifest and the pointer and
+whose start time is the calendar's. So a session is built again when its
+calendar entry changes, and when the change does not reach its files the
+build is the same generation, named as it is by its content, under a pointer
+that records the new entry.
 
 Those are looked up once, after the pointer is read, on every attempt, and the
 calendar again before the index is written: a publisher never decides from

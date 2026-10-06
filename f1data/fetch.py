@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,23 +157,31 @@ def fetch_session(
     )
 
 
-def f1_is_answering(year: int, timeout: float = 30.0) -> bool:
+def f1_is_answering(years: Iterable[int], timeout: float = 30.0) -> bool:
     """Whether F1's archive answers at all just now, asked for a season's index.
 
     For telling "these sessions cannot be fetched" from "nothing can": a
     network that is down and a host that refuses this address (AR-13) fail
     every session alike, and neither answers this.
+
+    ``years`` are seasons whose index should exist, and one answer is enough.
+    The season of the sessions that failed is the wrong one to ask about: a
+    season F1 does not hold at all fails every session of its own and says
+    nothing of the others.
     """
     import requests
     from fastf1 import _api
 
-    try:
-        with requests.get(
-            f"{_api.base_url}/static/{year}/Index.json", headers=_api.headers, stream=True, timeout=timeout
-        ) as response:
-            return response.status_code == 200
-    except requests.RequestException:
-        return False
+    for year in years:
+        try:
+            with requests.get(
+                f"{_api.base_url}/static/{year}/Index.json", headers=_api.headers, stream=True, timeout=timeout
+            ) as response:
+                if response.status_code == 200:
+                    return True
+        except requests.RequestException:
+            continue
+    return False
 
 
 def _feed_status(recorder: HttpRecorder) -> dict[str, Any]:

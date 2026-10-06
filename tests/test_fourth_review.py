@@ -62,7 +62,7 @@ def test_a_build_makes_its_session_from_the_calendar_row_it_gathered(tmp_path, m
     (built,) = world.built
     assert built.event == {"RoundNumber": 8, "EventName": "Austrian Grand Prix"}
     assert files == {"summary.json": b"round 8"}
-    assert inputs.context.scheduled.round == 8
+    assert inputs.also["calendar"]["round"] == 8
     assert built_from is inputs.snapshot
     # The build read no calendar of its own.
     assert len(world.schedule_reads) == calendar_reads
@@ -90,25 +90,23 @@ def test_a_recorder_can_refuse_every_host():
     assert guard.forbidden == ["https://anything.invalid/x"]
 
 
-def test_a_change_in_the_calendar_row_builds_nothing_again(tmp_path, monkeypatch):
-    """The old artifact writer read the round, the country, the dates and the
-    weekend's other sessions out of the row, so the pointer recorded a checksum
-    of all of it and a change anywhere built the session again. Format 2 takes
-    nothing from the row: a session is described by F1's own session
-    information, and the build records nothing of the calendar in the pointer."""
+def test_a_change_anywhere_in_the_calendar_row_builds_the_session_again(tmp_path, monkeypatch):
+    """The old artifact writer reads the country, the dates and the weekend's
+    other sessions out of the row. The pointer records a checksum of all of
+    it, not only the round and the names."""
     world = Archive(monkeypatch, EVERYONE)
     world.snapshot(tmp_path)
     builder = Builder(world.store, fastf1=None, now=lambda: SOON_AFTER)
     publish = lambda: publish_session(world.store, AUSTRIA, builder.gather, builder.build)
     assert publish().action == "published"
-    assert read_pointer(world.store, AUSTRIA)[0].also is None
+    assert read_pointer(world.store, AUSTRIA)[0].also["calendar"]["row"] == "sha256:the-row-as-first-read"
     assert publish().action == "current"
 
     world.row_fingerprint = "sha256:the-row-with-its-country-corrected"
     outcome = publish()
 
-    assert outcome.action == "current"
-    assert len(world.built) == 1
+    assert (outcome.action, outcome.reason) == ("published", "the calendar entry changed")
+    assert len(world.built) == 2
 
 
 def test_a_build_reads_the_calendar_from_one_source(tmp_path, monkeypatch):

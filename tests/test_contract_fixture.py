@@ -147,11 +147,21 @@ FILES = {
 }
 
 
+# What a build took from the calendar, as the builder records it in the pointer.
+CALENDAR_ENTRY = {
+    "calendar": {
+        "year": 2026,
+        "round": 8,
+        "meeting_name": "Austrian Grand Prix",
+        "session_name": "Race",
+        "row": "sha256:" + "d" * 64,
+    }
+}
+
+
 def published_bucket() -> dict[str, str]:
     store = MemoryStore()
-    # A build of this format takes nothing from the calendar, so the pointer's
-    # ``also`` is null.
-    inputs = Inputs(snapshot(), "sha256:" + "c" * 64)
+    inputs = Inputs(snapshot(), "sha256:" + "c" * 64, also=CALENDAR_ENTRY)
     files = {path: dump_json(artifact_json(artifact)) for path, artifact in FILES.items()}
     outcome = publish_session(store, AUSTRIA, lambda key, **_: inputs, lambda _: (files, None), now=lambda: NOW)
     assert outcome.action == "published"
@@ -192,4 +202,4 @@ def test_everything_in_the_fixture_is_what_its_model_says(monkeypatch):
     manifest = json.loads(next(text for key, text in bucket.items() if key.endswith("/manifest.json")))
     assert manifest["format_version"] == layout.FORMAT_VERSION and "schema_version" not in manifest
     assert json.loads(bucket[layout.standings_key(2026)])["format_version"] == layout.FORMAT_VERSION
-    assert json.loads(bucket[layout.pointer_key(AUSTRIA)])["also"] is None
+    assert json.loads(bucket[layout.pointer_key(AUSTRIA)])["also"] == CALENDAR_ENTRY

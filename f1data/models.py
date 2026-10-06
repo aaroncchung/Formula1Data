@@ -24,8 +24,8 @@ Conventions, which hold for every artifact:
   the same bytes on every platform.
 * A session is the one whose generation is being read. No artifact repeats its
   identity row by row; ``summary.json`` and the manifest carry F1's session
-  key. Nothing is taken from the calendar: a round number moves when the
-  calendar changes, so pages look it up in the index.
+  key. No artifact takes anything from the calendar: a round number moves when
+  the calendar changes, so pages look it up in the index.
 """
 
 from __future__ import annotations
@@ -900,14 +900,18 @@ class PacePrediction(Model):
 
 
 class Identity(Model):
-    """Who a session is, from F1's own session information (f1data/identity.py)."""
+    """Who a session is, from F1's own session information (f1data/identity.py).
+
+    Two fields are the calendar's, as it stood when the session was fetched:
+    the start time and the round.
+    """
 
     session_key: int
     meeting_key: int
     year: int
     session_type: SessionType
     session_name: str
-    start_time_utc: str
+    start_time_utc: str = Field(description="When the calendar said the session starts.")
     meeting_name: str
     meeting_official_name: str | None
     location: str | None
@@ -959,9 +963,10 @@ class Pointer(Model):
     snapshot_id: str
     classification_fingerprint: str | None
     also: dict[str, Any] | None = Field(
-        description="Anything else the generation was built from, outside the archive and the "
-        "classification. "
-        "Null in this format, where a build takes nothing from the calendar."
+        description="What else the generation was built from, outside the archive and the "
+        "classification: under calendar, the calendar entry the session was built as (year, round, "
+        "names, and a checksum of the whole row). The publisher's own record, by which it knows to "
+        "build again; a reader takes the round from the index."
     )
     record: str | None = Field(
         description="A checksum of what the snapshot's record said of its feeds when the session was "

@@ -252,7 +252,9 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                     failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
                     if failed_in_a_row >= _ASK_AFTER_FAILURES_IN_A_ROW:
-                        if f1_is_answering(session.year):
+                        # This year's index and last year's: one of the two
+                        # exists on any day of any year.
+                        if f1_is_answering((now.year, now.year - 1)):
                             # These sessions failed on their own account.
                             # Nothing was archived for them, so the next run
                             # plans them first again: stopping here would

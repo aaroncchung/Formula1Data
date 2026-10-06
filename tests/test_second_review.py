@@ -59,25 +59,19 @@ def planned(snapshots, now, **kwargs):
 
 
 # --- B1: the calendar is a build input ----------------------------------------
-#
-# It was in format 1, whose summary carried the round. In format 2 nothing in a
-# generation comes from the calendar, so a build made before the calendar moved
-# is still the build, and is published without being made again.
 
 
-def test_a_build_made_under_the_old_calendar_is_still_the_build_under_the_new_one(tmp_path, monkeypatch):
+def test_a_build_made_under_the_old_calendar_is_not_published_under_the_new_one(tmp_path, monkeypatch):
     """A builds with Austria at round 8. The calendar moves it to round 9 and B
     publishes from an older snapshot. A's snapshot and classification are
-    unchanged, and nothing in its build said which round it was."""
+    unchanged, but its build has round 8 in it."""
     world = World(monkeypatch)
     store = Interposing(archive(tmp_path / "older"))
     write_snapshot(store, fetched_session(tmp_path / "newer"), now=FIRST_FETCH + timedelta(hours=1))
     a = Builder(store, fastf1=None, now=lambda: SOON_AFTER)
-    builds = []
 
     def build_with_the_round_in_it(inputs):
-        builds.append(inputs.context.scheduled.round)
-        return {"summary.json": b"from the newer snapshot"}, None
+        return {"summary.json": f"round {inputs.context.scheduled.round}".encode()}, None
 
     def calendar_changes_and_another_publisher_wins():
         world.renumber()
@@ -96,10 +90,7 @@ def test_a_build_made_under_the_old_calendar_is_still_the_build_under_the_new_on
     assert outcome.action == "published"
     pointer, _ = read_pointer(store, AUSTRIA)
     summary = store.get(f"{layout.generation_prefix(AUSTRIA, pointer.generation)}summary.json").data
-    assert summary == b"from the newer snapshot"
-    # Built once, under round 8, and not again when the calendar said 9.
-    assert builds == [8]
-    assert pointer.also is None
+    assert summary == b"round 9"
 
 
 def a_store_snapshots(store):

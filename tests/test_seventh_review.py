@@ -41,8 +41,12 @@ CALENDAR = [
 # --- two sessions that never fetch do not keep the rest from being fetched ---------
 
 
-def fetch_due(tmp_path, monkeypatch, capsys, f1_answers: bool) -> tuple[list[int], str, int]:
-    """Run ``fetch-due`` once over a calendar whose first two races always fail."""
+def fetch_due(tmp_path, monkeypatch, capsys, f1_answers) -> tuple[list[int], str, int]:
+    """Run ``fetch-due`` once over a calendar whose first two races always fail.
+
+    ``f1_answers`` is what the question "is F1 answering at all" is answered
+    with, or a function that answers it.
+    """
     attempted: list[int] = []
 
     @contextmanager
@@ -58,7 +62,8 @@ def fetch_due(tmp_path, monkeypatch, capsys, f1_answers: bool) -> tuple[list[int
     monkeypatch.setattr(cli_module, "fastf1_cache", no_cache)
     monkeypatch.setattr(cli_module, "load_schedule", lambda fastf1, year: CALENDAR)
     monkeypatch.setattr(cli_module, "fetch_session", fetch)
-    monkeypatch.setattr(cli_module, "f1_is_answering", lambda year: f1_answers)
+    answering = f1_answers if callable(f1_answers) else (lambda years: f1_answers)
+    monkeypatch.setattr(cli_module, "f1_is_answering", answering)
     capsys.readouterr()
     with pytest.raises(SystemExit) as finished:
         main(["fetch-due", "--store", str(tmp_path / "store"), "--season", "2026"])

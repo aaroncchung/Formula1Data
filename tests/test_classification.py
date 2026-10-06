@@ -48,13 +48,13 @@ class Jolpica:
             def __init__(self, **kwargs):
                 pass
 
-            def get_race_results(self, season, round):
+            def get_race_results(self, season, round, limit=None):
                 return outer._answer("race", season, round)
 
-            def get_sprint_results(self, season, round):
+            def get_sprint_results(self, season, round, limit=None):
                 return outer._answer("sprint", season, round)
 
-            def get_lap_times(self, season, round, lap_number):
+            def get_lap_times(self, season, round, lap_number, limit=None):
                 return outer._first_lap_answer(season, round, lap_number)
 
         @contextmanager

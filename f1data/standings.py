@@ -28,6 +28,13 @@ from f1data.store import ObjectStore, PreconditionFailed
 STANDINGS_SCHEMA_VERSION = 1
 MAX_ATTEMPTS = 5
 _RETRY_PAUSES_SECONDS = (2.0, 6.0)
+# Jolpica answers in pages of thirty unless asked for more, and a hundred is
+# the most it gives. More drivers than that have never scored in a season.
+_PAGE_LIMIT = 100
+
+
+class StandingsError(RuntimeError):
+    """Jolpica answered with standings that cannot be published as they are."""
 
 _logger = logging.getLogger(__name__)
 
@@ -35,8 +42,10 @@ _logger = logging.getLogger(__name__)
 def fetch_standings(fastf1: Any, year: int, sleep: Any = time.sleep) -> dict[str, Any] | None:
     """The standings of ``year`` as Jolpica has them now, or ``None`` before the first round."""
     ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
-    drivers = _ask(lambda: ergast.get_driver_standings(season=year), fastf1, sleep)
-    constructors = _ask(lambda: ergast.get_constructor_standings(season=year), fastf1, sleep)
+    drivers = _ask(lambda: ergast.get_driver_standings(season=year, limit=_PAGE_LIMIT), fastf1, sleep)
+    constructors = _ask(
+        lambda: ergast.get_constructor_standings(season=year, limit=_PAGE_LIMIT), fastf1, sleep
+    )
     driver_rows, driver_round = _rows(drivers)
     constructor_rows, constructor_round = _rows(constructors)
     if not driver_rows or not constructor_rows or driver_round is None or constructor_round is None:
@@ -96,7 +105,7 @@ def publish_standings(
         if current is not None:
             if current.data == payload:
                 return "current"
-            if _is_behind(fetched, json.loads(current.data)):
+            if _is_behind(fetched, _stored(current.data, year)):
                 return "behind"
         try:
             if current is None:
@@ -110,11 +119,24 @@ def publish_standings(
     return "conflict"
 
 
-def _is_behind(fetched: dict[str, Any], stored: dict[str, Any]) -> bool:
-    stored_rounds = stored.get("rounds") or {}
+def _stored(data: bytes, year: int) -> dict[str, int]:
+    """The round of each table in the stored copy. Empty for one that cannot be read.
+
+    Standings are taken whole from Jolpica, so a stored copy that is not
+    standings loses nothing by being replaced, and would otherwise stop the
+    season's standings from ever being written again.
+    """
+    try:
+        rounds = json.loads(data)["rounds"]
+        return {table: int(rounds[table]) for table in ("drivers", "constructors")}
+    except (ValueError, KeyError, TypeError):
+        _logger.warning("The stored standings of %s cannot be read and will be replaced", year)
+        return {}
+
+
+def _is_behind(fetched: dict[str, Any], stored_rounds: dict[str, int]) -> bool:
     return any(
-        int(fetched["rounds"][table]) < int(stored_rounds.get(table) or 0)
-        for table in ("drivers", "constructors")
+        int(fetched["rounds"][table]) < stored_rounds.get(table, 0) for table in ("drivers", "constructors")
     )
 
 
@@ -132,14 +154,24 @@ def _ask(request: Callable[[], Any], fastf1: Any, sleep: Any) -> Any:
 
 
 def _rows(response: Any) -> tuple[list[dict[str, Any]], int | None]:
+    """The table and the round it stands after. Empty and ``None`` before the first round.
+
+    A table that is there and cannot be published as it is raises: reported
+    as "no standings yet" it would look like a quiet day.
+    """
     frames = getattr(response, "content", None) or []
     if not frames or frames[0].empty:
         return [], None
+    if not getattr(response, "is_complete", True):
+        raise StandingsError("Jolpica returned only part of the standings")
     try:
         round_number = int(response.description["round"].iloc[0])
-    except Exception:
-        return [], None
-    return frames[0].to_dict("records"), round_number
+    except Exception as exc:
+        raise StandingsError("Jolpica's standings do not say which round they stand after") from exc
+    rows = frames[0].to_dict("records")
+    if any(_plain(row.get("position")) is None or _plain(row.get("points")) is None for row in rows):
+        raise StandingsError("Jolpica's standings have a row with no position or no points")
+    return rows, round_number
 
 
 def _plain(value: Any) -> Any:

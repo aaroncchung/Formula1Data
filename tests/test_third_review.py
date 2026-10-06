@@ -76,61 +76,53 @@ def index_rounds(store) -> list[int]:
 
 
 # --- C1: the calendar entry is something a session was built from ---------------
-#
-# In format 1 it was: the summary carried the round. The review found a session
-# still saying round 8 under an index that said 9, and the pointer gained
-# ``also`` so that a session is built again when what it was built from, beyond
-# the snapshot and the result, changes. In format 2 nothing in a generation
-# comes from the calendar, so the builder's ``also`` is None and a renumbered
-# calendar moves the index and nothing else. The third test here keeps the
-# mechanism itself covered, for whatever a build next takes from outside.
 
 
-def test_a_session_is_not_built_again_when_only_its_calendar_entry_changes(tmp_path, monkeypatch):
+def test_a_session_is_built_again_when_only_its_calendar_entry_changes(tmp_path, monkeypatch):
     """The same snapshot and the same result, and a race inserted ahead of this
-    one. No artifact says which round the session is, so there is nothing in it
-    to correct: the index, derived from the calendar on every run, has the round."""
+    one: what is published still says round 8, under an index that says 9."""
     world = World(monkeypatch)
     store = archive(tmp_path)
     builder = Builder(store, fastf1=None, now=lambda: SOON_AFTER)
-    first = publish_session(store, AUSTRIA, builder.gather, build_stub)
-    assert builder.gather(AUSTRIA).also is None
-    assert read_pointer(store, AUSTRIA)[0].also is None
-    publish_index(store, builder.schedule)
-    assert index_rounds(store) == [8, 14]
+    publish_session(store, AUSTRIA, builder.gather, build_with_the_round_in_it)
+    assert published_summary(store) == b"round 8"
+    assert read_pointer(store, AUSTRIA)[0].also == calendar_entry(8)
 
     world.renumber()
-    outcome = publish_session(store, AUSTRIA, builder.gather, build_stub)
+    outcome = publish_session(store, AUSTRIA, builder.gather, build_with_the_round_in_it)
 
-    assert (outcome.action, outcome.generation) == ("current", first.generation)
-    # The result was still looked for where the calendar now says the race is.
-    assert world.classification_requests[-1] == 9
-    assert publish_index(store, builder.schedule) == "published"
-    assert index_rounds(store) == [9, 15]
+    assert (outcome.action, outcome.reason) == ("published", "the calendar entry changed")
+    assert published_summary(store) == b"round 9"
+    assert read_pointer(store, AUSTRIA)[0].also == calendar_entry(9)
+    assert publish_session(store, AUSTRIA, builder.gather, build_with_the_round_in_it).action == "current"
 
 
-def test_an_old_session_is_left_alone_when_its_calendar_entry_changes(tmp_path, monkeypatch):
+def test_an_old_session_is_built_again_when_its_calendar_entry_changes(tmp_path, monkeypatch):
     """Between the days its result is asked about, an old session is still
-    looked up in the calendar, and a new round for it is no reason to ask."""
+    looked up in the calendar."""
     world = World(monkeypatch)
     store = archive(tmp_path)
-    publish_session(store, AUSTRIA, Builder(store, fastf1=None, now=lambda: SOON_AFTER).gather, build_stub)
+    publish_session(
+        store, AUSTRIA, Builder(store, fastf1=None, now=lambda: SOON_AFTER).gather, build_with_the_round_in_it
+    )
     quiet = a_quiet_day(RACE_START + timedelta(days=100))
     builder = Builder(store, fastf1=None, now=lambda: quiet)
     world.classification_requests.clear()
 
-    world.renumber()
-    outcome = publish_session(store, AUSTRIA, builder.gather, build_stub)
-
-    assert outcome.action == "current"
+    assert publish_session(store, AUSTRIA, builder.gather, build_with_the_round_in_it).action == "current"
     assert world.classification_requests == []
 
+    world.renumber()
+    outcome = publish_session(store, AUSTRIA, builder.gather, build_with_the_round_in_it)
 
-def test_a_publisher_that_lost_to_a_build_from_something_else_publishes_its_own(tmp_path, monkeypatch):
-    """B wins the pointer write with the same snapshot and the same result,
-    and a build that says it was made from something more: here, as a format 1
-    publisher would, a calendar entry. A reads again and finds that what is
-    published was not built from what it would build from."""
+    assert (outcome.action, outcome.reason) == ("published", "the calendar entry changed")
+    assert published_summary(store) == b"round 9"
+
+
+def test_a_publisher_that_lost_to_a_build_from_the_old_calendar_publishes_its_own(tmp_path, monkeypatch):
+    """A builds with Austria at round 9. B, which still has the old calendar,
+    wins the pointer write with the same snapshot and the same result at round
+    8. A reads again and finds nothing changed but the calendar entry."""
     world = World(monkeypatch)
     world.renumber()
     store = Interposing(archive(tmp_path))
