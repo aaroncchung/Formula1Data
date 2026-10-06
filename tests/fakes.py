@@ -12,11 +12,29 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from f1data.coverage import measure_coverage
+from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES
+
 LAP_SECONDS = 80.0
 SAMPLE_INTERVAL = 0.25
 RACE_START = 600.0
 
 DRIVERS = {"1": "AAA", "2": "BBB", "3": "CCC"}
+
+# The feeds FastF1 does not load, as they arrive for a session where driver 1
+# stopped once on lap 5.
+EXTRAS = {
+    PIT_STOP_SERIES: (
+        b'\xef\xbb\xbf01:12:03.942{"PitTimes":{"1":[{"Timestamp":"2026-06-28T13:18:16.017Z",'
+        b'"PitStop":{"RacingNumber":"1","PitStopTime":"2.4","PitLaneTime":"21.369","Lap":"5"}}]}}\r\n'
+    ),
+    CIRCUIT_INFO: b'{"corners":[{"number":1,"letter":"","x":10.0,"y":20.0,"angle":90.0,"distance_m":350.0}],"rotation":0.0}\n',
+}
+
+
+def measure(session: SimpleNamespace, session_type: str = "R", extras: dict[str, bytes] | None = None) -> dict[str, Any]:
+    """Measure a fake session as a fetch would, with the extra feeds present unless told otherwise."""
+    return measure_coverage(session, session_type, EXTRAS if extras is None else extras)
 
 
 def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = None) -> SimpleNamespace:
@@ -36,6 +54,9 @@ def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = Non
                     "TyreLife": float(lap),
                     "Stint": 1.0,
                     "FastF1Generated": False,
+                    "PitInTime": pd.Timedelta(seconds=start + LAP_SECONDS - 5)
+                    if (number, lap) == ("1", 5)
+                    else pd.NaT,
                 }
             )
 

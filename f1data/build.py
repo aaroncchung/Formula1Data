@@ -22,6 +22,7 @@ from f1data.archive import (
     Snapshot,
     list_snapshots,
     partial_publication_time,
+    read_extras,
     restore_snapshot,
     select_snapshot,
 )
@@ -126,6 +127,7 @@ class Builder:
         guard = HttpRecorder(forbid_hosts=F1_ARCHIVE_HOSTS)
         with tempfile.TemporaryDirectory(prefix="f1data-build-") as scratch:
             cache_dir = restore_snapshot(self._store, snapshot, Path(scratch) / "cache")
+            extras = read_extras(self._store, snapshot)
             with fastf1_cache(cache_dir) as fastf1, guard:
                 session = fastf1.get_session(
                     context.scheduled.year, context.scheduled.round, context.scheduled.session_name
@@ -146,7 +148,7 @@ class Builder:
                     merge_into_session(session, context.classification)
                 # Measured again here, against the classification of today, so
                 # the pointer records what this generation was built from.
-                coverage = measure_coverage(session, snapshot.identity.session_type)
+                coverage = measure_coverage(session, snapshot.identity.session_type, extras)
                 files = legacy.build_legacy_artifacts(
                     session,
                     snapshot.identity,

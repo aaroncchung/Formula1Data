@@ -15,11 +15,11 @@ from f1data import build as build_module
 from f1data.archive import RETRY_WINDOW, write_snapshot
 from f1data.build import Builder
 from f1data.classification import Classification, ClassificationUnavailable
-from f1data.coverage import evaluate_coverage, measure_coverage
+from f1data.coverage import evaluate_coverage
 from f1data.due import RETRY_INTERVAL, plan_fetches
 from f1data.publish import Hold, Inputs, publish_session, read_pointer
 from f1data.store import MemoryStore
-from tests.fakes import make_session
+from tests.fakes import make_session, measure
 from tests.test_archive import fetched_session
 from tests.test_publish import AUSTRIA, ITALY, schedule_2026, snapshot
 
@@ -133,6 +133,25 @@ def test_timing_cut_short_before_the_classification_existed_is_caught_once_it_do
     ]
 
 
+def test_a_snapshot_measured_before_a_feed_was_added_is_fetched_again_once():
+    """A new bar is a new question, which a fetch from long ago never asked."""
+    long_ago = RACE_START + timedelta(hours=5)
+    old = snapshot(snapshot_id=fetched_at(long_ago))
+    old.coverage["measurement_version"] = 1
+    del old.coverage["feeds"]["circuit_info"]
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+
+    plans = plan_fetches(schedule, [old], LONG_AFTER)
+
+    assert [plan.reason for plan in plans] == ["fetched before the measured feeds changed"]
+
+    # The fetch that looked for the new feed starts a retry window of its own.
+    still_short = snapshot(snapshot_id=fetched_at(LONG_AFTER), session=without_position())
+    assert planned(schedule, [old, still_short], LONG_AFTER + timedelta(hours=1)) == []
+    assert planned(schedule, [old, still_short], LONG_AFTER + RETRY_INTERVAL) == [(8, "R")]
+    assert planned(schedule, [old, still_short], LONG_AFTER + RETRY_WINDOW) == []
+
+
 # --- judging against today's classification ----------------------------------
 
 
@@ -159,7 +178,7 @@ def test_feeds_are_still_judged_while_the_classification_is_missing():
     session = before_the_classification()
     del session.car_data["2"]
 
-    bars = {(item.bar, item.driver) for item in evaluate_coverage(measure_coverage(session, "R"))}
+    bars = {(item.bar, item.driver) for item in evaluate_coverage(measure(session))}
 
     assert ("car_data", "BBB") in bars
     assert ("classification", "BBB") in bars

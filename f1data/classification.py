@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,9 @@ _FINGERPRINT_COLUMNS = (
     "laps",
     "totalRaceTime",
 )
+
+
+_RETRY_PAUSES_SECONDS = (2.0, 6.0)
 
 
 class ClassificationUnavailable(RuntimeError):
@@ -54,23 +58,33 @@ def is_classified_session(session_type: str) -> bool:
     return session_type.upper() in RACE_LIKE_SESSION_TYPES
 
 
-def fetch_classification(fastf1: Any, year: int, round_number: int, session_type: str) -> Classification:
+def fetch_classification(
+    fastf1: Any, year: int, round_number: int, session_type: str, sleep: Any = time.sleep
+) -> Classification:
     """Ask Jolpica for the result of a race (``R``) or sprint (``S``), uncached."""
     code = session_type.upper()
     if not is_classified_session(code):
         raise ValueError(f"Session type {session_type!r} has no classification")
-    try:
-        ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
-        with fastf1.Cache.disabled():
-            if code == "R":
-                response = ergast.get_race_results(season=year, round=round_number)
-            else:
-                response = ergast.get_sprint_results(season=year, round=round_number)
-        frames = getattr(response, "content", None) or []
-    except Exception as exc:
-        raise ClassificationUnavailable(
-            f"Jolpica did not return a classification for {year} round {round_number} {code}"
-        ) from exc
+    ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
+    frames = None
+    for attempt, pause in enumerate((*_RETRY_PAUSES_SECONDS, None)):
+        try:
+            with fastf1.Cache.disabled():
+                if code == "R":
+                    response = ergast.get_race_results(season=year, round=round_number)
+                else:
+                    response = ergast.get_sprint_results(season=year, round=round_number)
+            frames = getattr(response, "content", None) or []
+            break
+        except Exception as exc:
+            # Jolpica allows four requests a second and answers 429 beyond
+            # that; a batch of sessions can reach it. Wait and ask again.
+            if pause is None:
+                raise ClassificationUnavailable(
+                    f"Jolpica did not return a classification for {year} round {round_number} {code} "
+                    f"after {attempt + 1} attempts"
+                ) from exc
+            sleep(pause)
     if not frames or frames[0].empty:
         raise ClassificationUnavailable(
             f"Jolpica has no classification for {year} round {round_number} {code}"

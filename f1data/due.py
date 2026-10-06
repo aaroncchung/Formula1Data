@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from f1data.archive import RETRY_WINDOW, Snapshot
-from f1data.coverage import refetch_could_help
+from f1data.coverage import MEASUREMENT_VERSION, refetch_could_help
 from f1data.identity import parse_utc
 from f1data.schedule import ScheduledSession
 
@@ -50,9 +50,11 @@ def plan_fetches(
 ) -> list[FetchPlan]:
     """The sessions to fetch now, oldest first, each with the reason.
 
-    ``classified_laps`` is asked only for a session whose snapshots all fall
-    short, to judge them against the classification of today: a snapshot taken
+    ``classified_laps`` is asked last, and only for a session that every other
+    test would fetch again or leave alone on the classification's say-so. It
+    judges the snapshots against the classification of today: a snapshot taken
     before Jolpica had the result cannot tell that its timing is cut short.
+    Asking for every session at once is how a run earns a 429 from Jolpica.
     """
     now = now.astimezone(timezone.utc)
     plans: list[FetchPlan] = []
@@ -73,6 +75,23 @@ def plan_fetches(
         if any(snapshot.complete for snapshot in mine):
             continue
 
+        # A snapshot measured before a feed was added says nothing about that
+        # feed. The retries, and their window, are counted afresh from the
+        # first fetch that looked for it.
+        current = [
+            snapshot
+            for snapshot in mine
+            if snapshot.coverage.get("measurement_version") == MEASUREMENT_VERSION
+        ]
+        if not current:
+            plans.append(FetchPlan(session, "fetched before the measured feeds changed"))
+            continue
+        fetched = [parse_utc(snapshot.fetched_at) for snapshot in current]
+        if now >= min(fetched) + RETRY_WINDOW:
+            continue
+        if now < max(fetched) + RETRY_INTERVAL:
+            continue
+
         laps = classified_laps(session)
         if laps:
             mine = [snapshot.judged_against(laps) for snapshot in mine]
@@ -80,12 +99,6 @@ def plan_fetches(
                 continue
         if not any(refetch_could_help(snapshot.shortfalls()) for snapshot in mine):
             # Only the classification is missing, and that is not F1's to give.
-            continue
-
-        fetched = [parse_utc(snapshot.fetched_at) for snapshot in mine]
-        if now >= min(fetched) + RETRY_WINDOW:
-            continue
-        if now < max(fetched) + RETRY_INTERVAL:
             continue
         best = max(mine, key=Snapshot.rank)
         short = sorted({shortfall.bar for shortfall in best.shortfalls()})

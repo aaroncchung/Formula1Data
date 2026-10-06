@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from f1data.coverage import measure_coverage
+from f1data.extras import fetch_extras
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, identity_from_fastf1, session_type_code
 
@@ -51,6 +52,8 @@ class FetchedSession:
     http: HttpRecorder
     attempts: int
     versions: dict[str, Any] = field(default_factory=dict)
+    # Feeds FastF1 does not load, by name (f1data/extras.py).
+    extras: dict[str, bytes] = field(default_factory=dict)
 
 
 @contextmanager
@@ -134,7 +137,8 @@ def fetch_session(
                 f"requests by host and status: {recorder.summary()}",
                 http=recorder,
             ) from exc
-        coverage = measure_coverage(session, code)
+        extras = fetch_extras(fastf1, session, identity.archive_path)
+        coverage = measure_coverage(session, code, extras)
         versions = _versions(fastf1)
 
     return FetchedSession(
@@ -145,6 +149,7 @@ def fetch_session(
         http=recorder,
         attempts=attempt,
         versions=versions,
+        extras=extras,
     )
 
 

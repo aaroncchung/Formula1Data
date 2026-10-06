@@ -14,7 +14,6 @@ import pytest
 
 from f1data import layout
 from f1data.archive import Snapshot
-from f1data.coverage import measure_coverage
 from f1data.identity import SessionIdentity
 from f1data.publish import (
     Inputs,
@@ -29,7 +28,7 @@ from f1data.publish import (
 )
 from f1data.schedule import ScheduledSession
 from f1data.store import MemoryStore
-from tests.fakes import make_session
+from tests.fakes import make_session, measure
 
 NOW = datetime(2026, 10, 5, 20, 0, tzinfo=timezone.utc)
 AUSTRIA = 11315
@@ -60,7 +59,7 @@ def snapshot(session_key: int = AUSTRIA, snapshot_id: str = "20261005T200000Z-aa
         snapshot_id=snapshot_id,
         identity=identity(session_key, **kwargs),
         fetched_at=f"{snapshot_id[:4]}-{snapshot_id[4:6]}-{snapshot_id[6:8]}T{snapshot_id[9:11]}:00:00Z",
-        coverage=measure_coverage(session or make_session(), "R"),
+        coverage=measure(session or make_session()),
     )
 
 

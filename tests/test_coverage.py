@@ -14,18 +14,22 @@ from f1data.coverage import (
     MAX_SAMPLE_GAP_SECONDS,
     evaluate_coverage,
     lap_is_usable,
-    measure_coverage,
     weakest_share,
 )
-from tests.fakes import LAP_SECONDS, RACE_START, make_session, thin_to_one_sample_per_lap
+from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
+from tests.fakes import EXTRAS, LAP_SECONDS, RACE_START, make_session, measure, thin_to_one_sample_per_lap
+
+
+def shortfalls_with(session, extras, session_type="R"):
+    return {(item.bar, item.driver) for item in evaluate_coverage(measure(session, session_type, extras))}
 
 
 def shortfalls(session, session_type="R"):
-    return {(item.bar, item.driver) for item in evaluate_coverage(measure_coverage(session, session_type))}
+    return {(item.bar, item.driver) for item in evaluate_coverage(measure(session, session_type))}
 
 
 def test_a_whole_session_meets_every_bar():
-    measurement = measure_coverage(make_session(), "R")
+    measurement = measure(make_session())
 
     assert evaluate_coverage(measurement) == []
     assert measurement["drivers"]["AAA"] == {
@@ -37,6 +41,7 @@ def test_a_whole_session_meets_every_bar():
         "car_laps": 10,
         "position_laps": 10,
         "tyre_laps": 10,
+        "tyre_age_laps": 10,
     }
     assert weakest_share(measurement) == 1.0
 
@@ -89,7 +94,7 @@ def test_a_lap_fastf1_generated_for_a_retirement_is_not_a_timing_lap():
     generated["Time"] = generated["Time"] + pd.Timedelta(seconds=150)
     session.laps = pd.concat([session.laps, generated], ignore_index=True)
 
-    measurement = measure_coverage(session, "R")
+    measurement = measure(session)
 
     assert measurement["drivers"]["CCC"]["timing_laps"] == 10
     assert measurement["drivers"]["CCC"]["generated_laps"] == 1
@@ -166,6 +171,21 @@ def test_one_driver_without_tyre_data_is_named():
     assert shortfalls(session) == {("tyre_data", "BBB")}
 
 
+def test_a_used_set_with_no_reported_age_is_measured_but_is_not_a_shortfall():
+    # Bearman's third stint at Barcelona in 2026: a used set of softs, with a
+    # compound and a stint and no age, however often it is fetched.
+    session = make_session()
+    used_set = (session.laps["DriverNumber"] == "2") & (session.laps["LapNumber"] > 6)
+    session.laps.loc[used_set, "TyreLife"] = np.nan
+    session.laps.loc[used_set, "Stint"] = 2.0
+
+    measurement = measure(session)
+
+    assert measurement["drivers"]["BBB"]["tyre_laps"] == 10
+    assert measurement["drivers"]["BBB"]["tyre_age_laps"] == 6
+    assert evaluate_coverage(measurement) == []
+
+
 def test_a_driver_known_only_from_jolpica_is_a_shortfall():
     session = make_session()
     session.results["BroadcastName"] = None
@@ -188,6 +208,60 @@ def test_a_session_without_a_lap_count_to_compare_needs_laps_for_every_driver():
     assert shortfalls(session, "Q") == {("timing_data", "CCC")}
 
 
+def test_a_race_with_stops_and_no_stationary_times_is_a_shortfall():
+    # What F1 answers for a race before late 2024: timing that shows the stops,
+    # and no pit-stop feed.
+    session = make_session()
+    without_feed = {CIRCUIT_INFO: EXTRAS[CIRCUIT_INFO]}
+
+    found = {(item.bar, item.driver, item.detail) for item in evaluate_coverage(measure(session, "R", without_feed))}
+
+    assert found == {("pit_stop_series", None, "no stationary times for 1 stop(s) in the timing")}
+
+
+def test_a_session_nobody_pitted_in_has_no_pit_stop_feed_to_miss():
+    session = make_session()
+    session.laps["PitInTime"] = pd.NaT
+
+    assert evaluate_coverage(measure(session, "S", {CIRCUIT_INFO: EXTRAS[CIRCUIT_INFO]})) == []
+
+
+def test_missing_corner_positions_are_a_shortfall():
+    session = make_session()
+
+    found = shortfalls_with(session, {PIT_STOP_SERIES: EXTRAS[PIT_STOP_SERIES]})
+
+    assert found == {("circuit_info", None)}
+
+
+def test_the_pit_stop_feed_is_read_whether_a_stop_is_a_driver_s_first_or_a_later_one():
+    feed = (
+        b'\xef\xbb\xbf01:12:03.942{"PitTimes":{"44":[{"Timestamp":"2026-06-28T13:18:16.017Z",'
+        b'"PitStop":{"RacingNumber":"44","PitStopTime":"2.4","PitLaneTime":"21.369","Lap":"12"}}]}}\r\n'
+        b'01:28:29.134{"PitTimes":{"44":{"1":{"Timestamp":"2026-06-28T13:34:41.209Z",'
+        b'"PitStop":{"RacingNumber":"44","PitStopTime":"2.2","PitLaneTime":"21.250","Lap":"25"}}}}}\r\n'
+        b"not a stream line\r\n"
+    )
+
+    assert parse_pit_stop_series(feed) == [
+        {
+            "driver_number": "44",
+            "lap_number": 12,
+            "stationary_ms": 2400,
+            "pit_lane_ms": 21369,
+            "time_utc": "2026-06-28T13:18:16.017Z",
+        },
+        {
+            "driver_number": "44",
+            "lap_number": 25,
+            "stationary_ms": 2200,
+            "pit_lane_ms": 21250,
+            "time_utc": "2026-06-28T13:34:41.209Z",
+        },
+    ]
+    assert parse_pit_stop_series(b"") == []
+
+
 def test_weakest_share_orders_two_incomplete_sessions():
     slightly_short = make_session()
     slightly_short.car_data["1"] = slightly_short.car_data["1"][
@@ -196,8 +270,8 @@ def test_weakest_share_orders_two_incomplete_sessions():
     badly_short = make_session()
     del badly_short.pos_data["1"]
 
-    assert weakest_share(measure_coverage(slightly_short, "R")) == pytest.approx(0.8)
-    assert weakest_share(measure_coverage(badly_short, "R")) == 0.0
+    assert weakest_share(measure(slightly_short)) == pytest.approx(0.8)
+    assert weakest_share(measure(badly_short)) == 0.0
 
 
 def test_lap_is_usable_needs_samples_from_start_to_end_without_a_long_hole():

@@ -20,7 +20,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-MEASUREMENT_VERSION = 1
+from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
+
+# What a measurement records. A snapshot measured by an older version says
+# nothing about a feed added since, and is fetched again (f1data/due.py).
+#
+#   2  the pit-stop feed and the circuit information; tyre age counted
+#      apart from compound and stint
+MEASUREMENT_VERSION = 2
 
 # A lap's telemetry is usable when its samples reach from the start of the lap
 # to its end with no hole longer than this. F1 sends car and position data
@@ -57,12 +64,16 @@ class Shortfall:
         return {"bar": self.bar, "driver": self.driver, "detail": self.detail}
 
 
-def measure_coverage(session: Any, session_type: str) -> dict[str, Any]:
+def measure_coverage(
+    session: Any, session_type: str, extras: dict[str, bytes] | None = None
+) -> dict[str, Any]:
     """Count what arrived for a loaded FastF1 session.
 
-    ``session_type`` is the short code (``R``, ``S``, ...). The result is plain
-    JSON and carries no judgement.
+    ``session_type`` is the short code (``R``, ``S``, ...). ``extras`` are the
+    feeds FastF1 does not load, by name. The result is plain JSON and carries
+    no judgement.
     """
+    extras = extras or {}
     laps = _frame(session, "laps")
     results = _frame(session, "results")
     car_data = _mapping(session, "car_data")
@@ -83,6 +94,7 @@ def measure_coverage(session: Any, session_type: str) -> dict[str, Any]:
                 timed, position_data.get(number), POSITION_CHANNELS, _position_valid
             ),
             "tyre_laps": _tyre_laps(timed),
+            "tyre_age_laps": _tyre_laps(timed, with_age=True),
         }
 
     session_info = _safe_attr(session, "session_info") or {}
@@ -101,7 +113,13 @@ def measure_coverage(session: Any, session_type: str) -> dict[str, Any]:
             "track_status": len(_frame(session, "track_status")) > 0,
             "session_status": len(_frame(session, "session_status")) > 0,
             "lap_count": _safe_attr(session, "total_laps") is not None,
+            "pit_stop_series": PIT_STOP_SERIES in extras,
+            "circuit_info": CIRCUIT_INFO in extras,
         },
+        # Stops as the timing saw them and as the pit-stop feed reported them.
+        # A session nobody pitted in has no pit-stop feed to miss.
+        "pit_stops_in_timing": _pit_stops_in_timing(laps),
+        "pit_stops_in_series": len(parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b""))),
         "session_ended": _session_ended(_frame(session, "session_status")),
         "total_laps": _int_or_none(_safe_attr(session, "total_laps")),
         "drivers": drivers,
@@ -121,6 +139,16 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
         shortfalls.append(Shortfall("lap_count", None, "feed did not arrive"))
     if feeds.get("session_status") and not measurement.get("session_ended"):
         shortfalls.append(Shortfall("session_status", None, "feed does not show the session ended"))
+    stops = int(measurement.get("pit_stops_in_timing") or 0)
+    if race_like and stops and not measurement.get("pit_stops_in_series"):
+        shortfalls.append(
+            Shortfall("pit_stop_series", None, f"no stationary times for {stops} stop(s) in the timing")
+        )
+    # The corner analysis can fall back to inferring corners from braking, so
+    # a build does not fail without this. It is still a bar: with it missing
+    # the session shows inferred corners, and a later fetch may well get it.
+    if not feeds.get("circuit_info"):
+        shortfalls.append(Shortfall("circuit_info", None, "corner positions did not arrive"))
 
     drivers = measurement.get("drivers", {})
     if not drivers:
@@ -198,6 +226,7 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
                 "car_laps": 0,
                 "position_laps": 0,
                 "tyre_laps": 0,
+                "tyre_age_laps": 0,
             }
     return {**measurement, "drivers": drivers}
 
@@ -270,12 +299,30 @@ def _position_valid(telemetry: pd.DataFrame) -> np.ndarray:
     return (present & located).to_numpy()
 
 
-def _tyre_laps(laps: pd.DataFrame) -> int:
+def _pit_stops_in_timing(laps: pd.DataFrame) -> int:
+    if len(laps) == 0 or "PitInTime" not in laps.columns:
+        return 0
+    return int((laps["PitInTime"].notna() & ~_generated(laps)).sum())
+
+
+def _tyre_laps(laps: pd.DataFrame, with_age: bool = False) -> int:
+    """Laps whose compound and stint are known, and whose tyre age is too if asked.
+
+    The bar is on compound and stint. When a driver's TimingAppData is missing
+    FastF1 leaves the compound empty, and that is what a second fetch can
+    cure. Tyre age is counted apart and is not a bar: F1 does not report the
+    age of a set that went on used, so those laps have a compound, a stint and
+    no age however often they are fetched. In the 2026 Barcelona race that is
+    21 of Bearman's 60 laps, and in the 2026 race at Sepang it is 152 laps
+    across eleven drivers.
+    """
     if len(laps) == 0 or not {"Compound", "TyreLife", "Stint"} <= set(laps.columns):
         return 0
     compound = laps["Compound"].astype("string").str.strip().str.upper()
-    known = compound.notna() & ~compound.isin(_UNKNOWN_COMPOUNDS)
-    return int((known & laps["TyreLife"].notna() & laps["Stint"].notna()).sum())
+    known = compound.notna() & ~compound.isin(_UNKNOWN_COMPOUNDS) & laps["Stint"].notna()
+    if with_age:
+        known = known & laps["TyreLife"].notna()
+    return int(known.sum())
 
 
 def _driver_codes(results: pd.DataFrame, laps: pd.DataFrame) -> dict[str, str]:

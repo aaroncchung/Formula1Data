@@ -37,6 +37,7 @@ from f1data.store import ObjectStore
 SNAPSHOT_SCHEMA_VERSION = 1
 PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
+EXTRA_PREFIX = "extra/"
 _LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # How long after its first fetch a session short of a bar keeps being fetched
@@ -153,6 +154,13 @@ def write_snapshot(store: ObjectStore, fetched: FetchedSession, now: datetime | 
             objects[HTTP_ARCHIVE] = _describe(compressed)
             store.put_file(f"{prefix}{HTTP_ARCHIVE}", compressed, content_type="application/gzip")
 
+    for name, data in sorted(fetched.extras.items()):
+        objects[f"{EXTRA_PREFIX}{name}"] = {
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        store.put(f"{prefix}{EXTRA_PREFIX}{name}", data, content_type=_extra_content_type(name))
+
     snapshot = Snapshot(
         snapshot_id=snapshot_id,
         identity=fetched.identity,
@@ -263,6 +271,26 @@ def archive_directory(
         raise ArchiveError(f"{key}.tar.gz did not arrive whole")
     store.put(f"{key}.json", dump_json(description), if_absent=True)
     return description
+
+
+def read_extras(store: ObjectStore, snapshot: Snapshot) -> dict[str, bytes]:
+    """The feeds archived beside the FastF1 cache, by name, checked against the snapshot."""
+    extras: dict[str, bytes] = {}
+    prefix = layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)
+    for name, described in sorted(snapshot.objects.items()):
+        if not name.startswith(EXTRA_PREFIX):
+            continue
+        found = store.get(f"{prefix}{name}")
+        if found is None:
+            raise ArchiveError(f"Snapshot {snapshot.snapshot_id} is missing {name}")
+        if hashlib.sha256(found.data).hexdigest() != described.get("sha256"):
+            raise ArchiveError(f"{prefix}{name} does not match its snapshot")
+        extras[name[len(EXTRA_PREFIX):]] = found.data
+    return extras
+
+
+def _extra_content_type(name: str) -> str:
+    return "application/json; charset=utf-8" if name.endswith(".json") else "application/octet-stream"
 
 
 def dump_json(payload: Any) -> bytes:
