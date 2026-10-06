@@ -140,6 +140,15 @@ def main(argv: list[str] | None = None) -> None:
     keep.add_argument("--name", required=True, help="A short name, such as legacy-fastf1-cache.")
     keep.set_defaults(func=run_archive_directory)
 
+    schema = subparsers.add_parser(
+        "schema",
+        help="Write the published format's JSON Schema from the models. Commit the result.",
+    )
+    schema.add_argument(
+        "--check", action="store_true", help="Write nothing; fail if the committed file is out of date."
+    )
+    schema.set_defaults(func=run_schema)
+
     args = parser.parse_args(argv)
     load_env_file(Path(".env"))
     logging.basicConfig(
@@ -314,7 +323,7 @@ def _print_snapshot(snapshot: Snapshot) -> None:
 
 
 def run_build(args: argparse.Namespace) -> int:
-    # Imported here so that fetching does not need the old normaliser on the path.
+    # Imported here so that fetching does not load the analyses.
     from f1data.build import Builder
     from f1data.publish import publish_index, publish_session, read_published
     from f1data.standings import publish_standings
@@ -429,6 +438,24 @@ def run_archive_directory(args: argparse.Namespace) -> int:
         f"Archived {description['file_count']} file(s), {description['total_bytes']} bytes, "
         f"as {archive['key']} ({archive['size_bytes']} bytes, sha256 {archive['sha256']})"
     )
+    return 0
+
+
+def run_schema(args: argparse.Namespace) -> int:
+    from f1data import schema
+    from f1data.schema import render_schema, write_schema
+
+    # Read when the command runs, so that a test can point it elsewhere.
+    SCHEMA_PATH = schema.SCHEMA_PATH
+    if args.check:
+        current = SCHEMA_PATH.read_text(encoding="utf-8") if SCHEMA_PATH.is_file() else None
+        if current != render_schema():
+            print(f"{SCHEMA_PATH} is out of date: run `python -m f1data schema` and commit it.")
+            return 1
+        print(f"{SCHEMA_PATH} matches the models.")
+        return 0
+    changed = write_schema(SCHEMA_PATH)
+    print(f"{'Wrote' if changed else 'Already current:'} {SCHEMA_PATH}")
     return 0
 
 

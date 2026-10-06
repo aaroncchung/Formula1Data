@@ -28,7 +28,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from f1data import layout, legacy
+from f1data import layout
+from f1data.artifacts import build_artifacts
 from f1data.archive import (
     Snapshot,
     list_snapshots,
@@ -170,9 +171,15 @@ class Builder:
             )
             for snapshot in snapshots
         ]
-        # The calendar entry reaches the artifacts (the round, the names, the
-        # dates), so a build made under another entry is not this build. The
-        # four fields are there to be read; the checksum covers the whole row.
+        # The calendar entry reaches what is published, so a build made under
+        # another entry is not this build. In format 2 no artifact carries the
+        # round or the calendar's names, but the manifest and the pointer
+        # carry the session's identity, whose start time is the calendar's
+        # and can, by the lines above, be another fetch's.
+        # A session built again for a change that does not reach its files is
+        # the same generation, since a generation is named by its content.
+        # The four fields are there to be read; the checksum covers the whole
+        # row.
         also = {
             "calendar": {
                 "year": scheduled.year,
@@ -337,12 +344,11 @@ class Builder:
                     )
                 if context.classification is not None:
                     merge_into_session(session, context.classification)
-                files = legacy.build_legacy_artifacts(
-                    session,
-                    snapshot.identity,
-                    context.scheduled.round,
-                    generated_at=snapshot.fetched_at,
-                    scratch=Path(scratch) / "artifacts",
+                # The snapshot's record, as gather judged it against today's
+                # result, is what the pointer will say of this generation, so
+                # it is what the generation says of itself.
+                files = build_artifacts(
+                    session, snapshot.identity, context.classification, extras, snapshot.coverage
                 )
         wanted_of_f1 = [url for url in guard.forbidden if _host(url) in F1_ARCHIVE_HOSTS]
         if wanted_of_f1:

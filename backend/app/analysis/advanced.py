@@ -55,6 +55,37 @@ MIN_DEGRADATION_LAPS = 8
 MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP = 20.0
 MAX_SLOPE_RELATIVE_STANDARD_ERROR = 0.25
 
+# An official corner is found on a lap by position: the lap's sample nearest
+# the corner's coordinates. Where the corner's distance along the lap is known
+# as well, only samples within this far of it are considered, so that a stretch
+# of track that passes close by (the two sides of a hairpin, a crossover) is
+# never taken for the corner. Laps disagree about distance by about 1%, which
+# on the longest circuit is 70 m.
+OFFICIAL_CORNER_SEARCH_M = 200.0
+# And the sample has to be at the corner. The corners of the 2026 circuits lie
+# within 20 m of the line a fast lap takes, so a lap whose samples never come
+# this near one did not go through it: it stopped before the corner, or its
+# position data did.
+#
+# Which of the two limits gives way when they disagree depends on the lap. One
+# that was timed and whose telemetry runs the length of that time went all the
+# way round, so a sample at a corner is that corner even where the lap's
+# distance says otherwise: in the 2026 Chinese sprint F1's car feed repeats
+# itself for seconds at a time on eight drivers' fastest laps, whose speed
+# then measures the lap from 8% short to 15% long. A lap that was not so
+# timed stopped somewhere, and then only a sample that is also where the
+# corner should be will do: in the 2026 Monaco race Verstappen's only lap ends
+# at the chicane, 2,107 m into a lap of 3,278 m, and Tabac and the swimming
+# pool, which he never reached, are within 50 m of the road out of Sainte
+# Devote and of the grid, where he had been two kilometres of lap earlier.
+OFFICIAL_CORNER_REACH_M = 50.0
+# ``x`` and ``y`` are F1's position data, which is in tenths of a metre.
+POSITION_UNITS_PER_METRE = 10.0
+# A driver who does not brake for a corner still has a slowest point near it.
+# It is looked for this far either side of the corner, and never past the
+# midpoint to the next one.
+OFFICIAL_CORNER_WINDOW_M = 75.0
+
 
 def calculate_track_dominance(
     session_id: str,
@@ -138,6 +169,10 @@ def calculate_track_dominance(
                 "driver_times_ms": dict(ordered),
             }
         )
+    if all(sector["midpoint"]["x"] is None for sector in sectors):
+        caveats.append(
+            "The quickest lap has no position data, so the minisectors cannot be placed on a map."
+        )
     return {
         **result,
         "minisector_count": len(sectors),
@@ -149,16 +184,73 @@ def calculate_track_dominance(
 def calculate_corner_analysis(
     session_id: str,
     laps: list[dict[str, Any]],
-    telemetry: list[dict[str, Any]],
+    telemetry: Any,
+    corners: list[dict[str, Any]] | None = None,
+    reference_lap_length_m: float | None = None,
 ) -> dict[str, Any]:
-    representatives, samples = representative_telemetry_laps(laps, telemetry)
+    """Braking and speed through each corner, on each driver's fastest lap.
+
+    ``corners`` are the circuit's official corner positions: ``number``,
+    ``letter``, ``x``, ``y`` and, where it is known, ``distance_m`` along the
+    lap, measured on a lap ``reference_lap_length_m`` long. With them the laps
+    are segmented by the real corners, and the result says so in
+    ``corner_source``. Without them, or when none can be found on any lap,
+    corners are inferred from where the drivers brake, as before (AR-17).
+    """
+    by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
+    representatives, samples = representative_telemetry_laps(laps, by_lap)
+    events_by_driver = {driver: _braking_events(driver, rows) for driver, rows in samples.items()}
+    # A driver who retires early is here with whatever lap they managed,
+    # which may not go all the way round.
+    lap_times = {row["driver_code"]: _float(row["lap_time_ms"]) for row in representatives}
+    complete = {driver: _runs_its_lap_time(rows, lap_times[driver]) for driver, rows in samples.items()}
+    official = _official_corner_rows(
+        _usable_corners(corners),
+        samples,
+        events_by_driver,
+        reference_lap_length_m,
+        _usual_lap_end(laps, by_lap),
+        complete,
+    )
+    if official is not None:
+        caveats = [
+            "Corners are the circuit's official corner positions. Each is found on a driver's "
+            "lap by position, so a distance shown for a driver is along that driver's own lap.",
+            "A driver's braking figures for a corner are those of the braking whose slowest "
+            "point is nearest it. Where the driver did not brake for a corner, only the slowest "
+            f"speed within {OFFICIAL_CORNER_WINDOW_M:.0f} m of it and the exit speed are given.",
+            "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
+        ]
+        unplaced = sorted(
+            driver for driver, rows in samples.items() if complete[driver] and not _has_position(rows)
+        )
+        if unplaced:
+            caveats.append(
+                f"No position data on the lap of: {', '.join(unplaced)}. Their corners are found by "
+                "distance along the lap, which can be tens of metres out."
+            )
+        short = sorted(driver for driver in samples if not complete[driver])
+        if short:
+            caveats.append(
+                f"Not a whole timed lap: {', '.join(short)}. The lap has no lap time, or its telemetry "
+                "does not run the length of it, so its corners are found by position alone, and one it "
+                "did not reach, or has no position data at, has no figures for that driver."
+            )
+        return {
+            "session_id": session_id,
+            "corner_source": "official",
+            "representative_laps": representatives,
+            "corners": official,
+            "caveats": caveats,
+        }
+
     caveats = [
         "Corners are inferred from brake application and speed loss, not official circuit geometry.",
-        "Entry, apex, and exit values are distance-interpolated from downsampled telemetry.",
+        "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
     ]
     events: list[dict[str, Any]] = []
-    for driver, rows in samples.items():
-        events.extend(_braking_events(driver, rows))
+    for driver_events in events_by_driver.values():
+        events.extend(driver_events)
 
     clusters: list[list[dict[str, Any]]] = []
     for event in sorted(events, key=lambda row: row["apex_distance_m"]):
@@ -171,7 +263,7 @@ def calculate_corner_analysis(
         else:
             clusters.append([event])
 
-    corners = []
+    inferred = []
     for corner_number, cluster in enumerate(clusters, start=1):
         center = float(median(item["apex_distance_m"] for item in cluster))
         by_driver: dict[str, dict[str, Any]] = {}
@@ -183,36 +275,189 @@ def calculate_corner_analysis(
                 by_driver[event["driver_code"]] = event
         driver_rows = []
         for driver, event in sorted(by_driver.items()):
-            driver_rows.append(
-                {
-                    "driver_code": driver,
-                    "brake_start_m": round(event["brake_start_m"], 1),
-                    "apex_distance_m": round(event["apex_distance_m"], 1),
-                    "braking_distance_m": round(event["braking_distance_m"], 1),
-                    "entry_speed_kph": round(event["entry_speed_kph"], 1),
-                    "apex_speed_kph": round(event["apex_speed_kph"], 1),
-                    "exit_speed_kph": _round_or_none(event.get("exit_speed_kph"), 1),
-                    "speed_loss_kph": round(event["speed_loss_kph"], 1),
-                    "brake_duration_ms": _round_or_none(event.get("brake_duration_ms"), 1),
-                }
-            )
+            driver_rows.append(_corner_driver_row(driver, event))
         position_event = min(cluster, key=lambda row: abs(row["apex_distance_m"] - center))
-        corners.append(
+        inferred.append(
             {
                 "corner_number": corner_number,
+                "letter": None,
                 "distance_m": round(center, 1),
                 "x": _round_or_none(position_event.get("x"), 2),
                 "y": _round_or_none(position_event.get("y"), 2),
                 "drivers": driver_rows,
             }
         )
-    if not corners:
+    if not inferred:
         caveats.append("No braking events with a meaningful speed reduction were detected.")
+    elif all(corner["x"] is None for corner in inferred):
+        caveats.append(
+            "The laps compared have no position data, so the corners cannot be placed on a map."
+        )
     return {
         "session_id": session_id,
+        "corner_source": "inferred",
         "representative_laps": representatives,
-        "corners": corners,
+        "corners": inferred,
         "caveats": caveats,
+    }
+
+
+def _has_position(rows: list[dict[str, Any]]) -> bool:
+    return any(_number(row.get("x")) and _number(row.get("y")) for row in rows)
+
+
+def _corner_driver_row(driver: str, event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "driver_code": driver,
+        "brake_start_m": _round_or_none(event.get("brake_start_m"), 1),
+        "apex_distance_m": round(event["apex_distance_m"], 1),
+        "braking_distance_m": _round_or_none(event.get("braking_distance_m"), 1),
+        "entry_speed_kph": _round_or_none(event.get("entry_speed_kph"), 1),
+        "apex_speed_kph": round(event["apex_speed_kph"], 1),
+        "exit_speed_kph": _round_or_none(event.get("exit_speed_kph"), 1),
+        "speed_loss_kph": _round_or_none(event.get("speed_loss_kph"), 1),
+        "brake_duration_ms": _round_or_none(event.get("brake_duration_ms"), 1),
+    }
+
+
+def _usable_corners(corners: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Official corners that have a number and something to find them by."""
+    usable = []
+    for corner in corners or []:
+        number = _float(corner.get("number"))
+        x, y, distance = _float(corner.get("x")), _float(corner.get("y")), _float(corner.get("distance_m"))
+        if number is None or ((x is None or y is None) and distance is None):
+            continue
+        usable.append(
+            {
+                "number": int(number),
+                "letter": str(corner.get("letter") or "").strip() or None,
+                "x": x,
+                "y": y,
+                "distance_m": distance,
+            }
+        )
+    return usable
+
+
+def _official_corner_rows(
+    corners: list[dict[str, Any]],
+    samples: dict[str, list[dict[str, Any]]],
+    events_by_driver: dict[str, list[dict[str, Any]]],
+    reference_lap_length_m: float | None,
+    usual_lap_length_m: float,
+    complete: dict[str, bool],
+) -> list[dict[str, Any]] | None:
+    """Each official corner with every driver's figures for it, or None if no lap can place one.
+
+    ``complete`` says, by driver, whether the lap went all the way round.
+    ``usual_lap_length_m`` is what the telemetry of a normal lap measures, or
+    0 when no lap says.
+    """
+    if not corners:
+        return None
+    by_corner: list[dict[str, dict[str, Any]]] = [{} for _ in corners]
+    placed_at: list[list[float]] = [[] for _ in corners]
+    for driver, rows in sorted(samples.items()):
+        # The official distances are along a lap of the reference length, and
+        # are scaled to this lap's. A lap that stopped somewhere is not a lap
+        # long, so its corners are looked for where a normal lap has them.
+        length = _lap_length(rows) if complete[driver] else usual_lap_length_m
+        scale = length / reference_lap_length_m if reference_lap_length_m and length > 0 else 1.0
+        distances = [_corner_distance_on_lap(rows, corner, scale, complete[driver]) for corner in corners]
+        found = [(distance, index) for index, distance in enumerate(distances) if distance is not None]
+        # In the order they come round the lap, each corner owns the track
+        # from half-way back to the one before to half-way on to the next.
+        found.sort()
+        for place, (distance, index) in enumerate(found):
+            start = (found[place - 1][0] + distance) / 2 if place else -math.inf
+            end = (distance + found[place + 1][0]) / 2 if place + 1 < len(found) else math.inf
+            placed_at[index].append(distance)
+            braking = [
+                event
+                for event in events_by_driver.get(driver, [])
+                if start <= event["apex_distance_m"] < end
+            ]
+            if braking:
+                event = min(braking, key=lambda item: abs(item["apex_distance_m"] - distance))
+            else:
+                event = _slowest_point_near(
+                    rows,
+                    distance,
+                    max(start, distance - OFFICIAL_CORNER_WINDOW_M),
+                    min(end, distance + OFFICIAL_CORNER_WINDOW_M),
+                )
+            if event is not None:
+                by_corner[index][driver] = _corner_driver_row(driver, event)
+    if not any(placed_at):
+        return None
+    return [
+        {
+            "corner_number": corner["number"],
+            "letter": corner["letter"],
+            "distance_m": _round_or_none(
+                corner["distance_m"]
+                if corner["distance_m"] is not None
+                else (median(placed_at[index]) if placed_at[index] else None),
+                1,
+            ),
+            "x": _round_or_none(corner["x"], 2),
+            "y": _round_or_none(corner["y"], 2),
+            "drivers": [by_corner[index][driver] for driver in sorted(by_corner[index])],
+        }
+        for index, corner in enumerate(corners)
+    ]
+
+
+def _corner_distance_on_lap(
+    rows: list[dict[str, Any]], corner: dict[str, Any], scale: float, complete: bool
+) -> float | None:
+    """How far round this lap the corner is, by the lap's own distance. None if the lap does not show it.
+
+    ``scale`` turns the corner's official distance into this lap's.
+    ``complete`` says whether the lap went all the way round.
+    """
+    expected = corner["distance_m"] * scale if corner["distance_m"] is not None else None
+    if corner["x"] is not None and corner["y"] is not None:
+        reach = (OFFICIAL_CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2
+        # (how far from the corner, how far round the lap) of each sample at the corner.
+        at_corner = []
+        for row in rows:
+            if _number(row.get("x")) and _number(row.get("y")):
+                off = (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2
+                if off <= reach:
+                    at_corner.append((off, float(row["distance_m"])))
+        where_expected = [
+            sample
+            for sample in at_corner
+            if expected is None or abs(sample[1] - expected) <= OFFICIAL_CORNER_SEARCH_M
+        ]
+        if where_expected:
+            return min(where_expected)[1]
+        if at_corner and complete:
+            # The lap passed the corner, and it is the lap's distance that is out.
+            return min(at_corner)[1]
+    # No position data where the corner is. A lap that went all the way round
+    # can still be read by distance, as far as its samples run.
+    if complete and expected is not None and rows[0]["distance_m"] <= expected <= rows[-1]["distance_m"]:
+        return expected
+    return None
+
+
+def _slowest_point_near(
+    rows: list[dict[str, Any]], distance: float, start: float, end: float
+) -> dict[str, Any] | None:
+    """The slowest sample around a corner the driver did not brake for, as a corner event."""
+    window = [row for row in rows if start <= row["distance_m"] <= end and _number(row.get("speed_kph"))]
+    if not window:
+        return None
+    apex = min(window, key=lambda row: (float(row["speed_kph"]), abs(row["distance_m"] - distance)))
+    return {
+        "apex_distance_m": float(apex["distance_m"]),
+        "apex_speed_kph": float(apex["speed_kph"]),
+        "exit_speed_kph": _interpolate(
+            rows, min(rows[-1]["distance_m"], apex["distance_m"] + 150), "speed_kph"
+        ),
     }
 
 
@@ -590,38 +835,74 @@ def _without_residual_outliers(samples: list[tuple[float, float]]) -> list[tuple
     ]
 
 
+class TelemetryByLap:
+    """Telemetry samples by driver and lap, grouped from a flat list of rows.
+
+    The analyses here take telemetry as one list of sample rows and group it
+    themselves. A race at full resolution is about 750,000 samples, of which
+    they read fewer than fifty laps, so a caller that holds telemetry in
+    another form can pass an object with these four methods instead of the
+    list (``telemetry_by_lap``). Only the laps an analysis reads then have to
+    be turned into rows.
+    """
+
+    def __init__(self, telemetry: list[dict[str, Any]], lap_number_of: Any) -> None:
+        self._rows: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+        for row in telemetry:
+            driver = str(row.get("driver_code") or "").upper()
+            number = lap_number_of(row)
+            if driver and number > 0 and _number(row.get("distance_m")):
+                self._rows[(driver, number)].append(row)
+
+    def lap_keys(self) -> list[tuple[str, int]]:
+        """Every (driver code, lap number) with at least one sample that has a distance."""
+        return list(self._rows)
+
+    def lap_sample_count(self, key: tuple[str, int]) -> int:
+        return len(self._rows.get(key, ()))
+
+    def lap_end_m(self, key: tuple[str, int]) -> float:
+        """The furthest distance the lap's samples reach."""
+        return max(float(row["distance_m"]) for row in self._rows[key])
+
+    def lap_rows(self, key: tuple[str, int]) -> list[dict[str, Any]]:
+        return self._rows.get(key, [])
+
+
+def telemetry_by_lap(telemetry: Any, lap_number_of: Any) -> Any:
+    """``telemetry`` grouped by lap, whether it came as rows or already by lap."""
+    if hasattr(telemetry, "lap_rows"):
+        return telemetry
+    return TelemetryByLap(telemetry, lap_number_of)
+
+
 def representative_telemetry_laps(
-    laps: list[dict[str, Any]], telemetry: list[dict[str, Any]]
+    laps: list[dict[str, Any]], telemetry: Any
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     lap_meta = {
         (str(lap.get("driver_code") or "").upper(), int(lap.get("lap_number") or 0)): lap
         for lap in laps
         if lap.get("driver_code") and lap.get("lap_number")
     }
-    grouped_samples: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
-    for row in telemetry:
-        driver = str(row.get("driver_code") or "").upper()
-        lap_number = int(row.get("lap_number") or 0)
-        if driver and lap_number > 0 and _number(row.get("distance_m")):
-            grouped_samples[(driver, lap_number)].append(row)
+    by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
 
-    by_driver: dict[str, list[tuple[tuple[str, int], list[dict[str, Any]]]]] = defaultdict(list)
-    for key, rows in grouped_samples.items():
-        if len(rows) >= 3 and not lap_meta.get(key, {}).get("is_deleted"):
-            by_driver[key[0]].append((key, rows))
+    by_driver: dict[str, list[tuple[str, int]]] = defaultdict(list)
+    for key in by_lap.lap_keys():
+        if by_lap.lap_sample_count(key) >= 3 and not lap_meta.get(key, {}).get("is_deleted"):
+            by_driver[key[0]].append(key)
 
     representatives = []
     selected: dict[str, list[dict[str, Any]]] = {}
     for driver, candidates in sorted(by_driver.items()):
-        key, rows = min(
+        key = min(
             candidates,
             key=lambda item: (
-                lap_meta.get(item[0], {}).get("lap_time_ms") is None,
-                lap_meta.get(item[0], {}).get("lap_time_ms") or math.inf,
-                item[0][1],
+                lap_meta.get(item, {}).get("lap_time_ms") is None,
+                lap_meta.get(item, {}).get("lap_time_ms") or math.inf,
+                item[1],
             ),
         )
-        prepared = _prepare_samples(rows)
+        prepared = _prepare_samples(by_lap.lap_rows(key))
         if len(prepared) < 3 or prepared[-1]["distance_m"] <= 0:
             continue
         selected[driver] = prepared
@@ -636,7 +917,7 @@ def representative_telemetry_laps(
 
 
 def fastest_complete_telemetry_laps(
-    laps: list[dict[str, Any]], telemetry: list[dict[str, Any]]
+    laps: list[dict[str, Any]], telemetry: Any
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[str]]:
     """Pick each driver's fastest clean lap whose telemetry runs line to line.
 
@@ -654,37 +935,27 @@ def fastest_complete_telemetry_laps(
     flags are allowed: the status is session-wide, and a lap that is still the
     driver's fastest was evidently not slowed by one.
     """
-    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
-    for row in telemetry:
-        driver = str(row.get("driver_code") or "").upper()
-        number = lap_number(row) or 0
-        if driver and number > 0 and _number(row.get("distance_m")):
-            grouped[(driver, number)].append(row)
+    by_lap = telemetry_by_lap(telemetry, lambda row: lap_number(row) or 0)
 
-    drivers = {key[0] for key in grouped}
+    drivers = {key[0] for key in by_lap.lap_keys()}
     drivers.update(str(lap["driver_code"]).upper() for lap in laps if lap.get("driver_code"))
 
     # (lap time, lap number, lap) per driver: sorts fastest first, earliest on a tie.
     candidates: dict[str, list[tuple[float, int, dict[str, Any]]]] = defaultdict(list)
-    ends = []
     for lap in clean_laps(laps):
         driver = str(lap.get("driver_code") or "").upper()
         number = lap_number(lap) or 0
         lap_time = _float(lap.get("lap_time_ms"))
-        rows = grouped.get((driver, number))
-        if not rows or lap_time is None:
+        if lap_time is None or not by_lap.lap_sample_count((driver, number)):
             continue
         candidates[driver].append((lap_time, number, lap))
-        ends.append(max(float(row["distance_m"]) for row in rows))
-    # The length of a normal lap is not an input, so take it from the laps
-    # themselves: most clean laps are complete, and the median ignores the rest.
-    usual_end = float(median(ends)) if ends else 0.0
+    usual_end = _usual_lap_end(laps, by_lap)
 
     representatives = []
     selected: dict[str, list[dict[str, Any]]] = {}
     for driver, driver_laps in sorted(candidates.items()):
         for lap_time, number, lap in sorted(driver_laps, key=lambda item: item[:2]):
-            rows = _prepare_samples(grouped[(driver, number)])
+            rows = _prepare_samples(by_lap.lap_rows((driver, number)))
             if not _covers_lap(rows, lap_time, usual_end):
                 continue
             selected[driver] = rows
@@ -695,6 +966,37 @@ def fastest_complete_telemetry_laps(
     return representatives, selected, sorted(drivers - set(selected))
 
 
+def _usual_lap_end(laps: list[dict[str, Any]], by_lap: Any) -> float:
+    """How far the telemetry of a normal lap runs, or 0 when no lap says.
+
+    The length of a normal lap is not an input, so it is taken from the laps
+    themselves: most clean laps are complete, and the median ignores the rest.
+    """
+    ends = []
+    for lap in clean_laps(laps):
+        key = (str(lap.get("driver_code") or "").upper(), lap_number(lap) or 0)
+        if _float(lap.get("lap_time_ms")) is not None and by_lap.lap_sample_count(key):
+            ends.append(by_lap.lap_end_m(key))
+    return float(median(ends)) if ends else 0.0
+
+
+def _runs_its_lap_time(rows: list[dict[str, Any]], lap_time_ms: float | None) -> bool:
+    """True when the lap was timed and its prepared telemetry runs the length of that time.
+
+    Such a lap went from line to line, whatever its telemetry says of the
+    distance. One with no lap time, or whose telemetry stops before the time
+    is up, did not, or cannot be shown to have.
+    """
+    if lap_time_ms is None or lap_time_ms <= 0:
+        return False
+    if any(_float(row.get("relative_time_ms")) is None for row in (rows[0], rows[-1])):
+        # No clock was recorded and ``_prepare_samples`` rebuilt one from
+        # speed and distance, so there is nothing independent to compare.
+        return True
+    elapsed = rows[-1]["_elapsed_ms"] - rows[0]["_elapsed_ms"]
+    return abs(elapsed - lap_time_ms) <= TELEMETRY_LAP_TIME_TOLERANCE * lap_time_ms
+
+
 def _covers_lap(rows: list[dict[str, Any]], lap_time_ms: float, usual_end: float) -> bool:
     """True when prepared telemetry runs the whole lap, in distance and on the clock."""
     if len(rows) < 3 or usual_end <= 0 or lap_time_ms <= 0:
@@ -702,13 +1004,7 @@ def _covers_lap(rows: list[dict[str, Any]], lap_time_ms: float, usual_end: float
     slack = TELEMETRY_LAP_DISTANCE_TOLERANCE * usual_end
     if rows[0]["distance_m"] > slack or abs(rows[-1]["distance_m"] - usual_end) > slack:
         return False
-    if any(_float(row.get("relative_time_ms")) is None for row in (rows[0], rows[-1])):
-        # No clock was recorded and ``_prepare_samples`` rebuilt one from
-        # speed and distance; that is the same information as the distance
-        # check, so there is nothing independent to compare.
-        return True
-    elapsed = rows[-1]["_elapsed_ms"] - rows[0]["_elapsed_ms"]
-    return abs(elapsed - lap_time_ms) <= TELEMETRY_LAP_TIME_TOLERANCE * lap_time_ms
+    return _runs_its_lap_time(rows, lap_time_ms)
 
 
 def _lap_length(rows: list[dict[str, Any]]) -> float:

@@ -48,8 +48,9 @@ class Loaded:
             "Path": ARCHIVE_PATH,
             "Meeting": {"Key": 1288, "Name": "Austrian Grand Prix"},
         }
-        # FastF1 keeps the calendar row a session was made from, and the old
-        # artifact writer reads the round and the names out of it.
+        # FastF1 keeps the calendar row a session was made from. The artifact
+        # writer reads nothing out of it; a test reads it to see which row a
+        # build was made from.
         self.event = {"RoundNumber": row.round, "EventName": row.meeting_name}
         self.date = datetime(2026, 6, 28, 13, 0)
         self.name = "Race"
@@ -118,7 +119,7 @@ class Archive(World):
         self.built: list[Loaded] = []
         monkeypatch.setattr(build_module, "fastf1_cache", self._cache)
         monkeypatch.setattr(build_module, "restore_snapshot", self._restore)
-        monkeypatch.setattr(build_module.legacy, "build_legacy_artifacts", self._artifacts)
+        monkeypatch.setattr(build_module, "build_artifacts", self._artifacts)
 
     def load_schedule(self, fastf1, year, fresh=False, backend=None):
         return [
@@ -155,6 +156,12 @@ class Archive(World):
         self.restoring = snapshot.snapshot_id
         return cache_dir
 
-    def _artifacts(self, session, identity, round_number, generated_at, scratch):
+    def _artifacts(self, session, identity, classification, extras, coverage):
+        """Stands in for ``f1data.artifacts.build_artifacts``, with its signature.
+
+        The real one puts nothing from the calendar into a generation. This
+        one writes down the round of the row the session was made from, so
+        that a test can tell which row that was.
+        """
         self.built.append(session)
-        return {"summary.json": f"round {round_number}".encode()}
+        return {"summary.json": f"round {session.event['RoundNumber']}".encode()}

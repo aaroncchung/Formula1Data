@@ -1621,7 +1621,7 @@ rewritten.
 | --- | --- | --- |
 | 1. Secure the source, settle where fetching runs | Partly done | The probe ran and settled AR-13. The 2026 races and sprints were fetched afresh and are in the R2 archive. The old FastF1 cache, the only source for the 2025 sessions, is still on one machine: `python -m f1data archive-directory` copies it |
 | 2. One session end to end | Done | Fetch, archive, build on a hosted runner, publish, Worker, and `/session` loading a tab at a time |
-| 3. New artifact format and typed contract | Not started | Artifacts are still in the old format, through `f1data/legacy.py`. The pit-stop feed and the corner positions are already archived with each fetch |
+| 3. New artifact format and typed contract | Done on the publishing side | Format 2, published under `v2/`: one model per artifact (`f1data/models.py`), exported as `schema/published-v2.schema.json`. Telemetry per driver as arrays, whole milliseconds, both pit-stop durations, official corners, coverage, analyses on full telemetry. `f1data/legacy.py` is gone. The frontend still reads `v1/` and has not been moved |
 | 4. The batch command | Partly done | `fetch-due`, `build` and standings from Jolpica exist. Nothing runs them on a schedule yet |
 | 5. Every page loads at runtime | Partly done | All eleven build-time readers are gone: every page loads in the browser, sessions are addressed by key, and the site builds with `frontend/public/data` moved aside. Still to do: remove that directory from git and the deploy, and keep a sample dataset in the published layout for local development |
 | 6. Remove the old path | Not started | |
@@ -1642,6 +1642,10 @@ rewritten.
 | 6c | The 2026 Austrian GP race built twice from the same snapshot, once with FastF1 fetching the result and the first-lap times from Jolpica during the load, once with both gathered beforehand and every request refused during the build | The same generation, `0e8945dc1038`: byte for byte the same artifacts |
 | 7 | F1's session key for the 21 races and sprints of 2026 | Present for all 21 |
 | 8 | The same snapshot built on Windows and on Linux | Different generations: 1,324 of 1,342 files differ, by float noise of about 1e-12 in telemetry distance and position. Rounding in the new format (step 3) should remove it |
+| 9 | Format 2: five sessions (11315, 11240, 11299, 11731, 11342) each built twice on Windows, in separate processes with different hash seeds | The same generation both times, for all five. Not yet built on Linux; `tests/fixtures/golden-11315.json` holds the checksum of every file of the Austrian race, so running `tests/test_recorded_race.py` there is the check |
+| 10 | Format 2: every lap's telemetry of the Austrian race against FastF1's per-lap call | 1,339 laps, 757,210 samples, nine channels: no value differs. The build takes 2.6 s for what took FastF1 about six minutes, which went on a car-ahead channel nothing uses |
+| 11 | Format 2: the Austrian race built from the archive | 9 s to build, against 369 s. 44 objects and 21.5 MB, against 1,343 and 108.5 MB. The manifest is 5.9 kB against 177 kB |
+| 12 | Format 2: each of the eleven feeds and both extras removed from the recorded Austrian race, whole and where it applies for one driver | Every removal leaves the session incomplete but one: a single driver's stops missing from F1's pit-stop feed |
 
 ### What real data changed
 
@@ -1668,6 +1672,88 @@ rewritten.
 - **Jolpica's burst limit is easy to reach.** Asking for the classification of
   21 sessions in a row earned a 429 on the next request. The job now asks only
   for sessions of the last 30 days, and waits and asks again on a failure.
+- **F1's pit-stop feed leaves whole drivers out.** In the Austrian race it has
+  36 of the timing's 44 pit-lane entries, and nothing at all for three
+  drivers. A stop it does not cover is published with the timing's figure and
+  `stationary_ms` null. No bar can ask for every driver's stops, so one
+  driver's stops going missing is the one removal no bar notices (rule 6).
+- **F1 sends (0, 0) for a car it has no position for, on track as well as in
+  the garage.** At Monaco it did so for the cars on the grid until up to 4.7 s
+  into the race, and FastF1 merges those samples as positions. Format 2 leaves
+  them out, never extrapolates a position past the last real sample, and
+  publishes null where there is none.
+- **The inferred corner analysis found eleven corners at a circuit with ten.**
+  Five of the eleven in the Austrian race were one driver each: Bottas, whose
+  only complete lap was the first, with a distance axis 200 m out of step. By
+  the official corner positions every driver's figures sit under the right
+  corner.
+- **Two of five sessions have feeds that repeat themselves, and no bar sees
+  it.** F1's car and position feeds send a sample about four times a second.
+  In the Hungarian race the car feed from lap 7 and the position feed from
+  lap 15 send the sample before again most of the time, for nearly every car,
+  to the flag: at the median lap six car samples in ten and nine position
+  samples in ten are repeats, and more than a quarter are on 1,169 and 998 of
+  the 1,279 clean laps. In the Chinese sprint it is the car feed, on 163 of
+  296 clean laps. The samples arrive on time, so the bars on car and position
+  data pass. The telemetry of such a lap is wrong: the speed stands still, so
+  the lap measures anywhere from 1,745 to 5,214 m at the Hungaroring and
+  4,352 to 6,459 m in Shanghai, and the car stands still on the map and then
+  jumps, 347 m on Hungary's fastest lap. FastF1's own telemetry is the same,
+  sample for sample, on the five such laps compared. The Austrian and Sepang
+  races have none of it, nor has Monaco's car feed. Left alone: a bar for it,
+  which is a publication rule, and which lap the analyses read (below).
+- **Corners are checked against, and placed on, a lap whose position data is
+  whole.** Measured against Hungary's fastest lap the 16 corners looked 44 m
+  off the track at the median and up to 116 m, and FastF1, which places
+  corners along the fastest lap, had put two pairs of them at one point of it.
+  The map is right: the corners are within a metre of the line of each of
+  the 40 laps of that race with the most complete position data, at the
+  median lap, and within 5 m at the worst. The reference lap is now the
+  fastest clean lap whose position samples are never more than 150 m apart,
+  which all but one of the 2,260 clean laps of the other four sessions are,
+  and archived distances that do not go round the lap in the order of the
+  corners are measured again on it. Of the 49 circuit files archived for 2025
+  and 2026, Hungary's is the one whose distances do not, and Monaco's the one
+  with none. `corners.json` still says whether the corners lie on the
+  reference lap's line (`fits_track`), for a map of another layout and for a
+  session with no whole lap. No session fails it.
+- **Monaco is the one race whose corners the build has to place for want of
+  distances.** FastF1 places a circuit's corners along the session's fastest
+  lap, which at Monaco has no position data, so the 19 corners are archived
+  without distances. The build places them on the fastest lap that has
+  position data (lap 5), all within 15 m of its samples, and the other 21
+  cars' laps are read by distance: the hairpin at a median of 43 kph, the
+  tunnel at 252.
+- **A lap that stops short was read as going everywhere.** Verstappen's only
+  lap of that race ends at the chicane, 2,107 m into a lap of 3,278 m, and he
+  had figures for all 19 corners: the nearest of his samples to each one he
+  never reached was taken for it. For Tabac and the swimming pool those are
+  within 50 m, on the road out of Sainte Devote and on the grid. A sample is
+  now a corner only if it is within 50 m of it, and on a lap that was not
+  timed all the way round it must also be within 200 m of where a normal lap
+  has the corner. He has figures for the eleven corners he drove through.
+- **A lap's distance can be far out.** In the Chinese sprint eight drivers'
+  fastest laps are among those whose car feed repeats itself, for many
+  seconds at a time, and measure the 5.4 km lap from 8% short to 15% long.
+  Looking for a corner only near where the lap's distance put it found the
+  edge of the search, hundreds of metres from the corner. A lap that was
+  timed all the way round passed every corner, so a sample at a corner is now
+  taken for it wherever the lap's distance says it is. What is left alone:
+  the corner analysis and the car performance take each driver's fastest lap
+  whatever the state of its telemetry, so in that sprint they report braking
+  that lasts up to 25 seconds, and in the Hungarian race a slowest speed
+  through turn 1 of anything from 80 to 335 kph. Track dominance already
+  takes the fastest lap whose telemetry is the length of a lap (AR-08). The
+  same choice here, with a test for a feed that repeats itself, would put it
+  right.
+- **The old format's numbers were off in two more places.** 152 sector times
+  of the Austrian race were a millisecond low, cut off instead of rounded.
+  Wind speed was published as `wind_speed_kph` in metres a second.
+- **The order on track is the classification.** Taken from the timing alone
+  (most laps, then who took the flag first), the Austrian race comes out as
+  Jolpica's result for all 22 places, laps and gaps, to the millisecond. That
+  is what a session is published with, marked provisional, when Jolpica has no
+  result.
 
 ### Reviews of the code
 

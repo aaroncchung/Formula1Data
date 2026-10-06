@@ -1,0 +1,177 @@
+{
+ "files": {
+  "analysis/car-performance.json": {
+   "sha256": "46bc281286eca0ab274216ee8bf182bbc4c088bed64e5643dbcf89c98380f18d",
+   "size_bytes": 7728
+  },
+  "analysis/corner-analysis.json": {
+   "sha256": "5560e6e438e089c621adb211305b1025364173e2acdba6a10a1e6df350f00350",
+   "size_bytes": 49652
+  },
+  "analysis/ideal-laps.json": {
+   "sha256": "9223277929234b1666748efe6c464872e307e9aa2422190ae8227e50d2e03960",
+   "size_bytes": 3573
+  },
+  "analysis/lap-times.json": {
+   "sha256": "633532e58b327c0a16289f73fdccb5b5624b51b3bd5237aa8088b3e80772533d",
+   "size_bytes": 12856
+  },
+  "analysis/race-pace.json": {
+   "sha256": "b66f7ab974bc5169784c31506b0ed77fee7d4f8440a5fa6603469704b8d14258",
+   "size_bytes": 16398
+  },
+  "analysis/strategy.json": {
+   "sha256": "05b151cfcbfe0b3304498c12c510da7faa6a10d92385dad0f87c277f5df56e93",
+   "size_bytes": 14509
+  },
+  "analysis/team-mate-comparison.json": {
+   "sha256": "36066df2808cbec61628f0fbc7fb33527a6f0f6be451b520cfdf9b0ef2ad3be0",
+   "size_bytes": 3657
+  },
+  "analysis/track-dominance.json": {
+   "sha256": "9d6d5da9a488bbeaf3e5ff97ec9e1f3f9de279d849292bc8e3073c24a50bdead",
+   "size_bytes": 13544
+  },
+  "analysis/tyre-degradation.json": {
+   "sha256": "0d1f4ac9c25317c6f9fd3f72bdc1e374645ca0a9e063e01e0ef8a1fd2575cc70",
+   "size_bytes": 25183
+  },
+  "corners.json": {
+   "sha256": "263ac9e2cdc6e6e2e997e202568c8c6fa1375cfee739ddeb6cbf7dbf0aef183e",
+   "size_bytes": 995
+  },
+  "coverage.json": {
+   "sha256": "c4feccdee145eaa5aaf7f0cb3669d949bfb8711b6e890ea46540dfc01643e7f9",
+   "size_bytes": 4389
+  },
+  "drivers.json": {
+   "sha256": "c5e6029d8ec37d7ee35c1cd57c17629d465208c73c1b85730e2834e4595d6749",
+   "size_bytes": 3481
+  },
+  "laps.json": {
+   "sha256": "a9f7058370a701b27a707b5e599dfb06332ce6eceddaaef6c83640369ce9f728",
+   "size_bytes": 369529
+  },
+  "pit-stops.json": {
+   "sha256": "d1181d50d7bc69b55e8d61caebd9507d9b75218ae2aad2335ac663b0e2b6030e",
+   "size_bytes": 9625
+  },
+  "position-replay.json": {
+   "sha256": "8294d75647ae9360430696a7a7b74cab3c84fbf6538e34e197c6f4568e8579a9",
+   "size_bytes": 624120
+  },
+  "race-control.json": {
+   "sha256": "3ede66d8e1189e214b9d4768d74b7d4568ddf3cd3e22e9dfbdfa5419e8d4b42a",
+   "size_bytes": 32042
+  },
+  "results.json": {
+   "sha256": "8a00d4afcef6418006671a659fcba047653f3e4bd5b8fb49931e67e9e20ec469",
+   "size_bytes": 4491
+  },
+  "stints.json": {
+   "sha256": "9ad194cfeba57b7ef4d29a15177673329c55d342a82f351c137e6ba258b89143",
+   "size_bytes": 5897
+  },
+  "summary.json": {
+   "sha256": "53bac7a0ab81788d16384e23524a729a5b5dee151474bedf66ae46a98323ca1d",
+   "size_bytes": 299
+  },
+  "telemetry/ALB.json": {
+   "sha256": "03321a8fabc20ef2b0bc57b432640703215d66bd0664d0baa2e59e0eb8fd266f",
+   "size_bytes": 1044258
+  },
+  "telemetry/ALO.json": {
+   "sha256": "e70f6e510c49a94b1db2ea1f892123555ccb201d2f575a33728acdcdc831c27f",
+   "size_bytes": 1028614
+  },
+  "telemetry/ANT.json": {
+   "sha256": "ddcee0c4ec5e21e024922144e6206854506dad281be4a32aab26d3a9626af509",
+   "size_bytes": 1076850
+  },
+  "telemetry/BEA.json": {
+   "sha256": "1fc604645b79dc8ac07fde4bcc80bf63d4bea78017772825cda7eeff767b7dd6",
+   "size_bytes": 1058806
+  },
+  "telemetry/BOR.json": {
+   "sha256": "6c104f126904de58cb9e5abd4440ee596d01cb648dd0fc3e64e2f5f27b9e03ee",
+   "size_bytes": 1060601
+  },
+  "telemetry/BOT.json": {
+   "sha256": "e698c780b1aad88fd297806d14ed2997a225b62c1f9f36ae53ecea499ced5248",
+   "size_bytes": 29975
+  },
+  "telemetry/COL.json": {
+   "sha256": "0f07fac58bae699d3a2b304769b0aa6f37abac2bea160a36c288d0460f71b3b7",
+   "size_bytes": 1060710
+  },
+  "telemetry/GAS.json": {
+   "sha256": "61f87781d14dc6a6748667c423925457131703089069d7e253ee2487a1a7b41e",
+   "size_bytes": 1061161
+  },
+  "telemetry/HAD.json": {
+   "sha256": "392a25bd9d135405270c58b2c9be5f8a3195d8e9822d98c98860d50102f30849",
+   "size_bytes": 1074539
+  },
+  "telemetry/HAM.json": {
+   "sha256": "c1e0441772d4b74227b87e59093d1019cd3304224cda051f9be7b16814c7ae2b",
+   "size_bytes": 1072799
+  },
+  "telemetry/HUL.json": {
+   "sha256": "37950d7cb8577773c8de9befad3c7c4b174a43e9dbd8ebcddb54fefc6773cffa",
+   "size_bytes": 1060428
+  },
+  "telemetry/LAW.json": {
+   "sha256": "2365a3c18868035191dbe8a2718974ec740aa194a589856c8b5cc1128ebede70",
+   "size_bytes": 1058252
+  },
+  "telemetry/LEC.json": {
+   "sha256": "9ac2e45a6a7f5066adaa5dc60891a3d53d0bd7fda8f79432f142eea4695c35d4",
+   "size_bytes": 1077332
+  },
+  "telemetry/LIN.json": {
+   "sha256": "0886ec594723a123a0274eada96cf226d80cf07cc5aaeafff568d8d51c451751",
+   "size_bytes": 1057041
+  },
+  "telemetry/NOR.json": {
+   "sha256": "3a18b50c0a0d3ea90ddbde25e1812ff1689446de878c40b830d503ed000d2e67",
+   "size_bytes": 1076881
+  },
+  "telemetry/OCO.json": {
+   "sha256": "599c5cddfe2e49e5c51f3bc4c6c47152a8f9a0e4e64617060389c4cff13c9d76",
+   "size_bytes": 1043799
+  },
+  "telemetry/PER.json": {
+   "sha256": "da27485a7b46495a344c3e8a20c1441f9253aedfc0ac7b895b9531a09adb70cd",
+   "size_bytes": 60220
+  },
+  "telemetry/PIA.json": {
+   "sha256": "3f4d9a94995e833bfb8119c743fd78c999f7dfad985277c0819635c70b9894d3",
+   "size_bytes": 1066386
+  },
+  "telemetry/RUS.json": {
+   "sha256": "3af9fa98b5254c445cdaf106db62399949ea28b6696b2e530b7d21a040bc0667",
+   "size_bytes": 1077492
+  },
+  "telemetry/SAI.json": {
+   "sha256": "d1ee7f0b42be09c5df48f9a6d0e0a26b314f6ccd97209ae09c193001db5e3ced",
+   "size_bytes": 363288
+  },
+  "telemetry/STR.json": {
+   "sha256": "e4b35eba8c1a31a3bcd3bb1f45b7e5729f9556f46e655c18b4aee543d98ba785",
+   "size_bytes": 680414
+  },
+  "telemetry/VER.json": {
+   "sha256": "17c3a6e9409bcef5c5466f9700ba88c5f2493b68b9cde6b0b32e06e7cc6b73cb",
+   "size_bytes": 1077056
+  },
+  "telemetry/index.json": {
+   "sha256": "8c662315df4f3070039b68435da166ff05d6930a05ac1156d89a2f3bfe58b508",
+   "size_bytes": 43217
+  },
+  "weather.json": {
+   "sha256": "7dddd350e4640288fb685c10df4f2e0a7e27fb2418de36a9a782fa24929d6142",
+   "size_bytes": 19770
+  }
+ },
+ "generation": "7b174087b8728b5719007cb58cb197dfe63eccd56fdc2d5524caf313c8ce665f"
+}

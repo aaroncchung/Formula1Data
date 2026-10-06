@@ -29,6 +29,7 @@ from typing import Any
 from f1data import layout
 from f1data.archive import Snapshot, dump_json
 from f1data.identity import SessionIdentity, format_utc
+from f1data.policy import IN_SCOPE_SESSION_TYPES
 from f1data.schedule import ScheduledSession, find_scheduled_session
 from f1data.store import (
     BINARY_CONTENT_TYPE,
@@ -280,7 +281,7 @@ def build_manifest(identity: SessionIdentity, files: dict[str, bytes]) -> bytes:
         raise ValueError(f"{layout.MANIFEST_NAME} is written by the publisher, not the build")
     return dump_json(
         {
-            "schema_version": layout.FORMAT_VERSION,
+            "format_version": layout.FORMAT_VERSION,
             "pipeline_version": layout.PIPELINE_VERSION,
             "session_key": identity.session_key,
             "identity": identity.to_json(),
@@ -485,6 +486,13 @@ def derive_index(
                     "location": entry.location,
                     "date": entry.meeting_date,
                     "format": entry.meeting_format,
+                    # F1's own keys for the meeting and its circuit, which a
+                    # calendar change does not move as it does the round. The
+                    # calendar has neither: they come from a published session
+                    # of the meeting, and are null until there is one.
+                    "meeting_key": None,
+                    "circuit_key": None,
+                    "circuit_name": None,
                     "sessions": [],
                 },
             )
@@ -492,11 +500,19 @@ def derive_index(
                 "type": entry.session_type,
                 "name": entry.session_name,
                 "start_time_utc": entry.start_time_utc,
+                # Whether sessions of this type are published at all. One that
+                # is in scope and has no key yet is on its way; one that is
+                # not in scope will not come.
+                "in_scope": entry.session_type in IN_SCOPE_SESSION_TYPES,
             }
             pointer = placed.get((entry.year, entry.round, entry.session_type))
             if pointer is not None:
                 session["session_key"] = pointer.session_key
                 session["complete"] = pointer.complete
+                if meeting["meeting_key"] is None:
+                    meeting["meeting_key"] = pointer.identity.meeting_key
+                    meeting["circuit_key"] = pointer.identity.circuit_key
+                    meeting["circuit_name"] = pointer.identity.circuit_name
             meeting["sessions"].append(session)
         seasons.append({"year": year, "meetings": [meetings[number] for number in sorted(meetings)]})
 

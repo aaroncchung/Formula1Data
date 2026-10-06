@@ -143,7 +143,7 @@ def test_a_first_publication_uploads_a_generation_and_then_points_at_it():
     prefix = layout.generation_prefix(AUSTRIA, pointer.generation)
     assert store.get(f"{prefix}summary.json").data == b'{"meeting":"Austrian Grand Prix"}\n'
     manifest = json.loads(store.get(f"{prefix}manifest.json").data)
-    assert manifest["schema_version"] == layout.FORMAT_VERSION
+    assert manifest["format_version"] == layout.FORMAT_VERSION
     assert [item["path"] for item in manifest["files"]] == ["laps.json", "summary.json"]
 
 
@@ -439,16 +439,25 @@ def test_the_index_is_the_calendar_with_published_sessions_attached():
     austria, italy = season["meetings"]
     assert (austria["round"], austria["name"]) == (8, "Austrian Grand Prix")
     assert austria["sessions"] == [
-        {"type": "Q", "name": "Qualifying", "start_time_utc": "2026-06-27T14:00:00Z"},
+        # Qualifying is not published at all; the race is, and this one has been.
+        {"type": "Q", "name": "Qualifying", "start_time_utc": "2026-06-27T14:00:00Z", "in_scope": False},
         {
             "type": "R",
             "name": "Race",
             "start_time_utc": "2026-06-28T13:00:00Z",
+            "in_scope": True,
             "session_key": AUSTRIA,
             "complete": True,
         },
     ]
-    assert italy["sessions"] == [{"type": "R", "name": "Race", "start_time_utc": "2026-09-06T13:00:00Z"}]
+    # In scope and not yet published: on its way.
+    assert italy["sessions"] == [
+        {"type": "R", "name": "Race", "start_time_utc": "2026-09-06T13:00:00Z", "in_scope": True}
+    ]
+    # F1's key for a meeting does not move with the calendar. It is known from
+    # the meeting's first published session, and not before.
+    assert (austria["meeting_key"], italy["meeting_key"]) == (AUSTRIA - 10000, None)
+    assert (austria["circuit_key"], austria["circuit_name"]) == (None, None)
     assert index["unscheduled"] == []
 
 

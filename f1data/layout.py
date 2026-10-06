@@ -18,7 +18,11 @@ import re
 
 # The artifact format: file names, shapes and units. A change here is published
 # under a new prefix before the frontend that reads it is deployed.
-FORMAT_VERSION = 1
+#
+#   2  one model per artifact (f1data/models.py): columnar telemetry bundled
+#      per driver, whole milliseconds, null for a missing value, floats
+#      rounded as they are written, nothing taken from the calendar
+FORMAT_VERSION = 2
 
 # Everything that changes what a build produces without changing the format: an
 # analysis fix, a coverage bar. A pointer written by an older pipeline version
@@ -41,7 +45,10 @@ FORMAT_VERSION = 1
 #      used to fetch from Jolpica while loading are fetched beforehand and
 #      are in the fingerprint; a record that disagrees with its feeds is
 #      corrected before anything is decided from it
-PIPELINE_VERSION = 5
+#   6  format 2: analyses read full-resolution telemetry, lap times are
+#      rounded and not cut off, corners are the circuit's own where archived,
+#      and nothing in a build comes from the calendar
+PIPELINE_VERSION = 6
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:
