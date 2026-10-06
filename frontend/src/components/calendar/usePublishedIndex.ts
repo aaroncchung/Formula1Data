@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { publishedData } from "@/lib/published/browser";
 import { toPublishedFailure } from "@/lib/published/errors";
 import type { PublishedFailure } from "@/lib/published/errors";
 import type { PublishedIndex } from "@/lib/published/types";
-import { publishedSource } from "@/lib/published-source";
 import { createOrderedRunner } from "@/lib/request-generation";
 
 export type IndexState =
@@ -30,7 +30,7 @@ export function usePublishedIndex(watch = "") {
   const [settled, setSettled] = useState<Settled | null>(null);
 
   useEffect(() => {
-    void requests.run(() => publishedSource.index(), {
+    void requests.run(() => publishedData.index(), {
       onResult: (index) => setSettled({ attempt, state: { status: "ready", index } }),
       onError: (error) =>
         setSettled({ attempt, state: { status: "failed", failure: toPublishedFailure(error) } })

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { loadChosenSession, recoverChosenSession } from "@/lib/chosen-session";
 import type { ChosenSessionLoad, ReadyChosenSession } from "@/lib/chosen-session";
+import { publishedData } from "@/lib/published/browser";
 import { toPublishedFailure } from "@/lib/published/errors";
 import { notifyWhenGone } from "@/lib/published/session";
-import { publishedSource } from "@/lib/published-source";
 import { createRequestGenerationGuard } from "@/lib/request-generation";
 
 export type ChosenSessionState = { readonly status: "loading" } | ChosenSessionLoad;
@@ -54,13 +54,13 @@ export function useChosenSession(requestedKey: number | null) {
     function watched(ready: ReadyChosenSession): ReadyChosenSession {
       const view = notifyWhenGone(ready.view, () => {
         if (requests.isCurrent(token)) {
-          recoverChosenSession(publishedSource, ready).then(commit, fail);
+          recoverChosenSession(publishedData, ready).then(commit, fail);
         }
       });
       return { ...ready, view };
     }
 
-    loadChosenSession(publishedSource, requestedKey).then(commit, fail);
+    loadChosenSession(publishedData, requestedKey).then(commit, fail);
     return () => requests.invalidate();
   }, [key, requestedKey, requests]);
 

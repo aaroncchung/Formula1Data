@@ -11,9 +11,11 @@
  *
  * Nothing is cached here. Generation paths are immutable and the pointer and
  * index are short-lived, and the browser's HTTP cache already holds each for
- * as long as the Worker says it may.
+ * as long as the Worker says it may. Callers that ask for the index in the
+ * same moment share one request, and it is forgotten as soon as it settles.
  */
 
+import { shareWhilePending } from "../shared-request.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { PublishedErrorCode } from "./errors.ts";
 import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey, standingsKey } from "./layout.ts";
@@ -114,7 +116,12 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
     }
   }
 
-  async function index(): Promise<PublishedIndex> {
+  // A page reads the calendar, the picker in the bar above it reads it too,
+  // and a session opened by key reads it beside its pointer, all in the same
+  // tick. They share the read that is in flight; the next caller after it
+  // settles asks again, so how long an answer may be reused stays the HTTP
+  // cache's decision.
+  const index = shareWhilePending(async (): Promise<PublishedIndex> => {
     const answer = await get(indexKey());
     if (!answer.found) {
       throw new PublishedDataError("index_missing", `There is no index of published data at ${answer.url}.`, {
@@ -122,7 +129,7 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
       });
     }
     return parseIndex(decode(answer, "invalid_index", "The index of published data"));
-  }
+  });
 
   // Standings are one object per season that is rewritten in place, like the
   // index, so they are read by their own key and never through a generation.

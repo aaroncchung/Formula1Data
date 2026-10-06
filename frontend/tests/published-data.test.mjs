@@ -75,6 +75,42 @@ test("a base URL with a trailing slash reads the same keys", async () => {
   assert.deepEqual(bucket.keys(), [INDEX_KEY]);
 });
 
+test("callers that ask for the index at the same moment share one request, and nothing is kept", async () => {
+  // A page, the picker above it and a session opened by key all read the
+  // calendar as the page loads.
+  const bucket = bucketOf();
+  const client = clientOf(bucket);
+
+  const [first, second, third] = await Promise.all([client.index(), client.index(), client.index()]);
+
+  assert.equal(bucket.count(INDEX_KEY), 1);
+  assert.equal(first, second);
+  assert.equal(second, third);
+
+  // The read is forgotten once it settles: the next caller asks again, and
+  // the calendar it gets is whatever is published by then.
+  edit(bucket, INDEX_KEY, (index) => {
+    index.seasons[0].meetings[0].round = 9;
+  });
+  const later = await client.index();
+  assert.equal(bucket.count(INDEX_KEY), 2);
+  assert.equal(later.seasons[0].meetings[0].round, 9);
+});
+
+test("an index read that fails is not held against the next caller", async () => {
+  const bucket = bucketOf();
+  const client = clientOf(bucket);
+  bucket.fault = (key) => (key === INDEX_KEY ? new TypeError("Failed to fetch") : undefined);
+
+  const [first, second] = await Promise.allSettled([client.index(), client.index()]);
+  assert.equal(first.status, "rejected");
+  assert.equal(second.status, "rejected");
+  assert.equal(bucket.count(INDEX_KEY), 1);
+
+  bucket.fault = () => undefined;
+  assert.equal((await client.index()).seasons.length, 1);
+});
+
 // ---------------------------------------------------------------------------
 // Rule 1: a session view reads one generation
 // ---------------------------------------------------------------------------
