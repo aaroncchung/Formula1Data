@@ -67,7 +67,7 @@ class Jolpica:
         answer = self._answers.pop(0)
         if isinstance(answer, Exception):
             raise answer
-        return SimpleNamespace(content=[answer])
+        return SimpleNamespace(content=[answer], description=getattr(self, "description", None))
 
 
 def test_the_result_is_asked_for_uncached_and_reduced_to_plain_rows():
@@ -170,3 +170,33 @@ def test_the_official_result_replaces_what_the_session_was_loaded_with():
     assert list(merged["ClassifiedPosition"]) == ["1", "2", "R"]
     # What only F1's driver list knows is kept.
     assert list(merged["TeamColor"]) == ["27F4D2", "3671C6", "909090"]
+
+
+def test_a_correction_to_a_name_changes_the_fingerprint_too():
+    """Found in review: the build takes the constructor's and the driver's
+    names from the result, and the fingerprint did not cover them."""
+    before = fetch_classification(Jolpica([named_result()]), 2026, 8, "R")
+    renamed_team = fetch_classification(Jolpica([named_result(constructorName="Mercedes-AMG")]), 2026, 8, "R")
+    renamed_driver = fetch_classification(Jolpica([named_result(familyName="Russel")]), 2026, 8, "R")
+
+    assert len({before.fingerprint, renamed_team.fingerprint, renamed_driver.fingerprint}) == 3
+
+
+def named_result(**changes):
+    frame = result_frame()
+    frame["givenName"] = ["George", "Max", "Valtteri"]
+    frame["familyName"] = ["Russell", "Verstappen", "Bottas"]
+    frame["constructorName"] = ["Mercedes", "Red Bull", "Cadillac"]
+    for column, value in changes.items():
+        frame.loc[0, column] = value
+    return frame
+
+
+def test_the_result_says_which_race_it_is_the_result_of():
+    jolpica = Jolpica([result_frame()])
+    jolpica.description = pd.DataFrame([{"season": 2026, "round": 8, "raceDate": pd.Timestamp("2026-06-28")}])
+
+    classification = fetch_classification(jolpica, 2026, 8, "R")
+
+    assert classification.race_date.isoformat() == "2026-06-28"
+    assert fetch_classification(Jolpica([result_frame()]), 2026, 8, "R").race_date is None

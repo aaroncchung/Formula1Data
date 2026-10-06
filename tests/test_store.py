@@ -152,3 +152,40 @@ def test_a_directory_store_refuses_a_key_that_leaves_its_root(tmp_path):
     for key in ("../outside.json", "v1/../../outside.json", "/absolute.json", "v1//double.json", ""):
         with pytest.raises(ValueError):
             directory.put(key, b"{}")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "D:/outside.json",
+        "v1/D:outside.json",
+        "v1/pointers/1.json:stream",
+        "v1/back" + chr(92) + "slash.json",
+        "v1/space in name.json",
+        "v1/*.json",
+    ],
+)
+def test_a_directory_store_refuses_a_key_windows_would_resolve_elsewhere(tmp_path, key):
+    """Found in review: joined to a root, a key with a drive letter replaces the
+    root, and a colon can name an alternate data stream."""
+    directory = DirectoryStore(tmp_path / "store")
+
+    with pytest.raises(ValueError):
+        directory.put(key, b"{}")
+    with pytest.raises(ValueError):
+        directory.get(key)
+
+
+def test_the_keys_the_job_writes_are_all_accepted(tmp_path):
+    directory = DirectoryStore(tmp_path / "store")
+
+    for key in (
+        "v1/index.json",
+        "v1/pointers/11315.json",
+        "v1/generations/11315/" + "a1" * 32 + "/telemetry/ver-lap-10.json",
+        "v1/standings/2026.json",
+        "archive/sessions/11315/20261006T000433Z-a05afd6c/extra/PitStopSeries.jsonStream",
+        "archive/legacy/legacy-fastf1-cache-20261005T200000Z-c36a1e95.tar.gz",
+    ):
+        directory.put(key, b"{}")
+        assert directory.get(key).data == b"{}"

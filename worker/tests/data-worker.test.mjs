@@ -24,10 +24,11 @@ function bucketOf(objects) {
       { bytes: new TextEncoder().encode(text), httpEtag: `"etag-${index}"` }
     ])
   );
+  // Uploaded part-way through a second, as real objects are.
   const metadata = (object) => ({
     size: object.bytes.byteLength,
     httpEtag: object.httpEtag,
-    uploaded: new Date("2026-10-05T20:00:00Z"),
+    uploaded: new Date("2026-10-05T20:00:00.789Z"),
     writeHttpMetadata() {}
   });
   return {
@@ -47,10 +48,14 @@ function bucketOf(objects) {
       if (options?.onlyIf?.get("if-none-match") === object.httpEtag) {
         return metadata(object);
       }
+      const asked = /^bytes=(\d+)-(\d+)$/.exec(options?.range?.get("range") || "");
+      const range = asked
+        ? { offset: Number(asked[1]), length: Number(asked[2]) - Number(asked[1]) + 1 }
+        : { offset: 0, length: object.bytes.byteLength };
       return {
         ...metadata(object),
-        range: { offset: 0, length: object.bytes.byteLength },
-        body: new Blob([object.bytes]).stream()
+        range,
+        body: new Blob([object.bytes.subarray(range.offset, range.offset + range.length)]).stream()
       };
     }
   };
@@ -184,4 +189,95 @@ test("health answers without the bucket", async () => {
   const response = await worker.fetch(new Request("https://data.example/health"), {});
 
   assert.deepEqual(await response.json(), { status: "ok", service: "formula-1-data-read" });
+});
+
+// --- found in review (GPT-6.1 Sol, 2026-10-06) --------------------------------
+
+function generationPath() {
+  const pointer = JSON.parse(PUBLISHED[`v1/pointers/${SESSION_KEY}.json`]);
+  return `/data/v1/generations/${pointer.session_key}/${pointer.generation}/summary.json`;
+}
+
+test("a failed precondition is not cacheable, even for a path that is immutable", async () => {
+  const bucket = bucketOf(PUBLISHED);
+
+  const response = await fetchFrom(bucket, generationPath(), {
+    method: "HEAD",
+    headers: { "if-match": '"some-other-version"' }
+  });
+
+  assert.equal(response.status, 412);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
+test("a missing artifact is not remembered by a cache", async () => {
+  const bucket = bucketOf(PUBLISHED);
+
+  for (const path of ["/data/v1/pointers/999.json", "/data/archive/x", "/nowhere"]) {
+    const response = await fetchFrom(bucket, path);
+    assert.equal(response.status, 404, path);
+    assert.equal(response.headers.get("cache-control"), "no-store", path);
+  }
+});
+
+test("If-Match compares strongly, If-None-Match weakly", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const etag = (await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD" })).headers.get("etag");
+
+  const strong = await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD", headers: { "if-match": etag } });
+  const weak = await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD", headers: { "if-match": `W/${etag}` } });
+  const any = await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD", headers: { "if-match": "*" } });
+  const revalidation = await fetchFrom(bucket, "/data/v1/index.json", {
+    method: "HEAD",
+    headers: { "if-none-match": `W/${etag}` }
+  });
+
+  assert.deepEqual([strong.status, weak.status, any.status, revalidation.status], [200, 412, 200, 304]);
+});
+
+test("the Last-Modified this Worker sends is accepted back as not modified", async () => {
+  // The object was uploaded at 20:00:00.789 and Last-Modified says 20:00:00.
+  const bucket = bucketOf(PUBLISHED);
+  const lastModified = (await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD" })).headers.get("last-modified");
+  assert.equal(lastModified, "Mon, 05 Oct 2026 20:00:00 GMT");
+
+  const since = await fetchFrom(bucket, "/data/v1/index.json", {
+    method: "HEAD",
+    headers: { "if-modified-since": lastModified }
+  });
+  const unmodified = await fetchFrom(bucket, "/data/v1/index.json", {
+    method: "HEAD",
+    headers: { "if-unmodified-since": lastModified }
+  });
+
+  assert.deepEqual([since.status, unmodified.status], [304, 200]);
+});
+
+test("a range is honoured only while the object is the version the client holds", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const whole = PUBLISHED["v1/index.json"];
+  const etag = (await fetchFrom(bucket, "/data/v1/index.json", { method: "HEAD" })).headers.get("etag");
+
+  const same = await fetchFrom(bucket, "/data/v1/index.json", {
+    headers: { range: "bytes=2-5", "if-range": etag }
+  });
+  assert.equal(same.status, 206);
+  assert.equal(same.headers.get("content-range"), `bytes 2-5/${whole.length}`);
+  assert.equal(await same.text(), whole.slice(2, 6));
+
+  // The index was republished since the client fetched its first part.
+  const stale = await fetchFrom(bucket, "/data/v1/index.json", {
+    headers: { range: "bytes=2-5", "if-range": '"the-version-before"' }
+  });
+  assert.equal(stale.status, 200);
+  assert.equal(stale.headers.get("content-range"), null);
+  assert.equal(await stale.text(), whole);
+
+  const weak = await fetchFrom(bucket, "/data/v1/index.json", {
+    headers: { range: "bytes=2-5", "if-range": `W/${etag}` }
+  });
+  assert.equal(weak.status, 200);
+
+  const plain = await fetchFrom(bucket, "/data/v1/index.json", { headers: { range: "bytes=2-5" } });
+  assert.equal(plain.status, 206);
 });

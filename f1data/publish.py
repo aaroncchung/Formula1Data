@@ -30,7 +30,13 @@ from f1data import layout
 from f1data.archive import Snapshot, dump_json
 from f1data.identity import SessionIdentity, format_utc
 from f1data.schedule import ScheduledSession, find_scheduled_session
-from f1data.store import BINARY_CONTENT_TYPE, JSON_CONTENT_TYPE, ObjectStore, PreconditionFailed
+from f1data.store import (
+    BINARY_CONTENT_TYPE,
+    JSON_CONTENT_TYPE,
+    ObjectStore,
+    PreconditionFailed,
+    content_etag,
+)
 
 POINTER_SCHEMA_VERSION = 1
 INDEX_SCHEMA_VERSION = 1
@@ -240,9 +246,9 @@ def upload_generation(
 ) -> tuple[str, int]:
     """Upload a generation and return its id and its manifest's size.
 
-    The manifest goes last, so a generation with a manifest is whole. Files
-    already there with the right size are left: the id is a hash of every
-    file's hash, so what sits under it is the same bytes.
+    The manifest goes last, so a generation with a manifest is whole. A file
+    already there is left only if it is the same bytes; anything missing or
+    different is uploaded, whether or not a manifest is present.
     """
     for path in files:
         if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path:
@@ -250,11 +256,12 @@ def upload_generation(
     manifest = build_manifest(identity, files)
     generation = hashlib.sha256(manifest).hexdigest()
     prefix = layout.generation_prefix(identity.session_key, generation)
-    present = {item.key[len(prefix):]: item.size for item in store.list(prefix)}
-    if present.get(layout.MANIFEST_NAME) == len(manifest):
-        return generation, len(manifest)
-
-    pending = [(path, data) for path, data in sorted(files.items()) if present.get(path) != len(data)]
+    # Every store names a single-part object by the MD5 of its bytes, so the
+    # listing says what is there as well as how much of it.
+    present = {item.key[len(prefix):]: item.etag for item in store.list(prefix)}
+    pending = [
+        (path, data) for path, data in sorted(files.items()) if present.get(path) != content_etag(data)
+    ]
 
     def upload(item: tuple[str, bytes]) -> None:
         path, data = item
@@ -263,30 +270,35 @@ def upload_generation(
     with ThreadPoolExecutor(max_workers=UPLOAD_WORKERS) as pool:
         # list() so that the first failed upload is raised here.
         list(pool.map(upload, pending))
-    store.put(f"{prefix}{layout.MANIFEST_NAME}", manifest)
+    if present.get(layout.MANIFEST_NAME) != content_etag(manifest):
+        store.put(f"{prefix}{layout.MANIFEST_NAME}", manifest)
     return generation, len(manifest)
 
 
 def publish_session(
     store: ObjectStore,
     session_key: int,
-    gather: Callable[[int], Inputs | Hold | None],
+    gather: Callable[..., Inputs | Hold | None],
     build: Callable[[Inputs], tuple[dict[str, bytes], Snapshot | None]],
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     max_attempts: int = MAX_ATTEMPTS,
 ) -> Outcome:
     """Bring one session's publication up to date with the archive.
 
-    ``gather`` selects the snapshot and fetches the classification, as of the
-    moment it is called. ``build`` turns those inputs into the generation's
+    ``gather(session_key, pointer=..., fresh=...)`` selects the snapshot and
+    fetches the classification, as of the moment it is called. It is given the
+    pointer now in place, and ``fresh`` is true on every attempt after the
+    first. ``build`` turns those inputs into the generation's
     files; it may also return the snapshot re-measured from the archive, whose
     coverage is then what the pointer records.
     """
     candidate: Candidate | None = None
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
         # The guarded read comes first, then everything derived (rule 2).
         pointer, etag = read_pointer(store, session_key)
-        inputs = gather(session_key)
+        # After a lost write nothing this run looked up is taken on trust:
+        # another publisher got in, possibly because the calendar moved.
+        inputs = gather(session_key, pointer=pointer, fresh=attempt > 0)
         if inputs is None:
             return Outcome("no_snapshot", session_key)
         if isinstance(inputs, Hold):
@@ -422,7 +434,7 @@ def derive_index(
 
 def publish_index(
     store: ObjectStore,
-    load_schedule: Callable[[int], list[ScheduledSession]],
+    load_schedule: Callable[..., list[ScheduledSession]],
     seasons: list[int] | None = None,
     max_attempts: int = MAX_ATTEMPTS,
 ) -> str:
@@ -433,11 +445,12 @@ def publish_index(
     then succeed and drop that publisher's session with no conflict raised
     (rule 2). On a conflict the whole sequence starts again from the read.
     """
-    for _ in range(max_attempts):
+    for attempt in range(max_attempts):
         current = store.get(layout.index_key())
         pointers = read_published(store)
         years = sorted({pointer.identity.year for pointer in pointers} | set(seasons or []))
-        payload = dump_json(derive_index(pointers, {year: load_schedule(year) for year in years}))
+        schedules = {year: load_schedule(year, fresh=attempt > 0) for year in years}
+        payload = dump_json(derive_index(pointers, schedules))
         if current is not None and current.data == payload:
             return "current"
         try:

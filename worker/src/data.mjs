@@ -90,10 +90,13 @@ function withCors(response) {
   });
 }
 
+// Everything this Worker says for itself, as opposed to what it reads from the
+// bucket, is an answer about now: a 404 for a session that is published a
+// minute later must not be remembered by a cache.
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", ...headers }
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers }
   });
 }
 

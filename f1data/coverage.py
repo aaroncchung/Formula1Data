@@ -42,9 +42,30 @@ POSITION_CHANNELS = ("X", "Y")
 MIN_CAR_LAP_SHARE = 0.95
 MIN_POSITION_LAP_SHARE = 0.95
 MIN_TYRE_LAP_SHARE = 0.95
-# Timing laps a driver may be short of the classified count. FastF1 can leave
-# out a first lap it could not time; a cut feed loses far more than one.
-TIMING_LAP_TOLERANCE = 1
+# Timing has no tolerance: a driver has to have every lap they are classified
+# with. Across the 21 races and sprints of 2026 fetched on 2026-10-06 (462
+# driver entries) timing had exactly the classified laps 452 times and one lap
+# more, for a retirement, 10 times. It never had fewer. A tolerance of one lap
+# would let a driver classified with one lap pass with no data at all.
+
+# The F1 feed (or other source) each bar depends on, by the name it is fetched
+# under. Used to tell "F1 does not hold this" from "this did not arrive whole".
+FEED_FILE_BY_BAR = {
+    "session_info": "SessionInfo.jsonStream",
+    "driver_list": "DriverList.jsonStream",
+    "timing_data": "TimingData.jsonStream",
+    "tyre_data": "TimingAppData.jsonStream",
+    "track_status": "TrackStatus.jsonStream",
+    "lap_count": "LapCount.jsonStream",
+    "session_status": "SessionStatus.jsonStream",
+    "weather": "WeatherData.jsonStream",
+    "race_control": "RaceControlMessages.jsonStream",
+    "car_data": "CarData.z.jsonStream",
+    "position": "Position.z.jsonStream",
+    "pit_stop_series": PIT_STOP_SERIES,
+    "circuit_info": CIRCUIT_INFO,
+}
+_NOT_HELD_STATUSES = frozenset({403, 404})
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
 CLASSIFICATION_BAR = "classification"
@@ -160,7 +181,6 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
 
         classified = driver.get("classified_laps")
         timing = int(driver.get("timing_laps") or 0)
-        tolerance = 0
         if race_like and classified is None:
             # Jolpica can be hours behind a race. The session cannot be called
             # complete without it, but the feeds can still be judged against
@@ -170,8 +190,7 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
             expected = timing
         elif race_like:
             expected = int(classified)
-            tolerance = TIMING_LAP_TOLERANCE
-            if timing < expected - tolerance:
+            if timing < expected:
                 shortfalls.append(
                     Shortfall("timing_data", code, f"{timing} timing laps for {expected} classified")
                 )
@@ -189,10 +208,7 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
             ("tyre_data", "tyre_laps", MIN_TYRE_LAP_SHARE),
         ):
             usable = int(driver.get(key) or 0)
-            # A lap the timing bar forgives cannot then be demanded of the
-            # feeds, which are only ever counted over laps that were timed.
-            required = math.ceil(minimum * expected) - tolerance
-            if usable < required:
+            if usable < math.ceil(minimum * expected):
                 shortfalls.append(
                     Shortfall(bar, code, f"{usable} of {expected} expected laps usable")
                 )
@@ -229,6 +245,16 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
                 "tyre_age_laps": 0,
             }
     return {**measurement, "drivers": drivers}
+
+
+def f1_does_not_hold(shortfall: Shortfall, feed_status: dict[str, Any]) -> bool:
+    """Whether the feed behind a shortfall is one F1 answered that it does not have.
+
+    F1 answers 403 for a feed that is not in a session's archive, as it does
+    for the pit-stop feed of races before late 2024. A feed that was answered
+    and came up short for a driver is a different thing: it may yet be mended.
+    """
+    return feed_status.get(FEED_FILE_BY_BAR.get(shortfall.bar, "")) in _NOT_HELD_STATUSES
 
 
 def refetch_could_help(shortfalls: list[Shortfall]) -> bool:

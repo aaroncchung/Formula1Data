@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 JSON_CONTENT_TYPE = "application/json; charset=utf-8"
+_KEY_PART = re.compile(r"^[A-Za-z0-9._-]+$")
 BINARY_CONTENT_TYPE = "application/octet-stream"
 
 
@@ -136,8 +138,12 @@ class DirectoryStore:
         self._lock = threading.Lock()
 
     def _path(self, key: str) -> Path:
+        # A key is slash-separated names of letters, digits, dots, hyphens and
+        # underscores. That leaves out a drive letter ("D:/x" joined to a root
+        # replaces the root on Windows), an alternate data stream, a backslash
+        # and every other way a key could name something outside the root.
         parts = key.split("/")
-        if not key or key.startswith("/") or any(part in {"", ".", ".."} for part in parts) or "\\" in key:
+        if any(part in {".", ".."} or not _KEY_PART.match(part) for part in parts):
             raise ValueError(f"Invalid object key: {key!r}")
         return self.root.joinpath(*parts)
 
@@ -310,8 +316,12 @@ def _check_precondition(key: str, current: bytes | None, if_match: str | None, i
         raise PreconditionFailed(key)
 
 
-def _etag(data: bytes) -> str:
+def content_etag(data: bytes) -> str:
+    """The ETag every store gives an object written in one piece: its quoted MD5."""
     return f'"{hashlib.md5(data, usedforsecurity=False).hexdigest()}"'
+
+
+_etag = content_etag
 
 
 def _file_etag(path: Path) -> str:

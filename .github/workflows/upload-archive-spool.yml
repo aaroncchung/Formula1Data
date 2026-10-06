@@ -14,7 +14,7 @@ on:
     inputs:
       release_tag:
         description: Draft release holding spool.tar
-        default: archive-spool-1
+        default: archive-spool-2
   # workflow_dispatch only works once this file is on the default branch. Until
   # then a push that touches this file runs it from the rewrite branch.
   push:
@@ -27,13 +27,19 @@ permissions:
   # Draft releases are only visible to a token that can write contents.
   contents: write
 
+# An explicit shell makes every step run with "-eo pipefail". Without it a step
+# that pipes into tee reports tee's success whatever came before the pipe.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   upload:
     name: Copy the spool into the bucket
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      RELEASE_TAG: ${{ inputs.release_tag || 'archive-spool-1' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'archive-spool-2' }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

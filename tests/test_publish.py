@@ -73,7 +73,7 @@ class Publisher:
         self.files = files or {"summary.json": b'{"meeting":"Austrian Grand Prix"}\n', "laps.json": b"[]\n"}
         self.builds = 0
 
-    def gather(self, session_key):
+    def gather(self, session_key, pointer=None, fresh=False):
         return Inputs(self.snapshot, self.fingerprint)
 
     def build(self, inputs):
@@ -215,7 +215,7 @@ def test_the_same_inputs_built_anywhere_land_on_the_same_generation():
 def test_nothing_in_the_archive_means_nothing_to_publish():
     store = MemoryStore()
 
-    outcome = publish_session(store, AUSTRIA, lambda key: None, lambda inputs: ({}, None))
+    outcome = publish_session(store, AUSTRIA, lambda key, **_: None, lambda inputs: ({}, None))
 
     assert outcome.action == "no_snapshot"
     assert read_pointer(store, AUSTRIA) == (None, None)
@@ -431,7 +431,7 @@ def test_the_index_is_the_calendar_with_published_sessions_attached():
     store = MemoryStore()
     Publisher(store).publish()
 
-    assert publish_index(store, lambda year: schedule_2026()) == "published"
+    assert publish_index(store, lambda year, **_: schedule_2026()) == "published"
 
     index = json.loads(store.get(layout.index_key()).data)
     assert index["format_version"] == layout.FORMAT_VERSION
@@ -479,10 +479,10 @@ def test_a_published_session_the_calendar_no_longer_lists_is_shown_not_dropped()
 def test_an_index_that_would_not_change_is_not_rewritten():
     store = Interposing(MemoryStore())
     Publisher(store).publish()
-    publish_index(store, lambda year: schedule_2026())
+    publish_index(store, lambda year, **_: schedule_2026())
     store.operations.clear()
 
-    assert publish_index(store, lambda year: schedule_2026()) == "current"
+    assert publish_index(store, lambda year, **_: schedule_2026()) == "current"
     assert ("put", layout.index_key()) not in store.operations
 
 
@@ -491,7 +491,7 @@ def test_the_index_is_read_before_the_pointers_are_listed():
     Publisher(store).publish()
     store.operations.clear()
 
-    publish_index(store, lambda year: schedule_2026())
+    publish_index(store, lambda year, **_: schedule_2026())
 
     relevant = [op for op in store.operations if op in {("get", layout.index_key()), ("list", layout.pointers_prefix())}]
     assert relevant == [("get", layout.index_key()), ("list", layout.pointers_prefix())]
@@ -507,13 +507,13 @@ def test_two_publishers_started_together_both_end_up_in_the_index():
 
     def italy_publishes_pointer_and_index():
         italy.publish()
-        assert publish_index(store, lambda year: schedule_2026()) == "published"
+        assert publish_index(store, lambda year, **_: schedule_2026()) == "published"
 
     # Austria's run has read the index and listed the pointers (one session);
     # Italy's whole publication happens just before Austria's index write.
     store.before_put[layout.index_key()] = italy_publishes_pointer_and_index
 
-    result = publish_index(store, lambda year: schedule_2026())
+    result = publish_index(store, lambda year, **_: schedule_2026())
 
     index = json.loads(store.get(layout.index_key()).data)
     assert published_keys(index) == {(8, "R"): AUSTRIA, (14, "R"): ITALY}
@@ -526,16 +526,16 @@ def test_a_session_published_right_after_the_pointers_were_listed_is_not_dropped
     index this run read is no longer the one in the store, so its write fails."""
     store = Interposing(MemoryStore())
     Publisher(store).publish()
-    publish_index(store, lambda year: schedule_2026())
+    publish_index(store, lambda year, **_: schedule_2026())
     italy = Publisher(store, snap=italy_snapshot())
 
     def italy_publishes_pointer_and_index():
         italy.publish()
-        publish_index(store, lambda year: schedule_2026())
+        publish_index(store, lambda year, **_: schedule_2026())
 
     store.after_list[layout.pointers_prefix()] = italy_publishes_pointer_and_index
 
-    publish_index(store, lambda year: schedule_2026(), seasons=[2026])
+    publish_index(store, lambda year, **_: schedule_2026(), seasons=[2026])
 
     index = json.loads(store.get(layout.index_key()).data)
     assert published_keys(index) == {(8, "R"): AUSTRIA, (14, "R"): ITALY}
@@ -547,5 +547,48 @@ def test_an_invalid_pointer_stops_the_index_from_being_derived_without_it():
     store.put(layout.pointer_key(ITALY), b"{}")
 
     with pytest.raises(PointerError):
-        publish_index(store, lambda year: schedule_2026())
+        publish_index(store, lambda year, **_: schedule_2026())
     assert store.get(layout.index_key()) is None
+
+
+# --- a generation that is already there is trusted by content, not by size ----
+
+
+def test_a_generation_with_a_manifest_and_a_missing_file_is_repaired():
+    """Found in review: a manifest of the right size was taken as proof that
+    everything under it was whole."""
+    store = MemoryStore()
+    files = {"summary.json": b"{}" + bytes([10]), "laps.json": b"[]" + bytes([10])}
+    generation, _ = upload_generation(store, identity(), files)
+    prefix = layout.generation_prefix(AUSTRIA, generation)
+    del store._objects[f"{prefix}laps.json"]
+
+    again, _ = upload_generation(store, identity(), files)
+
+    assert again == generation
+    assert store.get(f"{prefix}laps.json").data == files["laps.json"]
+
+
+def test_a_file_of_the_right_size_and_the_wrong_bytes_is_replaced():
+    store = MemoryStore()
+    files = {"summary.json": b'{"winner":"RUS"}', "laps.json": b"[]"}
+    generation, _ = upload_generation(store, identity(), files)
+    prefix = layout.generation_prefix(AUSTRIA, generation)
+    store.put(f"{prefix}summary.json", b'{"winner":"VER"}')
+    del store._objects[f"{prefix}manifest.json"]
+
+    upload_generation(store, identity(), files)
+
+    assert store.get(f"{prefix}summary.json").data == b'{"winner":"RUS"}'
+    assert store.get(f"{prefix}manifest.json") is not None
+
+
+def test_a_whole_generation_is_not_uploaded_twice():
+    store = Interposing(MemoryStore())
+    files = {"summary.json": b"{}", "laps.json": b"[]"}
+    upload_generation(store, identity(), files)
+    store.operations.clear()
+
+    upload_generation(store, identity(), files)
+
+    assert [operation for operation, _ in store.operations] == ["list"]

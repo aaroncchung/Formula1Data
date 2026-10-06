@@ -188,7 +188,6 @@ def test_a_snapshot_is_judged_by_the_bars_of_the_code_reading_it(monkeypatch):
     monkeypatch.setattr(coverage, "MIN_CAR_LAP_SHARE", 0.85)
     assert Snapshot.from_json(almost.to_json()).complete
     monkeypatch.setattr(coverage, "MIN_CAR_LAP_SHARE", 1.0)
-    monkeypatch.setattr(coverage, "TIMING_LAP_TOLERANCE", 0)
     assert not Snapshot.from_json(almost.to_json()).complete
 
 

@@ -70,19 +70,36 @@ def test_timing_cut_short_is_noticed_against_the_classification():
     assert ("car_data", "AAA") in found
 
 
-@pytest.mark.parametrize("timed_laps", [3, 10, 60])
-def test_one_lap_short_of_the_classification_is_tolerated_on_every_bar(timed_laps):
-    session = make_session(laps_per_driver=timed_laps)
-    session.results["Laps"] = float(timed_laps + 1)
-
-    assert shortfalls(session) == set()
-
-
-def test_two_laps_short_of_the_classification_is_not():
-    session = make_session(laps_per_driver=3)
-    session.results["Laps"] = 5.0
+def test_a_driver_one_lap_short_of_the_classification_is_short():
+    session = make_session()
+    session.results["Laps"] = 11.0
 
     assert ("timing_data", "AAA") in shortfalls(session)
+
+
+def test_a_driver_classified_with_one_lap_and_no_data_at_all_is_short():
+    """Found in review: with a lap of tolerance this driver met every bar."""
+    session = make_session()
+    session.results.loc["3", "Laps"] = 1.0
+    session.laps = session.laps[session.laps["DriverNumber"] != "3"]
+    del session.car_data["3"]
+    del session.pos_data["3"]
+
+    assert shortfalls(session) == {
+        ("timing_data", "CCC"),
+        ("car_data", "CCC"),
+        ("position", "CCC"),
+        ("tyre_data", "CCC"),
+    }
+
+
+def test_one_more_timed_lap_than_classified_is_not_a_shortfall():
+    # A retirement: Alonso was classified with 21 laps of the 2026 Australian
+    # GP and timed over 22.
+    session = make_session(laps_per_driver=22)
+    session.results["Laps"] = 21.0
+
+    assert shortfalls(session) == set()
 
 
 def test_a_lap_fastf1_generated_for_a_retirement_is_not_a_timing_lap():

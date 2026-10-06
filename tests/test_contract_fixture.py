@@ -89,9 +89,9 @@ def published_bucket() -> dict[str, str]:
     store = MemoryStore()
     inputs = Inputs(snapshot(), "sha256:" + "c" * 64)
     files = {path: dump_json(payload) for path, payload in FILES.items()}
-    outcome = publish_session(store, AUSTRIA, lambda key: inputs, lambda _: (files, None), now=lambda: NOW)
+    outcome = publish_session(store, AUSTRIA, lambda key, **_: inputs, lambda _: (files, None), now=lambda: NOW)
     assert outcome.action == "published"
-    assert publish_index(store, lambda year: schedule_2026()) == "published"
+    assert publish_index(store, lambda year, **_: schedule_2026()) == "published"
     return {item.key: store.get(item.key).data.decode("utf-8") for item in store.list("")}
 
 

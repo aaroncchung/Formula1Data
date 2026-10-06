@@ -7,19 +7,22 @@ again until a retry window closes, and only then is it published as partial.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from f1data import build as build_module
-from f1data.archive import RETRY_WINDOW, write_snapshot
+from f1data.archive import write_snapshot
 from f1data.build import Builder
 from f1data.classification import Classification, ClassificationUnavailable
 from f1data.coverage import evaluate_coverage
-from f1data.due import RETRY_INTERVAL, plan_fetches
+from f1data.due import plan_fetches
+from f1data.policy import RETRY_INTERVAL, RETRY_WINDOW, SLOW_RETRY_INTERVAL
 from f1data.publish import Hold, Inputs, publish_session, read_pointer
 from f1data.store import MemoryStore
-from tests.fakes import make_session, measure
+from f1data.extras import CIRCUIT_INFO
+from tests.fakes import EXTRAS, make_session, measure
 from tests.test_archive import fetched_session
 from tests.test_publish import AUSTRIA, ITALY, schedule_2026, snapshot
 
@@ -193,14 +196,14 @@ class Jolpica:
     def __init__(self, monkeypatch, laps=None, available=True):
         self.laps = laps or {"1": 10, "2": 10, "3": 10}
         self.available = available
-        monkeypatch.setattr(build_module, "load_schedule", lambda fastf1, year: schedule_2026())
+        monkeypatch.setattr(build_module, "load_schedule", lambda fastf1, year, fresh=False: schedule_2026())
         monkeypatch.setattr(build_module, "fetch_classification", self.fetch)
 
     def fetch(self, fastf1, year, round_number, session_type):
         if not self.available:
             raise ClassificationUnavailable(f"Jolpica has no classification for {year} round {round_number}")
         rows = [{"number": number, "laps": laps} for number, laps in sorted(self.laps.items())]
-        return Classification(rows=rows, fingerprint="sha256:result")
+        return Classification(rows=rows, fingerprint="sha256:result", race_date=RACE_START.date())
 
 
 def archived(tmp_path, moment: datetime, session=None) -> MemoryStore:
@@ -284,3 +287,82 @@ def test_a_session_nobody_archived_is_not_gathered(monkeypatch):
     Jolpica(monkeypatch)
 
     assert Builder(MemoryStore(), fastf1=None).gather(ITALY) is None
+
+
+# --- after the window: rarely, and never for what F1 does not hold -------------
+
+
+def test_after_the_window_a_short_session_is_still_fetched_but_rarely():
+    """Found in review: fetching stopped for good at 48 hours, and rule 3 lets it
+    stop only for a session that is complete."""
+    first_fetch = RACE_START + timedelta(hours=5)
+    short = snapshot(snapshot_id=fetched_at(first_fetch), session=without_position())
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+
+    assert planned(schedule, [short], first_fetch + RETRY_WINDOW + timedelta(days=1)) == []
+    assert planned(schedule, [short], first_fetch + SLOW_RETRY_INTERVAL) == [(8, "R")]
+
+    again = snapshot(snapshot_id=fetched_at(first_fetch + SLOW_RETRY_INTERVAL), session=without_position())
+    assert planned(schedule, [short, again], first_fetch + SLOW_RETRY_INTERVAL + timedelta(days=6)) == []
+    assert planned(schedule, [short, again], first_fetch + 2 * SLOW_RETRY_INTERVAL) == [(8, "R")]
+
+
+def test_a_feed_f1_says_it_does_not_hold_ends_the_retries_once_the_window_closes():
+    """A race from before late 2024: F1 answers 403 for its pit-stop feed, and
+    will whenever it is asked."""
+    first_fetch = RACE_START + timedelta(hours=5)
+    measurement = measure(make_session(), "R", {CIRCUIT_INFO: EXTRAS[CIRCUIT_INFO]})
+    not_held = replace(
+        snapshot(snapshot_id=fetched_at(first_fetch)),
+        coverage=measurement,
+        feed_status={"PitStopSeries.jsonStream": 403, "TimingData.jsonStream": 200},
+    )
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+    assert [shortfall.bar for shortfall in not_held.shortfalls()] == ["pit_stop_series"]
+
+    # While the window is open the answer may only mean "not yet".
+    assert planned(schedule, [not_held], first_fetch + RETRY_INTERVAL) == [(8, "R")]
+    assert planned(schedule, [not_held], first_fetch + SLOW_RETRY_INTERVAL) == []
+    assert planned(schedule, [not_held], first_fetch + 10 * SLOW_RETRY_INTERVAL) == []
+
+
+def test_a_feed_that_was_answered_but_came_up_short_is_not_one_f1_does_not_hold():
+    first_fetch = RACE_START + timedelta(hours=5)
+    answered = replace(
+        snapshot(snapshot_id=fetched_at(first_fetch), session=without_position()),
+        feed_status={"Position.z.jsonStream": 200},
+    )
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+
+    assert not answered.missing_only_what_f1_does_not_hold()
+    assert planned(schedule, [answered], first_fetch + SLOW_RETRY_INTERVAL) == [(8, "R")]
+
+
+def test_a_correction_to_a_recent_result_makes_a_whole_snapshot_due_again():
+    """Found in review: a snapshot once judged complete was skipped before the
+    classification of today was looked at."""
+    first_fetch = RACE_START + timedelta(hours=5)
+    whole = snapshot(snapshot_id=fetched_at(first_fetch))
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+    later = first_fetch + RETRY_INTERVAL
+    asked = []
+
+    def corrected(session):
+        asked.append(session.round)
+        return {"1": 11, "2": 10, "3": 10}
+
+    assert planned(schedule, [whole], later) == []
+    plans = plan_fetches(schedule, [whole], later, classified_laps=corrected)
+    assert [plan.reason for plan in plans] == ["best of 1 snapshot(s) is short on car_data, position, timing_data, tyre_data"]
+    assert asked == [8]
+
+
+def test_only_recent_sessions_are_checked_against_the_classification_of_today():
+    first_fetch = RACE_START + timedelta(hours=5)
+    whole = snapshot(snapshot_id=fetched_at(first_fetch))
+    schedule = [entry for entry in schedule_2026() if entry.round == 8]
+    asked = []
+
+    plan_fetches(schedule, [whole], LONG_AFTER, classified_laps=lambda session: asked.append(session.round))
+
+    assert asked == []

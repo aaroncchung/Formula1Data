@@ -37,9 +37,18 @@ class ScheduledSession:
         return datetime.fromisoformat(self.start_time_utc.replace("Z", "+00:00"))
 
 
-def load_schedule(fastf1: Any, year: int) -> list[ScheduledSession]:
-    """Every session of every race weekend in ``year``, in calendar order."""
-    schedule = fastf1.get_event_schedule(year, include_testing=False)
+def load_schedule(fastf1: Any, year: int, fresh: bool = False) -> list[ScheduledSession]:
+    """Every session of every race weekend in ``year``, in calendar order.
+
+    FastF1 keeps the schedule in its HTTP cache for twelve hours. ``fresh``
+    reads it from the source again, for a caller that has to decide from the
+    calendar as it is now.
+    """
+    if fresh:
+        with fastf1.Cache.disabled():
+            schedule = fastf1.get_event_schedule(year, include_testing=False)
+    else:
+        schedule = fastf1.get_event_schedule(year, include_testing=False)
     sessions: list[ScheduledSession] = []
     for _, event in schedule.iterrows():
         round_number = _int(event.get("RoundNumber"))

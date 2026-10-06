@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from f1data.coverage import measure_coverage
-from f1data.extras import fetch_extras
+from f1data.extras import CIRCUIT_INFO, fetch_extras
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, identity_from_fastf1, session_type_code
 
@@ -54,6 +54,9 @@ class FetchedSession:
     versions: dict[str, Any] = field(default_factory=dict)
     # Feeds FastF1 does not load, by name (f1data/extras.py).
     extras: dict[str, bytes] = field(default_factory=dict)
+    # What F1 last answered for each feed, by file name: a status, or None
+    # when the request got no answer.
+    feed_status: dict[str, Any] = field(default_factory=dict)
 
 
 @contextmanager
@@ -150,7 +153,23 @@ def fetch_session(
         attempts=attempt,
         versions=versions,
         extras=extras,
+        feed_status=_feed_status(recorder),
     )
+
+
+def _feed_status(recorder: HttpRecorder) -> dict[str, Any]:
+    """F1's own last answer for each feed, and MultiViewer's for the circuit.
+
+    FastF1's mirror is left out: when F1 says 403 and the mirror then says
+    404, the answer that says whether F1 holds the feed is F1's.
+    """
+    status: dict[str, Any] = {}
+    for record in recorder.records:
+        if record.host == "livetiming.formula1.com":
+            status[record.path.rsplit("/", 1)[-1]] = record.status
+        elif record.host == "api.multiviewer.app":
+            status[CIRCUIT_INFO] = record.status
+    return status
 
 
 def _versions(fastf1: Any) -> dict[str, Any]:

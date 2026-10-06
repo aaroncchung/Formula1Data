@@ -25,6 +25,12 @@ concurrency:
   group: deploy-data-worker
   cancel-in-progress: false
 
+# An explicit shell makes every step run with "-eo pipefail". Without it a step
+# that pipes into tee reports tee's success whatever came before the pipe.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy:
     name: Test and deploy

@@ -24,14 +24,22 @@ import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.coverage import Shortfall, apply_classification, evaluate_coverage, weakest_share
+from f1data.coverage import (
+    CLASSIFICATION_BAR,
+    Shortfall,
+    apply_classification,
+    evaluate_coverage,
+    f1_does_not_hold,
+    weakest_share,
+)
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
 from f1data.identity import SessionIdentity, format_utc, parse_utc
+from f1data.policy import RETRY_WINDOW
 from f1data.store import ObjectStore
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -39,11 +47,6 @@ PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
 EXTRA_PREFIX = "extra/"
 _LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-
-# How long after its first fetch a session short of a bar keeps being fetched
-# again before it is published as partial (rule 6). The acceptance bar for a
-# complete session is 48 hours when fetching runs on a local machine.
-RETRY_WINDOW = timedelta(hours=48)
 
 
 class ArchiveError(RuntimeError):
@@ -60,6 +63,8 @@ class Snapshot:
     objects: dict[str, dict[str, Any]] = field(default_factory=dict)
     attempts: int = 1
     requests_by_host: dict[str, dict[str, int]] = field(default_factory=dict)
+    # What F1 last answered for each feed it was asked for, by file name.
+    feed_status: dict[str, Any] = field(default_factory=dict)
 
     @property
     def session_key(self) -> int:
@@ -73,6 +78,15 @@ class Snapshot:
     @property
     def complete(self) -> bool:
         return not self.shortfalls()
+
+    def missing_only_what_f1_does_not_hold(self) -> bool:
+        """Whether every shortfall is a feed F1 answered that it does not have.
+
+        Such a session is as whole as it can be, and asking again is pointless.
+        A missing classification is left out of the reckoning: it is Jolpica's.
+        """
+        feeds = [shortfall for shortfall in self.shortfalls() if shortfall.bar != CLASSIFICATION_BAR]
+        return bool(feeds) and all(f1_does_not_hold(shortfall, self.feed_status) for shortfall in feeds)
 
     def judged_against(self, classified_laps: dict[str, int]) -> "Snapshot":
         """This snapshot as it stands against today's classification.
@@ -103,6 +117,7 @@ class Snapshot:
             "versions": self.versions,
             "attempts": self.attempts,
             "requests_by_host": self.requests_by_host,
+            "feed_status": self.feed_status,
             "objects": self.objects,
             "coverage": self.coverage,
         }
@@ -120,6 +135,7 @@ class Snapshot:
             objects=dict(payload.get("objects") or {}),
             attempts=int(payload.get("attempts") or 1),
             requests_by_host=dict(payload.get("requests_by_host") or {}),
+            feed_status=dict(payload.get("feed_status") or {}),
         )
 
 
@@ -170,6 +186,7 @@ def write_snapshot(store: ObjectStore, fetched: FetchedSession, now: datetime | 
         objects=objects,
         attempts=fetched.attempts,
         requests_by_host=fetched.http.summary(),
+        feed_status=fetched.feed_status,
     )
     store.put(f"{prefix}{layout.SNAPSHOT_MARKER}", dump_json(snapshot.to_json()), if_absent=True)
     return snapshot
@@ -248,7 +265,9 @@ def archive_directory(
         raise ArchiveError(f"{source} holds no files")
 
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    key = f"{layout.ARCHIVE_PREFIX}legacy/{name}-{now.strftime('%Y%m%dT%H%M%SZ')}"
+    # The random part is what keeps two copies started in the same second
+    # from landing on one key, where the second would replace the first.
+    key = f"{layout.ARCHIVE_PREFIX}legacy/{name}-{new_snapshot_id(now)}"
     with tempfile.TemporaryDirectory(prefix="f1data-legacy-") as scratch:
         packed = Path(scratch) / "directory.tar.gz"
         with tarfile.open(packed, "w:gz", compresslevel=6) as archive:

@@ -13,21 +13,28 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from f1data.coverage import RACE_LIKE_SESSION_TYPES
 
-_FINGERPRINT_COLUMNS = (
-    "number",
-    "driverCode",
-    "position",
-    "positionText",
-    "grid",
-    "status",
-    "points",
-    "laps",
-    "totalRaceTime",
-)
+# Jolpica's column and the FastF1 result column it replaces. Every column that
+# reaches a build is in the fingerprint, so that a correction to any of them,
+# a constructor's name as much as a position, rebuilds the session.
+_RESULT_COLUMNS = {
+    "number": "DriverNumber",
+    "driverCode": "Abbreviation",
+    "givenName": "FirstName",
+    "familyName": "LastName",
+    "constructorName": "TeamName",
+    "position": "Position",
+    "positionText": "ClassifiedPosition",
+    "grid": "GridPosition",
+    "status": "Status",
+    "points": "Points",
+    "totalRaceTime": "Time",
+    "laps": "Laps",
+}
 
 
 _RETRY_PAUSES_SECONDS = (2.0, 6.0)
@@ -43,6 +50,8 @@ class Classification:
     fingerprint: str
     # As Jolpica returned it, for merging into a FastF1 session's results.
     frame: Any = field(default=None, compare=False, repr=False)
+    # The date of the race this is the result of. A sprint's is its Sunday race.
+    race_date: date | None = field(default=None, compare=False)
 
     @property
     def laps_by_number(self) -> dict[str, int]:
@@ -91,10 +100,24 @@ def fetch_classification(
         )
     frame = frames[0]
     rows = [
-        {column: _plain(row.get(column)) for column in _FINGERPRINT_COLUMNS if column in frame.columns}
+        {column: _plain(row.get(column)) for column in _RESULT_COLUMNS if column in frame.columns}
         for _, row in frame.iterrows()
     ]
-    return Classification(rows=rows, fingerprint=fingerprint(rows), frame=frame)
+    return Classification(
+        rows=rows, fingerprint=fingerprint(rows), frame=frame, race_date=_race_date(response)
+    )
+
+
+def _race_date(response: Any) -> date | None:
+    description = getattr(response, "description", None)
+    try:
+        value = description["raceDate"].iloc[0]
+    except Exception:
+        return None
+    try:
+        return value.date() if hasattr(value, "date") else date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
 
 
 def fingerprint(rows: list[dict[str, Any]]) -> str:
@@ -109,20 +132,7 @@ def merge_into_session(session: Any, classification: Classification) -> None:
     which for a build is the archive. The classification is the one input a
     build takes from today.
     """
-    rename = {
-        "number": "DriverNumber",
-        "driverCode": "Abbreviation",
-        "givenName": "FirstName",
-        "familyName": "LastName",
-        "constructorName": "TeamName",
-        "position": "Position",
-        "positionText": "ClassifiedPosition",
-        "grid": "GridPosition",
-        "status": "Status",
-        "points": "Points",
-        "totalRaceTime": "Time",
-        "laps": "Laps",
-    }
+    rename = _RESULT_COLUMNS
     official = classification.frame
     official = official.rename(
         columns={key: value for key, value in rename.items() if key in official.columns}

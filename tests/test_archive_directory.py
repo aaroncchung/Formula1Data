@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import re
 import tarfile
 from datetime import datetime, timezone
 
@@ -31,7 +33,8 @@ def test_a_directory_is_kept_whole_with_a_description_beside_it(tmp_path):
 
     description = archive_directory(store, cache, "legacy-fastf1-cache", now=NOW)
 
-    key = "archive/legacy/legacy-fastf1-cache-20261005T200000Z"
+    key = description["archive"]["key"].removesuffix(".tar.gz")
+    assert re.fullmatch(r"archive/legacy/legacy-fastf1-cache-20261005T200000Z-[a-f0-9]{8}", key)
     assert sorted(item.key for item in store.list("archive/")) == [f"{key}.json", f"{key}.tar.gz"]
     assert json.loads(store.get(f"{key}.json").data) == description
     assert description["file_count"] == 3
@@ -50,6 +53,22 @@ def test_a_directory_is_kept_whole_with_a_description_beside_it(tmp_path):
         "fastf1_http_cache.sqlite",
     ]
     assert car_data == b"car data " * 2000
+
+
+def test_two_copies_started_in_the_same_second_do_not_share_a_key(tmp_path):
+    """Found in review: the second replaced the first's archive and left its description."""
+    store = MemoryStore()
+    first_cache = old_cache(tmp_path / "one")
+    second_cache = old_cache(tmp_path / "two")
+    (second_cache / "fastf1_http_cache.sqlite").write_bytes(b"a different machine's cache")
+
+    first = archive_directory(store, first_cache, "legacy-fastf1-cache", now=NOW)
+    second = archive_directory(store, second_cache, "legacy-fastf1-cache", now=NOW)
+
+    assert first["archive"]["key"] != second["archive"]["key"]
+    for description in (first, second):
+        stored = store.get(description["archive"]["key"]).data
+        assert hashlib.sha256(stored).hexdigest() == description["archive"]["sha256"]
 
 
 def test_it_never_reaches_a_served_prefix(tmp_path):
