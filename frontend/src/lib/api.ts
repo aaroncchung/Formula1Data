@@ -4,11 +4,9 @@ import {
   createStaticApi,
   isApiFailure,
   isEmptyState,
-  isLiveDisabled,
   safeApi
 } from "@/lib/static-api-core";
 import type { QueueIngestionResponse, SessionStatusResponse } from "@/types/api";
-import type { LiveDisabledResponse } from "@/types/domain";
 
 const DEFAULT_STATIC_DATA_BASE_PATH = "/data";
 const DEFAULT_DYNAMIC_API_BASE_PATH = "";
@@ -18,16 +16,11 @@ export {
   ApiClientError,
   isApiFailure,
   isEmptyState,
-  isLiveDisabled,
   safeApi
 };
 
 export function staticDataBasePath(): string {
   return process.env.NEXT_PUBLIC_STATIC_DATA_BASE_PATH || DEFAULT_STATIC_DATA_BASE_PATH;
-}
-
-export function apiBaseUrl(): string {
-  return staticDataBasePath();
 }
 
 export function dynamicApiBaseUrl(): string {
@@ -105,14 +98,7 @@ export const dynamicApi = {
     readDynamicJson<QueueIngestionResponse>("/api/ingestion/session", {
       method: "POST",
       body: JSON.stringify(payload)
-    }),
-  ingestionJob: (jobId: string) =>
-    readDynamicJson<SessionStatusResponse["job"]>(`/api/ingestion/jobs/${encodeURIComponent(jobId)}`),
-  liveCurrentSession: () => readDynamicJson<Record<string, unknown> | LiveDisabledResponse>("/api/live/current-session"),
-  liveTiming: () => readDynamicJson<Record<string, unknown> | LiveDisabledResponse>("/api/live/timing"),
-  liveRaceControl: () => readDynamicJson<Record<string, unknown> | LiveDisabledResponse>("/api/live/race-control"),
-  livePositions: () => readDynamicJson<Record<string, unknown> | LiveDisabledResponse>("/api/live/positions"),
-  liveWeather: () => readDynamicJson<Record<string, unknown> | LiveDisabledResponse>("/api/live/weather")
+    })
 };
 
 async function readDynamicJson<T>(path: string, init: RequestInit = {}): Promise<T> {

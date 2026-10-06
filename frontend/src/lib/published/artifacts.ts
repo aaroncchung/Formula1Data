@@ -29,9 +29,23 @@ export async function readResults(view: SessionView): Promise<SessionResults> {
   return { results, drivers };
 }
 
-/** One lap-time series for each driver. */
-export function readLapTimes(view: SessionView): Promise<ChartSeries[]> {
-  return readList<ChartSeries>(view, LAP_TIMES_PATH);
+export type SessionLapTimes = {
+  readonly series: ChartSeries[];
+  readonly drivers: Driver[];
+};
+
+/**
+ * One lap-time series for each driver, with the drivers the chart styles them
+ * from: team-mates share a colour, and the driver list is what tells the two
+ * lines apart (lib/driver-style.ts).
+ */
+export async function readLapTimes(view: SessionView): Promise<SessionLapTimes> {
+  // One after the other on purpose. A generation without lap times then fails
+  // before anything is requested, and the drivers are normally in the HTTP
+  // cache already, because the results tab reads them and opens first.
+  const series = await readList<ChartSeries>(view, LAP_TIMES_PATH);
+  const drivers = await readList<Driver>(view, DRIVERS_PATH);
+  return { series, drivers };
 }
 
 /**

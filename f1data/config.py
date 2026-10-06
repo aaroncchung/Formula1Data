@@ -107,6 +107,8 @@ def open_r2_store(settings: R2Settings, prefix: str = "") -> S3Store:
         config=Config(
             signature_version="s3v4",
             retries={"max_attempts": 5, "mode": "standard"},
+            # A generation is uploaded by a pool of threads sharing this client.
+            max_pool_connections=32,
             # boto3 adds a CRC32 trailer to every upload by default since 1.36;
             # R2 asks S3 clients to send checksums only when an operation
             # requires one.

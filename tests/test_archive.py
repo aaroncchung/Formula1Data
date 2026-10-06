@@ -17,16 +17,16 @@ from f1data.archive import (
     ArchiveError,
     Snapshot,
     list_snapshots,
+    read_extras,
     restore_snapshot,
     select_snapshot,
     write_snapshot,
 )
 from f1data.cli import main
-from f1data.coverage import measure_coverage
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
 from f1data.httplog import HttpRecorder
 from f1data.store import DirectoryStore, MemoryStore
-from tests.fakes import LAP_SECONDS, RACE_START, make_session
+from tests.fakes import EXTRAS, LAP_SECONDS, RACE_START, make_session, measure
 from tests.test_publish import AUSTRIA, identity, snapshot
 
 ARCHIVE_PATH = "2026/2026-06-28_Austrian_Grand_Prix/2026-06-28_Race/"
@@ -42,15 +42,16 @@ def fetched_session(tmp_path: Path, session=None) -> FetchedSession:
     return FetchedSession(
         session=None,
         identity=identity(),
-        coverage=measure_coverage(session or make_session(), "R"),
+        coverage=measure(session or make_session()),
         cache_dir=cache_dir,
         http=HttpRecorder(),
         attempts=1,
         versions={"fastf1": "3.8.3", "fastf1_cache": 15},
+        extras=dict(EXTRAS),
     )
 
 
-def test_a_snapshot_is_three_objects_and_restores_as_a_fastf1_cache(tmp_path):
+def test_a_snapshot_holds_the_cache_the_raw_responses_and_the_extra_feeds(tmp_path):
     store = MemoryStore()
     now = datetime(2026, 10, 5, 20, 0, 0, tzinfo=timezone.utc)
 
@@ -59,8 +60,15 @@ def test_a_snapshot_is_three_objects_and_restores_as_a_fastf1_cache(tmp_path):
     assert layout.is_snapshot_id(written.snapshot_id) and written.snapshot_id.startswith("20261005T200000Z-")
     prefix = layout.snapshot_prefix(AUSTRIA, written.snapshot_id)
     assert sorted(item.key[len(prefix):] for item in store.list(prefix)) == sorted(
-        [PARSED_ARCHIVE, HTTP_ARCHIVE, layout.SNAPSHOT_MARKER]
+        [
+            PARSED_ARCHIVE,
+            HTTP_ARCHIVE,
+            "extra/PitStopSeries.jsonStream",
+            "extra/circuit-info.json",
+            layout.SNAPSHOT_MARKER,
+        ]
     )
+    assert read_extras(store, written) == EXTRAS
     (listed,) = list_snapshots(store, AUSTRIA)
     assert listed == written
     assert listed.fetched_at == "2026-10-05T20:00:00Z"
@@ -101,6 +109,16 @@ def test_a_restored_archive_that_does_not_match_its_checksum_is_refused(tmp_path
 
     with pytest.raises(ArchiveError, match="does not match its snapshot"):
         restore_snapshot(store, written, tmp_path / "restored")
+
+
+def test_an_extra_feed_that_does_not_match_its_checksum_is_refused(tmp_path):
+    store = MemoryStore()
+    written = write_snapshot(store, fetched_session(tmp_path))
+    key = f"{layout.snapshot_prefix(AUSTRIA, written.snapshot_id)}extra/circuit-info.json"
+    store.put(key, b'{"corners":[]}\n')
+
+    with pytest.raises(ArchiveError, match="does not match its snapshot"):
+        read_extras(store, written)
 
 
 def test_a_fetch_with_no_parsed_feeds_is_not_archived(tmp_path):
@@ -187,7 +205,7 @@ def test_copy_archive_moves_snapshots_between_stores_and_is_safe_to_repeat(tmp_p
         main(["copy-archive", "--from", str(spool), "--to", str(bucket)])
     assert first.value.code == 0
     output = capsys.readouterr().out
-    assert "Copied 3 object(s); 0 already there." in output
+    assert "Copied 5 object(s); 0 already there." in output
     # The marker is copied last, so a half-copied snapshot is never visible.
     copied = [line for line in output.splitlines() if line.startswith("copied ")]
     assert copied[-1].startswith(f"copied {layout.snapshot_prefix(AUSTRIA, written.snapshot_id)}snapshot.json")
@@ -197,4 +215,4 @@ def test_copy_archive_moves_snapshots_between_stores_and_is_safe_to_repeat(tmp_p
 
     with pytest.raises(SystemExit):
         main(["copy-archive", "--from", str(spool), "--to", str(bucket)])
-    assert "Copied 0 object(s); 3 already there." in capsys.readouterr().out
+    assert "Copied 0 object(s); 5 already there." in capsys.readouterr().out

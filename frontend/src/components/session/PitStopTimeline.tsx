@@ -1,14 +1,10 @@
+import { groupByDriver } from "@/lib/chart-utils";
 import { formatMs } from "@/lib/format";
 import type { PitStop } from "@/types/domain";
 
 export function PitStopTimeline({ stops }: { stops: PitStop[] }) {
   const maxLap = Math.max(...stops.map((stop) => stop.lap_number), 1);
-  const drivers = Array.from(stops.reduce((groups, stop) => {
-    const rows = groups.get(stop.driver_code) || [];
-    rows.push(stop);
-    groups.set(stop.driver_code, rows);
-    return groups;
-  }, new Map<string, PitStop[]>()).entries());
+  const drivers = groupByDriver(stops);
   if (!drivers.length) return <div className="rounded-md border border-dashed border-line p-6 text-center text-sm text-slate-500">No pit events detected.</div>;
   return (
     <div className="space-y-3">

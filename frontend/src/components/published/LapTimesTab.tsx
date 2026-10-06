@@ -15,12 +15,12 @@ export function LapTimesTab({ view, active }: { view: SessionView; active: boole
   }
   return (
     <ArtifactPanel tab="lap-times" name="lap times" artifact={artifact} onRetry={retry}>
-      {(series) =>
+      {({ series, drivers }) =>
         series.length === 0 ? (
           <EmptyState title="No lap times" detail="This session was published without any timed laps." />
         ) : (
           <ChartPanel title="Lap Time Evolution" description="All available lap times by driver.">
-            <LapTimeChart series={series} />
+            <LapTimeChart series={series} drivers={drivers} />
           </ChartPanel>
         )
       }

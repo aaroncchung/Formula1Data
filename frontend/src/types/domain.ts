@@ -365,15 +365,6 @@ export type TelemetrySample = {
   session_time_ms?: number | null;
 };
 
-export type QualifyingDeltaResult = {
-  session_id: string;
-  driver_a: string;
-  driver_b: string;
-  sector_delta_ms: Record<string, number | null>;
-  telemetry?: TelemetryComparison | null;
-  caveats: string[];
-};
-
 export type PositionReplayFrame = {
   session_id: string;
   frame_index: number;

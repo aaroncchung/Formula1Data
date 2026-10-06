@@ -18,24 +18,32 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import secrets
 import shutil
 import tarfile
 import tempfile
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.coverage import Shortfall, evaluate_coverage, weakest_share
+from f1data.coverage import Shortfall, apply_classification, evaluate_coverage, weakest_share
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
-from f1data.identity import SessionIdentity, format_utc
+from f1data.identity import SessionIdentity, format_utc, parse_utc
 from f1data.store import ObjectStore
 
 SNAPSHOT_SCHEMA_VERSION = 1
 PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
+EXTRA_PREFIX = "extra/"
+_LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+# How long after its first fetch a session short of a bar keeps being fetched
+# again before it is published as partial (rule 6). The acceptance bar for a
+# complete session is 48 hours when fetching runs on a local machine.
+RETRY_WINDOW = timedelta(hours=48)
 
 
 class ArchiveError(RuntimeError):
@@ -65,6 +73,15 @@ class Snapshot:
     @property
     def complete(self) -> bool:
         return not self.shortfalls()
+
+    def judged_against(self, classified_laps: dict[str, int]) -> "Snapshot":
+        """This snapshot as it stands against today's classification.
+
+        What a snapshot recorded of the classification is what Jolpica had when
+        it was fetched, which for a session fetched soon after it ended is
+        nothing. Timing is compared with the laps classified now.
+        """
+        return replace(self, coverage=apply_classification(self.coverage, classified_laps))
 
     def rank(self) -> tuple[bool, int, float, str]:
         """Higher is better. The order in which build picks a snapshot (rule 6).
@@ -137,6 +154,13 @@ def write_snapshot(store: ObjectStore, fetched: FetchedSession, now: datetime | 
             objects[HTTP_ARCHIVE] = _describe(compressed)
             store.put_file(f"{prefix}{HTTP_ARCHIVE}", compressed, content_type="application/gzip")
 
+    for name, data in sorted(fetched.extras.items()):
+        objects[f"{EXTRA_PREFIX}{name}"] = {
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        store.put(f"{prefix}{EXTRA_PREFIX}{name}", data, content_type=_extra_content_type(name))
+
     snapshot = Snapshot(
         snapshot_id=snapshot_id,
         identity=fetched.identity,
@@ -174,6 +198,15 @@ def select_snapshot(snapshots: list[Snapshot]) -> Snapshot | None:
     return max(snapshots, key=Snapshot.rank, default=None)
 
 
+def partial_publication_time(snapshots: list[Snapshot]) -> datetime:
+    """When a session still short of a bar may be published as partial (rule 6).
+
+    Until then later fetches may still do better, and a partial publication is
+    not what anyone is waiting for.
+    """
+    return min(parse_utc(snapshot.fetched_at) for snapshot in snapshots) + RETRY_WINDOW
+
+
 def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:
     """Unpack a snapshot's parsed feeds into ``cache_dir`` as a FastF1 cache."""
     described = snapshot.objects.get(PARSED_ARCHIVE)
@@ -193,6 +226,71 @@ def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) ->
         with tarfile.open(archive_path, "r:gz") as archive:
             archive.extractall(cache_dir, filter="data")
     return cache_dir
+
+
+def archive_directory(
+    store: ObjectStore, source: Path, name: str, now: datetime | None = None
+) -> dict[str, Any]:
+    """Keep a whole directory in the archive as one compressed file.
+
+    For data that exists on one machine only and is not yet in snapshot form:
+    the FastF1 cache the sessions before the rewrite were built from (AR-11).
+    Nothing is parsed, so nothing has to load for the copy to succeed. A
+    description of the contents is written beside it, last.
+    """
+    if not _LEGACY_NAME.match(name):
+        raise ValueError(f"Use lowercase letters, digits and hyphens for the name, not {name!r}")
+    source = source.resolve()
+    if not source.is_dir():
+        raise ArchiveError(f"{source} is not a directory")
+    files = sorted(path for path in source.rglob("*") if path.is_file())
+    if not files:
+        raise ArchiveError(f"{source} holds no files")
+
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    key = f"{layout.ARCHIVE_PREFIX}legacy/{name}-{now.strftime('%Y%m%dT%H%M%SZ')}"
+    with tempfile.TemporaryDirectory(prefix="f1data-legacy-") as scratch:
+        packed = Path(scratch) / "directory.tar.gz"
+        with tarfile.open(packed, "w:gz", compresslevel=6) as archive:
+            for path in files:
+                archive.add(path, arcname=path.relative_to(source).as_posix())
+        description = {
+            "name": name,
+            "created_at": format_utc(now),
+            "archive": {"key": f"{key}.tar.gz", **_describe(packed)},
+            "file_count": len(files),
+            "total_bytes": sum(path.stat().st_size for path in files),
+            "files": [
+                {"path": path.relative_to(source).as_posix(), "size_bytes": path.stat().st_size}
+                for path in files
+            ],
+        }
+        store.put_file(f"{key}.tar.gz", packed, content_type="application/gzip")
+    uploaded = store.head(f"{key}.tar.gz")
+    if uploaded is None or uploaded.size != description["archive"]["size_bytes"]:
+        raise ArchiveError(f"{key}.tar.gz did not arrive whole")
+    store.put(f"{key}.json", dump_json(description), if_absent=True)
+    return description
+
+
+def read_extras(store: ObjectStore, snapshot: Snapshot) -> dict[str, bytes]:
+    """The feeds archived beside the FastF1 cache, by name, checked against the snapshot."""
+    extras: dict[str, bytes] = {}
+    prefix = layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)
+    for name, described in sorted(snapshot.objects.items()):
+        if not name.startswith(EXTRA_PREFIX):
+            continue
+        found = store.get(f"{prefix}{name}")
+        if found is None:
+            raise ArchiveError(f"Snapshot {snapshot.snapshot_id} is missing {name}")
+        if hashlib.sha256(found.data).hexdigest() != described.get("sha256"):
+            raise ArchiveError(f"{prefix}{name} does not match its snapshot")
+        extras[name[len(EXTRA_PREFIX):]] = found.data
+    return extras
+
+
+def _extra_content_type(name: str) -> str:
+    return "application/json; charset=utf-8" if name.endswith(".json") else "application/octet-stream"
 
 
 def dump_json(payload: Any) -> bytes:

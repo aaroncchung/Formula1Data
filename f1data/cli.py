@@ -7,15 +7,22 @@ import os
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.archive import list_snapshots, write_snapshot
+from f1data.archive import ArchiveError, Snapshot, archive_directory, list_snapshots, write_snapshot
+from f1data.classification import ClassificationUnavailable, fetch_classification
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
+from f1data.due import plan_fetches
 from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_session
+from f1data.schedule import ScheduledSession, load_schedule
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore
+
+# A batch of fetches stops here rather than fail its way through every session.
+_GIVE_UP_AFTER_FAILURES_IN_A_ROW = 2
 
 # The feeds whose absence the old loader tolerated or could not see (AR-13, AR-21).
 _RAW_CHECK_FEEDS = (
@@ -56,6 +63,18 @@ def main(argv: list[str] | None = None) -> None:
     fetch.add_argument("--session", required=True, help="Session code or name, such as R.")
     fetch.set_defaults(func=run_fetch)
 
+    due = subparsers.add_parser(
+        "fetch-due",
+        help="Fetch every finished session the archive does not yet hold in full. Needs a network F1 answers.",
+    )
+    _add_store_argument(due)
+    due.add_argument(
+        "--season", type=int, action="append", help="Season to look at. Repeatable. Defaults to this year."
+    )
+    due.add_argument("--limit", type=int, help="Fetch at most this many sessions.")
+    due.add_argument("--dry-run", action="store_true", help="Say what would be fetched and stop.")
+    due.set_defaults(func=run_fetch_due)
+
     build = subparsers.add_parser(
         "build",
         help="Build and publish every archived session that needs it, then the index. Never contacts F1.",
@@ -79,6 +98,15 @@ def main(argv: list[str] | None = None) -> None:
     copy.add_argument("--from", dest="source", required=True, help="Directory, or r2.")
     copy.add_argument("--to", dest="destination", required=True, help="Directory, or r2.")
     copy.set_defaults(func=run_copy_archive)
+
+    keep = subparsers.add_parser(
+        "archive-directory",
+        help="Keep a whole directory in the archive as one compressed file, such as an old FastF1 cache.",
+    )
+    _add_store_argument(keep)
+    keep.add_argument("--path", type=Path, required=True, help="The directory to keep.")
+    keep.add_argument("--name", required=True, help="A short name, such as legacy-fastf1-cache.")
+    keep.set_defaults(func=run_archive_directory)
 
     args = parser.parse_args(argv)
     load_env_file(Path(".env"))
@@ -137,6 +165,68 @@ def run_fetch(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory(prefix="f1data-fetch-", ignore_cleanup_errors=True) as scratch:
         fetched = fetch_session(args.year, event, args.session, Path(scratch) / "cache")
         snapshot = write_snapshot(store, fetched)
+    _print_snapshot(snapshot)
+    return 0
+
+
+def run_fetch_due(args: argparse.Namespace) -> int:
+    store = _store(args.store)
+    now = datetime.now(timezone.utc)
+    seasons = args.season or [now.year]
+    failed = failed_in_a_row = 0
+    with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
+        with fastf1_cache(Path(scratch) / "run") as fastf1:
+            try:
+                schedule = [session for year in seasons for session in load_schedule(fastf1, year)]
+            except Exception as exc:
+                raise SystemExit(f"Could not load the calendar, so nothing was fetched: {exc}") from exc
+
+            def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
+                try:
+                    return fetch_classification(
+                        fastf1, session.year, session.round, session.session_type
+                    ).laps_by_number
+                except ClassificationUnavailable:
+                    return None
+
+            plans = plan_fetches(schedule, list_snapshots(store), now, classified_laps)
+            if args.limit is not None:
+                plans = plans[: args.limit]
+            if not plans:
+                print("Nothing to fetch: the archive holds every finished session in scope.")
+            for number, plan in enumerate(plans):
+                session = plan.session
+                label = f"{session.year} round {session.round} {session.meeting_name} {session.session_name}"
+                print(f"{label}: {plan.reason}")
+                if args.dry_run:
+                    continue
+                cache_dir = Path(scratch) / f"fetch-{number}"
+                try:
+                    fetched = fetch_session(session.year, session.round, session.session_type, cache_dir)
+                    snapshot = write_snapshot(store, fetched)
+                except Exception as exc:
+                    # One session failing must not stop the others. The next
+                    # run plans it again, since nothing was archived. A fetch
+                    # can fail in more ways than FetchError: with the network
+                    # down FastF1 cannot even load its schedule.
+                    failed += 1
+                    failed_in_a_row += 1
+                    print(f"  FAILED: {type(exc).__name__}: {exc}")
+                    if failed_in_a_row >= _GIVE_UP_AFTER_FAILURES_IN_A_ROW:
+                        print(
+                            f"Stopping: {failed_in_a_row} fetches failed in a row, so the network "
+                            f"or F1 is not answering. {len(plans) - number - 1} session(s) left for the next run."
+                        )
+                        break
+                else:
+                    failed_in_a_row = 0
+                    _print_snapshot(snapshot)
+                finally:
+                    shutil.rmtree(cache_dir, ignore_errors=True)
+    return 1 if failed else 0
+
+
+def _print_snapshot(snapshot: Snapshot) -> None:
     identity = snapshot.identity
     print(
         f"Archived session {identity.session_key} ({identity.meeting_name} {identity.session_name}, "
@@ -149,7 +239,6 @@ def run_fetch(args: argparse.Namespace) -> int:
         print(f"  incomplete: {len(shortfalls)} shortfall(s); a later fetch will try again")
         for shortfall in shortfalls:
             print(f"    {shortfall.bar} {shortfall.driver or 'session'}: {shortfall.detail}")
-    return 0
 
 
 def run_build(args: argparse.Namespace) -> int:
@@ -206,6 +295,21 @@ def run_copy_archive(args: argparse.Namespace) -> int:
             copied += 1
             print(f"copied {item.key} ({item.size} bytes)")
     print(f"Copied {copied} object(s); {skipped} already there.")
+    return 0
+
+
+def run_archive_directory(args: argparse.Namespace) -> int:
+    store = _store(args.store)
+    print(f"Packing {args.path} ...")
+    try:
+        description = archive_directory(store, args.path, args.name)
+    except (ArchiveError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    archive = description["archive"]
+    print(
+        f"Archived {description['file_count']} file(s), {description['total_bytes']} bytes, "
+        f"as {archive['key']} ({archive['size_bytes']} bytes, sha256 {archive['sha256']})"
+    )
     return 0
 
 

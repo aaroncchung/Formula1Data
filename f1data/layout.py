@@ -23,7 +23,10 @@ FORMAT_VERSION = 1
 # Everything that changes what a build produces without changing the format: an
 # analysis fix, a coverage bar. A pointer written by an older pipeline version
 # is rebuilt; one written by a newer version is never replaced (rule 2).
-PIPELINE_VERSION = 1
+#
+#   2  the analysis method fixes of AR-08: pit loss, pace change across a
+#      stop, track dominance, tyre degradation fits, team-mate comparison
+PIPELINE_VERSION = 2
 
 ARCHIVE_PREFIX = "archive/"
 SNAPSHOT_MARKER = "snapshot.json"

@@ -902,9 +902,15 @@ test("each tab reads its own artifacts from the pinned generation, and only thos
   assert.deepEqual(drivers.map((driver) => [driver.code, driver.team.name]), [["RUS", "Mercedes"], ["VER", "Red Bull Racing"]]);
   assert.deepEqual(bucket.keys().sort(), [`${generationPrefix(generation)}drivers.json`, `${generationPrefix(generation)}results.json`]);
 
+  // The lap-time chart is styled from the driver list, so its tab reads both.
   bucket.requests.length = 0;
-  assert.deepEqual(await readLapTimes(view), lapTimes);
-  assert.deepEqual(bucket.keys(), [`${generationPrefix(generation)}analysis/lap-times.json`]);
+  const lapTimeTab = await readLapTimes(view);
+  assert.deepEqual(lapTimeTab.series, lapTimes);
+  assert.deepEqual(lapTimeTab.drivers, drivers);
+  assert.deepEqual(bucket.keys(), [
+    `${generationPrefix(generation)}analysis/lap-times.json`,
+    `${generationPrefix(generation)}drivers.json`
+  ]);
 });
 
 test("a tab whose artifact the generation does not hold fails on its own, without a request", async () => {

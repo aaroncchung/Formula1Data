@@ -40,11 +40,15 @@ export function PublishedSession({ year, round, sessionType }: SessionRoute) {
     return (
       <div>
         <SessionHeader entry={state.entry} />
-        <EmptyState
-          title="Not published yet"
-          detail="This session is in the calendar, and its data has not been published. It appears here without a new version of the site once it is."
-          action={<RetryButton onClick={retry} label="Check again" />}
-        />
+        <div className="space-y-3">
+          <EmptyState
+            title="Not published yet"
+            detail="This session is in the calendar, and its data has not been published. It appears here without a new version of the site once it is."
+          />
+          <div className="flex justify-center">
+            <RetryButton onClick={retry} label="Check again" />
+          </div>
+        </div>
       </div>
     );
   }
