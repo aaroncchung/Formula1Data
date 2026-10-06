@@ -1,13 +1,17 @@
 name: Build and publish
 
 # The build stage of the data plane: read the source archive in R2, build every
-# session that needs it, publish to R2 and derive the index. It never contacts
-# F1, which refuses hosted runners (docs/architecture-review-findings.md, AR-13),
-# so it can run here while the fetch stage runs on a machine F1 answers.
+# session that needs it, publish to R2 and derive the index and the standings.
+# It never contacts F1, which refuses hosted runners
+# (docs/architecture-review-findings.md, AR-13), so it can run here while the
+# fetch stage runs on a machine F1 answers.
 #
-# There is deliberately no concurrency group. Two runs at once are safe: every
+# The sessions are split across several jobs that run side by side, and there
+# is deliberately no concurrency group. That is safe by construction: every
 # object that changes is written against the version that was read (section 6,
-# rule 2), and the loser decides again.
+# rule 2), and the loser of a write decides again. Each job derives the index,
+# so every run of this workflow is also a run of the plan's fourth acceptance
+# criterion, two publishers started together, on the real bucket.
 on:
   workflow_dispatch:
     inputs:
@@ -25,11 +29,23 @@ on:
 permissions:
   contents: read
 
+# An explicit shell makes every step run with "-eo pipefail". Without it a step
+# that pipes into tee reports tee's success whatever came before the pipe.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish:
-    name: Build from the archive and publish
+    name: Build and publish, part ${{ matrix.part }} of 4
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A race in today's artifact format takes about six minutes to build.
+    timeout-minutes: 120
+    strategy:
+      # One part failing says nothing about the others' sessions.
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3]
     env:
       PYTHONUNBUFFERED: "1"
       F1DATA_STORE: r2
@@ -41,6 +57,7 @@ jobs:
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       SESSION_KEY: ${{ inputs.session_key }}
+      PART: ${{ matrix.part }}
     steps:
       # backend/app and pipeline are the old normaliser and artifact writer,
       # which the build still goes through (f1data/legacy.py) until the new
@@ -65,8 +82,7 @@ jobs:
 
       - name: Build and publish
         run: |
-          set -o pipefail
-          arguments=(--season "$(date -u +%Y)")
+          arguments=(--season "$(date -u +%Y)" --shard "$PART/4")
           if [ -n "$SESSION_KEY" ]; then
             arguments+=(--session-key "$SESSION_KEY")
           fi

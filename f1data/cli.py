@@ -89,7 +89,23 @@ def main(argv: list[str] | None = None) -> None:
         action="append",
         help="List this season in the index even with nothing published. Repeatable.",
     )
+    build.add_argument(
+        "--shard",
+        type=_shard,
+        help="Build only part I of N, written I/N with I from 0. Sessions are split by key, "
+        "so the parts can run side by side; every part still derives the index.",
+    )
     build.set_defaults(func=run_build)
+
+    both = subparsers.add_parser(
+        "run",
+        help="The whole job: fetch what is due, then build and publish. For a schedule on a machine F1 answers.",
+    )
+    _add_store_argument(both)
+    both.add_argument(
+        "--season", type=int, action="append", help="Season to look at. Repeatable. Defaults to this year."
+    )
+    both.set_defaults(func=run_job, limit=None, dry_run=False, session_key=None, shard=None)
 
     copy = subparsers.add_parser(
         "copy-archive",
@@ -249,6 +265,9 @@ def run_build(args: argparse.Namespace) -> int:
 
     store = _store(args.store)
     session_keys = args.session_key or sorted({snapshot.session_key for snapshot in list_snapshots(store)})
+    if args.shard is not None:
+        part, parts = args.shard
+        session_keys = [key for key in session_keys if key % parts == part]
     failed = 0
     with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
         with fastf1_cache(Path(scratch)) as fastf1:
@@ -285,6 +304,17 @@ def run_build(args: argparse.Namespace) -> int:
                 if standings == "conflict":
                     failed += 1
     return 1 if failed else 0
+
+
+def run_job(args: argparse.Namespace) -> int:
+    """Fetch, then build. Each stage is idempotent, so a run that is cut short,
+    or a machine that was off for a weekend, is made good by the next run."""
+    if args.season is None:
+        args.season = [datetime.now(timezone.utc).year]
+    fetched = run_fetch_due(args)
+    # A failed fetch is no reason to hold back what the archive already has.
+    built = run_build(args)
+    return 1 if fetched or built else 0
 
 
 def run_copy_archive(args: argparse.Namespace) -> int:
@@ -325,6 +355,16 @@ def run_archive_directory(args: argparse.Namespace) -> int:
         f"as {archive['key']} ({archive['size_bytes']} bytes, sha256 {archive['sha256']})"
     )
     return 0
+
+
+def _shard(value: str) -> tuple[int, int]:
+    try:
+        part, parts = (int(number) for number in value.split("/"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("write the shard as I/N, such as 0/4") from exc
+    if parts < 1 or not 0 <= part < parts:
+        raise argparse.ArgumentTypeError("the shard I/N needs 0 <= I < N")
+    return part, parts
 
 
 def _is_marker(key: str) -> bool:

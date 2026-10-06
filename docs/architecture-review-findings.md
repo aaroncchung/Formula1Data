@@ -85,7 +85,7 @@ during the review other than this document.
 - **A refusal from F1's servers on a GitHub runner, as an HTTP status.** The
   logs in AR-13 show every F1 feed failing on hosted runners on 2026-07-25, but
   FastF1 logs no status at that level, and nothing has been tried from a
-  runner since.
+  runner since. *Verified since: section 10.*
 - **What the R2 bucket currently holds.**
 - **Which Cloudflare plan the Pages project is on.** AR-02 assumes Free.
 - **Anything rendered in a browser.** Chart and UI defects in AR-12 are
@@ -100,9 +100,9 @@ during the review other than this document.
 - **Why the committed Monaco result is stale.** See AR-15.
 - **The mechanisms in section 6 against the real bucket.** Conditional writes
   through R2's S3 API were checked against Cloudflare's documentation only.
-  Nothing was published.
+  Nothing was published. *Verified since: section 10.*
 - **F1's session key beyond one session.** AR-20 read it from one cached
-  session.
+  session. *Verified since for races and sprints: section 10.*
 - **Replaying raw feed files into FastF1.** AR-11 tested FastF1's own cache
   files only.
 
@@ -724,7 +724,7 @@ the most work. None of it is entangled.
 | **Category** | External dependency |
 | **Severity** | High |
 | **Confidence** | High that hosted runners could not read the archive on 2026-07-25. Medium that this is a deliberate refusal and still in force: no HTTP status was logged, and nothing has been tried since |
-| **Status** | Open; needs one confirming ingestion from a runner |
+| **Status** | Confirmed 2026-10-05: HTTP 403 from F1's CDN on a hosted runner (section 10). Fetching runs on a local machine (decision 2) |
 
 **Evidence**
 
@@ -1605,3 +1605,69 @@ points from those rounds:
 
 Round 7 raised only point 29 and passed the plan. Point 29 was applied after
 that verdict and has not been reviewed.
+
+---
+
+## 10. Implementation progress
+
+Work on section 6 started on 2026-10-05 on the branch `rewrite/data-plane`
+(pull request #11). This section records what each step has verified on the
+real infrastructure. It is updated as steps finish; the plan above is not
+rewritten.
+
+### Status by step
+
+| Step | Status | What exists |
+| --- | --- | --- |
+| 1. Secure the source, settle where fetching runs | Partly done | The probe ran and settled AR-13. The 2026 races and sprints were fetched afresh and are in the R2 archive. The old FastF1 cache, the only source for the 2025 sessions, is still on one machine: `python -m f1data archive-directory` copies it |
+| 2. One session end to end | Done | Fetch, archive, build on a hosted runner, publish, Worker, and `/session` loading a tab at a time |
+| 3. New artifact format and typed contract | Not started | Artifacts are still in the old format, through `f1data/legacy.py`. The pit-stop feed and the corner positions are already archived with each fetch |
+| 4. The batch command | Partly done | `fetch-due`, `build` and standings from Jolpica exist. Nothing runs them on a schedule yet |
+| 5. Every page loads at runtime | Not started | Only `/session` does |
+| 6. Remove the old path | Not started | |
+| 7. Product quality | Partly done | Six analysis methods fixed (AR-08, AR-16). `/live` and `/settings` removed, chart fixes, dead code removed (AR-12) |
+
+### What was verified
+
+| # | Check | Result |
+| --- | --- | --- |
+| 1 | `python -m f1data probe` for the 2026 Austrian GP race on `ubuntu-latest`, empty cache (runs 37390032860 and 37390272298) | `livetiming.formula1.com` answered 403 to all 30 requests, with `server: CloudFront` and `x-cache: Error from cloudfront`. FastF1's mirror answered 404 to all 30. Jolpica and the schedule file answered 200 |
+| 2 | The same probe from a residential network | 11 feeds, all 200. 1,339 laps; car and position data for 22 of 22 drivers |
+| 3 | `tests/test_store.py` against the real bucket through R2's S3 API, with the repository's Cloudflare token (run 37391255736 and later) | All cases pass. Of six writers racing on one version with `If-Match`, and six with `If-None-Match: *`, exactly one wins each time |
+| 4 | Build of the 2026 Austrian GP race on a hosted runner from the R2 archive (run 37392847582) | Built and published without a request to F1. Requests to F1's hosts are refused during a build, so this holds by construction |
+| 5 | The published session through the new Worker | Pointer and index answer 200 with a 30-second cache life, generation paths 200 and immutable, the archive 404 |
+| 6 | `/session?year=2026&round=8&session=R` in headless Edge against the real Worker | Five requests on load (index, pointer, manifest, results, drivers). The lap-times artifact is requested only when its tab is opened. Not yet looked at in a browser on the deployed site |
+| 7 | F1's session key for the 21 races and sprints of 2026 | Present for all 21 |
+| 8 | The same snapshot built on Windows and on Linux | Different generations: 1,324 of 1,342 files differ, by float noise of about 1e-12 in telemetry distance and position. Rounding in the new format (step 3) should remove it |
+
+### What real data changed
+
+- **The deployed Worker answers every plain GET with 206.** R2 reports the
+  range it returned on every read, the whole object included, and the Worker
+  turned any reported range into `206 Partial Content`. The new Worker answers
+  206 only to a request that asked for a range. The old Worker is unchanged.
+- **Timing needs no tolerance** (rule 6 allowed for one). Across the 462
+  driver entries of the 21 sessions, timing had the classified laps 452 times
+  and one lap more 10 times. It never had fewer. A tolerance of one lap would
+  have let a driver classified with one lap pass every bar with no data.
+- **Tyre age cannot be a bar.** F1 does not report the age of a set that went
+  on used. In the 2026 Barcelona race that is 21 of one driver's 60 laps, and
+  in the race at Sepang 152 laps across eleven drivers. The tyre bar is
+  compound and stint; tyre age is counted beside it.
+- **Four of the 21 sessions fall short of a bar at the source.** Monaco: F1's
+  position feed stops in lap 5 of 78, for every driver. Hungary: no compound
+  for 25 of one driver's laps. Spain and Sepang: MultiViewer has no corner
+  positions for the two new circuits. The old pipeline would have reported all
+  four complete (AR-21).
+- **The pit-stop feed is not held for every season.** F1 answers 200 for
+  `PitStopSeries` in 2026, 2025 and from the 2024 United States GP, and 403
+  before that.
+- **Jolpica's burst limit is easy to reach.** Asking for the classification of
+  21 sessions in a row earned a 429 on the next request. The job now asks only
+  for sessions of the last 30 days, and waits and asks again on a failure.
+
+### Reviews of the code
+
+| Round | Reviewer | Commit | Result |
+| --- | --- | --- | --- |
+| 1 | GPT-6.1 Sol, through Codex, read-only | `c8bd3c2` | Twelve findings, two of which could publish wrong data or lose source data: a publisher holding a stale calendar could attach another race's result to a session, and two directory copies in one second could share a key. All twelve are fixed in `d58794f`, each with a test that fails without the fix |
