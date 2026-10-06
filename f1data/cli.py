@@ -17,12 +17,14 @@ from f1data.classification import ClassificationUnavailable, fetch_classified_la
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
 from f1data.due import plan_fetches
-from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_session
+from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, f1_is_answering, fastf1_cache, fetch_session
 from f1data.schedule import ScheduledSession, load_schedule
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
 
-# A batch of fetches stops here rather than fail its way through every session.
-_GIVE_UP_AFTER_FAILURES_IN_A_ROW = 2
+# After this many fetches have failed one after the other, the batch asks
+# whether F1 is answering at all, and stops if it is not, rather than fail its
+# way through every session.
+_ASK_AFTER_FAILURES_IN_A_ROW = 2
 
 # The feeds whose absence the old loader tolerated or could not see (AR-13, AR-21).
 _RAW_CHECK_FEEDS = (
@@ -240,12 +242,21 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                     failed += 1
                     failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
-                    if failed_in_a_row >= _GIVE_UP_AFTER_FAILURES_IN_A_ROW:
-                        print(
-                            f"Stopping: {failed_in_a_row} fetches failed in a row, so the network "
-                            f"or F1 is not answering. {len(plans) - number - 1} session(s) left for the next run."
-                        )
-                        break
+                    if failed_in_a_row >= _ASK_AFTER_FAILURES_IN_A_ROW:
+                        if f1_is_answering(session.year):
+                            # These sessions failed on their own account.
+                            # Nothing was archived for them, so the next run
+                            # plans them first again: stopping here would
+                            # keep every later session from ever being
+                            # fetched, for as long as these two go on failing.
+                            print("  F1's archive is answering, so the fault is with these sessions; carrying on.")
+                            failed_in_a_row = 0
+                        else:
+                            print(
+                                f"Stopping: {failed_in_a_row} fetches failed in a row and F1's archive is not "
+                                f"answering. {len(plans) - number - 1} session(s) left for the next run."
+                            )
+                            break
                 else:
                     failed_in_a_row = 0
                     _print_snapshot(snapshot)

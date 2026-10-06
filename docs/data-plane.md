@@ -59,7 +59,14 @@ defaults to the `F1DATA_STORE` environment variable.
 Every command is safe to repeat. A snapshot and a generation are written once
 under a name of their own. A pointer, the index and the standings are written
 against the version that was read, so two runs at once cannot lose each other's
-work: the one that loses a write reads again and decides again.
+work: the one that loses a write reads again and decides again. That holds for
+a directory as it does for `r2`: two runs sharing a directory take a lock on
+it for each write.
+
+One session failing to fetch does not stop the others. After two failures in
+a row `fetch-due` asks F1's archive for the season's index: if that answers,
+the fault is with those sessions and the batch carries on; if it does not,
+nothing can be fetched and the batch stops until the next run.
 
 ## Credentials
 
