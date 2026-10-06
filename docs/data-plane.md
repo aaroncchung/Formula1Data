@@ -38,7 +38,9 @@ v2/standings/<year>.json
 ```
 
 A snapshot's marker has to describe the snapshot it is filed as: the session
-key and the snapshot id in its key, with a measurement that can be read. One
+key and the snapshot id in its key, with a measurement in which every figure
+is a figure, a fetch time and a start time that can be read, and its parts
+listed. One
 that does not, or that cannot be read, is passed over with an error in the
 log, like an upload that never finished, and the rest of the archive is read
 as usual.
@@ -134,8 +136,8 @@ none does, the batch stops until the next run.
 
 Retries are timed from when a session was last fetched, by the stamp of the
 machine that fetched it. A stamp more than an hour ahead of this machine's
-clock is not believed, and a session with no believable stamp is fetched again
-at once.
+clock, or from before the session started, is not believed, and a session with
+no believable stamp is fetched again at once.
 
 ## Credentials
 
@@ -220,6 +222,12 @@ record says it writes the figures it measured beside the snapshot, as
 Every reader of the archive is given a corrected snapshot with the corrected
 figures, so the fetch stage, the choice of snapshot and the build always judge
 the same thing.
+
+A build also checks that the feeds it loaded are of the session its calendar
+entry describes: the same kind of session, started within three days of the
+entry's start by F1's own session information. A marker whose start time
+pointed at another race would otherwise bring that race's round and result
+with it.
 
 A correction is written against the one that was read, so a build never
 replaces one it has not seen, and one written by a newer pipeline version is

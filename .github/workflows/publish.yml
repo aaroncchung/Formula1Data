@@ -39,8 +39,9 @@ jobs:
   publish:
     name: Build and publish, part ${{ matrix.part }} of 4
     runs-on: ubuntu-latest
-    # A race in today's artifact format takes about six minutes to build.
-    timeout-minutes: 120
+    # A session builds in seconds. The limit is for a run that has stopped
+    # making progress, not for one that is working.
+    timeout-minutes: 60
     strategy:
       # One part failing says nothing about the others' sessions.
       fail-fast: false
@@ -59,16 +60,14 @@ jobs:
       SESSION_KEY: ${{ inputs.session_key }}
       PART: ${{ matrix.part }}
     steps:
-      # backend/app and pipeline are the old normaliser and artifact writer,
-      # which the build still goes through (f1data/legacy.py) until the new
-      # format lands. frontend/public/data is 1.2 GB and is not needed.
+      # The build takes its analyses from backend/app/analysis.
+      # frontend/public/data is 1.2 GB and is not needed.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
             f1data
             backend/app
-            pipeline
 
       - name: Set up Python
         uses: actions/setup-python@v5

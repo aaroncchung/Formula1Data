@@ -47,6 +47,9 @@ class Loaded:
             "Name": "Race",
             "Path": ARCHIVE_PATH,
             "Meeting": {"Key": 1288, "Name": "Austrian Grand Prix"},
+            # Local time and the offset from UTC, as F1 files them: 13:00 UTC.
+            "StartDate": datetime(2026, 6, 28, 15, 0),
+            "GmtOffset": timedelta(hours=2),
         }
         # FastF1 keeps the calendar row a session was made from. The artifact
         # writer reads nothing out of it; a test reads it to see which row a

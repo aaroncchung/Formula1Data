@@ -46,6 +46,12 @@ SETTLED_RECHECK_FOR_DAYS = 2
 # no two race weekends are less than a week apart.
 CLASSIFICATION_DATE_TOLERANCE = timedelta(days=3)
 
+# The feeds in a snapshot say when their session started. The calendar entry
+# a build finds for the snapshot has to be of the same meeting: within this
+# of that start. Calendar and F1 can disagree by hours and a postponement by a
+# day; another meeting is a week away at the least.
+SAME_MEETING_TOLERANCE = timedelta(days=3)
+
 # A fetch is stamped by the machine that made it. A stamp further ahead of
 # this machine's clock than this was written by a clock that was wrong, and
 # says nothing about when the fetch was made.

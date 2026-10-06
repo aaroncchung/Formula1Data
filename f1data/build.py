@@ -51,9 +51,10 @@ from f1data.classification import (
 from f1data.coverage import feed_figures, measure_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
-from f1data.identity import SessionIdentity, format_utc, identity_from_fastf1
+from f1data.identity import SessionIdentity, archived_start_time, format_utc, identity_from_fastf1
 from f1data.policy import (
     CLASSIFICATION_RECHECK_WINDOW,
+    SAME_MEETING_TOLERANCE,
     SETTLED_RECHECK_EVERY_DAYS,
     SETTLED_RECHECK_FOR_DAYS,
 )
@@ -304,6 +305,24 @@ class Builder:
                     raise BuildError(
                         f"Snapshot {snapshot.snapshot_id} holds session {loaded.session_key}, "
                         f"not {snapshot.session_key}"
+                    )
+                # The calendar entry, and with it the round and the result,
+                # was found by the start time in the snapshot's marker. The
+                # feeds say for themselves what kind of session they are of
+                # and when it started. If that is not the session the entry
+                # describes, the marker has sent this build to another race.
+                archived_start = archived_start_time(session)
+                if (
+                    loaded.session_type != context.scheduled.session_type
+                    or archived_start is None
+                    or context.scheduled.start_time is None
+                    or abs(archived_start - context.scheduled.start_time) > SAME_MEETING_TOLERANCE
+                ):
+                    raise BuildError(
+                        f"Snapshot {snapshot.snapshot_id} holds a {loaded.session_type} session that "
+                        f"started at {format_utc(archived_start) if archived_start else 'no stated time'}, "
+                        f"not the {context.scheduled.session_type} of {context.scheduled.meeting_name} "
+                        f"at {context.scheduled.start_time_utc} that its marker led to"
                     )
                 # Measured as a fetch would measure it, before anything from
                 # today is put in. The feeds are the archive's, so this is

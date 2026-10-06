@@ -40,13 +40,14 @@ from f1data.coverage import (
     evaluate_coverage,
     f1_does_not_hold,
     feed_figures,
+    is_measurement,
     weakest_share,
 )
 from f1data.extras import CIRCUIT_INFO, circuit_corner_count
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
-from f1data.identity import SessionIdentity, format_utc, parse_utc
+from f1data.identity import SESSION_TYPES, SessionIdentity, format_utc, parse_utc
 from f1data.policy import CLOCK_TOLERANCE, RETRY_WINDOW
-from f1data.store import ObjectStore
+from f1data.store import ObjectStore, PreconditionFailed
 
 SNAPSHOT_SCHEMA_VERSION = 1
 PARSED_ARCHIVE = "fastf1-cache.tar.gz"
@@ -265,18 +266,41 @@ def _snapshot_at(key: str, data: bytes) -> Snapshot | None:
     archive is read as usual.
     """
     placed = layout.snapshot_from_marker_key(key)
+    # Whatever goes wrong reading it, it is not a marker: the archive is read
+    # by both stages before either has started on any session.
     try:
         snapshot = Snapshot.from_json(json.loads(data)) if placed is not None else None
-    except (ValueError, KeyError, TypeError, AttributeError, ArchiveError) as exc:
+        described = snapshot is not None and _is_described(snapshot)
+    except Exception as exc:
         _logger.error("%s is not a snapshot marker and is passed over: %s", key, exc)
         return None
     if snapshot is None or (snapshot.session_key, snapshot.snapshot_id) != placed:
         _logger.error("%s does not describe the snapshot it is filed as, and is passed over", key)
         return None
-    if not _is_measurement(snapshot.coverage):
-        _logger.error("%s records a measurement that cannot be read, and is passed over", key)
+    if not described or not _is_measurement(snapshot.coverage):
+        _logger.error("%s records something that cannot be read, and is passed over", key)
         return None
     return snapshot
+
+
+def _is_described(snapshot: Snapshot) -> bool:
+    """Whether everything a marker says besides its measurement can be read.
+
+    When it was fetched and when its session started are compared with the
+    clock; its parts are looked up by name. Raises, or answers no, for a
+    marker that would make any of that raise later.
+    """
+    identity = snapshot.identity
+    parse_utc(snapshot.fetched_at)
+    identity.start_time
+    return (
+        isinstance(identity.year, int)
+        and not isinstance(identity.year, bool)
+        and identity.session_type in SESSION_TYPES
+        and isinstance(identity.archive_path, str)
+        and bool(identity.archive_path)
+        and all(isinstance(name, str) and isinstance(part, dict) for name, part in snapshot.objects.items())
+    )
 
 
 def _is_measurement(coverage: Any) -> bool:
@@ -287,6 +311,8 @@ def _is_measurement(coverage: Any) -> bool:
     has planned anything, or the choice of snapshot: one unreadable record
     would stop every session.
     """
+    if not is_measurement(coverage):
+        return False
     try:
         evaluate_coverage(coverage)
         weakest_share(coverage)
@@ -294,7 +320,14 @@ def _is_measurement(coverage: Any) -> bool:
         apply_classification(coverage, {})
     except Exception:
         return False
-    return isinstance(coverage.get("feeds", {}), dict)
+    return True
+
+
+def _whole_number(value: Any) -> int:
+    """A version number as one, or ``ValueError`` for anything a version cannot be."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"not a version: {value!r}")
+    return value
 
 
 def write_remeasurement(
@@ -356,9 +389,9 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         payload = json.loads(found.data)
         if payload["schema_version"] != SNAPSHOT_SCHEMA_VERSION or payload["snapshot_id"] != snapshot.snapshot_id:
             return snapshot
-        written_by = int(payload["pipeline_version"])
+        written_by = _whole_number(payload["pipeline_version"])
         coverage = payload["coverage"]
-        measured_by = int(coverage["measurement_version"])
+        measured_by = _whole_number(coverage["measurement_version"])
         if measured_by != MEASUREMENT_VERSION:
             # Figures this version does not know how to read, from a version
             # that does. They are not used, and whoever wrote them is on
@@ -373,7 +406,7 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         }
         if not _is_measurement(corrected):
             raise ValueError("the figures cannot be read")
-    except (ValueError, KeyError, TypeError, AttributeError):
+    except Exception:
         # Not something a build wrote. The snapshot stands as it was recorded,
         # and the next build of it writes the figures again. Nothing the
         # object claims is believed, the pipeline version least of all: a
@@ -439,10 +472,28 @@ def note_failed_fetch(
     session that failed an hour ago from one never tried, and would try the
     same ones first every time.
     """
-    store.put(
-        layout.attempt_key(year, session_type, start_time_utc),
-        dump_json({"failed_at": format_utc(now), "error": error[:500]}),
-    )
+    key = layout.attempt_key(year, session_type, start_time_utc)
+    now = now.astimezone(timezone.utc)
+    data = dump_json({"failed_at": format_utc(now), "error": error[:500]})
+    # Written against what is there, like everything else that changes in
+    # place (rule 2), and only over an older note: two runs can fail the same
+    # session a moment apart and finish their writes in the other order.
+    for _ in range(3):
+        current = store.get(key)
+        try:
+            noted = parse_utc(json.loads(current.data)["failed_at"]) if current is not None else None
+        except Exception:
+            noted = None
+        if noted is not None and now <= noted <= now + CLOCK_TOLERANCE:
+            return
+        try:
+            if current is None:
+                store.put(key, data, if_absent=True)
+            else:
+                store.put(key, data, if_match=current.etag)
+            return
+        except PreconditionFailed:
+            continue
 
 
 def failed_fetches(store: ObjectStore, now: datetime) -> dict[str, datetime]:
@@ -457,7 +508,7 @@ def failed_fetches(store: ObjectStore, now: datetime) -> dict[str, datetime]:
         found = store.get(item.key)
         try:
             at = parse_utc(json.loads(found.data)["failed_at"]) if found is not None else None
-        except (ValueError, KeyError, TypeError, AttributeError):
+        except Exception:
             continue
         if at is not None and at <= now + CLOCK_TOLERANCE:
             failed[item.key] = at
@@ -469,10 +520,16 @@ def plausible_fetch_time(snapshot: Snapshot, now: datetime) -> datetime | None:
 
     The stamp is the fetching machine's. One whose clock ran two weeks fast
     would otherwise put off every retry, and the partial publication, by two
-    weeks on every other machine.
+    weeks on every other machine. One whose clock ran slow would close the
+    retry window before it had opened: a session cannot have been fetched
+    before it started.
     """
-    fetched = parse_utc(snapshot.fetched_at)
-    return fetched if fetched <= now + CLOCK_TOLERANCE else None
+    try:
+        fetched = parse_utc(snapshot.fetched_at)
+        started = snapshot.identity.start_time
+    except Exception:
+        return None
+    return fetched if started - CLOCK_TOLERANCE <= fetched <= now + CLOCK_TOLERANCE else None
 
 
 def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:

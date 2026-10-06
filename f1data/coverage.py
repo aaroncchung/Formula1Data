@@ -77,6 +77,23 @@ _FIGURE_OF_A_FEED_WITH_NO_ENTRY = {"tyre_data": "tyre_laps", "driver_list": "in_
 # What a measurement holds per driver that does not come from F1's feeds, or
 # is no bar: the classification of the day, and laps FastF1 made up.
 _NOT_OF_THE_FEEDS = frozenset({"classified_laps", "generated_laps"})
+# Every count a measurement holds, for the session and for each driver.
+_SESSION_COUNTS = (
+    "measurement_version",
+    "pit_stops_in_timing",
+    "pit_stops_in_series",
+    "circuit_corners",
+    "total_laps",
+)
+_DRIVER_COUNTS = (
+    "classified_laps",
+    "timing_laps",
+    "generated_laps",
+    "car_laps",
+    "position_laps",
+    "tyre_laps",
+    "tyre_age_laps",
+)
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
 CLASSIFICATION_BAR = "classification"
@@ -239,6 +256,44 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
                     Shortfall(bar, code, f"{usable} of {expected} expected laps usable")
                 )
     return shortfalls
+
+
+def is_measurement(measurement: Any) -> bool:
+    """Whether this is a measurement in every figure, whether or not anything reads it today.
+
+    Checked figure by figure, not by running what reads a measurement: the
+    readers skip the counts of a driver with no laps to account for, and read
+    them on the day a result gives that driver laps. A count may be missing,
+    as it is in a record from before it was counted. It may not be text, a
+    fraction, negative, or true and false.
+    """
+
+    def count(value: Any) -> bool:
+        return value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0)
+
+    def flag(value: Any) -> bool:
+        return value is None or isinstance(value, bool)
+
+    if not isinstance(measurement, dict):
+        return False
+    feeds, drivers = measurement.get("feeds"), measurement.get("drivers")
+    if not isinstance(feeds, dict) or not isinstance(drivers, dict):
+        return False
+    if not all(isinstance(name, str) and isinstance(arrived, bool) for name, arrived in feeds.items()):
+        return False
+    if not isinstance(measurement.get("session_type"), str) or not flag(measurement.get("session_ended")):
+        return False
+    if not all(count(measurement.get(key)) for key in _SESSION_COUNTS):
+        return False
+    for code, driver in drivers.items():
+        if not isinstance(code, str) or not isinstance(driver, dict):
+            return False
+        number = driver.get("number")
+        if isinstance(number, bool) or not isinstance(number, (str, int)):
+            return False
+        if not flag(driver.get("in_driver_list")) or not all(count(driver.get(key)) for key in _DRIVER_COUNTS):
+            return False
+    return True
 
 
 def apply_classification(measurement: dict[str, Any], classified_laps: dict[str, int]) -> dict[str, Any]:

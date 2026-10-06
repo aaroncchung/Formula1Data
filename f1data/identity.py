@@ -119,6 +119,21 @@ def identity_from_fastf1(session: Any) -> SessionIdentity:
     )
 
 
+def archived_start_time(session: Any) -> datetime | None:
+    """When the session started, by F1's own session information.
+
+    A loaded FastF1 session takes its date from the calendar row it was made
+    from. This is the other source: what F1 filed with the feeds. ``None``
+    when the session information does not say.
+    """
+    try:
+        info = session.session_info
+        start, offset = info["StartDate"], info["GmtOffset"]
+        return _as_utc((start - offset).replace(tzinfo=None))
+    except Exception:
+        return None
+
+
 def format_utc(value: datetime) -> str:
     return _as_utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
 
