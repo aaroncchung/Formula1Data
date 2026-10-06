@@ -152,8 +152,10 @@ After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/da
    archive is never served.
 5. After a second publication of the same session, the first generation's paths
    still answer 200. Nothing is pruned.
-6. The page `/session?year=<year>&round=<round>&session=<type>` shows the
-   session, and opening a tab requests only that tab's artifacts.
+6. The page `/session?key=<key>` shows the session, and so does
+   `/session?year=<year>&round=<round>&session=<type>`. Opening a tab requests
+   only that tab's artifacts: the position replay and the telemetry laps are
+   not requested until their tabs are opened.
 
 ## What is not here yet
 
