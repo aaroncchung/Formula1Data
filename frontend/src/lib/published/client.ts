@@ -11,14 +11,16 @@
  *
  * Nothing is cached here. Generation paths are immutable and the pointer and
  * index are short-lived, and the browser's HTTP cache already holds each for
- * as long as the Worker says it may.
+ * as long as the Worker says it may. Callers that ask for the index in the
+ * same moment share one request, and it is forgotten as soon as it settles.
  */
 
+import { shareWhilePending } from "../shared-request.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { PublishedErrorCode } from "./errors.ts";
-import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey } from "./layout.ts";
-import { parseIndex, parseManifest, parsePointer } from "./parse.ts";
-import type { Manifest, Pointer, PublishedIndex } from "./types.ts";
+import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey, standingsKey } from "./layout.ts";
+import { parseIndex, parseManifest, parsePointer, parseStandings } from "./parse.ts";
+import type { Manifest, Pointer, PublishedIndex, Standings } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -61,6 +63,13 @@ export type SessionView = {
 export type PublishedClient = {
   index(): Promise<PublishedIndex>;
   openSession(sessionKey: number, options?: OpenSessionOptions): Promise<SessionView>;
+  /**
+   * The championship standings of a season, or null when none are published.
+   * Null is a normal state: before a season's first round Jolpica has no
+   * table and the publisher writes nothing. An outage or a broken file throws
+   * instead, so neither is ever shown as "no standings yet".
+   */
+  standings(year: number): Promise<Standings | null>;
 };
 
 type Answer =
@@ -107,7 +116,12 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
     }
   }
 
-  async function index(): Promise<PublishedIndex> {
+  // A page reads the calendar, the picker in the bar above it reads it too,
+  // and a session opened by key reads it beside its pointer, all in the same
+  // tick. They share the read that is in flight; the next caller after it
+  // settles asks again, so how long an answer may be reused stays the HTTP
+  // cache's decision.
+  const index = shareWhilePending(async (): Promise<PublishedIndex> => {
     const answer = await get(indexKey());
     if (!answer.found) {
       throw new PublishedDataError("index_missing", `There is no index of published data at ${answer.url}.`, {
@@ -115,6 +129,19 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
       });
     }
     return parseIndex(decode(answer, "invalid_index", "The index of published data"));
+  });
+
+  // Standings are one object per season that is rewritten in place, like the
+  // index, so they are read by their own key and never through a generation.
+  async function standings(year: number): Promise<Standings | null> {
+    if (!Number.isSafeInteger(year) || year < 0) {
+      throw new RangeError(`Not a season: ${String(year)}`);
+    }
+    const answer = await get(standingsKey(year));
+    if (!answer.found) {
+      return null;
+    }
+    return parseStandings(decode(answer, "invalid_standings", `The standings file for ${year}`), year);
   }
 
   async function openSession(sessionKey: number, { revalidate = false }: OpenSessionOptions = {}): Promise<SessionView> {
@@ -179,7 +206,7 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
     return Object.freeze(view);
   }
 
-  return Object.freeze({ index, openSession });
+  return Object.freeze({ index, openSession, standings });
 }
 
 function decode(

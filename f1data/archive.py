@@ -6,6 +6,8 @@ A fetch is stored as a snapshot under a name of its own and never overwritten
     archive/sessions/<session_key>/<snapshot_id>/fastf1-cache.tar.gz    parsed feeds
     archive/sessions/<session_key>/<snapshot_id>/http-cache.sqlite.gz   raw responses
     archive/sessions/<session_key>/<snapshot_id>/snapshot.json          written last
+    archive/sessions/<session_key>/<snapshot_id>/remeasured.json        only if a build
+                                                                        found the record wrong
 
 ``snapshot.json`` is the marker: a snapshot without one did not finish
 uploading and is ignored. The parsed feeds are what a build reads. The raw
@@ -88,9 +90,8 @@ class Snapshot:
         A missing classification is left out of the reckoning: it is Jolpica's.
         """
         short = [shortfall for shortfall in self.shortfalls() if shortfall.bar != CLASSIFICATION_BAR]
-        arrived = self.coverage.get("feeds") or {}
         return bool(short) and all(
-            f1_does_not_hold(shortfall, self.feed_status, arrived) for shortfall in short
+            f1_does_not_hold(shortfall, self.feed_status, self.coverage) for shortfall in short
         )
 
     def judged_against(self, classified_laps: dict[str, int]) -> "Snapshot":
@@ -216,15 +217,82 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
         if session_key is not None
         else f"{layout.ARCHIVE_PREFIX}sessions/"
     )
-    snapshots = []
+    markers: list[str] = []
+    remeasured: set[str] = set()
     for item in store.list(prefix):
-        if not item.key.endswith(f"/{layout.SNAPSHOT_MARKER}"):
-            continue
-        found = store.get(item.key)
+        if item.key.endswith(f"/{layout.SNAPSHOT_MARKER}"):
+            markers.append(item.key)
+        elif item.key.endswith(f"/{layout.REMEASUREMENT_NAME}"):
+            remeasured.add(item.key)
+    snapshots = []
+    for key in markers:
+        found = store.get(key)
         if found is None:
             continue
-        snapshots.append(_with_corner_count(store, Snapshot.from_json(json.loads(found.data))))
+        snapshot = Snapshot.from_json(json.loads(found.data))
+        correction = f"{key[: -len(layout.SNAPSHOT_MARKER)]}{layout.REMEASUREMENT_NAME}"
+        if correction in remeasured:
+            snapshot = _as_remeasured(store, snapshot, correction)
+        snapshots.append(_with_corner_count(store, snapshot))
     return snapshots
+
+
+def write_remeasurement(
+    store: ObjectStore, snapshot: Snapshot, coverage: dict[str, Any], now: datetime | None = None
+) -> None:
+    """Record that a snapshot's feeds, measured again, are not what its record says.
+
+    A snapshot is never rewritten. This goes beside it, and from then on
+    every reader of the archive is given the snapshot with these figures:
+    the fetch planner, snapshot selection and the next build judge what the
+    feeds hold, not what a faulty record claimed (rules 3 and 6).
+
+    The figures are a function of the archived feeds and of the code that
+    measures them, so two builds writing here write the same thing.
+    """
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    store.put(
+        f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{layout.REMEASUREMENT_NAME}",
+        dump_json(
+            {
+                "schema_version": SNAPSHOT_SCHEMA_VERSION,
+                "snapshot_id": snapshot.snapshot_id,
+                "session_key": snapshot.session_key,
+                "measured_at": format_utc(now),
+                "pipeline_version": layout.PIPELINE_VERSION,
+                "coverage": coverage,
+            }
+        ),
+    )
+
+
+def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot:
+    """The snapshot with the figures a build measured from its feeds, if they can be read."""
+    found = store.get(key)
+    # A build loads its session with Jolpica out of reach, so what it measured
+    # says nothing of the classification. That stays as the fetch recorded it.
+    recorded = {
+        str(driver.get("number")): driver.get("classified_laps")
+        for driver in snapshot.coverage.get("drivers", {}).values()
+    }
+    try:
+        payload = json.loads(found.data) if found is not None else None
+        coverage = payload["coverage"]
+        if (
+            payload["schema_version"] != SNAPSHOT_SCHEMA_VERSION
+            or payload["snapshot_id"] != snapshot.snapshot_id
+            or coverage["measurement_version"] != MEASUREMENT_VERSION
+        ):
+            return snapshot
+        drivers = {
+            code: {**driver, "classified_laps": recorded.get(str(driver.get("number")))}
+            for code, driver in coverage["drivers"].items()
+        }
+    except (ValueError, KeyError, TypeError, AttributeError):
+        # Not something a build wrote. The snapshot stands as it was recorded,
+        # and the next build of it writes the figures again.
+        return snapshot
+    return replace(snapshot, coverage={**coverage, "drivers": drivers})
 
 
 def _with_corner_count(store: ObjectStore, snapshot: Snapshot) -> Snapshot:

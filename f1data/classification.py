@@ -5,6 +5,12 @@ after the session: the committed Monaco result has a driver third whom Jolpica
 has seventh (docs/architecture-review-findings.md, AR-15). The fingerprint of
 what was used is stored in the session's pointer, and a session is rebuilt when
 it no longer matches (section 6, rule 3).
+
+Everything a build takes from Jolpica is fetched here, before the build, and
+is in that fingerprint. FastF1 would otherwise fetch two things itself while
+it loads a session: the result, and each driver's time for the first lap of a
+race, which F1's timing does not give. A build that let it would depend on
+what Jolpica answered at that moment, with nothing in the pointer to say so.
 """
 
 from __future__ import annotations
@@ -15,6 +21,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
+
+import pandas as pd
 
 from f1data.coverage import RACE_LIKE_SESSION_TYPES
 
@@ -68,6 +76,9 @@ class Classification:
     frame: Any = field(default=None, compare=False, repr=False)
     # The date of the race this is the result of. A sprint's is its Sunday race.
     race_date: date | None = field(default=None, compare=False)
+    # Each driver's time for the first lap, in milliseconds, by driver number.
+    # Races only, and empty until Jolpica has lap times for the race.
+    first_lap_ms: dict[str, int] = field(default_factory=dict)
 
     @property
     def laps_by_number(self) -> dict[str, int]:
@@ -86,30 +97,60 @@ def is_classified_session(session_type: str) -> bool:
 def fetch_classification(
     fastf1: Any, year: int, round_number: int, session_type: str, sleep: Any = time.sleep
 ) -> Classification:
-    """Ask Jolpica for the result of a race (``R``) or sprint (``S``), uncached."""
+    """Ask Jolpica for everything a build takes from it, uncached.
+
+    That is the result of the race (``R``) or sprint (``S``), and for a race
+    each driver's time for the first lap.
+    """
     code = session_type.upper()
-    if not is_classified_session(code):
-        raise ValueError(f"Session type {session_type!r} has no classification")
     ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
-    frames = None
-    for attempt, pause in enumerate((*_RETRY_PAUSES_SECONDS, None)):
-        try:
-            with fastf1.Cache.disabled():
-                if code == "R":
-                    response = ergast.get_race_results(season=year, round=round_number)
-                else:
-                    response = ergast.get_sprint_results(season=year, round=round_number)
-            frames = getattr(response, "content", None) or []
-            break
-        except Exception as exc:
-            # Jolpica allows four requests a second and answers 429 beyond
-            # that; a batch of sessions can reach it. Wait and ask again.
-            if pause is None:
-                raise ClassificationUnavailable(
-                    f"Jolpica did not return a classification for {year} round {round_number} {code} "
-                    f"after {attempt + 1} attempts"
-                ) from exc
-            sleep(pause)
+    response, frame, rows = _result(fastf1, ergast, year, round_number, code, sleep)
+    first_lap_ms: dict[str, int] = {}
+    if code == "R":
+        laps = _ask(
+            fastf1,
+            lambda: ergast.get_lap_times(season=year, round=round_number, lap_number=1),
+            f"first-lap times for {year} round {round_number}",
+            sleep,
+        )
+        first_lap_ms = _first_lap_ms(laps, frame)
+    return Classification(
+        rows=rows,
+        fingerprint=fingerprint(rows, first_lap_ms),
+        frame=frame,
+        race_date=_race_date(response),
+        first_lap_ms=first_lap_ms,
+    )
+
+
+def fetch_classified_laps(
+    fastf1: Any, year: int, round_number: int, session_type: str, sleep: Any = time.sleep
+) -> dict[str, int]:
+    """Driver number to the laps Jolpica classifies the driver with, uncached.
+
+    For judging a snapshot. It is the one request of the two that says how
+    many laps a driver should have, and the fetch planner asks it of a
+    session on every run: it has no use for first-lap times.
+    """
+    ergast = fastf1.ergast.Ergast(result_type="pandas", auto_cast=True)
+    _, _, rows = _result(fastf1, ergast, year, round_number, session_type.upper(), sleep)
+    return Classification(rows=rows, fingerprint="").laps_by_number
+
+
+def _result(
+    fastf1: Any, ergast: Any, year: int, round_number: int, code: str, sleep: Any
+) -> tuple[Any, Any, list[dict[str, Any]]]:
+    """Jolpica's answer, its table, and the table as plain rows."""
+    if not is_classified_session(code):
+        raise ValueError(f"Session type {code!r} has no classification")
+
+    def results() -> Any:
+        if code == "R":
+            return ergast.get_race_results(season=year, round=round_number)
+        return ergast.get_sprint_results(season=year, round=round_number)
+
+    response = _ask(fastf1, results, f"a classification for {year} round {round_number} {code}", sleep)
+    frames = getattr(response, "content", None) or []
     if not frames or frames[0].empty:
         raise ClassificationMissing(
             f"Jolpica has no classification for {year} round {round_number} {code}"
@@ -119,9 +160,46 @@ def fetch_classification(
         {column: _plain(row.get(column)) for column in _RESULT_COLUMNS if column in frame.columns}
         for _, row in frame.iterrows()
     ]
-    return Classification(
-        rows=rows, fingerprint=fingerprint(rows), frame=frame, race_date=_race_date(response)
-    )
+    return response, frame, rows
+
+
+def _ask(fastf1: Any, request: Any, what: str, sleep: Any) -> Any:
+    """Make one request of Jolpica, uncached, and ask again if it fails."""
+    for attempt, pause in enumerate((*_RETRY_PAUSES_SECONDS, None)):
+        try:
+            with fastf1.Cache.disabled():
+                return request()
+        except Exception as exc:
+            # Jolpica allows four requests a second and answers 429 beyond
+            # that; a batch of sessions can reach it. Wait and ask again.
+            if pause is None:
+                raise ClassificationUnavailable(
+                    f"Jolpica did not return {what} after {attempt + 1} attempts"
+                ) from exc
+            sleep(pause)
+    raise AssertionError("unreachable")
+
+
+def _first_lap_ms(response: Any, results: Any) -> dict[str, int]:
+    """Driver number to first-lap time. Empty when Jolpica has no lap times yet.
+
+    Jolpica names the driver of a lap by its own id, and the result is where
+    that id is tied to a number.
+    """
+    frames = getattr(response, "content", None) or []
+    if not frames or frames[0].empty or not {"driverId", "number"} <= set(results.columns):
+        return {}
+    laps = frames[0]
+    if not {"driverId", "time"} <= set(laps.columns):
+        return {}
+    numbers = {str(row["driverId"]): str(_plain(row["number"])) for _, row in results.iterrows()}
+    times: dict[str, int] = {}
+    for _, row in laps.iterrows():
+        number = numbers.get(str(row["driverId"]))
+        milliseconds = _plain(row["time"])
+        if number is not None and isinstance(milliseconds, int):
+            times[number] = milliseconds
+    return dict(sorted(times.items()))
 
 
 def _race_date(response: Any) -> date | None:
@@ -136,21 +214,29 @@ def _race_date(response: Any) -> date | None:
         return None
 
 
-def fingerprint(rows: list[dict[str, Any]]) -> str:
-    canonical = json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+def fingerprint(rows: list[dict[str, Any]], first_lap_ms: dict[str, int] | None = None) -> str:
+    """Of everything a build takes from Jolpica: the result and the first-lap times."""
+    canonical = json.dumps(
+        {"results": rows, "first_lap_ms": first_lap_ms or {}},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
     return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
 def merge_into_session(session: Any, classification: Classification) -> None:
-    """Replace the result columns of a loaded FastF1 session with Jolpica's.
+    """Put Jolpica's result, and its first-lap times, into a loaded FastF1 session.
 
-    FastF1 fills these from whatever it fetched when the session was loaded,
-    which for a build is the archive. The classification is the one input a
-    build takes from today, and it is the whole answer: a driver it does not
-    list is not classified, whatever the session was loaded with. Such a
-    driver stays in the table, since the timing may still hold their laps,
-    with no position, points, status or lap count to their name.
+    A build loads its session from the archive with Jolpica out of reach, so
+    the result table holds F1's driver list and little else. The
+    classification is the one input a build takes from today, and it is the
+    whole answer: a driver it does not list is not classified, whatever the
+    session was loaded with. Such a driver stays in the table, since the
+    timing may still hold their laps, with no position, points, status or lap
+    count to their name.
     """
+    _set_first_lap_times(session, classification.first_lap_ms)
     rename = _RESULT_COLUMNS
     official = classification.frame
     official = official.rename(
@@ -185,6 +271,17 @@ def merge_into_session(session: Any, classification: Classification) -> None:
             combined[column] = None
         combined.loc[official.index, column] = official[column]
     session._results = combined.sort_values("Position")
+
+
+def _set_first_lap_times(session: Any, first_lap_ms: dict[str, int]) -> None:
+    """What FastF1's ``_add_first_lap_time_from_ergast`` does, from times fetched beforehand."""
+    laps = getattr(session, "laps", None)
+    if not first_lap_ms or laps is None or not {"LapNumber", "DriverNumber", "LapTime"} <= set(laps.columns):
+        return
+    first = laps["LapNumber"] == 1
+    numbers = laps["DriverNumber"].astype(str)
+    for number, milliseconds in first_lap_ms.items():
+        laps.loc[first & (numbers == number), "LapTime"] = pd.Timedelta(milliseconds=milliseconds)
 
 
 def _plain(value: Any) -> Any:

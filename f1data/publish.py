@@ -85,13 +85,15 @@ class Hold:
     reason: str
 
 
-class NotYetPublishable(RuntimeError):
-    """Raised by a build that found its session short while it may still improve.
+class DecideAgain(RuntimeError):
+    """Raised by a build that found its inputs are not what ``gather`` described.
 
-    ``gather`` holds a short session back from what the archive recorded of
-    it. A build measures the snapshot again, and can find it short where the
-    record said whole. The same rule applies then (rule 6): nothing is
-    published until later fetches have had their chance.
+    A build measures the snapshot it was given. If the feeds are not what the
+    archive's record of the snapshot says, the build corrects the record and
+    raises this, and the decision is taken again from the corrected record:
+    which snapshot is best, and whether the session may be published yet
+    (rules 3 and 6). Nothing is published from a judgement that turned out to
+    be about some other state of the archive.
     """
 
 
@@ -190,7 +192,8 @@ class Outcome:
     ``waiting``     not publishable yet: no classification, or short of a bar
                     with the retry window still open
     ``no_snapshot`` nothing in the archive to build from
-    ``conflict``    lost the pointer write every time; the next run decides again
+    ``conflict``    not settled: the pointer write was lost, or the archive's
+                    record corrected, on every attempt; the next run decides again
     """
 
     action: str
@@ -318,11 +321,12 @@ def publish_session(
     called: it must not answer from anything it looked up before the pointer
     was read. It is given the pointer now in place, and ``retry`` is true on
     every attempt after the first. ``build`` turns those inputs into the
-    generation's files; it may also return the snapshot re-measured from the
-    archive, whose coverage is then what the pointer records, and it may raise
-    ``NotYetPublishable``.
+    generation's files; it may also return a snapshot whose coverage is then
+    what the pointer records in place of the inputs', and it may raise
+    ``DecideAgain``.
     """
     candidate: Candidate | None = None
+    unsettled = "lost the pointer write"
     for attempt in range(max_attempts):
         # The guarded read comes first, then everything derived (rule 2). A
         # publisher that decided from a calendar it read earlier could replace
@@ -358,13 +362,10 @@ def publish_session(
         if candidate is None or candidate.inputs_key != inputs.key:
             try:
                 files, measured = build(inputs)
-            except NotYetPublishable as exc:
-                return Outcome(
-                    "waiting",
-                    session_key,
-                    reason=str(exc),
-                    generation=pointer.generation if pointer is not None else None,
-                )
+            except DecideAgain as exc:
+                _logger.info("Session %s: %s; deciding again", session_key, exc)
+                unsettled = str(exc)
+                continue
             generation, manifest_size = upload_generation(store, inputs.snapshot.identity, files)
             judged = measured or inputs.snapshot
             candidate = Candidate(
@@ -395,9 +396,14 @@ def publish_session(
             _conditional_put(store, layout.pointer_key(session_key), dump_json(replacement.to_json()), etag)
         except PreconditionFailed:
             _logger.info("Lost the pointer write for session %s; deciding again", session_key)
+            unsettled = "lost the pointer write"
             continue
         return Outcome("published", session_key, reason=reason, generation=candidate.generation)
-    return Outcome("conflict", session_key, reason=f"lost the pointer write {max_attempts} times")
+    return Outcome(
+        "conflict",
+        session_key,
+        reason=f"not settled after {max_attempts} attempts: {unsettled}",
+    )
 
 
 def derive_index(

@@ -4,12 +4,12 @@ For the tests that need real data (tests/test_recorded_race.py). They run when
 ``F1DATA_TEST_ARCHIVE`` names a store that holds the 2026 archive, a directory
 or ``r2``, and are skipped otherwise.
 
-A build asks the calendar which round a session is and FastF1 then asks
-Jolpica for that round's result and first-lap times. Here the session is
-opened from what its snapshot recorded of itself, and every host is refused,
-so a test reads the archive and nothing else. The one difference from a real
-build is that the first lap of a race has no lap time: F1 does not time it and
-FastF1 takes it from Jolpica.
+A build gathers two things from outside the archive, the calendar row and
+Jolpica's result with its first-lap times, and is then made with the network
+refused. Here both are stood in for: the calendar row is made from what the
+snapshot recorded of the session, and the Austrian race's result is a fixture
+(``tests/fixtures/classification-11315.json``). With those, ``Builder.build``
+itself runs on the archive and reads nothing else.
 """
 
 from __future__ import annotations
@@ -25,18 +25,18 @@ import pandas as pd
 import pytest
 
 from f1data.archive import Snapshot, list_snapshots, read_extras, restore_snapshot, select_snapshot
+from f1data.build import BuildContext, Builder
 from f1data.classification import Classification, fingerprint
 from f1data.config import open_store
 from f1data.extras import PIT_STOP_SERIES
-from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
+from f1data.fetch import fastf1_cache
 from f1data.httplog import HttpRecorder
+from f1data.publish import Inputs
+from f1data.schedule import ScheduledSession
 from f1data.store import ObjectStore
 
 ARCHIVE_VARIABLE = "F1DATA_TEST_ARCHIVE"
 FIXTURES = Path(__file__).parent / "fixtures"
-
-# Everything FastF1 would otherwise ask during a load.
-OFFLINE = F1_ARCHIVE_HOSTS | {"api.jolpi.ca", "raw.githubusercontent.com", "api.multiviewer.app"}
 
 # The eleven feeds FastF1 requests when it loads a session, by the bar that
 # answers for each (f1data/coverage.py), and the file FastF1 caches each in.
@@ -73,14 +73,13 @@ def restore(store: ObjectStore, session_key: int, cache_dir: Path) -> tuple[Snap
     return snapshot, read_extras(store, snapshot)
 
 
-def load_offline(snapshot: Snapshot, cache_dir: Path) -> Any:
-    """The snapshot's session as FastF1 loads it from ``cache_dir``, with every host refused."""
-    from fastf1.core import Session
+def calendar_row(snapshot: Snapshot) -> Any:
+    """FastF1's calendar row for the snapshot's meeting, made from what the snapshot knows of it."""
     from fastf1.events import Event
 
     identity = snapshot.identity
     start = pd.Timestamp(identity.start_time_utc).tz_localize(None)
-    event = Event(
+    return Event(
         {
             "RoundNumber": identity.round_at_fetch or 0,
             "Country": identity.country,
@@ -100,11 +99,44 @@ def load_offline(snapshot: Snapshot, cache_dir: Path) -> Any:
         },
         year=identity.year,
     )
-    with fastf1_cache(cache_dir), HttpRecorder(forbid_hosts=OFFLINE):
-        session = Session(event=event, session_name=identity.session_name, f1_api_support=True)
-        session.api_path = f"/static/{identity.archive_path}"
+
+
+def load_offline(snapshot: Snapshot, cache_dir: Path) -> Any:
+    """The snapshot's session as FastF1 loads it from ``cache_dir``, with every host refused."""
+    with fastf1_cache(cache_dir), HttpRecorder(forbid_all=True):
+        session = calendar_row(snapshot).get_session(snapshot.identity.session_name)
+        session.api_path = f"/static/{snapshot.identity.archive_path}"
         session.load(laps=True, telemetry=True, weather=True, messages=True)
     return session
+
+
+def build_offline(store: ObjectStore, snapshot: Snapshot, classification: Classification | None) -> dict[str, bytes]:
+    """``Builder.build`` on an archived snapshot, given what a run would have gathered for it."""
+    identity = snapshot.identity
+    scheduled = ScheduledSession(
+        year=identity.year,
+        round=identity.round_at_fetch or 0,
+        meeting_name=identity.meeting_name,
+        meeting_official_name=identity.meeting_official_name,
+        country=identity.country,
+        location=identity.location,
+        meeting_date=identity.start_time_utc[:10],
+        meeting_format="conventional",
+        session_type=identity.session_type,
+        session_name=identity.session_name,
+        start_time_utc=identity.start_time_utc,
+        event=calendar_row(snapshot),
+    )
+    # As gather does: the snapshot's record is judged against today's result.
+    judged = snapshot.judged_against(classification.laps_by_number) if classification else snapshot
+    inputs = Inputs(
+        snapshot=judged,
+        classification_fingerprint=classification.fingerprint if classification else None,
+        context=BuildContext(scheduled=scheduled, classification=classification),
+    )
+    files, built_from = Builder(store, fastf1=None).build(inputs)
+    assert built_from is judged
+    return files
 
 
 def without(base: Path, snapshot: Snapshot, target: Path, bar: str, driver_number: str | None = None) -> Path:
@@ -135,12 +167,14 @@ def without_pit_stops_of(extras: dict[str, bytes], driver_number: str) -> dict[s
 
 
 def recorded_classification(session_key: int) -> Classification:
-    """Jolpica's result for a session as it stood when the fixture was recorded."""
+    """Jolpica's result for a session, with its first-lap times, as they stood when the fixture was recorded."""
     recorded = json.loads((FIXTURES / f"classification-{session_key}.json").read_text(encoding="utf-8"))
-    rows = recorded["rows"]
+    rows, first_lap_ms = recorded["rows"], recorded["first_lap_ms"]
     frame = pd.DataFrame(rows)
     frame["totalRaceTime"] = pd.to_timedelta(frame["totalRaceTime"], unit="ms")
-    return Classification(rows=rows, fingerprint=fingerprint(rows), frame=frame)
+    return Classification(
+        rows=rows, fingerprint=fingerprint(rows, first_lap_ms), frame=frame, first_lap_ms=first_lap_ms
+    )
 
 
 def classified_laps(snapshot: Snapshot) -> dict[str, int]:

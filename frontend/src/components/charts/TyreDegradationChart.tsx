@@ -18,8 +18,16 @@ import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import { visibleDrivers } from "@/lib/driver-selection";
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
-import { describeTyreAgePlot, isTyreAgePoint, tyreAgePlot, tyreFitsFor } from "@/lib/tyre-chart";
-import type { Driver, Lap, TyreDegradationResult } from "@/types/domain";
+import {
+  describeTyreAgePlot,
+  isTyreAgePoint,
+  reportedFitCount,
+  tyreAgePlot,
+  tyreFit,
+  tyreFitLabel,
+  tyreFitsFor
+} from "@/lib/tyre-chart";
+import type { Driver, Lap, TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
 
 /** Stint fits shown before the reader asks for the rest: three rows of cards. */
 const FIT_PREVIEW_COUNT = 9;
@@ -44,6 +52,7 @@ export function TyreDegradationChart({
 
   const shown = new Set(visibleDrivers(codes, selection.hidden));
   const fits = tyreFitsFor(degradation.rows, [...shown], showAllFits ? degradation.rows.length : FIT_PREVIEW_COUNT);
+  const reported = reportedFitCount(degradation.rows, [...shown]);
 
   return (
     <div className="space-y-4">
@@ -89,9 +98,11 @@ export function TyreDegradationChart({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
             <span className="font-semibold text-slate-300">
               {fits.shown.length === fits.total
-                ? `${fits.total} stint ${fits.total === 1 ? "fit" : "fits"} for the drivers shown`
-                : `${fits.shown.length} of ${fits.total} stint fits for the drivers shown`}
+                ? `${fits.total} ${fits.total === 1 ? "stint" : "stints"} for the drivers shown`
+                : `${fits.shown.length} of ${fits.total} stints for the drivers shown`}
             </span>
+            {/* A stint without a reported rate still has a card, which says so. */}
+            <span>{reported === fits.total ? "Each has a fitted rate." : `${reported} of ${fits.total} have a fitted rate.`}</span>
             {fits.total > FIT_PREVIEW_COUNT ? (
               <button
                 type="button"
@@ -104,19 +115,37 @@ export function TyreDegradationChart({
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {fits.shown.map((row) => (
-              <div key={`${row.driver_code}-${row.stint}-${row.compound}`} className="rounded border border-line bg-white/[0.03] p-3">
-                <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
-                <div className="mt-1 text-xs text-slate-400">{row.compound}</div>
-                <div className="mt-2 text-lg font-black text-aqua">
-                  {row.degradation_ms_per_lap === null || row.degradation_ms_per_lap === undefined
-                    ? "--"
-                    : `${row.degradation_ms_per_lap} ms/lap`}
-                </div>
-              </div>
+              <TyreFitCard key={`${row.driver_code}-${row.stint}-${row.compound}`} row={row} />
             ))}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * One stint's fit. A fit that was not reported is not given a number: the
+ * card says there is no rate, and why on hover.
+ */
+function TyreFitCard({ row }: { row: TyreDegradationRow }) {
+  const fit = tyreFit(row);
+  return (
+    <div className="rounded border border-line bg-white/[0.03] p-3" title={fit.status === "reported" ? undefined : fit.reason}>
+      <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
+      <div className="mt-1 text-xs text-slate-400">
+        {row.compound} · {row.sample_count} {row.sample_count === 1 ? "lap" : "laps"}
+      </div>
+      {fit.status === "reported" ? (
+        <div className="mt-2 text-lg font-black text-aqua">
+          {tyreFitLabel(fit)}
+          {fit.standard_error_ms_per_lap === null ? null : (
+            <span className="ml-2 text-xs font-normal text-slate-500">± {fit.standard_error_ms_per_lap.toFixed(1)}</span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-2 text-sm font-semibold text-slate-500">{tyreFitLabel(fit)}</div>
+      )}
     </div>
   );
 }

@@ -3,8 +3,9 @@
     F1DATA_TEST_ARCHIVE=<a directory store, or r2> python -m pytest tests/test_recorded_race.py -s
 
 Skipped unless the variable is set. Nothing here touches the network: the
-sessions are loaded from the archive with every host refused, and the Austrian
-race's classification is a fixture (tests/recorded.py).
+builds are ``Builder.build`` itself, run on the archive with every host
+refused, and what a run gathers first (the calendar row, and the Austrian
+race's result with its first-lap times) is stood in for (tests/recorded.py).
 
 Three things are checked that only real data can check:
 
@@ -28,6 +29,7 @@ import hashlib
 import json
 import os
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -52,6 +54,7 @@ from tests.recorded import (
     FIXTURES,
     PER_DRIVER_FEEDS,
     archive_store,
+    build_offline,
     classified_laps,
     load_offline,
     recorded_classification,
@@ -77,8 +80,11 @@ FEED_TABLE: list[tuple[str, str, str]] = []
 @pytest.fixture(scope="module")
 def austria(tmp_path_factory):
     base = tmp_path_factory.mktemp("austria") / "cache"
-    snapshot, extras = restore(archive_store(), AUSTRIA, base)
-    return SimpleNamespace(snapshot=snapshot, extras=extras, base=base, session=load_offline(snapshot, base))
+    store = archive_store()
+    snapshot, extras = restore(store, AUSTRIA, base)
+    return SimpleNamespace(
+        store=store, snapshot=snapshot, extras=extras, base=base, session=load_offline(snapshot, base)
+    )
 
 
 @pytest.fixture(scope="module")
@@ -87,12 +93,8 @@ def telemetry(austria):
 
 
 def build(recorded, official):
-    """What ``Builder.build`` does once it has the session, the extras and the classification."""
-    session = load_offline(recorded.snapshot, recorded.base)
-    if official is not None:
-        merge_into_session(session, official)
-    measurement = measure_coverage(session, recorded.snapshot.identity.session_type, recorded.extras)
-    return build_artifacts(session, recorded.snapshot.identity, official, recorded.extras, measurement)
+    """``Builder.build`` on the archived snapshot, with ``official`` as the result that was gathered."""
+    return build_offline(recorded.store, recorded.snapshot, official)
 
 
 @pytest.fixture(scope="module")
@@ -314,7 +316,16 @@ def test_the_order_on_track_from_the_timing_is_the_official_result_to_the_millis
 
 
 def test_a_race_with_no_classification_builds_whole(austria):
-    files = build(austria, None)
+    """Jolpica has had no result for the whole retry window, so the snapshot's
+    record has no classified laps either: it was fetched without them."""
+    unclassified = {
+        code: {**driver, "classified_laps": None} for code, driver in austria.snapshot.coverage["drivers"].items()
+    }
+    fetched_without_a_result = replace(
+        austria.snapshot, coverage={**austria.snapshot.coverage, "drivers": unclassified}
+    )
+
+    files = build(SimpleNamespace(store=austria.store, snapshot=fetched_without_a_result), None)
 
     assert read(files, "results.json")[0] == {
         "position": 1, "driver_code": "RUS", "classified_position": None, "status": None, "points": None,
@@ -410,8 +421,8 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     extras = without_pit_stops_of(austria.extras, number)
     session = load_offline(austria.snapshot, austria.base)
     official = recorded_classification(AUSTRIA)
+    measurement = apply_classification(measure_coverage(session, "R", extras), official.laps_by_number)
     merge_into_session(session, official)
-    measurement = measure_coverage(session, "R", extras)
 
     files = build_artifacts(session, austria.snapshot.identity, official, extras, measurement)
 
@@ -430,8 +441,9 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
 @pytest.fixture(scope="module")
 def monaco(tmp_path_factory):
     base = tmp_path_factory.mktemp("monaco") / "cache"
-    snapshot, extras = restore(archive_store(), MONACO, base)
-    recorded = SimpleNamespace(snapshot=snapshot, extras=extras, base=base)
+    store = archive_store()
+    snapshot, extras = restore(store, MONACO, base)
+    recorded = SimpleNamespace(store=store, snapshot=snapshot, extras=extras, base=base)
     return SimpleNamespace(files=build(recorded, None), snapshot=snapshot)
 
 

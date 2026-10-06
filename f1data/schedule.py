@@ -9,7 +9,9 @@ needs nothing from F1.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +31,13 @@ class ScheduledSession:
     session_type: str
     session_name: str
     start_time_utc: str | None
+    # FastF1's row for the meeting, as it was read. A build makes its session
+    # from this row and never looks the round up again, so the calendar a
+    # build uses is the one its inputs were gathered from.
+    event: Any = field(default=None, compare=False, repr=False)
+    # A checksum of everything in that row: whatever a build takes from the
+    # calendar, it takes from there.
+    row_fingerprint: str | None = None
 
     @property
     def start_time(self) -> datetime | None:
@@ -37,18 +46,25 @@ class ScheduledSession:
         return datetime.fromisoformat(self.start_time_utc.replace("Z", "+00:00"))
 
 
-def load_schedule(fastf1: Any, year: int, fresh: bool = False) -> list[ScheduledSession]:
+def load_schedule(
+    fastf1: Any, year: int, fresh: bool = False, backend: str | None = None
+) -> list[ScheduledSession]:
     """Every session of every race weekend in ``year``, in calendar order.
 
     FastF1 keeps the schedule in its HTTP cache for twelve hours. ``fresh``
     reads it from the source again, for a caller that has to decide from the
     calendar as it is now.
+
+    ``backend`` names one of FastF1's sources and rules out the others. With
+    none given FastF1 falls back from its own schedule file to F1's site and
+    then to Jolpica, whose rows are not the same rows. A build records the
+    row it was made from, so it reads one source or fails.
     """
     if fresh:
         with fastf1.Cache.disabled():
-            schedule = fastf1.get_event_schedule(year, include_testing=False)
+            schedule = fastf1.get_event_schedule(year, include_testing=False, backend=backend)
     else:
-        schedule = fastf1.get_event_schedule(year, include_testing=False)
+        schedule = fastf1.get_event_schedule(year, include_testing=False, backend=backend)
     sessions: list[ScheduledSession] = []
     for _, event in schedule.iterrows():
         round_number = _int(event.get("RoundNumber"))
@@ -73,6 +89,8 @@ def load_schedule(fastf1: Any, year: int, fresh: bool = False) -> list[Scheduled
                     session_type=session_type,
                     session_name=session_name,
                     start_time_utc=_utc(event.get(f"Session{index}DateUtc")),
+                    event=event,
+                    row_fingerprint=_row_fingerprint(event),
                 )
             )
     return sessions
@@ -91,6 +109,27 @@ def find_scheduled_session(
     if not matches:
         return None
     return min(matches, key=lambda entry: abs((entry.start_time - identity.start_time).total_seconds()))
+
+
+def _row_fingerprint(event: Any) -> str:
+    """The same for the same row on every platform, and different for any other."""
+    plain = {str(column): _plain(value) for column, value in event.items()}
+    canonical = json.dumps(plain, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def _plain(value: Any) -> Any:
+    if _missing(value):
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 
 def _missing(value: Any) -> bool:

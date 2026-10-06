@@ -40,13 +40,20 @@ FORMAT_VERSION = 2
 #      from the archive into a build; a corner count that is absent no
 #      longer passes; the pointer records the calendar entry it was built
 #      under, and a session is rebuilt when that changes
-#   5  format 2: analyses read full-resolution telemetry, lap times are
+#   5  a build is made from the calendar row that was gathered, and reads
+#      nothing over the network: the result and the first-lap times FastF1
+#      used to fetch from Jolpica while loading are fetched beforehand and
+#      are in the fingerprint; a record that disagrees with its feeds is
+#      corrected before anything is decided from it
+#   6  format 2: analyses read full-resolution telemetry, lap times are
 #      rounded and not cut off, corners are the circuit's own where archived,
 #      and nothing in a build comes from the calendar
-PIPELINE_VERSION = 5
+PIPELINE_VERSION = 6
 
 ARCHIVE_PREFIX = "archive/"
 SNAPSHOT_MARKER = "snapshot.json"
+# Beside a snapshot whose record a build found to disagree with its feeds.
+REMEASUREMENT_NAME = "remeasured.json"
 MANIFEST_NAME = "manifest.json"
 
 _GENERATION_ID = re.compile(r"^[a-f0-9]{64}$")

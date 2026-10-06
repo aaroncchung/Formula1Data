@@ -1,22 +1,32 @@
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { compactDate } from "@/lib/format";
-import type { SessionEntry } from "@/lib/published/lookup";
+import type { SessionHeading } from "@/lib/published/lookup";
 
 /**
- * Everything here comes from the index entry, so the header reads the same
- * whether the session turned out to be published, unpublished or broken, and
- * the round is the one the calendar gives the meeting today.
+ * The heading of a session page. For a session the calendar places it comes
+ * from the index entry, so it reads the same whether the session turned out
+ * to be published, unpublished or broken, and the round is the one the
+ * calendar gives the meeting today. A session the calendar has no entry for
+ * has no round, and the header says which of the two reasons applies.
  */
-export function SessionHeader({ entry, actions }: { entry: SessionEntry; actions?: React.ReactNode }) {
-  const { meeting, session } = entry;
-  const place = [meeting.location, meeting.country].filter(Boolean).join(", ");
-  const date = compactDate(session.start_time_utc ?? meeting.date);
+export function SessionHeader({ heading, actions }: { heading: SessionHeading; actions?: React.ReactNode }) {
+  const place = [heading.location, heading.country].filter(Boolean).join(", ");
+  const date = compactDate(heading.startTimeUtc);
   return (
     <PageHeader
-      eyebrow={`${entry.year} Round ${meeting.round}`}
-      title={`${meeting.name} - ${session.name}`}
+      eyebrow={eyebrow(heading)}
+      title={`${heading.meetingName} - ${heading.sessionName}`}
       description={place ? `${date} · ${place}` : date}
       actions={actions}
     />
   );
+}
+
+function eyebrow(heading: SessionHeading): string {
+  if (heading.round !== null) {
+    return `${heading.year} Round ${heading.round}`;
+  }
+  // Published, and the current calendar has no entry for it. A session the
+  // index says nothing about gets the year alone: there is nothing to add.
+  return heading.placement === "unscheduled" ? `${heading.year} · Not in the current calendar` : String(heading.year);
 }
