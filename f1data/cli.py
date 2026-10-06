@@ -19,7 +19,7 @@ from f1data.coverage import evaluate_coverage
 from f1data.due import plan_fetches
 from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_session
 from f1data.schedule import ScheduledSession, load_schedule
-from f1data.store import JSON_CONTENT_TYPE, ObjectStore
+from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
 
 # A batch of fetches stops here rather than fail its way through every session.
 _GIVE_UP_AFTER_FAILURES_IN_A_ROW = 2
@@ -88,6 +88,12 @@ def main(argv: list[str] | None = None) -> None:
         type=int,
         action="append",
         help="List this season in the index even with nothing published. Repeatable.",
+    )
+    build.add_argument(
+        "--recheck",
+        action="store_true",
+        help="Ask Jolpica for the classification of every session, not only recent ones. "
+        "For a result corrected long after its race.",
     )
     build.add_argument(
         "--shard",
@@ -271,7 +277,7 @@ def run_build(args: argparse.Namespace) -> int:
     failed = 0
     with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
         with fastf1_cache(Path(scratch)) as fastf1:
-            builder = Builder(store, fastf1)
+            builder = Builder(store, fastf1, recheck=bool(getattr(args, "recheck", False)))
             for session_key in session_keys:
                 try:
                     outcome = publish_session(store, session_key, builder.gather, builder.build)
@@ -327,13 +333,13 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     copied = skipped = 0
     with tempfile.TemporaryDirectory(prefix="f1data-copy-") as scratch:
         for item in ordered:
-            existing = destination.head(item.key)
-            if existing is not None and existing.size == item.size:
-                skipped += 1
-                continue
             local = Path(scratch) / "object"
             if not source.download_file(item.key, local):
                 raise SystemExit(f"{item.key} disappeared from the source while copying")
+            existing = destination.head(item.key)
+            if existing is not None and _same_bytes(destination, existing, local, Path(scratch) / "theirs"):
+                skipped += 1
+                continue
             content_type = JSON_CONTENT_TYPE if item.key.endswith(".json") else "application/gzip"
             destination.put_file(item.key, local, content_type=content_type)
             copied += 1
@@ -365,6 +371,23 @@ def _shard(value: str) -> tuple[int, int]:
     if parts < 1 or not 0 <= part < parts:
         raise argparse.ArgumentTypeError("the shard I/N needs 0 <= I < N")
     return part, parts
+
+
+def _same_bytes(destination: ObjectStore, existing: Any, local: Path, scratch: Path) -> bool:
+    """Whether the object already at the destination is the file about to be copied.
+
+    Size alone is not enough: an object of the right length and the wrong
+    bytes would be skipped on every run, under a marker that describes the
+    right ones. An ETag is the content's MD5 unless the object went up in
+    parts, in which case there is nothing for it but to fetch it and look.
+    """
+    if existing.size != local.stat().st_size:
+        return False
+    if "-" not in existing.etag:
+        return existing.etag == file_etag(local)
+    if not destination.download_file(existing.key, scratch):
+        return False
+    return file_etag(scratch) == file_etag(local)
 
 
 def _is_marker(key: str) -> bool:

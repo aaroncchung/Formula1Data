@@ -41,7 +41,11 @@ _RETRY_PAUSES_SECONDS = (2.0, 6.0)
 
 
 class ClassificationUnavailable(RuntimeError):
-    """Jolpica has no result for the session yet, or did not answer."""
+    """Jolpica did not answer. Nothing is known about the result."""
+
+
+class ClassificationMissing(ClassificationUnavailable):
+    """Jolpica answered, and has no result for the session."""
 
 
 @dataclass(frozen=True)
@@ -95,7 +99,7 @@ def fetch_classification(
                 ) from exc
             sleep(pause)
     if not frames or frames[0].empty:
-        raise ClassificationUnavailable(
+        raise ClassificationMissing(
             f"Jolpica has no classification for {year} round {round_number} {code}"
         )
     frame = frames[0]

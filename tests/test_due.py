@@ -315,7 +315,7 @@ def test_a_feed_f1_says_it_does_not_hold_ends_the_retries_once_the_window_closes
     not_held = replace(
         snapshot(snapshot_id=fetched_at(first_fetch)),
         coverage=measurement,
-        feed_status={"PitStopSeries.jsonStream": 403, "TimingData.jsonStream": 200},
+        feed_status={"PitStopSeries.jsonStream": 403, "SessionInfo.jsonStream": 200},
     )
     schedule = [entry for entry in schedule_2026() if entry.round == 8]
     assert [shortfall.bar for shortfall in not_held.shortfalls()] == ["pit_stop_series"]

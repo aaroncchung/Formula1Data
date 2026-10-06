@@ -18,8 +18,14 @@ export async function serveR2Object(bucket, key, request, cacheControl) {
     return object ? r2ObjectResponse(object, { key, cacheControl, headOnly: true, requestHeaders }) : null;
   }
   if (bucket?.get) {
-    const rangeHeaders = (await rangeStillApplies(bucket, key, requestHeaders)) ? requestHeaders : null;
-    const object = await bucket.get(key, r2GetOptions(requestHeaders, rangeHeaders));
+    let rangeHeaders = requestHeaders?.has("range") ? requestHeaders : null;
+    let object = await bucket.get(key, r2GetOptions(requestHeaders, rangeHeaders));
+    if (object?.body && rangeHeaders && !ifRangeHolds(object, requestHeaders)) {
+      // Not the version the client holds part of: send all of the one there is.
+      await object.body.cancel?.();
+      rangeHeaders = null;
+      object = await bucket.get(key, r2GetOptions(requestHeaders, null));
+    }
     return object ? r2ObjectResponse(object, { key, cacheControl, requestHeaders, rangeHeaders }) : null;
   }
   return null;
@@ -29,23 +35,20 @@ export async function serveR2Object(bucket, key, request, cacheControl) {
 // the object is still the version the client holds part of. Otherwise the whole
 // current object is sent, so a resumed download cannot stitch two versions
 // together. That matters for the pointers and the index, which change in place.
-async function rangeStillApplies(bucket, key, headers) {
-  if (!headers?.has("range")) {
-    return false;
-  }
-  const validator = headers.get("if-range");
-  if (!validator || !bucket?.head) {
-    return true;
-  }
-  const current = await bucket.head(key);
-  if (!current) {
+//
+// The validator is compared with the object the range was read from, not with
+// a look at the object beforehand: a publication between the look and the read
+// would hand the client part of a version it never asked about.
+function ifRangeHolds(object, headers) {
+  const validator = headers?.get("if-range");
+  if (!validator) {
     return true;
   }
   if (validator.startsWith('"') || validator.startsWith("W/")) {
-    return strongEtagMatch(validator, current.httpEtag);
+    return strongEtagMatch(validator, object.httpEtag);
   }
   const held = Date.parse(validator);
-  return Number.isFinite(held) && held === lastModifiedMs(current);
+  return Number.isFinite(held) && held === lastModifiedMs(object);
 }
 
 function r2GetOptions(headers, rangeHeaders) {

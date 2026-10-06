@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 PIT_STOP_SERIES = "PitStopSeries.jsonStream"
@@ -83,28 +84,64 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
 
     A driver's first stop arrives as a list of one and each later stop as a
     mapping keyed by its index, the way F1's streams send additions.
+
+    Never raises, whatever the bytes are: this runs while a fetch is being
+    measured, before it is archived, and a broken optional feed must not cost
+    the feeds that arrived whole. A line or an entry that cannot be read is
+    left out, and so is a stop with no lap or with neither duration, since
+    there is nothing in it to publish.
     """
     stops: list[dict[str, Any]] = []
-    for line in data.decode("utf-8-sig").splitlines():
-        if len(line) <= _STREAM_TIMESTAMP_CHARS:
-            continue
+    for line in data.decode("utf-8-sig", errors="replace").splitlines():
         try:
             payload = json.loads(line[_STREAM_TIMESTAMP_CHARS:])
-        except ValueError:
+            pit_times = payload.get("PitTimes") or {}
+            by_driver = list(pit_times.items())
+        except (ValueError, AttributeError, TypeError):
             continue
-        for number, entries in (payload.get("PitTimes") or {}).items():
-            for entry in entries if isinstance(entries, list) else list(entries.values()):
-                stop = (entry or {}).get("PitStop") or {}
-                stops.append(
-                    {
-                        "driver_number": str(stop.get("RacingNumber") or number),
-                        "lap_number": _int(stop.get("Lap")),
-                        "stationary_ms": _seconds_to_ms(stop.get("PitStopTime")),
-                        "pit_lane_ms": _seconds_to_ms(stop.get("PitLaneTime")),
-                        "time_utc": entry.get("Timestamp"),
-                    }
-                )
+        for number, entries in by_driver:
+            if isinstance(entries, dict):
+                entries = list(entries.values())
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                stop = _stop(number, entry)
+                if stop is not None:
+                    stops.append(stop)
     return stops
+
+
+def _stop(number: Any, entry: Any) -> dict[str, Any] | None:
+    if not isinstance(entry, dict) or not isinstance(entry.get("PitStop"), dict):
+        return None
+    reported = entry["PitStop"]
+    stop = {
+        "driver_number": str(reported.get("RacingNumber") or number),
+        "lap_number": _int(reported.get("Lap")),
+        "stationary_ms": _seconds_to_ms(reported.get("PitStopTime")),
+        "pit_lane_ms": _seconds_to_ms(reported.get("PitLaneTime")),
+        "time_utc": entry.get("Timestamp") if isinstance(entry.get("Timestamp"), str) else None,
+    }
+    if stop["lap_number"] is None or (stop["stationary_ms"] is None and stop["pit_lane_ms"] is None):
+        return None
+    return stop
+
+
+def circuit_corner_count(data: bytes) -> int:
+    """How many corners with a position an archived circuit-info file holds. Never raises."""
+    try:
+        corners = json.loads(data.decode("utf-8", errors="replace")).get("corners")
+    except (ValueError, AttributeError):
+        return 0
+    if not isinstance(corners, list):
+        return 0
+    return sum(
+        1
+        for corner in corners
+        if isinstance(corner, dict)
+        and isinstance(corner.get("x"), (int, float))
+        and isinstance(corner.get("y"), (int, float))
+    )
 
 
 def circuit_info_json(info: Any) -> dict[str, Any]:
@@ -135,15 +172,17 @@ def _markers(frame: Any) -> list[dict[str, Any]]:
 
 def _seconds_to_ms(value: Any) -> int | None:
     try:
-        return round(float(value) * 1000)
+        seconds = float(value)
     except (TypeError, ValueError):
         return None
+    # "Infinity" and "NaN" are floats to Python and durations to nobody.
+    return round(seconds * 1000) if math.isfinite(seconds) and seconds >= 0 else None
 
 
 def _int(value: Any) -> int | None:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -152,7 +191,7 @@ def _number(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError):
         return None
-    return round(number, 3) if number == number else None
+    return round(number, 3) if math.isfinite(number) else None
 
 
 def _dump(payload: Any) -> bytes:

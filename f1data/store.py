@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 JSON_CONTENT_TYPE = "application/json; charset=utf-8"
+# R2 takes up to about 5 GB in one PUT. A session's archive is about 14 MB.
+SINGLE_PART_LIMIT_BYTES = 1024 * 1024 * 1024
 _KEY_PART = re.compile(r"^[A-Za-z0-9._-]+$")
 BINARY_CONTENT_TYPE = "application/octet-stream"
 
@@ -209,7 +211,7 @@ class DirectoryStore:
         for key in keys:
             if key.startswith(prefix):
                 path = self._path(key)
-                yield ObjectInfo(key, path.stat().st_size, _file_etag(path))
+                yield ObjectInfo(key, path.stat().st_size, file_etag(path))
 
 
 class S3Store:
@@ -283,8 +285,18 @@ class S3Store:
         return str(response["ETag"])
 
     def put_file(self, key: str, path: Path, *, content_type: str = BINARY_CONTENT_TYPE) -> None:
+        from boto3.s3.transfer import TransferConfig
+
+        # In one piece up to the size of any snapshot, so that the object's
+        # ETag is the MD5 of its bytes like every other object's. A multipart
+        # upload gets an ETag that says nothing about the content, and then a
+        # copy cannot be checked without downloading it.
         self._client.upload_file(
-            str(path), self._bucket, self._key(key), ExtraArgs={"ContentType": content_type}
+            str(path),
+            self._bucket,
+            self._key(key),
+            ExtraArgs={"ContentType": content_type},
+            Config=TransferConfig(multipart_threshold=SINGLE_PART_LIMIT_BYTES),
         )
 
     def download_file(self, key: str, path: Path) -> bool:
@@ -324,7 +336,7 @@ def content_etag(data: bytes) -> str:
 _etag = content_etag
 
 
-def _file_etag(path: Path) -> str:
+def file_etag(path: Path) -> str:
     digest = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as handle:
         while chunk := handle.read(1024 * 1024):
