@@ -416,8 +416,11 @@ def corners_of(session, found):
 def test_archived_corner_positions_are_published_as_they_are():
     corners = corners_of(make_race(), extras())
 
-    assert corners.distance_source is DistanceSource.ARCHIVE and corners.reference_lap is None
+    assert corners.distance_source is DistanceSource.ARCHIVE
     assert corners.rotation == 12.0
+    # They are checked against the fastest lap all the same, and lie on its track.
+    assert (corners.reference_lap.driver_code, corners.reference_lap.lap_number) == ("AAA", 2)
+    assert corners.fits_track is True and corners.off_track_m < 5.0
     assert [(corner.number, corner.letter, corner.distance_m) for corner in corners.corners] == [
         (1, None, 1250.0),
         (2, "A", 2500.0),
@@ -450,13 +453,43 @@ def test_corners_cannot_be_placed_without_a_lap_that_has_position_data():
     assert corners.distance_source is None and corners.reference_lap is None
     assert [corner.distance_m for corner in corners.corners] == [None, None, None]
     assert len(corners.corners) == 3
+    # Nor can they be checked against the track.
+    assert (corners.fits_track, corners.off_track_m) == (None, None)
+
+
+def test_corners_of_another_layout_are_published_as_not_fitting_this_track():
+    """The Hungaroring in 2026: the archived map puts its corners 44 m off the
+    track at the median and up to 116 m, and two pairs at one point of the lap."""
+    elsewhere = [{**corner, "x": corner["x"] * 1.12, "y": corner["y"] * 1.12} for corner in CORNERS]
+    found = {CIRCUIT_INFO: json.dumps({"rotation": 12.0, "corners": elsewhere}).encode()}
+
+    corners = corners_of(make_race(), found)
+
+    # 12% further from the middle of a circle 796 m in radius.
+    assert corners.fits_track is False
+    assert corners.off_track_m == pytest.approx(0.12 * TRACK_LENGTH_M / (2 * np.pi), abs=2.0)
+    # They are still what the archive holds, and are published as that.
+    assert len(corners.corners) == 3 and corners.distance_source is DistanceSource.ARCHIVE
+
+
+def test_one_corner_a_little_off_the_racing_line_still_fits():
+    """Monza and Spa each have a corner 19 m from the fastest lap's line."""
+    nudged = [dict(CORNERS[0], x=CORNERS[0]["x"] + 190.0), *CORNERS[1:]]
+    found = {CIRCUIT_INFO: json.dumps({"corners": nudged}).encode()}
+
+    corners = corners_of(make_race(), found)
+
+    assert corners.fits_track is True and corners.off_track_m == pytest.approx(19.0, abs=1.0)
 
 
 @pytest.mark.parametrize("found", [{}, {CIRCUIT_INFO: b"not json"}, {CIRCUIT_INFO: b"[]"}, {CIRCUIT_INFO: b'{"corners":[{"number":1}]}'}])
 def test_no_usable_circuit_file_is_an_empty_list_of_corners(found):
     corners = corners_of(make_race(), found)
 
-    assert artifact_json(corners) == {"rotation": None, "corners": [], "distance_source": None, "reference_lap": None}
+    assert artifact_json(corners) == {
+        "rotation": None, "corners": [], "distance_source": None, "reference_lap": None,
+        "off_track_m": None, "fits_track": None,
+    }
 
 
 # --- coverage and the summary ---------------------------------------------------

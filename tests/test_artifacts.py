@@ -23,6 +23,7 @@ from f1data import normalize
 from f1data.analyses import LapRows, position_replay, sample_rows
 from f1data.artifacts import build_artifacts, telemetry_artifacts
 from f1data.coverage import apply_classification, measure_coverage
+from f1data.extras import CIRCUIT_INFO
 from f1data.models import SESSION_ARTIFACTS, artifact_json, model_for_artifact
 from f1data.publish import upload_generation
 from f1data.store import MemoryStore
@@ -268,6 +269,21 @@ def test_official_corners_are_used_when_archived_and_inferred_ones_when_not():
     assert inferred["corner_source"] == "inferred"
     assert all(corner["letter"] is None for corner in inferred["corners"])
     assert read(built(found=extras(corners=False)), "corners.json")["corners"] == []
+
+
+def test_corners_that_do_not_lie_on_the_track_are_not_what_the_laps_are_segmented_by():
+    found = extras()
+    archived = json.loads(found[CIRCUIT_INFO])
+    archived["corners"] = [{**corner, "x": corner["x"] * 1.12, "y": corner["y"] * 1.12} for corner in archived["corners"]]
+    found[CIRCUIT_INFO] = json.dumps(archived).encode()
+
+    files = built(found=found)
+
+    assert read(files, "corners.json")["fits_track"] is False
+    analysis = read(files, "analysis/corner-analysis.json")
+    assert analysis["corner_source"] == "inferred"
+    assert "do not lie on the track" in analysis["caveats"][-1] and "m off it" in analysis["caveats"][-1]
+    assert read(built(), "corners.json")["fits_track"] is True
 
 
 def test_a_race_with_no_classification_is_built_with_a_provisional_result():

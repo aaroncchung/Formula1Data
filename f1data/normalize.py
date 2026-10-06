@@ -52,6 +52,16 @@ from f1data.telemetry import LapSamples, SessionTelemetry
 
 _NS_PER_MS = 1_000_000
 _METRES_PER_SECOND_IN_KPH = 3.6
+# Position data is in tenths of a metre.
+_POSITION_UNITS_PER_METRE = 10.0
+# A circuit's archived corner positions are taken to be of the track a session
+# drove when they lie on it. Of the 18 races and sprints of 2026 archived with
+# corner positions, 17 have every corner within 20 m of the fastest lap's line,
+# at a median of 1 to 3 m. The Hungaroring's are 44 m off at the median and up
+# to 116 m: the map is of another layout, and FastF1 placed two pairs of its
+# corners at the same point of the lap.
+CORNERS_FIT_WITHIN_MEDIAN_M = 10.0
+CORNERS_FIT_WITHIN_M = 50.0
 _HEX_COLOUR = re.compile(r"^#?([0-9A-Fa-f]{6})$")
 # A classification has to have these for every driver before it is published.
 _REQUIRED_OF_A_RESULT = ("positionText", "status", "points", "grid", "laps")
@@ -503,6 +513,9 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
     and when that fails the corners are archived without distances
     (f1data/extras.py). The build then places them itself, on the fastest
     clean lap of the session that has position data.
+
+    The same lap says whether the corners are of this track at all: a map of
+    another layout puts them tens of metres off it, and the artifact says so.
     """
     try:
         archived = json.loads(extras.get(CIRCUIT_INFO, b"{}").decode("utf-8", errors="replace"))
@@ -530,27 +543,34 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
 
     source: DistanceSource | None = None
     reference: ReferenceLap | None = None
+    furthest: float | None = None
+    fits: bool | None = None
+    lap = _reference_lap(telemetry, lap_rows) if found else None
+    if lap is not None:
+        reference = ReferenceLap(
+            driver_code=lap.driver_code,
+            lap_number=lap.lap_number,
+            length_m=float(lap.distance_m[-1] - lap.distance_m[0]),
+        )
+        squared = [(lap.x - corner["x"]) ** 2 + (lap.y - corner["y"]) ** 2 for corner in found]
+        off_track = [float(np.sqrt(np.nanmin(each))) / _POSITION_UNITS_PER_METRE for each in squared]
+        furthest = max(off_track)
+        fits = float(np.median(off_track)) <= CORNERS_FIT_WITHIN_MEDIAN_M and furthest <= CORNERS_FIT_WITHIN_M
     if found and all(corner["distance_m"] is not None for corner in found):
         source = DistanceSource.ARCHIVE
-    elif found:
-        lap = _reference_lap(telemetry, lap_rows)
-        if lap is None:
-            found = [{**corner, "distance_m": None} for corner in found]
-        else:
-            source = DistanceSource.TELEMETRY
-            reference = ReferenceLap(
-                driver_code=lap.driver_code,
-                lap_number=lap.lap_number,
-                length_m=float(lap.distance_m[-1] - lap.distance_m[0]),
-            )
-            for corner in found:
-                nearest = int(np.nanargmin((lap.x - corner["x"]) ** 2 + (lap.y - corner["y"]) ** 2))
-                corner["distance_m"] = float(lap.distance_m[nearest])
+    elif lap is not None:
+        source = DistanceSource.TELEMETRY
+        for corner, each in zip(found, squared):
+            corner["distance_m"] = float(lap.distance_m[int(np.nanargmin(each))])
+    else:
+        found = [{**corner, "distance_m": None} for corner in found]
     return Corners(
         rotation=_float(archived.get("rotation")),
         corners=[Corner(**corner) for corner in found],
         distance_source=source,
         reference_lap=reference,
+        off_track_m=furthest,
+        fits_track=fits,
     )
 
 

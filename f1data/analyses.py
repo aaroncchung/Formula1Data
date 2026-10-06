@@ -26,6 +26,7 @@ from f1data.models import (
     CarPerformance,
     CornerAnalysis,
     Corners,
+    DistanceSource,
     Driver,
     IdealLaps,
     Lap,
@@ -141,8 +142,20 @@ def session_analyses(
         for driver in drivers
     ]
     by_lap = LapRows(telemetry)
-    official = [artifact_json(corner) for corner in corners.corners]
-    reference_length = corners.reference_lap.length_m if corners.reference_lap else None
+    # Corners that do not lie on this track would put every driver's figures
+    # under the wrong corner, so they are not offered to the analysis.
+    fitting = corners.fits_track is not False
+    official = [artifact_json(corner) for corner in corners.corners] if fitting else []
+    # Distances the build placed are along the reference lap, whose length
+    # scales them to another lap. The archive's are along a lap it does not name.
+    placed_here = corners.distance_source is DistanceSource.TELEMETRY and corners.reference_lap is not None
+    reference_length = corners.reference_lap.length_m if placed_here else None
+    corner_analysis = calculate_corner_analysis(session_id, lap_rows, by_lap, official, reference_length)
+    if not fitting:
+        corner_analysis["caveats"].append(
+            "The circuit's archived corner positions do not lie on the track this session was driven "
+            f"on (up to {corners.off_track_m:.0f} m off it), so they are not used."
+        )
 
     strategy = calculate_strategy(
         session_id,
@@ -181,9 +194,7 @@ def session_analyses(
         "track-dominance": TrackDominance.model_validate(
             _result(calculate_track_dominance(session_id, lap_rows, by_lap))
         ),
-        "corner-analysis": CornerAnalysis.model_validate(
-            _result(calculate_corner_analysis(session_id, lap_rows, by_lap, official, reference_length))
-        ),
+        "corner-analysis": CornerAnalysis.model_validate(_result(corner_analysis)),
         "car-performance": CarPerformance.model_validate(
             _result(calculate_car_performance(session_id, lap_rows, by_lap, driver_rows))
         ),

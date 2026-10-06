@@ -430,8 +430,18 @@ class Corners(Model):
     corners: list[Corner]
     distance_source: DistanceSource | None = Field(description="Null when no corner has a distance.")
     reference_lap: ReferenceLap | None = Field(
-        description="The lap the build measured the distances along. Null unless distance_source is "
-        "telemetry."
+        description="The lap the corners were checked against, and placed along when distance_source "
+        "is telemetry: the fastest clean lap with position data. Null when no lap has any."
+    )
+    off_track_m: Decimal1 | None = Field(
+        description="Metres from the track, as reference_lap drove it, of the corner furthest from it. "
+        "Null when there is no lap to check against."
+    )
+    fits_track: bool | None = Field(
+        description="False when the corner positions do not lie on the track this session was driven "
+        "on: the archived map is of another layout. They should not be drawn over this session's "
+        "position data, and the corner analysis infers its corners instead. Null when there is no "
+        "lap to check against."
     )
 
 

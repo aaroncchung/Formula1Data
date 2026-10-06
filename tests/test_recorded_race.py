@@ -70,6 +70,7 @@ pytestmark = pytest.mark.skipif(
 
 AUSTRIA = 11315
 MONACO = 11299
+HUNGARY = 11342
 GOLDEN = FIXTURES / f"golden-{AUSTRIA}.json"
 # The driver each single-driver removal is made for: Hamilton, who finished
 # and stopped three times.
@@ -229,7 +230,9 @@ def test_the_austrian_race_in_figures(generation):
     corners = read(files, "analysis/corner-analysis.json")
     assert corners["corner_source"] == "official"
     assert [corner["corner_number"] for corner in corners["corners"]] == list(range(1, 11))
-    assert read(files, "corners.json")["distance_source"] == "archive"
+    circuit = read(files, "corners.json")
+    assert (circuit["distance_source"], circuit["fits_track"], circuit["off_track_m"]) == ("archive", True, 5.9)
+    assert circuit["reference_lap"] == {"driver_code": "ANT", "lap_number": 59, "length_m": 4290.5}
     assert read(files, "coverage.json")["complete"] is True
 
 
@@ -433,6 +436,26 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     stops = [stop for stop in read(files, "pit-stops.json") if stop["driver_code"] == code]
     assert len(stops) == 3 and all(stop["stationary_ms"] is None and stop["duration_ms"] for stop in stops)
     assert read(files, "coverage.json")["pit_stops_in_series"] == 33
+
+
+# --- a circuit whose archived corners are of another layout ------------------------
+
+
+def test_the_hungarian_races_corners_do_not_fit_its_track_and_are_not_used(tmp_path):
+    """MultiViewer's map of the Hungaroring puts the 2026 race's corners 44 m
+    off the track at the median. Every other circuit of the season is within
+    20 m at its worst corner."""
+    store = archive_store()
+    snapshot, _ = restore(store, HUNGARY, tmp_path / "cache")
+
+    files = build_offline(store, snapshot, None)
+
+    circuit = read(files, "corners.json")
+    assert circuit["fits_track"] is False and circuit["off_track_m"] > 100
+    assert len(circuit["corners"]) == 16
+    analysis = read(files, "analysis/corner-analysis.json")
+    assert analysis["corner_source"] == "inferred"
+    assert "do not lie on the track" in analysis["caveats"][-1]
 
 
 # --- a race F1 holds only part of ------------------------------------------------
