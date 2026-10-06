@@ -4,7 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-import { LoadFailure } from "@/components/calendar/LoadFailure";
+import { LoadFailure } from "@/components/published/LoadFailure";
 import { usePublishedIndex } from "@/components/calendar/usePublishedIndex";
 import { DataTable } from "@/components/data-table/DataTable";
 import { EmptyState } from "@/components/dashboard/EmptyState";

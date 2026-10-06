@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   findMeeting,
-  findPublishedSession,
   findSeason,
   latestPublishedSession,
   nextSession,
@@ -15,6 +14,9 @@ import {
   venues
 } from "../src/lib/calendar.ts";
 import { fixtureIndex, indexOf, meeting, NOW, sampleIndex, session } from "./support/sample-index.mjs";
+
+/** One row of the list of published sessions, by its key. */
+const listed = (index, key) => publishedSessions(index).find((item) => item.key === key) ?? null;
 
 // ---------------------------------------------------------------------------
 // What a page may say about one session
@@ -108,16 +110,16 @@ test("a calendar with nothing published has no most recent session", () => {
   assert.equal(latestPublishedSession(index), null);
 });
 
-test("a session is found by its key alone, in the calendar or out of it", () => {
+test("a session is listed under its key, in the calendar or out of it", () => {
   const index = sampleIndex();
 
-  assert.equal(findPublishedSession(index, 11315).meeting.round, 8);
-  assert.equal(findPublishedSession(index, 11200).meeting, null);
-  assert.equal(findPublishedSession(index, 11200).meetingName, "Imola Grand Prix");
-  assert.equal(findPublishedSession(index, 4), null);
+  assert.equal(listed(index, 11315).meeting.round, 8);
+  assert.equal(listed(index, 11200).meeting, null);
+  assert.equal(listed(index, 11200).meetingName, "Imola Grand Prix");
+  assert.equal(listed(index, 4), null);
 });
 
-test("the same key is found after the calendar renumbers its round", () => {
+test("the same key is listed after the calendar renumbers its round", () => {
   // AR-20: a race is inserted and every later round moves by one. A page that
   // kept the round would now open a different race; the key still names the
   // same one, and the round shown is the new one.
@@ -134,18 +136,18 @@ test("the same key is found after the calendar renumbers its round", () => {
     }
   ]);
 
-  assert.equal(findPublishedSession(before, 11315).meeting.round, 8);
-  assert.equal(findPublishedSession(after, 11315).meeting.round, 9);
-  assert.equal(findPublishedSession(after, 11315).meetingName, "Austrian Grand Prix");
+  assert.equal(listed(before, 11315).meeting.round, 8);
+  assert.equal(listed(after, 11315).meeting.round, 9);
+  assert.equal(listed(after, 11315).meetingName, "Austrian Grand Prix");
 });
 
 test("a session is named in one line, saying when it is partial or outside the calendar", () => {
   const index = sampleIndex();
 
-  assert.equal(sessionLabel(findPublishedSession(index, 11315)), "R8 · Austrian Grand Prix · Race");
-  assert.equal(sessionLabel(findPublishedSession(index, 11314)), "R8 · Austrian Grand Prix · Sprint");
-  assert.equal(sessionLabel(findPublishedSession(index, 11300)), "R7 · Barcelona Grand Prix · Race (partial)");
-  assert.equal(sessionLabel(findPublishedSession(index, 11200)), "Imola Grand Prix · Race · not in the calendar");
+  assert.equal(sessionLabel(listed(index, 11315)), "R8 · Austrian Grand Prix · Race");
+  assert.equal(sessionLabel(listed(index, 11314)), "R8 · Austrian Grand Prix · Sprint");
+  assert.equal(sessionLabel(listed(index, 11300)), "R7 · Barcelona Grand Prix · Race (partial)");
+  assert.equal(sessionLabel(listed(index, 11200)), "Imola Grand Prix · Race · not in the calendar");
 });
 
 test("the published fixture's one session is its most recent", () => {

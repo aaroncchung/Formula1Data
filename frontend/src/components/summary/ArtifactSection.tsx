@@ -1,4 +1,4 @@
-import { LoadFailure } from "@/components/calendar/LoadFailure";
+import { LoadFailure } from "@/components/published/LoadFailure";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { LoadingState } from "@/components/dashboard/LoadingState";
 import { failureDetail } from "@/components/published/failure-copy";
@@ -27,7 +27,7 @@ export function ArtifactSection<T>({ name, artifact, onRetry, children }: Artifa
   }
   const { failure } = artifact;
   // The session is being opened again on the generation its pointer names now
-  // (useChosenSession). This section is given the new view next, or the page
+  // (usePublishedSession). This section is given the new view next, or the page
   // shows why there is none.
   if (failure.code === "generation_gone") {
     return <LoadingState label="This session was published again. Loading the new version." />;

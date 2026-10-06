@@ -5,18 +5,18 @@ import { Suspense } from "react";
 import { LoadingState } from "@/components/dashboard/LoadingState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { SummaryPage } from "@/components/summary/SummaryPage";
-import type { ReadyChosenSession } from "@/lib/chosen-session";
+import type { ReadySession } from "@/lib/published/session";
 
 type SummaryRouteProps = {
   path: string;
   title: string;
   description: string;
-  children: (session: ReadyChosenSession) => React.ReactNode;
+  children: (session: ReadySession) => React.ReactNode;
 };
 
 /**
  * A summary page as a route: `SummaryPage` inside the Suspense boundary that
- * reading `?key=` needs. The query string does not exist while the shell is
+ * reading the address needs. The query string does not exist while the shell is
  * exported, so the exported HTML is the fallback, with the page's real
  * heading, and the session renders in the browser.
  */

@@ -100,10 +100,6 @@ export function latestPublishedSession(index: PublishedIndex): PublishedSession 
   return publishedSessions(index)[0] ?? null;
 }
 
-export function findPublishedSession(index: PublishedIndex, key: number): PublishedSession | null {
-  return publishedSessions(index).find((session) => session.key === key) ?? null;
-}
-
 /**
  * A published session in one line, for a list to choose from: "R8 · Austrian
  * Grand Prix · Race". The round is today's and only says where to look; a

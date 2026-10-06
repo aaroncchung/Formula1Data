@@ -1,6 +1,6 @@
 "use client";
 
-import { LoadFailure } from "@/components/calendar/LoadFailure";
+import { LoadFailure } from "@/components/published/LoadFailure";
 import { usePublishedIndex } from "@/components/calendar/usePublishedIndex";
 import { LoadingState } from "@/components/dashboard/LoadingState";
 import { PageHeader } from "@/components/dashboard/PageHeader";

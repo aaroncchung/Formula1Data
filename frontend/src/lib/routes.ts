@@ -12,8 +12,9 @@
  *   /session?key=11315                one session's dashboard
  *   /standings?year=2026              the championship tables of a season
  *   /strategy?key=11315               and /telemetry, /drivers, /teams: one
- *                                     session's summary, the most recent
- *                                     published session when no key is given
+ *                                     session's summary, named as on /session,
+ *                                     or the most recent published session
+ *                                     when the address names none
  *
  * A session is always linked by its key. The link to its dashboard, and the
  * reading of an address that names a session, are in lib/published/lookup.ts
@@ -23,7 +24,8 @@
  * (AR-20).
  */
 
-import { sessionQuery } from "./published/lookup.ts";
+import { parseSessionAddress, sessionQuery } from "./published/lookup.ts";
+import type { SessionAddress } from "./published/lookup.ts";
 
 export const SEASONS_PATH = "/seasons";
 export const STANDINGS_PATH = "/standings";
@@ -71,9 +73,6 @@ export type Param<T> =
 
 const YEAR = /^[0-9]{4}$/;
 const ROUND = /^[0-9]{1,2}$/;
-// Fifteen digits at most, so that the number read is always a safe integer
-// and therefore a session key (`isSessionKey`).
-const SESSION_KEY = /^[0-9]{1,15}$/;
 
 /** `?year=2026`. */
 export function yearParam(query: Query): Param<number> {
@@ -85,9 +84,30 @@ export function roundParam(query: Query): Param<number> {
   return numberParam(query, "round", ROUND);
 }
 
-/** `?key=11315`. */
-export function sessionKeyParam(query: Query): Param<number> {
-  return numberParam(query, "key", SESSION_KEY);
+/** Which session a page that shows one session was asked for. */
+export type SessionChoice =
+  /** The address names none, so the page shows the most recent published session. */
+  | { readonly kind: "latest" }
+  | { readonly kind: "named"; readonly address: SessionAddress }
+  /** The address tries to name a session and does not: a mistyped link, to be answered as one. */
+  | { readonly kind: "invalid" };
+
+const SESSION_PARAMETERS = ["key", "year", "round", "session"];
+
+/**
+ * Read which session a summary page is about. A session is named exactly as
+ * it is on `/session`, by the same reader, so a link that works there works
+ * here. What that reader cannot tell apart is an address that names no
+ * session from one that names it wrongly, and a page that shows the latest
+ * session for the first must not show it for the second.
+ */
+export function sessionChoice(query: Query): SessionChoice {
+  const address = parseSessionAddress(query);
+  if (address) {
+    return { kind: "named", address };
+  }
+  const tried = SESSION_PARAMETERS.some((name) => (query.get(name) ?? "") !== "");
+  return tried ? { kind: "invalid" } : { kind: "latest" };
 }
 
 function numberParam(query: Query, name: string, shape: RegExp): Param<number> {
