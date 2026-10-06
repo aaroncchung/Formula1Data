@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { pickerKeyForQuery, pickerSelection, pickerYears } from "../src/lib/session-picker.ts";
-import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./published-bucket.mjs";
+import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./support/sample-index.mjs";
 
 const query = (text) => new URLSearchParams(text);
 

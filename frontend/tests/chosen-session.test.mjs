@@ -3,31 +3,25 @@ import test from "node:test";
 
 import { findPublishedSession } from "../src/lib/calendar.ts";
 import { describeSession, loadChosenSession, recoverChosenSession } from "../src/lib/chosen-session.ts";
-import { createPublishedClient } from "../src/lib/published/client.ts";
 import { notifyWhenGone } from "../src/lib/published/session.ts";
 import { readField, readStrategy } from "../src/lib/session-summaries.ts";
 import {
-  AUSTRIAN_RACE_KEY,
-  BASE_URL,
   bucketOf,
+  clientOf,
   edit,
-  GENERATION,
-  GENERATION_PREFIX,
+  FIRST_GENERATION as GENERATION,
+  generationPrefix,
   INDEX_KEY,
   POINTER_KEY,
-  PUBLISHED,
   removeGeneration,
   republish,
-  sampleIndex
-} from "./published-bucket.mjs";
+  reversedResults,
+  SESSION_KEY as AUSTRIAN_RACE_KEY
+} from "./support/published-bucket.mjs";
+import { sampleIndex } from "./support/sample-index.mjs";
 
+const GENERATION_PREFIX = generationPrefix(GENERATION);
 const MANIFEST_KEY = `${GENERATION_PREFIX}manifest.json`;
-
-function clientOf(bucket) {
-  return createPublishedClient({ baseUrl: BASE_URL, fetch: bucket.fetch });
-}
-
-const reversedResults = () => JSON.parse(PUBLISHED[`${GENERATION_PREFIX}results.json`]).reverse();
 
 // ---------------------------------------------------------------------------
 // Which session a page shows

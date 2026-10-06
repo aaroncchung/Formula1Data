@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { safePublished } from "../src/lib/published/errors.ts";
 import { createStandingsReader, parseStandings, standingsKey } from "../src/lib/published/standings.ts";
 import { defaultStandingsYear, driverName, roundLabel, standingsRounds } from "../src/lib/standings-view.ts";
-import { BASE_URL, bucketOf, edit, fixtureIndex, indexOf, meeting, sampleIndex, session } from "./published-bucket.mjs";
+import { BASE_URL, bucketOf, edit, failureOf } from "./support/published-bucket.mjs";
+import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./support/sample-index.mjs";
 
 // The shape f1data/standings.py writes (`fetch_standings`). The figures are
 // the ones AR-15 found the old page got wrong: it showed ANT with 158 points
@@ -60,12 +60,6 @@ function publishedWith(standings = STANDINGS) {
 
 function readerOf(bucket, options = {}) {
   return createStandingsReader({ baseUrl: BASE_URL, fetch: bucket.fetch, ...options });
-}
-
-async function failureOf(promise) {
-  const result = await safePublished(() => promise);
-  assert.equal(result.ok, false, "expected the read to fail");
-  return result.error;
 }
 
 function changed(change) {

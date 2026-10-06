@@ -14,7 +14,7 @@ import {
   unscheduledSessions,
   venues
 } from "../src/lib/calendar.ts";
-import { fixtureIndex, indexOf, meeting, NOW, sampleIndex, session } from "./published-bucket.mjs";
+import { fixtureIndex, indexOf, meeting, NOW, sampleIndex, session } from "./support/sample-index.mjs";
 
 // ---------------------------------------------------------------------------
 // What a page may say about one session
