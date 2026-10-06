@@ -202,7 +202,10 @@ def results(classification: Classification | None, session: Any, codes: dict[str
     """
     if classification is None:
         return _provisional_results(session, codes)
-    rows = sorted(classification.rows, key=lambda row: (_int(row.get("position")) is None, _int(row.get("position")) or 0))
+    rows = sorted(
+        classification.rows,
+        key=lambda row: (_int(row.get("position")) is None, _int(row.get("position")) or 0),
+    )
     positions = [_int(row.get("position")) for row in rows]
     if len(rows) < 2 or positions != list(range(1, len(rows) + 1)):
         raise SessionDataError(
@@ -227,7 +230,10 @@ def results(classification: Classification | None, session: Any, codes: dict[str
         classified = (_text(row.get("positionText")) or "").isdigit()
         down = (
             winner_laps - laps_completed
-            if classified and winner_laps is not None and laps_completed is not None and laps_completed < winner_laps
+            if classified
+            and winner_laps is not None
+            and laps_completed is not None
+            and laps_completed < winner_laps
             else None
         )
         built.append(
@@ -252,8 +258,18 @@ def results(classification: Classification | None, session: Any, codes: dict[str
     for code in sorted(_codes_with_laps(session) - listed):
         built.append(
             Result(
-                position=None, driver_code=code, classified_position=None, status=None, points=None, grid=None,
-                time_ms=None, gap_ms=None, laps_down=None, behind_at_flag_ms=None, laps=None, provisional=False,
+                position=None,
+                driver_code=code,
+                classified_position=None,
+                status=None,
+                points=None,
+                grid=None,
+                time_ms=None,
+                gap_ms=None,
+                laps_down=None,
+                behind_at_flag_ms=None,
+                laps=None,
+                provisional=False,
             )
         )
     return built
@@ -287,14 +303,26 @@ def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
             if "FastF1Generated" in frame.columns
             else pd.Series(False, index=frame.index)
         )
-        for number, lap, end in zip(frame["DriverNumber"].astype(str)[~generated], frame["LapNumber"][~generated], frame["Time"][~generated]):
+        for number, lap, end in zip(
+            frame["DriverNumber"].astype(str)[~generated],
+            frame["LapNumber"][~generated],
+            frame["Time"][~generated],
+        ):
             lap_number, finished = _int(lap), _milliseconds(end)
             if lap_number is None or finished is None:
                 continue
             if number not in last or lap_number > last[number][0]:
                 last[number] = (lap_number, finished)
 
-    order = sorted(codes, key=lambda number: (-last.get(number, (0, 0))[0], last.get(number, (0, 0))[1], _int(number) or 0, number))
+    order = sorted(
+        codes,
+        key=lambda number: (
+            -last.get(number, (0, 0))[0],
+            last.get(number, (0, 0))[1],
+            _int(number) or 0,
+            number,
+        ),
+    )
     leader_laps, leader_finished = last[order[0]] if order and order[0] in last else (0, None)
     rows: list[Result] = []
     for position, number in enumerate(order, start=1):
@@ -337,7 +365,9 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
     for stop in parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b"")):
         code = codes.get(str(stop["driver_number"]))
         if code is None:
-            _logger.warning("The pit-stop feed names driver number %s, who is not in the session", stop["driver_number"])
+            _logger.warning(
+                "The pit-stop feed names driver number %s, who is not in the session", stop["driver_number"]
+            )
             continue
         # A later line for the same stop is F1 correcting the earlier one.
         reported[(code, int(stop["lap_number"]))] = stop
@@ -346,7 +376,9 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
     rows: list[PitStop] = []
     if len(frame) and {"Driver", "LapNumber", "PitInTime", "PitOutTime"} <= set(frame.columns):
         by_driver: dict[str, dict[int, tuple[Any, Any]]] = {}
-        for code, lap, came_in, went_out in zip(frame["Driver"], frame["LapNumber"], frame["PitInTime"], frame["PitOutTime"]):
+        for code, lap, came_in, went_out in zip(
+            frame["Driver"], frame["LapNumber"], frame["PitInTime"], frame["PitOutTime"]
+        ):
             number = _int(lap)
             if _present(code) and number is not None:
                 by_driver.setdefault(str(code).strip().upper(), {})[number] = (came_in, went_out)

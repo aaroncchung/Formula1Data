@@ -68,7 +68,9 @@ def build_artifacts(
     """
     return {
         path: dump_json(artifact_json(artifact))
-        for path, artifact in session_artifacts(session, identity, classification, extras, measurement).items()
+        for path, artifact in session_artifacts(
+            session, identity, classification, extras, measurement
+        ).items()
     }
 
 

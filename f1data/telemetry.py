@@ -136,7 +136,9 @@ class _Feed:
 def extract_telemetry(session: Any) -> SessionTelemetry:
     """Full-resolution telemetry for every lap of a loaded FastF1 session that has any."""
     laps = _frame(session, "laps")
-    if len(laps) == 0 or not {"DriverNumber", "Driver", "LapNumber", "LapStartTime", "Time"} <= set(laps.columns):
+    if len(laps) == 0 or not {"DriverNumber", "Driver", "LapNumber", "LapStartTime", "Time"} <= set(
+        laps.columns
+    ):
         return SessionTelemetry({})
     car_data = _mapping(session, "car_data")
     position_data = _mapping(session, "pos_data")
@@ -178,7 +180,9 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
         located = position is not None and lap_is_usable(
             position_seconds, start_ns[row] / _NS_PER_SECOND, end_ns[row] / _NS_PER_SECOND
         )
-        samples = _lap_samples(car, position if located else None, int(start_ns[row]), int(end_ns[row]), clock_zero)
+        samples = _lap_samples(
+            car, position if located else None, int(start_ns[row]), int(end_ns[row]), clock_zero
+        )
         if samples is None and located:
             samples = _lap_samples(car, None, int(start_ns[row]), int(end_ns[row]), clock_zero)
         if samples is None:
@@ -242,10 +246,13 @@ def _lap_samples(
         position_cut = _padded_cut(position.session, start, end, within=_MAX_GAP_NS)
         if position_cut is None or position_cut[1] - position_cut[0] < _MIN_SPLINE_POINTS:
             return None
-        position_dates = position.date[position_cut[0]:position_cut[1]]
+        position_dates = position.date[position_cut[0] : position_cut[1]]
         dates = np.union1d(car_dates, position_dates)
         located = {
-            name: _fill_quadratic(dates, _spread(dates, position_dates, position.channels[name][position_cut[0]:position_cut[1]]))
+            name: _fill_quadratic(
+                dates,
+                _spread(dates, position_dates, position.channels[name][position_cut[0] : position_cut[1]]),
+            )
             for name in ("X", "Y")
         }
 
@@ -263,7 +270,8 @@ def _lap_samples(
     edges = np.array([start + clock_zero, end + clock_zero], dtype=np.int64)
     with_edges = np.union1d(dates, edges)
     continuous = {
-        name: _fill_linear(with_edges, _spread(with_edges, dates, values)) for name, values in continuous.items()
+        name: _fill_linear(with_edges, _spread(with_edges, dates, values))
+        for name, values in continuous.items()
     }
     lap_distance = _fill_quadratic(with_edges, _spread(with_edges, dates, lap_distance))
     if located is not None:
@@ -342,7 +350,9 @@ def _fill_quadratic(dates: np.ndarray, values: np.ndarray) -> np.ndarray:
     if known.all() or known.sum() < _MIN_SPLINE_POINTS:
         return values
     missing = ~known
-    spline = interp1d(dates[known], values[known], kind="quadratic", fill_value="extrapolate", bounds_error=False)
+    spline = interp1d(
+        dates[known], values[known], kind="quadratic", fill_value="extrapolate", bounds_error=False
+    )
     values[missing] = spline(dates[missing])
     values[: int(np.argmax(known))] = np.nan
     return values
@@ -374,7 +384,9 @@ def _position_feed(frame: Any, clock_zero: int) -> _Feed | None:
     return _feed(frame["Date"], channels, present & located, clock_zero)
 
 
-def _feed(dates: pd.Series, channels: dict[str, np.ndarray], usable: np.ndarray, clock_zero: int) -> _Feed | None:
+def _feed(
+    dates: pd.Series, channels: dict[str, np.ndarray], usable: np.ndarray, clock_zero: int
+) -> _Feed | None:
     date = dates.to_numpy(dtype="datetime64[ns]")
     usable = usable & ~np.isnat(date)
     date = date.astype("int64")[usable]

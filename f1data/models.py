@@ -224,7 +224,9 @@ class SessionSummary(Model):
     country: str | None
     driver_count: int
     lap_count: int = Field(description="Laps in laps.json, over every driver.")
-    weather_summary: str = Field(description="One line for a heading: the air and track temperature ranges, and rain or dry.")
+    weather_summary: str = Field(
+        description="One line for a heading: the air and track temperature ranges, and rain or dry."
+    )
     clock_zero_utc: str | None = Field(
         description="When the session clock read zero, in UTC to the millisecond. "
         "Every position in time in this generation is milliseconds after it."
@@ -244,7 +246,9 @@ class Driver(Model):
     full_name: str
     number: int | None = Field(description="The racing number.")
     team: Team | None = Field(description="Null when F1's driver list names no team.")
-    country: str | None = Field(description="F1's country code for the driver. F1 left it empty throughout 2026.")
+    country: str | None = Field(
+        description="F1's country code for the driver. F1 left it empty throughout 2026."
+    )
 
 
 class Drivers(RootModel[list[Driver]]):
@@ -260,7 +264,8 @@ class Lap(Model):
     sector_3_ms: int | None
     compound: CompoundOrNull = Field(description="Null where F1 reported none.")
     tyre_age: int | None = Field(
-        description="Laps the set had done at the end of this lap. Null for a set that went on used: F1 does not report its age."
+        description="Laps the set had done at the end of this lap. Null for a set that went on used: F1 "
+        "does not report its age."
     )
     stint: int | None
     position: int | None = Field(description="Position at the end of the lap.")
@@ -280,21 +285,25 @@ class Laps(RootModel[list[Lap]]):
 
 class Result(Model):
     position: int | None = Field(
-        description="Null for a driver who took part and whom the classification leaves out. Such rows come last."
+        description="Null for a driver who took part and whom the classification leaves out. Such rows come "
+        "last."
     )
     driver_code: str
     classified_position: str | None = Field(
-        description="The position as the classification prints it: a number, or a letter such as R for retired."
+        description="The position as the classification prints it: a number, or a letter such as R for "
+        "retired."
     )
     status: str | None
     points: Decimal1 | None
     grid: int | None = Field(description="Starting position. 0 for a start from the pit lane.")
     time_ms: int | None = Field(description="The winner's race time in milliseconds. Null for everyone else.")
     gap_ms: int | None = Field(
-        description="Milliseconds behind the winner, for a driver who finished on the same lap. Null for everyone else."
+        description="Milliseconds behind the winner, for a driver who finished on the same lap. Null for "
+        "everyone else."
     )
     laps_down: int | None = Field(
-        description="Laps behind the winner, for a classified driver who finished one or more down. Null for everyone else."
+        description="Laps behind the winner, for a classified driver who finished one or more down. Null "
+        "for everyone else."
     )
     behind_at_flag_ms: int | None = Field(
         description="For a driver with laps_down: milliseconds after the winner that they took the flag. "
@@ -330,8 +339,12 @@ class PitStopSources(Model):
     duration_ms: Literal["timing"] | None = Field(
         description="timing: the gap between the timing's pit-entry and pit-exit times."
     )
-    stationary_ms: Literal["pit_stop_series"] | None = Field(description="pit_stop_series: F1's own pit-stop feed.")
-    pit_lane_ms: Literal["pit_stop_series"] | None = Field(description="pit_stop_series: F1's own pit-stop feed.")
+    stationary_ms: Literal["pit_stop_series"] | None = Field(
+        description="pit_stop_series: F1's own pit-stop feed."
+    )
+    pit_lane_ms: Literal["pit_stop_series"] | None = Field(
+        description="pit_stop_series: F1's own pit-stop feed."
+    )
 
 
 class PitStop(Model):
@@ -342,9 +355,12 @@ class PitStop(Model):
         "Null for a stop only F1's pit-stop feed reports."
     )
     duration_ms: int | None = Field(
-        description="Milliseconds from pit entry to pit exit, from the timing. Null when the car did not come back out."
+        description="Milliseconds from pit entry to pit exit, from the timing. Null when the car did not "
+        "come back out."
     )
-    stationary_ms: int | None = Field(description="Milliseconds the car stood still, from F1's pit-stop feed.")
+    stationary_ms: int | None = Field(
+        description="Milliseconds the car stood still, from F1's pit-stop feed."
+    )
     pit_lane_ms: int | None = Field(description="Milliseconds in the pit lane, from F1's pit-stop feed.")
     sources: PitStopSources
 
@@ -356,7 +372,8 @@ class PitStops(RootModel[list[PitStop]]):
 class WeatherSample(Model):
     time_ms: int = Field(description="Milliseconds on the session clock.")
     lap_number: int | None = Field(
-        description="In a race or sprint, the lap the leader was on. Null before the start, after the flag, and in any other session."
+        description="In a race or sprint, the lap the leader was on. Null before the start, after the flag, "
+        "and in any other session."
     )
     air_temp_c: Decimal1 | None
     track_temp_c: Decimal1 | None
@@ -390,8 +407,12 @@ class Corner(Model):
     letter: str | None = Field(description="Set where one number covers several corners, such as 1A.")
     x: Decimal1 = Field(description="In the units of the position data, tenths of a metre.")
     y: Decimal1
-    angle: Decimal1 | None = Field(description="Degrees. Which way to draw the corner's label from its position.")
-    distance_m: Decimal1 | None = Field(description="Metres from the start line. Null when the corner could not be placed along the lap.")
+    angle: Decimal1 | None = Field(
+        description="Degrees. Which way to draw the corner's label from its position."
+    )
+    distance_m: Decimal1 | None = Field(
+        description="Metres from the start line. Null when the corner could not be placed along the lap."
+    )
 
 
 class ReferenceLap(Model):
@@ -403,11 +424,14 @@ class ReferenceLap(Model):
 class Corners(Model):
     """``corners.json``: the circuit's official corner positions. Empty when none were archived."""
 
-    rotation: Decimal1 | None = Field(description="Degrees to turn the position data by so the map sits as F1 draws it.")
+    rotation: Decimal1 | None = Field(
+        description="Degrees to turn the position data by so the map sits as F1 draws it."
+    )
     corners: list[Corner]
     distance_source: DistanceSource | None = Field(description="Null when no corner has a distance.")
     reference_lap: ReferenceLap | None = Field(
-        description="The lap the build measured the distances along. Null unless distance_source is telemetry."
+        description="The lap the build measured the distances along. Null unless distance_source is "
+        "telemetry."
     )
 
 
@@ -442,7 +466,9 @@ class DriverCoverage(Model):
     in_driver_list: bool
     classified_laps: int | None = Field(description="Laps in the classification. Null when there is none.")
     timing_laps: int = Field(description="Laps F1 timed.")
-    generated_laps: int = Field(description="Laps FastF1 added for a retirement. They are in laps.json and were never timed.")
+    generated_laps: int = Field(
+        description="Laps FastF1 added for a retirement. They are in laps.json and were never timed."
+    )
     car_laps: int = Field(description="Timed laps whose car data runs from start to end with no long hole.")
     position_laps: int = Field(description="The same for position data.")
     tyre_laps: int = Field(description="Timed laps with a compound and a stint.")
@@ -461,7 +487,8 @@ class Coverage(Model):
     pit_stops_in_series: int
     circuit_corners: int
     max_sample_gap_seconds: Decimal1 = Field(
-        description="The longest hole between two samples that a lap's car or position data may have and still count."
+        description="The longest hole between two samples that a lap's car or position data may have and "
+        "still count."
     )
     drivers: list[DriverCoverage]
 
@@ -483,15 +510,20 @@ class TelemetryDriverEntry(Model):
     raw_sample_count: list[int] = Field(
         description="Samples each lap has at full resolution, which is what the analyses read."
     )
-    has_position: list[bool] = Field(description="False for a lap with no usable position data, and so no x and y.")
+    has_position: list[bool] = Field(
+        description="False for a lap with no usable position data, and so no x and y."
+    )
 
 
 class TelemetryIndex(Model):
     """``telemetry/index.json``: which laps have telemetry, and where."""
 
-    max_samples_per_lap: int = Field(description="A lap with more samples is thinned evenly to this many, keeping both ends.")
+    max_samples_per_lap: int = Field(
+        description="A lap with more samples is thinned evenly to this many, keeping both ends."
+    )
     channels: list[TelemetryChannel] = Field(
-        description="The arrays a lap carries. DRS is absent when it never changes in the session, as in 2026, which has no DRS."
+        description="The arrays a lap carries. DRS is absent when it never changes in the session, as in "
+        "2026, which has no DRS."
     )
     drivers: list[TelemetryDriverEntry]
 
@@ -501,16 +533,21 @@ class TelemetryLap(Model):
 
     lap_number: int
     start_ms: int = Field(description="When the lap started, in milliseconds on the session clock.")
-    time_ms: list[int] = Field(description="Milliseconds since the lap started. Add start_ms for the session clock.")
+    time_ms: list[int] = Field(
+        description="Milliseconds since the lap started. Add start_ms for the session clock."
+    )
     distance_m: Decimals1 = Field(description="Metres since the lap started, integrated from speed.")
     speed_kph: Decimals1
     throttle_pct: list[int] = Field(description="0 to 100.")
     brake: list[bool]
     rpm: list[int]
     gear: list[int]
-    drs: list[int] | None = Field(description="F1's DRS code. Null when the channel is left out of the session.")
+    drs: list[int] | None = Field(
+        description="F1's DRS code. Null when the channel is left out of the session."
+    )
     x: Decimals1OrNull | None = Field(
-        description="Tenths of a metre. Null when the lap has no usable position data. Within a lap that has, "
+        description="Tenths of a metre. Null when the lap has no usable position data. Within a lap that "
+        "has, "
         "null for a sample taken before the position feed started or after it stopped, which can only be "
         "within a few seconds of either end of the lap."
     )
@@ -542,8 +579,12 @@ class PositionReplay(Model):
     """
 
     interval_ms: int = Field(description="The length of a frame's window in milliseconds.")
-    time_ms: list[int] = Field(description="The start of each frame's window, in milliseconds on the session clock.")
-    lap_number: list[int | None] = Field(description="The lap the session had reached: the highest any car had started.")
+    time_ms: list[int] = Field(
+        description="The start of each frame's window, in milliseconds on the session clock."
+    )
+    lap_number: list[int | None] = Field(
+        description="The lap the session had reached: the highest any car had started."
+    )
     drivers: list[ReplayDriver]
 
 
@@ -651,7 +692,8 @@ class PaceChangeAcrossStop(Model):
     driver_code: str
     stop_lap: int
     first_clean_lap_gain_ms: int | None = Field(
-        description="The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres."
+        description="The lap before the stop minus the lap after it, in milliseconds. Positive is quicker "
+        "on the new tyres."
     )
     before_lap_number: int | None
     before_lap_ms: int | None
@@ -732,7 +774,9 @@ class Minisector(Model):
     winner_driver_code: str | None
     segment_time_ms: Decimal1 | None
     gap_to_next_ms: Decimal1 | None
-    driver_times_ms: dict[str, Decimal1] = Field(description="Milliseconds through the minisector, by driver code.")
+    driver_times_ms: dict[str, Decimal1] = Field(
+        description="Milliseconds through the minisector, by driver code."
+    )
 
 
 class TrackDominance(Model):
@@ -758,7 +802,9 @@ class CornerDriver(Model):
 
 
 class AnalysedCorner(Model):
-    corner_number: int = Field(description="The circuit's own number when corner_source is official, otherwise the order found.")
+    corner_number: int = Field(
+        description="The circuit's own number when corner_source is official, otherwise the order found."
+    )
     letter: str | None
     distance_m: Decimal1 | None
     x: Decimal1 | None
@@ -858,7 +904,9 @@ class Identity(Model):
     circuit_key: int | None
     circuit_name: str | None
     archive_path: str
-    round_at_fetch: int | None = Field(description="The round when the session was fetched. The index has the round as it is now.")
+    round_at_fetch: int | None = Field(
+        description="The round when the session was fetched. The index has the round as it is now."
+    )
 
 
 class ManifestFile(Model):
@@ -900,7 +948,8 @@ class Pointer(Model):
     snapshot_id: str
     classification_fingerprint: str | None
     also: dict[str, Any] | None = Field(
-        description="Anything else the generation was built from, outside the archive and the classification. "
+        description="Anything else the generation was built from, outside the archive and the "
+        "classification. "
         "Null in this format, where a build takes nothing from the calendar."
     )
     coverage: PointerCoverage
@@ -932,7 +981,8 @@ class IndexMeeting(Model):
     date: str | None
     format: str | None
     meeting_key: int | None = Field(
-        description="F1's key for the meeting, which does not move. Known once a session of the meeting is published."
+        description="F1's key for the meeting, which does not move. Known once a session of the meeting is "
+        "published."
     )
     circuit_key: int | None = Field(description="F1's key for the circuit, from the same source.")
     circuit_name: str | None
@@ -1043,7 +1093,11 @@ def model_for_artifact(path: str) -> type[BaseModel] | None:
         return SESSION_ARTIFACTS[path]
     if path == "manifest.json":
         return Manifest
-    if path.startswith(TELEMETRY_PREFIX) and path.endswith(".json") and "/" not in path[len(TELEMETRY_PREFIX):]:
+    if (
+        path.startswith(TELEMETRY_PREFIX)
+        and path.endswith(".json")
+        and "/" not in path[len(TELEMETRY_PREFIX) :]
+    ):
         return DriverTelemetry
     return None
 
