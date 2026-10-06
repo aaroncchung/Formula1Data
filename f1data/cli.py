@@ -21,6 +21,9 @@ from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_sessi
 from f1data.schedule import ScheduledSession, load_schedule
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore
 
+# A batch of fetches stops here rather than fail its way through every session.
+_GIVE_UP_AFTER_FAILURES_IN_A_ROW = 2
+
 # The feeds whose absence the old loader tolerated or could not see (AR-13, AR-21).
 _RAW_CHECK_FEEDS = (
     "SessionInfo.jsonStream",
@@ -170,10 +173,13 @@ def run_fetch_due(args: argparse.Namespace) -> int:
     store = _store(args.store)
     now = datetime.now(timezone.utc)
     seasons = args.season or [now.year]
-    failed = 0
+    failed = failed_in_a_row = 0
     with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
         with fastf1_cache(Path(scratch) / "run") as fastf1:
-            schedule = [session for year in seasons for session in load_schedule(fastf1, year)]
+            try:
+                schedule = [session for year in seasons for session in load_schedule(fastf1, year)]
+            except Exception as exc:
+                raise SystemExit(f"Could not load the calendar, so nothing was fetched: {exc}") from exc
 
             def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
                 try:
@@ -198,12 +204,22 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 try:
                     fetched = fetch_session(session.year, session.round, session.session_type, cache_dir)
                     snapshot = write_snapshot(store, fetched)
-                except (FetchError, ArchiveError) as exc:
+                except Exception as exc:
                     # One session failing must not stop the others. The next
-                    # run plans it again, since nothing was archived.
+                    # run plans it again, since nothing was archived. A fetch
+                    # can fail in more ways than FetchError: with the network
+                    # down FastF1 cannot even load its schedule.
                     failed += 1
+                    failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
+                    if failed_in_a_row >= _GIVE_UP_AFTER_FAILURES_IN_A_ROW:
+                        print(
+                            f"Stopping: {failed_in_a_row} fetches failed in a row, so the network "
+                            f"or F1 is not answering. {len(plans) - number - 1} session(s) left for the next run."
+                        )
+                        break
                 else:
+                    failed_in_a_row = 0
                     _print_snapshot(snapshot)
                 finally:
                     shutil.rmtree(cache_dir, ignore_errors=True)
