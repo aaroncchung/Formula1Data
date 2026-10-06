@@ -9,6 +9,14 @@ import { api, isEmptyState } from "@/lib/api";
 import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
 import type { TelemetryIndex } from "@/lib/static-api-core";
 
+/** Loads the comparison of two laps: driver and lap number of each. */
+export type CompareLaps = (
+  driverA: string,
+  lapA: number,
+  driverB: string,
+  lapB: number
+) => Promise<TelemetryComparison | EmptyStateResponse>;
+
 export function TelemetryComparePanel({
   initialDriverA,
   initialDriverB,
@@ -17,7 +25,8 @@ export function TelemetryComparePanel({
   initialComparison,
   initialEmptyState,
   sessionId,
-  availableLaps = []
+  availableLaps = [],
+  compare
 }: {
   initialDriverA?: string;
   initialDriverB?: string;
@@ -27,6 +36,12 @@ export function TelemetryComparePanel({
   initialEmptyState?: EmptyStateResponse | null;
   sessionId: string;
   availableLaps?: TelemetryIndex["laps"];
+  /**
+   * Where a comparison is loaded from. Left out, it is the build-time site's
+   * `/data` under `sessionId`; a page that reads published data passes a
+   * loader bound to the generation it has pinned.
+   */
+  compare?: CompareLaps;
 }) {
   const [driverA, setDriverA] = useState(initialDriverA || initialComparison?.driver_a.driver_code || "");
   const [driverB, setDriverB] = useState(initialDriverB || initialComparison?.driver_b.driver_code || "");
@@ -61,7 +76,10 @@ export function TelemetryComparePanel({
     }
     setIsLoading(true);
     setEmptyState(null);
-    api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB)).then((result) => {
+    const loading = compare
+      ? compare(driverA, Number(lapA), driverB, Number(lapB))
+      : api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB));
+    loading.then((result) => {
       if (isEmptyState(result)) {
         setEmptyState(result);
         setComparison(null);

@@ -8,6 +8,7 @@ import { parseSessionAddress, sessionQuery } from "@/lib/published/lookup";
 import type { SessionAddress } from "@/lib/published/lookup";
 import { loadAddress, notifyWhenGone, recoverSession } from "@/lib/published/session";
 import type { ReadySession, SessionLoad } from "@/lib/published/session";
+import { shareReads } from "@/lib/published/share";
 import { createRequestGenerationGuard } from "@/lib/request-generation";
 
 export type SessionState = { readonly status: "loading" } | SessionLoad;
@@ -57,14 +58,14 @@ export function usePublishedSession(address: SessionAddress) {
     // Tabs read through this view and do not report upwards. When one of them
     // finds the generation gone, the session is opened again here and every
     // tab starts over on the new view, so two generations are never on screen
-    // together.
+    // together. The tabs also share what they read through it.
     function watched(ready: ReadySession): ReadySession {
       const view = notifyWhenGone(ready.view, () => {
         if (requests.isCurrent(token)) {
           recoverSession(publishedData, ready).then(commit, fail);
         }
       });
-      return { ...ready, view };
+      return { ...ready, view: shareReads(view) };
     }
 
     // `sessionQuery` writes what `parseSessionAddress` reads back. If it ever
