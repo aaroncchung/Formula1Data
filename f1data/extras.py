@@ -45,12 +45,37 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
         _logger.warning("Could not fetch %s: %s", PIT_STOP_SERIES, exc)
 
     try:
-        info = session.get_circuit_info()
+        info = _circuit_info(fastf1, session)
         if info is not None:
             extras[CIRCUIT_INFO] = _dump(circuit_info_json(info))
     except Exception as exc:
         _logger.warning("Could not fetch the circuit information: %s", exc)
     return extras
+
+
+def _circuit_info(fastf1: Any, session: Any) -> Any:
+    """The circuit's markers from MultiViewer, with distances where they can be had.
+
+    ``session.get_circuit_info()`` does the same and then places each marker
+    along the lap using the fastest lap's position data. When that data is
+    broken the whole call fails: the 2026 Monaco race, whose position feed
+    stops in lap 5, came back with no corners at all. The markers do not depend
+    on the session, so they are fetched on their own and the distances are
+    added only if they can be.
+    """
+    circuit = session.session_info["Meeting"]["Circuit"]
+    circuit_key = circuit["Key"]
+    if circuit_key == 149 and circuit.get("ShortName") == "Mugello":
+        # FastF1's own correction for a key F1 reused.
+        circuit_key = 146
+    info = fastf1.mvapi.get_circuit_info(year=session.event.year, circuit_key=circuit_key)
+    if info is None:
+        return None
+    try:
+        info.add_marker_distance(reference_lap=session.laps.pick_fastest())
+    except Exception as exc:
+        _logger.warning("Circuit markers kept without distances along the lap: %s", exc)
+    return info
 
 
 def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
