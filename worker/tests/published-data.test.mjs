@@ -24,9 +24,11 @@ function generationKey(generationId, file, version = "v1") {
 
 // An in-memory stand-in for the R2 binding. It behaves like R2 in the three
 // places the Worker depends on: `head` returns metadata only, a `get` whose
-// `onlyIf` fails returns metadata without a body, and a ranged `get` reports
-// the range it returned. Every call is recorded, so a test can show which keys
-// the Worker asked for and that it asked for nothing else.
+// `onlyIf` fails returns metadata without a body, and every `get` reports the
+// range it returned, which for a plain `get` is the whole object. That last
+// one is what production R2 does and what the earlier fakes did not. Every
+// call is recorded, so a test can show which keys the Worker asked for and
+// that it asked for nothing else.
 function fakeBucket() {
   const objects = new Map();
   const calls = [];
@@ -74,7 +76,7 @@ function fakeBucket() {
       const bytes = range ? stored.bytes.subarray(range.offset, range.offset + range.length) : stored.bytes;
       return {
         ...metadata(stored),
-        ...(range ? { range } : {}),
+        range: range || { offset: 0, length: stored.bytes.byteLength },
         body: new Blob([bytes]).stream()
       };
     }

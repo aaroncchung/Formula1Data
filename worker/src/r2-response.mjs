@@ -77,7 +77,11 @@ export function r2ObjectResponse(object, { key, cacheControl, headOnly = false, 
     return new Response(null, { status, headers });
   }
 
-  const range = object.range;
+  // R2 reports the range it returned on every `get`, the whole object included.
+  // Only a request that asked for a range gets a 206: the deployed Worker was
+  // answering a plain GET of catalog.json with "206, bytes 0-1582/1583", which
+  // shared caches do not store the way they store a 200.
+  const range = requestHeaders?.has("range") ? object.range : null;
   if (range && Number.isFinite(range.offset) && Number.isFinite(range.length)) {
     const end = range.offset + range.length - 1;
     headers.set("content-range", `bytes ${range.offset}-${end}/${object.size}`);
