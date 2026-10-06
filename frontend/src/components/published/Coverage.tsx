@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
-import type { Coverage } from "@/lib/published/types";
+import type { PointerCoverage } from "@/lib/published/types";
 
 /**
  * Published and complete are separate states: a session below a coverage bar
@@ -8,7 +8,7 @@ import type { Coverage } from "@/lib/published/types";
  * figures are shown. Both components read the pointer of the pinned
  * generation, not the index, which only repeats the verdict and can lag.
  */
-export function CoverageBadge({ coverage }: { coverage: Coverage }) {
+export function CoverageBadge({ coverage }: { coverage: PointerCoverage }) {
   return coverage.complete ? (
     <span className="inline-flex items-center gap-2 rounded border border-aqua/40 bg-aqua/10 px-3 py-1.5 text-xs font-semibold text-aqua">
       <CheckCircle2 size={14} aria-hidden="true" />
@@ -22,7 +22,7 @@ export function CoverageBadge({ coverage }: { coverage: Coverage }) {
   );
 }
 
-export function CoverageShortfalls({ coverage }: { coverage: Coverage }) {
+export function CoverageShortfalls({ coverage }: { coverage: PointerCoverage }) {
   if (coverage.complete) {
     return null;
   }

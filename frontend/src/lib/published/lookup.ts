@@ -11,7 +11,14 @@
  */
 
 import { isSessionKey } from "./layout.ts";
-import type { IndexMeeting, IndexSession, PublishedIndex, SessionIdentity, UnscheduledSession } from "./types.ts";
+import type {
+  IndexMeeting,
+  IndexSession,
+  PublishedIndex,
+  PublishedIndexSession,
+  SessionIdentity,
+  UnscheduledSession
+} from "./types.ts";
 
 /** A session named by where the calendar puts it. */
 export type SessionRoute = {
@@ -65,6 +72,15 @@ export type SessionHeading = {
    */
   readonly placement: "calendar" | "unscheduled" | "unplaced";
 };
+
+/**
+ * Whether a session of the calendar is published. The index gives a session
+ * its key, and its coverage verdict, only once it is: until then neither
+ * field is there at all.
+ */
+export function isPublished(session: IndexSession): session is PublishedIndexSession {
+  return session.session_key !== undefined;
+}
 
 const YEAR = /^[0-9]{4}$/;
 const ROUND = /^[0-9]{1,2}$/;

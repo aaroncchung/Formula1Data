@@ -476,7 +476,7 @@ test("the telemetry tab opens on the index and the two laps it compares", async 
     session: "2026-08-r",
     lap_number: 3
   });
-  assert.equal(telemetry.comparison.driver_b.team, "Red Bull Racing");
+  assert.equal(telemetry.comparison.driver_b.team, "Red Bull");
   assert.deepEqual(telemetry.comparison.distance_m, [0, 1000, 2000, 3000, 4000]);
   // Russell's lap 3 runs 17,300 ms a kilometre and Verstappen's lap 2 17,200.
   assert.deepEqual(telemetry.comparison.delta_time_ms, [0, -100, -200, -300, -400]);

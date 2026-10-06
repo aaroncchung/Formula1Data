@@ -10,6 +10,7 @@
  * each time, for display and to follow a link that names one.
  */
 
+import { isPublished } from "./published/lookup.ts";
 import type { SessionEntry } from "./published/lookup.ts";
 import type {
   IndexMeeting,
@@ -28,7 +29,7 @@ import type {
 export type SessionAvailability = "complete" | "partial" | "not_published" | "scheduled";
 
 export function sessionAvailability(session: IndexSession, now: number): SessionAvailability {
-  if (session.session_key !== null) {
+  if (isPublished(session)) {
     return session.complete ? "complete" : "partial";
   }
   const start = timeOf(session.start_time_utc);
@@ -67,7 +68,7 @@ export function publishedSessions(index: PublishedIndex): PublishedSession[] {
   for (const season of index.seasons) {
     for (const meeting of season.meetings) {
       for (const session of meeting.sessions) {
-        if (session.session_key !== null) {
+        if (isPublished(session)) {
           add(
             {
               key: session.session_key,
@@ -75,7 +76,7 @@ export function publishedSessions(index: PublishedIndex): PublishedSession[] {
               type: session.type,
               name: session.name,
               startTimeUtc: session.start_time_utc,
-              complete: session.complete === true,
+              complete: session.complete,
               meetingName: meeting.name,
               meeting
             },
@@ -151,7 +152,7 @@ export function seasonOverviews(index: PublishedIndex): SeasonOverview[] {
     .sort((left, right) => right - left)
     .map((year) => {
       const sessions = (findSeason(index, year)?.meetings ?? []).flatMap((meeting) => meeting.sessions);
-      const published = sessions.filter((session) => session.session_key !== null);
+      const published = sessions.filter(isPublished);
       const unscheduled = index.unscheduled.filter((session) => session.year === year);
       return {
         year,
@@ -159,7 +160,7 @@ export function seasonOverviews(index: PublishedIndex): SeasonOverview[] {
         sessionCount: sessions.length,
         publishedCount: published.length + unscheduled.length,
         partialCount:
-          published.filter((session) => session.complete !== true).length +
+          published.filter((session) => !session.complete).length +
           unscheduled.filter((session) => !session.complete).length,
         unscheduledCount: unscheduled.length
       };
@@ -252,7 +253,7 @@ export function venues(index: PublishedIndex): Venue[] {
       ),
       publishedCount: venue.meetings
         .flatMap((item) => item.meeting.sessions)
-        .filter((session) => session.session_key !== null).length
+        .filter(isPublished).length
     }))
     .sort((left, right) => left.place.localeCompare(right.place, "en"));
 }

@@ -168,7 +168,7 @@ test("the most recent published session opens by its key, and a page's reads sta
   assert.equal(field.results[0].driver_code, "RUS");
   assert.deepEqual(await readSessionFigures(load.view), {
     summary: JSON.parse(bucket.stored.get(`${generationPrefix(FIRST_GENERATION)}summary.json`)),
-    idealLaps: null
+    idealLaps: JSON.parse(bucket.stored.get(`${generationPrefix(FIRST_GENERATION)}analysis/ideal-laps.json`))
   });
   for (const key of bucket.keys()) {
     assert.ok(key.startsWith(generationPrefix(FIRST_GENERATION)), key);

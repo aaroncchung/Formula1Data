@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { findMeeting, sessionAvailability } from "@/lib/calendar";
 import type { SessionAvailability } from "@/lib/calendar";
 import { calendarDay, sessionStart } from "@/lib/format";
-import { sessionHref } from "@/lib/published/lookup";
+import { isPublished, sessionHref } from "@/lib/published/lookup";
 import type { IndexMeeting, IndexSession, PublishedIndex } from "@/lib/published/types";
 import { meetingHref, seasonHref } from "@/lib/routes";
 
@@ -57,7 +57,7 @@ function Meeting({ index, year, round }: { index: PublishedIndex; year: number; 
   const place = [meeting.location, meeting.country].filter(Boolean).join(", ");
   const sprint = meeting.format?.startsWith("sprint") ?? false;
   const facts = [calendarDay(meeting.date), place, sprint ? "Sprint weekend" : null].filter(Boolean).join(" · ");
-  const published = meeting.sessions.filter((session) => session.session_key !== null).length;
+  const published = meeting.sessions.filter(isPublished).length;
   return (
     <div>
       <PageHeader
@@ -107,7 +107,7 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
   );
   // Only a published session has a dashboard, and it is reached by its key.
   // The others are shown as what they are and lead nowhere.
-  if (session.session_key === null) {
+  if (!isPublished(session)) {
     return (
       <div className={clsx("h-full rounded-lg border border-line/60 bg-panel/50 p-5", state === "scheduled" && "border-dashed")}>
         {body}

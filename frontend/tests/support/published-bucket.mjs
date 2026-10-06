@@ -15,16 +15,16 @@ import { safePublished } from "../../src/lib/published/errors.ts";
 // Worker is tested against it too (worker/tests/data-worker.test.mjs), so the
 // reader is tested against what is really published and served.
 export const PUBLISHED = JSON.parse(
-  readFileSync(new URL("../../../tests/fixtures/published-v1.json", import.meta.url), "utf8")
+  readFileSync(new URL("../../../tests/fixtures/published-v2.json", import.meta.url), "utf8")
 );
 
 export const BASE_URL = "https://data.example/data";
 export const SESSION_KEY = 11315;
-export const INDEX_KEY = "v1/index.json";
-export const POINTER_KEY = `v1/pointers/${SESSION_KEY}.json`;
+export const INDEX_KEY = "v2/index.json";
+export const POINTER_KEY = `v2/pointers/${SESSION_KEY}.json`;
 export const AUSTRIAN_RACE = { year: 2026, round: 8, sessionType: "R" };
 
-export const generationPrefix = (generation) => `v1/generations/${SESSION_KEY}/${generation}/`;
+export const generationPrefix = (generation) => `v2/generations/${SESSION_KEY}/${generation}/`;
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
 /** Minified, key-sorted JSON with a trailing newline: the publisher's `dump_json`. */

@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import type { SessionAvailability } from "@/lib/calendar";
 import { sessionStart } from "@/lib/format";
-import { sessionHref } from "@/lib/published/lookup";
+import { isPublished, sessionHref } from "@/lib/published/lookup";
 import type { IndexSession } from "@/lib/published/types";
 
 /**
@@ -71,7 +71,7 @@ export function SessionChip({ session, state }: { session: IndexSession; state: 
       <span className="sr-only">{label}</span>
     </>
   );
-  if (session.session_key === null) {
+  if (!isPublished(session)) {
     return (
       <span className={className} title={description}>
         {content}

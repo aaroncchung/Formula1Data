@@ -10,7 +10,7 @@
 // The artifact format: file names, shapes and units. Mirrors FORMAT_VERSION in
 // f1data/layout.py. A new format is published under a new prefix before the
 // frontend that reads it is deployed, so this build never has to read two.
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 // The versions of the two envelopes the reader parses before it reaches any
 // artifact. Mirror POINTER_SCHEMA_VERSION and INDEX_SCHEMA_VERSION in

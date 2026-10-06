@@ -10,7 +10,14 @@
 import type { PublishedClient, SessionView } from "./client.ts";
 import { isPublishedError, safePublished, toPublishedFailure } from "./errors.ts";
 import type { PublishedFailure } from "./errors.ts";
-import { findSession, findSessionByKey, headingOfEntry, headingOfIdentity, headingOfUnscheduled } from "./lookup.ts";
+import {
+  findSession,
+  findSessionByKey,
+  headingOfEntry,
+  headingOfIdentity,
+  headingOfUnscheduled,
+  isPublished
+} from "./lookup.ts";
 import type { SessionAddress, SessionEntry, SessionHeading, SessionLookup, SessionRoute } from "./lookup.ts";
 
 export type SessionLoad =
@@ -61,7 +68,7 @@ export async function loadSession(client: PublishedClient, route: SessionRoute):
   }
   const { entry } = lookup;
   const heading = headingOfEntry(entry);
-  if (entry.session.session_key === null) {
+  if (!isPublished(entry.session)) {
     return { status: "unpublished", entry, heading };
   }
   return open(client, { entry, heading }, entry.session.session_key, false);
