@@ -1,0 +1,440 @@
+"""Publish a built session, and derive the index.
+
+The publication rules of docs/architecture-review-findings.md, section 6, live
+here:
+
+1. A generation is immutable. It is named by the SHA-256 of its manifest, so
+   the same inputs built twice land on the same keys, and a page that pinned a
+   generation keeps reading it after a later publication. Nothing is pruned.
+2. The pointer and the index are written against the version that was read.
+   The loser of a conditional write reads again and decides again from current
+   inputs; it never resends what it built. A pointer written by a newer
+   pipeline version is never replaced.
+3. A session is published when its pointer exists. The index is derived from
+   the pointers and the schedule on every run, and never merged from files.
+7. Everything sits under the format version's prefix.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
+
+from f1data import layout
+from f1data.archive import Snapshot, dump_json
+from f1data.identity import SessionIdentity, format_utc
+from f1data.schedule import ScheduledSession, find_scheduled_session
+from f1data.store import BINARY_CONTENT_TYPE, JSON_CONTENT_TYPE, ObjectStore, PreconditionFailed
+
+POINTER_SCHEMA_VERSION = 1
+INDEX_SCHEMA_VERSION = 1
+MAX_POINTER_BYTES = 64 * 1024
+MAX_ATTEMPTS = 5
+UPLOAD_WORKERS = 16
+
+_logger = logging.getLogger(__name__)
+
+
+class PointerError(RuntimeError):
+    """A pointer exists but cannot be trusted. Never treated as "not published"."""
+
+
+@dataclass(frozen=True)
+class Inputs:
+    """What a build of one session would be made from, as of now."""
+
+    snapshot: Snapshot
+    classification_fingerprint: str | None
+    # Carried to the build; not part of what makes two sets of inputs equal.
+    context: Any = field(default=None, compare=False, repr=False)
+
+    @property
+    def key(self) -> tuple[str, str | None]:
+        return (self.snapshot.snapshot_id, self.classification_fingerprint)
+
+
+@dataclass(frozen=True)
+class Pointer:
+    session_key: int
+    identity: SessionIdentity
+    generation: str
+    manifest_sha256: str
+    manifest_size_bytes: int
+    format_version: int
+    pipeline_version: int
+    snapshot_id: str
+    classification_fingerprint: str | None
+    complete: bool
+    shortfalls: list[dict[str, Any]]
+    published_at: str
+    previous_generation: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "schema_version": POINTER_SCHEMA_VERSION,
+            "format_version": self.format_version,
+            "pipeline_version": self.pipeline_version,
+            "session_key": self.session_key,
+            "identity": self.identity.to_json(),
+            "generation": self.generation,
+            "manifest": {"sha256": self.manifest_sha256, "size_bytes": self.manifest_size_bytes},
+            "snapshot_id": self.snapshot_id,
+            "classification_fingerprint": self.classification_fingerprint,
+            "coverage": {"complete": self.complete, "shortfalls": self.shortfalls},
+            "published_at": self.published_at,
+            "previous_generation": self.previous_generation,
+        }
+
+    @classmethod
+    def from_json(cls, payload: Any, session_key: int) -> "Pointer":
+        try:
+            if payload["schema_version"] != POINTER_SCHEMA_VERSION:
+                raise ValueError(f"unsupported schema {payload['schema_version']!r}")
+            manifest = payload["manifest"]
+            coverage = payload["coverage"]
+            pointer = cls(
+                session_key=int(payload["session_key"]),
+                identity=SessionIdentity.from_json(payload["identity"]),
+                generation=payload["generation"],
+                manifest_sha256=str(manifest["sha256"]),
+                manifest_size_bytes=int(manifest["size_bytes"]),
+                format_version=int(payload["format_version"]),
+                pipeline_version=int(payload["pipeline_version"]),
+                snapshot_id=str(payload["snapshot_id"]),
+                classification_fingerprint=payload.get("classification_fingerprint"),
+                complete=bool(coverage["complete"]),
+                shortfalls=list(coverage.get("shortfalls") or []),
+                published_at=str(payload["published_at"]),
+                previous_generation=payload.get("previous_generation"),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PointerError(f"Pointer for session {session_key} is invalid: {exc}") from exc
+        # The generation is named by its manifest's checksum, so a pointer
+        # whose two halves disagree cannot be followed either way.
+        if (
+            pointer.session_key != int(session_key)
+            or pointer.identity.session_key != pointer.session_key
+            or not layout.is_generation_id(pointer.generation)
+            or pointer.generation != pointer.manifest_sha256
+        ):
+            raise PointerError(f"Pointer for session {session_key} is inconsistent")
+        return pointer
+
+
+@dataclass(frozen=True)
+class Candidate:
+    """A generation that has been uploaded and is waiting for its pointer."""
+
+    inputs_key: tuple[str, str | None]
+    generation: str
+    manifest_size_bytes: int
+    complete: bool
+    shortfalls: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What a publish attempt did. ``action`` is one of:
+
+    ``published``   the pointer now names a new generation
+    ``current``     the published session already matches the inputs
+    ``superseded``  another publisher got there first with what was needed
+    ``newer``       a newer pipeline version published it; left alone
+    ``no_snapshot`` nothing in the archive to build from
+    ``conflict``    lost the pointer write every time; the next run decides again
+    """
+
+    action: str
+    session_key: int
+    reason: str | None = None
+    generation: str | None = None
+
+
+def read_pointer(store: ObjectStore, session_key: int) -> tuple[Pointer | None, str | None]:
+    """The pointer and its ETag. ``(None, None)`` when the session is not published."""
+    found = store.get(layout.pointer_key(session_key))
+    if found is None:
+        return None, None
+    if len(found.data) > MAX_POINTER_BYTES:
+        raise PointerError(f"Pointer for session {session_key} is too large")
+    try:
+        payload = json.loads(found.data)
+    except ValueError as exc:
+        raise PointerError(f"Pointer for session {session_key} is not JSON") from exc
+    return Pointer.from_json(payload, session_key), found.etag
+
+
+def read_published(store: ObjectStore) -> list[Pointer]:
+    """Every published session: one list call, then one read each (rule 3)."""
+    pointers = []
+    for item in store.list(layout.pointers_prefix()):
+        session_key = layout.session_key_from_pointer_key(item.key)
+        if session_key is None:
+            continue
+        pointer, _ = read_pointer(store, session_key)
+        if pointer is not None:
+            pointers.append(pointer)
+    return sorted(pointers, key=lambda pointer: pointer.session_key)
+
+
+def rebuild_reason(pointer: Pointer | None, inputs: Inputs) -> str | None:
+    """Why the session needs building from ``inputs``, or ``None`` when it does not (rule 3)."""
+    if pointer is None:
+        return "not published"
+    if pointer.pipeline_version < layout.PIPELINE_VERSION:
+        return f"pipeline version {pointer.pipeline_version} is older than {layout.PIPELINE_VERSION}"
+    if pointer.classification_fingerprint != inputs.classification_fingerprint:
+        return "the classification changed"
+    if pointer.snapshot_id != inputs.snapshot.snapshot_id:
+        return "a different snapshot is now selected"
+    return None
+
+
+def build_manifest(identity: SessionIdentity, files: dict[str, bytes]) -> bytes:
+    """The manifest of a generation. Its SHA-256 is the generation's name.
+
+    Nothing in it varies between two builds of the same inputs: no timestamp,
+    no host. That is what makes a rebuild land on the same keys.
+    """
+    if layout.MANIFEST_NAME in files:
+        raise ValueError(f"{layout.MANIFEST_NAME} is written by the publisher, not the build")
+    return dump_json(
+        {
+            "schema_version": layout.FORMAT_VERSION,
+            "pipeline_version": layout.PIPELINE_VERSION,
+            "session_key": identity.session_key,
+            "identity": identity.to_json(),
+            "files": [
+                {
+                    "path": path,
+                    "size_bytes": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+                for path, data in sorted(files.items())
+            ],
+        }
+    )
+
+
+def upload_generation(
+    store: ObjectStore, identity: SessionIdentity, files: dict[str, bytes]
+) -> tuple[str, int]:
+    """Upload a generation and return its id and its manifest's size.
+
+    The manifest goes last, so a generation with a manifest is whole. Files
+    already there with the right size are left: the id is a hash of every
+    file's hash, so what sits under it is the same bytes.
+    """
+    for path in files:
+        if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path:
+            raise ValueError(f"Invalid artifact path: {path!r}")
+    manifest = build_manifest(identity, files)
+    generation = hashlib.sha256(manifest).hexdigest()
+    prefix = layout.generation_prefix(identity.session_key, generation)
+    present = {item.key[len(prefix):]: item.size for item in store.list(prefix)}
+    if present.get(layout.MANIFEST_NAME) == len(manifest):
+        return generation, len(manifest)
+
+    pending = [(path, data) for path, data in sorted(files.items()) if present.get(path) != len(data)]
+
+    def upload(item: tuple[str, bytes]) -> None:
+        path, data = item
+        store.put(f"{prefix}{path}", data, content_type=_content_type(path))
+
+    with ThreadPoolExecutor(max_workers=UPLOAD_WORKERS) as pool:
+        # list() so that the first failed upload is raised here.
+        list(pool.map(upload, pending))
+    store.put(f"{prefix}{layout.MANIFEST_NAME}", manifest)
+    return generation, len(manifest)
+
+
+def publish_session(
+    store: ObjectStore,
+    session_key: int,
+    gather: Callable[[int], Inputs | None],
+    build: Callable[[Inputs], tuple[dict[str, bytes], Snapshot | None]],
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    max_attempts: int = MAX_ATTEMPTS,
+) -> Outcome:
+    """Bring one session's publication up to date with the archive.
+
+    ``gather`` selects the snapshot and fetches the classification, as of the
+    moment it is called. ``build`` turns those inputs into the generation's
+    files; it may also return the snapshot re-measured from the archive, whose
+    coverage is then what the pointer records.
+    """
+    candidate: Candidate | None = None
+    for _ in range(max_attempts):
+        # The guarded read comes first, then everything derived (rule 2).
+        pointer, etag = read_pointer(store, session_key)
+        inputs = gather(session_key)
+        if inputs is None:
+            return Outcome("no_snapshot", session_key)
+        if pointer is not None and pointer.pipeline_version > layout.PIPELINE_VERSION:
+            return Outcome(
+                "newer",
+                session_key,
+                reason=f"published by pipeline version {pointer.pipeline_version}",
+                generation=pointer.generation,
+            )
+        reason = rebuild_reason(pointer, inputs)
+        if reason is None:
+            assert pointer is not None
+            action = "superseded" if candidate is not None else "current"
+            return Outcome(action, session_key, generation=pointer.generation)
+
+        # A candidate built before a lost write is published only if it is
+        # what these inputs would build; otherwise it is dropped and rebuilt.
+        if candidate is None or candidate.inputs_key != inputs.key:
+            files, measured = build(inputs)
+            generation, manifest_size = upload_generation(store, inputs.snapshot.identity, files)
+            judged = measured or inputs.snapshot
+            candidate = Candidate(
+                inputs_key=inputs.key,
+                generation=generation,
+                manifest_size_bytes=manifest_size,
+                complete=judged.complete,
+                shortfalls=[shortfall.to_json() for shortfall in judged.shortfalls()],
+            )
+
+        replacement = Pointer(
+            session_key=session_key,
+            identity=inputs.snapshot.identity,
+            generation=candidate.generation,
+            manifest_sha256=candidate.generation,
+            manifest_size_bytes=candidate.manifest_size_bytes,
+            format_version=layout.FORMAT_VERSION,
+            pipeline_version=layout.PIPELINE_VERSION,
+            snapshot_id=inputs.snapshot.snapshot_id,
+            classification_fingerprint=inputs.classification_fingerprint,
+            complete=candidate.complete,
+            shortfalls=candidate.shortfalls,
+            published_at=format_utc(now()),
+            previous_generation=pointer.generation if pointer is not None else None,
+        )
+        try:
+            _conditional_put(store, layout.pointer_key(session_key), dump_json(replacement.to_json()), etag)
+        except PreconditionFailed:
+            _logger.info("Lost the pointer write for session %s; deciding again", session_key)
+            continue
+        return Outcome("published", session_key, reason=reason, generation=candidate.generation)
+    return Outcome("conflict", session_key, reason=f"lost the pointer write {max_attempts} times")
+
+
+def derive_index(
+    pointers: list[Pointer], schedules: dict[int, list[ScheduledSession]]
+) -> dict[str, Any]:
+    """The index: the calendar, with each published session attached to its entry."""
+    placed: dict[tuple[int, int, str], Pointer] = {}
+    unscheduled: list[Pointer] = []
+    for pointer in pointers:
+        entry = find_scheduled_session(schedules.get(pointer.identity.year, []), pointer.identity)
+        if entry is None:
+            unscheduled.append(pointer)
+            continue
+        key = (entry.year, entry.round, entry.session_type)
+        # Two pointers on one calendar entry should not happen. If it does,
+        # keep the one that started closest and show the other, not drop it.
+        other = placed.get(key)
+        if other is None:
+            placed[key] = pointer
+        else:
+            closest, displaced = sorted(
+                (other, pointer),
+                key=lambda item: abs((item.identity.start_time - entry.start_time).total_seconds()),
+            )
+            placed[key] = closest
+            unscheduled.append(displaced)
+
+    seasons = []
+    for year in sorted(schedules):
+        meetings: dict[int, dict[str, Any]] = {}
+        for entry in schedules[year]:
+            meeting = meetings.setdefault(
+                entry.round,
+                {
+                    "round": entry.round,
+                    "name": entry.meeting_name,
+                    "official_name": entry.meeting_official_name,
+                    "country": entry.country,
+                    "location": entry.location,
+                    "date": entry.meeting_date,
+                    "format": entry.meeting_format,
+                    "sessions": [],
+                },
+            )
+            session: dict[str, Any] = {
+                "type": entry.session_type,
+                "name": entry.session_name,
+                "start_time_utc": entry.start_time_utc,
+            }
+            pointer = placed.get((entry.year, entry.round, entry.session_type))
+            if pointer is not None:
+                session["session_key"] = pointer.session_key
+                session["complete"] = pointer.complete
+            meeting["sessions"].append(session)
+        seasons.append({"year": year, "meetings": [meetings[number] for number in sorted(meetings)]})
+
+    return {
+        "schema_version": INDEX_SCHEMA_VERSION,
+        "format_version": layout.FORMAT_VERSION,
+        "seasons": seasons,
+        "unscheduled": [
+            {
+                "session_key": pointer.session_key,
+                "year": pointer.identity.year,
+                "type": pointer.identity.session_type,
+                "name": pointer.identity.session_name,
+                "meeting_name": pointer.identity.meeting_name,
+                "start_time_utc": pointer.identity.start_time_utc,
+                "complete": pointer.complete,
+            }
+            for pointer in sorted(unscheduled, key=lambda item: item.session_key)
+        ],
+    }
+
+
+def publish_index(
+    store: ObjectStore,
+    load_schedule: Callable[[int], list[ScheduledSession]],
+    seasons: list[int] | None = None,
+    max_attempts: int = MAX_ATTEMPTS,
+) -> str:
+    """Rebuild the index from the pointers and the schedule. Returns what happened.
+
+    The index is read before the pointers are listed. Listing first would let
+    another publisher's pointer and index land in between; this write would
+    then succeed and drop that publisher's session with no conflict raised
+    (rule 2). On a conflict the whole sequence starts again from the read.
+    """
+    for _ in range(max_attempts):
+        current = store.get(layout.index_key())
+        pointers = read_published(store)
+        years = sorted({pointer.identity.year for pointer in pointers} | set(seasons or []))
+        payload = dump_json(derive_index(pointers, {year: load_schedule(year) for year in years}))
+        if current is not None and current.data == payload:
+            return "current"
+        try:
+            _conditional_put(store, layout.index_key(), payload, current.etag if current else None)
+        except PreconditionFailed:
+            _logger.info("Lost the index write; deriving it again")
+            continue
+        return "published"
+    return "conflict"
+
+
+def _conditional_put(store: ObjectStore, key: str, data: bytes, etag: str | None) -> None:
+    if etag is None:
+        store.put(key, data, if_absent=True)
+    else:
+        store.put(key, data, if_match=etag)
+
+
+def _content_type(path: str) -> str:
+    return JSON_CONTENT_TYPE if path.endswith(".json") else BINARY_CONTENT_TYPE

@@ -1,0 +1,68 @@
+name: Upload a spooled archive
+
+# A stopgap, to be deleted once the fetch machine has R2 credentials of its own.
+#
+# The fetch stage has to run on a machine F1 answers (AR-13), and that machine
+# cannot write to R2 yet. Until it can, a fetch is archived to a local
+# directory (`python -m f1data fetch --store <dir>`), the directory's archive/
+# folder is packed into spool.tar and attached to a draft release, and this
+# workflow copies it into the bucket with the credentials the repository has.
+# Snapshots are written once under names of their own, so copying is additive
+# and safe to repeat.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Draft release holding spool.tar
+        default: archive-spool-1
+  # workflow_dispatch only works once this file is on the default branch. Until
+  # then a push that touches this file runs it from the rewrite branch.
+  push:
+    branches:
+      - rewrite/data-plane
+    paths:
+      - .github/workflows/upload-archive-spool.yml
+
+permissions:
+  # Draft releases are only visible to a token that can write contents.
+  contents: write
+
+jobs:
+  upload:
+    name: Copy the spool into the bucket
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || 'archive-spool-1' }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: f1data
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download the spool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern spool.tar
+          mkdir spool
+          tar -xf spool.tar -C spool
+          find spool -type f | sort
+
+      - name: Copy to R2
+        run: python -m f1data copy-archive --from spool --to r2 | tee -a "$GITHUB_STEP_SUMMARY"

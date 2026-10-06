@@ -3,14 +3,19 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from f1data import layout
+from f1data.archive import list_snapshots, write_snapshot
+from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
-from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fetch_session
+from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_session
+from f1data.store import JSON_CONTENT_TYPE, ObjectStore
 
 # The feeds whose absence the old loader tolerated or could not see (AR-13, AR-21).
 _RAW_CHECK_FEEDS = (
@@ -41,7 +46,42 @@ def main(argv: list[str] | None = None) -> None:
     probe.add_argument("--report", type=Path, help="Write the full report here as JSON.")
     probe.set_defaults(func=run_probe)
 
+    fetch = subparsers.add_parser(
+        "fetch",
+        help="Fetch one session from F1 and archive it as a new snapshot. Needs a network F1 answers.",
+    )
+    _add_store_argument(fetch)
+    fetch.add_argument("--year", type=int, required=True)
+    fetch.add_argument("--event", required=True, help="Round number or event name.")
+    fetch.add_argument("--session", required=True, help="Session code or name, such as R.")
+    fetch.set_defaults(func=run_fetch)
+
+    build = subparsers.add_parser(
+        "build",
+        help="Build and publish every archived session that needs it, then the index. Never contacts F1.",
+    )
+    _add_store_argument(build)
+    build.add_argument(
+        "--session-key", type=int, action="append", help="Limit to these F1 session keys. Repeatable."
+    )
+    build.add_argument(
+        "--season",
+        type=int,
+        action="append",
+        help="List this season in the index even with nothing published. Repeatable.",
+    )
+    build.set_defaults(func=run_build)
+
+    copy = subparsers.add_parser(
+        "copy-archive",
+        help="Copy archive snapshots from one store to another, such as a local spool to R2.",
+    )
+    copy.add_argument("--from", dest="source", required=True, help="Directory, or r2.")
+    copy.add_argument("--to", dest="destination", required=True, help="Directory, or r2.")
+    copy.set_defaults(func=run_copy_archive)
+
     args = parser.parse_args(argv)
+    load_env_file(Path(".env"))
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(name)-14s %(levelname)-7s %(message)s",
@@ -89,6 +129,105 @@ def run_probe(args: argparse.Namespace) -> int:
     finally:
         if temporary:
             shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def run_fetch(args: argparse.Namespace) -> int:
+    store = _store(args.store)
+    event = int(args.event) if str(args.event).isdigit() else args.event
+    with tempfile.TemporaryDirectory(prefix="f1data-fetch-", ignore_cleanup_errors=True) as scratch:
+        fetched = fetch_session(args.year, event, args.session, Path(scratch) / "cache")
+        snapshot = write_snapshot(store, fetched)
+    identity = snapshot.identity
+    print(
+        f"Archived session {identity.session_key} ({identity.meeting_name} {identity.session_name}, "
+        f"{identity.start_time_utc}) as snapshot {snapshot.snapshot_id}"
+    )
+    shortfalls = snapshot.shortfalls()
+    if not shortfalls:
+        print("  complete: every feed arrived and every coverage bar is met")
+    else:
+        print(f"  incomplete: {len(shortfalls)} shortfall(s); a later fetch will try again")
+        for shortfall in shortfalls:
+            print(f"    {shortfall.bar} {shortfall.driver or 'session'}: {shortfall.detail}")
+    return 0
+
+
+def run_build(args: argparse.Namespace) -> int:
+    # Imported here so that fetching does not need the old normaliser on the path.
+    from f1data.build import Builder
+    from f1data.publish import publish_index, publish_session
+
+    store = _store(args.store)
+    session_keys = args.session_key or sorted({snapshot.session_key for snapshot in list_snapshots(store)})
+    failed = 0
+    with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
+        with fastf1_cache(Path(scratch)) as fastf1:
+            builder = Builder(store, fastf1)
+            for session_key in session_keys:
+                try:
+                    outcome = publish_session(store, session_key, builder.gather, builder.build)
+                except Exception as exc:
+                    # One session failing must not stop the others, or the index.
+                    failed += 1
+                    logging.getLogger(__name__).exception("Session %s failed", session_key)
+                    print(f"session {session_key}: FAILED: {type(exc).__name__}: {exc}")
+                    continue
+                detail = f" ({outcome.reason})" if outcome.reason else ""
+                generation = f", generation {outcome.generation[:12]}" if outcome.generation else ""
+                print(f"session {session_key}: {outcome.action}{detail}{generation}")
+                if outcome.action == "conflict":
+                    failed += 1
+            index = publish_index(store, builder.schedule, seasons=args.season)
+            print(f"index ({layout.index_key()}): {index}")
+            if index == "conflict":
+                failed += 1
+    return 1 if failed else 0
+
+
+def run_copy_archive(args: argparse.Namespace) -> int:
+    source, destination = _store(args.source), _store(args.destination)
+    items = sorted(source.list(layout.ARCHIVE_PREFIX), key=lambda item: item.key)
+    # The marker goes last, as it did when the snapshot was first written: a
+    # snapshot is only visible once all of it is there.
+    ordered = [item for item in items if not _is_marker(item.key)]
+    ordered += [item for item in items if _is_marker(item.key)]
+    copied = skipped = 0
+    with tempfile.TemporaryDirectory(prefix="f1data-copy-") as scratch:
+        for item in ordered:
+            existing = destination.head(item.key)
+            if existing is not None and existing.size == item.size:
+                skipped += 1
+                continue
+            local = Path(scratch) / "object"
+            if not source.download_file(item.key, local):
+                raise SystemExit(f"{item.key} disappeared from the source while copying")
+            content_type = JSON_CONTENT_TYPE if item.key.endswith(".json") else "application/gzip"
+            destination.put_file(item.key, local, content_type=content_type)
+            copied += 1
+            print(f"copied {item.key} ({item.size} bytes)")
+    print(f"Copied {copied} object(s); {skipped} already there.")
+    return 0
+
+
+def _is_marker(key: str) -> bool:
+    return key.endswith(f"/{layout.SNAPSHOT_MARKER}")
+
+
+def _add_store_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--store",
+        default=os.environ.get("F1DATA_STORE"),
+        help="Where the archive and published data live: a directory, or r2. Defaults to F1DATA_STORE.",
+    )
+
+
+def _store(spec: str | None) -> ObjectStore:
+    if not spec:
+        raise SystemExit("Say which store to use with --store (a directory, or r2) or F1DATA_STORE.")
+    try:
+        return open_store(spec)
+    except ConfigError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _raw_check(archive_path: str) -> dict[str, dict[str, Any]]:

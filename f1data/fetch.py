@@ -55,22 +55,32 @@ class FetchedSession:
 
 @contextmanager
 def fastf1_cache(cache_dir: Path) -> Iterator[Any]:
-    """Point FastF1's process-wide cache at ``cache_dir`` and release it after.
+    """Point FastF1's process-wide cache at ``cache_dir``, and put it back after.
 
     FastF1 keeps its HTTP cache open in SQLite. Until that is closed the
-    directory cannot be archived reliably, or removed at all on Windows.
+    directory cannot be archived reliably, or removed at all on Windows. The
+    cache that was active before is restored, so a build of one session can
+    run inside a command that keeps a cache of its own for the schedule.
     """
     import fastf1
 
+    previous = fastf1.Cache._CACHE_DIR if fastf1.Cache._requests_session_cached is not None else None
+    _close_http_cache(fastf1)
     cache_dir.mkdir(parents=True, exist_ok=True)
     fastf1.Cache.enable_cache(str(cache_dir))
     try:
         yield fastf1
     finally:
-        cached = fastf1.Cache._requests_session_cached
-        if cached is not None:
-            cached.close()
-            fastf1.Cache._requests_session_cached = None
+        _close_http_cache(fastf1)
+        if previous and Path(previous).is_dir():
+            fastf1.Cache.enable_cache(previous)
+
+
+def _close_http_cache(fastf1: Any) -> None:
+    cached = fastf1.Cache._requests_session_cached
+    if cached is not None:
+        cached.close()
+        fastf1.Cache._requests_session_cached = None
 
 
 def fetch_session(

@@ -1,0 +1,208 @@
+"""The source archive: each fetch of a session, kept as it arrived.
+
+A fetch is stored as a snapshot under a name of its own and never overwritten
+(docs/architecture-review-findings.md, section 6, rules 4 and 6):
+
+    archive/sessions/<session_key>/<snapshot_id>/fastf1-cache.tar.gz    parsed feeds
+    archive/sessions/<session_key>/<snapshot_id>/http-cache.sqlite.gz   raw responses
+    archive/sessions/<session_key>/<snapshot_id>/snapshot.json          written last
+
+``snapshot.json`` is the marker: a snapshot without one did not finish
+uploading and is ignored. The parsed feeds are what a build reads. The raw
+responses are kept because FastF1 discards parsed feeds written under another
+cache version (AR-11), and F1 may not answer a second time.
+"""
+
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+import secrets
+import shutil
+import tarfile
+import tempfile
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from f1data import layout
+from f1data.coverage import Shortfall, evaluate_coverage, weakest_share
+from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
+from f1data.identity import SessionIdentity, format_utc
+from f1data.store import ObjectStore
+
+SNAPSHOT_SCHEMA_VERSION = 1
+PARSED_ARCHIVE = "fastf1-cache.tar.gz"
+HTTP_ARCHIVE = "http-cache.sqlite.gz"
+
+
+class ArchiveError(RuntimeError):
+    """A snapshot is missing a part, or a part does not match its checksum."""
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    snapshot_id: str
+    identity: SessionIdentity
+    fetched_at: str
+    coverage: dict[str, Any]
+    versions: dict[str, Any] = field(default_factory=dict)
+    objects: dict[str, dict[str, Any]] = field(default_factory=dict)
+    attempts: int = 1
+    requests_by_host: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    @property
+    def session_key(self) -> int:
+        return self.identity.session_key
+
+    def shortfalls(self) -> list[Shortfall]:
+        # Judged with the bars in this code, not the ones at fetch time, so a
+        # bar can change without a re-fetch.
+        return evaluate_coverage(self.coverage)
+
+    @property
+    def complete(self) -> bool:
+        return not self.shortfalls()
+
+    def rank(self) -> tuple[bool, int, float, str]:
+        """Higher is better. The order in which build picks a snapshot (rule 6).
+
+        A snapshot that meets every bar beats one that does not. Among those
+        that fall short, fewer shortfalls wins, then the higher weakest share.
+        Only then does the later fetch win, so a retry that does worse changes
+        nothing.
+        """
+        return (self.complete, -len(self.shortfalls()), weakest_share(self.coverage), self.fetched_at)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "schema_version": SNAPSHOT_SCHEMA_VERSION,
+            "snapshot_id": self.snapshot_id,
+            "session_key": self.session_key,
+            "identity": self.identity.to_json(),
+            "fetched_at": self.fetched_at,
+            "versions": self.versions,
+            "attempts": self.attempts,
+            "requests_by_host": self.requests_by_host,
+            "objects": self.objects,
+            "coverage": self.coverage,
+        }
+
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> "Snapshot":
+        if payload.get("schema_version") != SNAPSHOT_SCHEMA_VERSION:
+            raise ArchiveError(f"Unsupported snapshot schema: {payload.get('schema_version')!r}")
+        return cls(
+            snapshot_id=str(payload["snapshot_id"]),
+            identity=SessionIdentity.from_json(payload["identity"]),
+            fetched_at=str(payload["fetched_at"]),
+            coverage=dict(payload["coverage"]),
+            versions=dict(payload.get("versions") or {}),
+            objects=dict(payload.get("objects") or {}),
+            attempts=int(payload.get("attempts") or 1),
+            requests_by_host=dict(payload.get("requests_by_host") or {}),
+        )
+
+
+def new_snapshot_id(now: datetime | None = None) -> str:
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return f"{now.strftime('%Y%m%dT%H%M%SZ')}-{secrets.token_hex(4)}"
+
+
+def write_snapshot(store: ObjectStore, fetched: FetchedSession, now: datetime | None = None) -> Snapshot:
+    """Archive a fetched session. Call after the fetch has released its cache."""
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    snapshot_id = new_snapshot_id(now)
+    prefix = layout.snapshot_prefix(fetched.identity.session_key, snapshot_id)
+    session_dir = fetched.cache_dir / fetched.identity.archive_path
+    if not session_dir.is_dir() or not any(session_dir.glob("*.ff1pkl")):
+        raise ArchiveError(f"No parsed feeds to archive under {session_dir}")
+
+    objects: dict[str, dict[str, Any]] = {}
+    with tempfile.TemporaryDirectory(prefix="f1data-snapshot-") as scratch:
+        parsed = Path(scratch) / PARSED_ARCHIVE
+        with tarfile.open(parsed, "w:gz", compresslevel=6) as archive:
+            for path in sorted(session_dir.glob("*.ff1pkl")):
+                archive.add(path, arcname=f"{fetched.identity.archive_path}{path.name}")
+        objects[PARSED_ARCHIVE] = _describe(parsed)
+        store.put_file(f"{prefix}{PARSED_ARCHIVE}", parsed, content_type="application/gzip")
+
+        http_cache = fetched.cache_dir / HTTP_CACHE_FILE
+        if http_cache.is_file():
+            compressed = Path(scratch) / HTTP_ARCHIVE
+            with http_cache.open("rb") as source, gzip.open(compressed, "wb", compresslevel=6) as sink:
+                shutil.copyfileobj(source, sink, length=1024 * 1024)
+            objects[HTTP_ARCHIVE] = _describe(compressed)
+            store.put_file(f"{prefix}{HTTP_ARCHIVE}", compressed, content_type="application/gzip")
+
+    snapshot = Snapshot(
+        snapshot_id=snapshot_id,
+        identity=fetched.identity,
+        fetched_at=format_utc(now),
+        coverage=fetched.coverage,
+        versions=fetched.versions,
+        objects=objects,
+        attempts=fetched.attempts,
+        requests_by_host=fetched.http.summary(),
+    )
+    store.put(f"{prefix}{layout.SNAPSHOT_MARKER}", dump_json(snapshot.to_json()), if_absent=True)
+    return snapshot
+
+
+def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[Snapshot]:
+    """Every finished snapshot, for one session or for all of them."""
+    prefix = (
+        layout.session_archive_prefix(session_key)
+        if session_key is not None
+        else f"{layout.ARCHIVE_PREFIX}sessions/"
+    )
+    snapshots = []
+    for item in store.list(prefix):
+        if not item.key.endswith(f"/{layout.SNAPSHOT_MARKER}"):
+            continue
+        found = store.get(item.key)
+        if found is None:
+            continue
+        snapshots.append(Snapshot.from_json(json.loads(found.data)))
+    return snapshots
+
+
+def select_snapshot(snapshots: list[Snapshot]) -> Snapshot | None:
+    """The snapshot a build should use, or ``None`` when there is none."""
+    return max(snapshots, key=Snapshot.rank, default=None)
+
+
+def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:
+    """Unpack a snapshot's parsed feeds into ``cache_dir`` as a FastF1 cache."""
+    described = snapshot.objects.get(PARSED_ARCHIVE)
+    if not described:
+        raise ArchiveError(f"Snapshot {snapshot.snapshot_id} lists no parsed feeds")
+    key = f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{PARSED_ARCHIVE}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="f1data-restore-") as scratch:
+        archive_path = Path(scratch) / PARSED_ARCHIVE
+        if not store.download_file(key, archive_path):
+            raise ArchiveError(f"Snapshot {snapshot.snapshot_id} is missing {PARSED_ARCHIVE}")
+        actual = _describe(archive_path)
+        if actual != {"size_bytes": described.get("size_bytes"), "sha256": described.get("sha256")}:
+            raise ArchiveError(
+                f"{key} does not match its snapshot: expected {described}, found {actual}"
+            )
+        with tarfile.open(archive_path, "r:gz") as archive:
+            archive.extractall(cache_dir, filter="data")
+    return cache_dir
+
+
+def dump_json(payload: Any) -> bytes:
+    """Minified, key-sorted JSON with a trailing newline, the same on every platform."""
+    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _describe(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return {"size_bytes": path.stat().st_size, "sha256": digest.hexdigest()}

@@ -1,0 +1,72 @@
+name: Deploy the data Worker
+
+# The read-only Worker that serves published data from R2 (worker/src/data.mjs,
+# wrangler.data.jsonc). It is a separate Worker from the old one in
+# wrangler.jsonc, which this does not touch.
+on:
+  workflow_dispatch:
+  # workflow_dispatch only works once this file is on the default branch. Until
+  # then a push that touches the Worker deploys it from the rewrite branch.
+  push:
+    branches:
+      - rewrite/data-plane
+    paths:
+      - .github/workflows/deploy-data-worker.yml
+      - wrangler.data.jsonc
+      - worker/src/data.mjs
+      - worker/src/published-data.mjs
+      - worker/src/r2-response.mjs
+      - worker/src/session-utils.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-data-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            worker
+            tests/fixtures
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Test what is about to be deployed
+        run: node --test worker/tests/data-worker.test.mjs worker/tests/published-data.test.mjs
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.147.0 deploy --config wrangler.data.jsonc | tee deploy-output.txt
+
+      # The deploy prints the workers.dev URL it published to. Ask that URL,
+      # not a hard-coded one, so this step fails if the Worker is not there.
+      - name: Check the deployed Worker answers
+        run: |
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy-output.txt | head -n 1)
+          if [ -z "$url" ]; then
+            echo "The deploy did not report a workers.dev URL." >&2
+            exit 1
+          fi
+          echo "Deployed to $url" | tee -a "$GITHUB_STEP_SUMMARY"
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --max-time 20 "$url/health"; then
+              echo
+              exit 0
+            fi
+            sleep 10
+          done
+          exit 1

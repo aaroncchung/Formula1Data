@@ -39,11 +39,23 @@ class HttpRecord:
         return self.status is None or self.status >= 400
 
 
-class HttpRecorder:
-    """Context manager that records requests made through ``requests``."""
+class ForbiddenHostError(RuntimeError):
+    """A request was about to go to a host this stage must not contact."""
 
-    def __init__(self) -> None:
+
+class HttpRecorder:
+    """Context manager that records requests made through ``requests``.
+
+    ``forbid_hosts`` turns it into a guard as well: a request to one of those
+    hosts is refused before it is sent and kept in ``forbidden``. FastF1
+    swallows the exception and carries on with an empty feed, so the caller has
+    to check ``forbidden`` afterwards.
+    """
+
+    def __init__(self, forbid_hosts: frozenset[str] = frozenset()) -> None:
         self.records: list[HttpRecord] = []
+        self.forbidden: list[str] = []
+        self._forbid_hosts = forbid_hosts
         self._original_send: Any = None
 
     def __enter__(self) -> "HttpRecorder":
@@ -53,6 +65,10 @@ class HttpRecorder:
         recorder = self
 
         def send(session: requests.Session, request: requests.PreparedRequest, **kwargs: Any):
+            host = urlsplit(request.url or "").netloc
+            if host in recorder._forbid_hosts:
+                recorder.forbidden.append(request.url or host)
+                raise ForbiddenHostError(f"This stage must not contact {host}")
             started = time.perf_counter()
             try:
                 response = original(session, request, **kwargs)
