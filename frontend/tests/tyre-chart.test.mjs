@@ -5,10 +5,15 @@ import { describeTyreAgePlot, isTyreAgePoint, tyreAgePlot, tyreFitsFor } from ".
 
 function lap(driver, number, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     driver_code: driver,
     lap_number: number,
     lap_time_ms: 72000 + number,
+    sector_1_ms: null,
+    sector_2_ms: null,
+    sector_3_ms: null,
+    stint: 1,
+    position: null,
+    track_status: "1",
     compound: "MEDIUM",
     tyre_age: number,
     is_pit_in_lap: false,
@@ -78,7 +83,7 @@ test("laps without a lap time or a tyre age are left out and counted", () => {
   const plot = tyreAgePlot([
     lap("RUS", 1, { lap_time_ms: null }),
     lap("RUS", 2, { tyre_age: null }),
-    lap("RUS", 3, { tyre_age: undefined }),
+    lap("RUS", 3, { lap_time_ms: null, tyre_age: null }),
     lap("RUS", 4, { lap_time_ms: 0 }),
     lap("RUS", 5)
   ]);

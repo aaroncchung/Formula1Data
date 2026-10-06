@@ -1,4 +1,5 @@
-import type { Lap, TyreDegradationRow } from "@/types/domain";
+import type { TyreDegradationRow } from "@/types/domain";
+import type { Lap } from "./published/types.ts";
 
 /**
  * The data behind the tyre degradation chart: lap time against tyre age for

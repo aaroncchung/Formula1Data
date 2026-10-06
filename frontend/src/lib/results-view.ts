@@ -12,7 +12,7 @@
  * shown beside the laps down and never in place of them.
  */
 
-import { formatDuration, formatElapsed } from "./pandas-time.ts";
+import { formatDuration, formatElapsed } from "./durations.ts";
 import type { Result } from "./published/types.ts";
 
 /** A cell: what it prints, and anything more that is true of it, for a tooltip. */

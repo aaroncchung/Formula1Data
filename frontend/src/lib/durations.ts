@@ -1,47 +1,16 @@
 /**
- * Times as pandas prints them, which is how the published artifacts still
- * carry them (AR-05): a pit stop's `local_time`, a weather sample's
- * `timestamp` and a result's `gap` are `str(Timedelta)`, such as
- * `0 days 01:22:52.191000`, and a race-control message's `timestamp` is
- * `str(Timestamp)`, such as `2026-06-28 12:20:00`.
+ * How a number of milliseconds is written on a page.
  *
- * The data is not fixed here. These functions read the strings so that a page
- * shows a time and not the string.
+ * Every time in the published format is a number of milliseconds: a length
+ * of time, or a reading of the session clock, which is milliseconds after
+ * `clock_zero_utc` in the session's summary. Format 1 carried them as text
+ * the way pandas prints a duration, and this module used to parse that; now
+ * it only formats.
  */
-
-// `-1 days +23:59:58.500000` is how pandas writes minus one and a half
-// seconds: the day count carries the sign and the clock part is positive.
-const PANDAS_DURATION = /^(-?\d+) days?,? \+?(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?$/;
-const CLOCK_DURATION = /^(\d{1,3}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?$/;
-const PANDAS_TIMESTAMP = /^\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2}:\d{2})/;
 
 const MS_PER_SECOND = 1000;
 const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
-const MS_PER_DAY = 24 * MS_PER_HOUR;
-
-/**
- * A pandas duration in whole milliseconds, or null when the text is not one.
- * `NaT`, an empty string and anything else unreadable are all null: the
- * caller shows "no time", never a guess.
- */
-export function parsePandasDuration(text: string | null | undefined): number | null {
-  if (typeof text !== "string") {
-    return null;
-  }
-  const trimmed = text.trim();
-  const withDays = PANDAS_DURATION.exec(trimmed);
-  if (withDays) {
-    return Number(withDays[1]) * MS_PER_DAY + clockMs(withDays[2], withDays[3], withDays[4], withDays[5]);
-  }
-  const clockOnly = CLOCK_DURATION.exec(trimmed);
-  return clockOnly ? clockMs(clockOnly[1], clockOnly[2], clockOnly[3], clockOnly[4]) : null;
-}
-
-function clockMs(hours: string, minutes: string, seconds: string, fraction: string | undefined): number {
-  const fractionMs = fraction ? Math.round(Number(`0.${fraction}`) * MS_PER_SECOND) : 0;
-  return Number(hours) * MS_PER_HOUR + Number(minutes) * MS_PER_MINUTE + Number(seconds) * MS_PER_SECOND + fractionMs;
-}
 
 /**
  * A reading of the session clock as `1:22:52`. The clock starts with F1's
@@ -95,19 +64,6 @@ export function formatDuration(ms: number | null | undefined): string {
 export function formatElapsed(ms: number | null | undefined): string {
   const text = formatDuration(ms);
   return text === "--" || text.includes(":") ? text : `${text}s`;
-}
-
-/**
- * The time of day in a pandas timestamp, `12:20:00`, or null when the text is
- * not one. F1's feed is in UTC and the string carries no zone, so the caller
- * names the zone.
- */
-export function clockTimeOfTimestamp(text: string | null | undefined): string | null {
-  if (typeof text !== "string") {
-    return null;
-  }
-  const match = PANDAS_TIMESTAMP.exec(text.trim());
-  return match ? match[1] : null;
 }
 
 function pad(value: number): string {

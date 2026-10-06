@@ -4,7 +4,7 @@ import type { ChartSeries, TelemetryComparison } from "@/types/domain";
 export const CHART_TOOLTIP_STYLE = { background: "#111722", border: "1px solid #283246", color: "#e5edf8" };
 
 /** Rows grouped by driver, in the order each driver first appears. */
-export function groupByDriver<T extends { driver_code: string }>(rows: T[]): Array<[string, T[]]> {
+export function groupByDriver<T extends { driver_code: string }>(rows: ReadonlyArray<T>): Array<[string, T[]]> {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
     const group = groups.get(row.driver_code);

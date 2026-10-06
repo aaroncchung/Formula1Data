@@ -16,24 +16,29 @@ import type {
   ChartSeries,
   CornerAnalysisResult,
   IdealLapsResult,
-  Lap,
   PacePredictionResult,
-  PitStop,
   PositionReplayFrame,
-  RaceControlMessage,
   RacePaceResult,
-  Stint,
-  StrategyResult,
   TeammateComparisonResult,
   TrackDominanceResult,
-  TyreDegradationResult,
-  WeatherSample
+  TyreDegradationResult
 } from "../../types/domain";
 import type { TelemetryIndex } from "../static-api-core.ts";
 import type { SessionView } from "./client.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { SessionTabId } from "./tabs.ts";
-import type { Driver, GenerationFiles, Result, SessionSummary } from "./types.ts";
+import type {
+  Driver,
+  GenerationFiles,
+  Lap,
+  PitStop,
+  RaceControlMessage,
+  Result,
+  SessionSummary,
+  Stint,
+  Strategy,
+  WeatherSample
+} from "./types.ts";
 
 /** One file of a generation: where it is, and how it is read as what it is. */
 export type ArtifactFile<T> = {
@@ -54,20 +59,20 @@ export const ARTIFACTS = {
   summary: recordOf("summary.json"),
   drivers: listOf("drivers.json"),
   results: listOf("results.json"),
+  laps: listOf("laps.json"),
+  stints: listOf("stints.json"),
+  pitStops: listOf("pit-stops.json"),
+  weather: listOf("weather.json"),
+  raceControl: listOf("race-control.json"),
+  strategy: recordOf("analysis/strategy.json", ["undercut_overcut", "caveats"]),
   // Still read on their format-1 shapes; each moves to its schema type with
   // the pages that show it.
-  laps: formerListOf<Lap>("laps.json"),
-  stints: formerListOf<Stint>("stints.json"),
-  pitStops: formerListOf<PitStop>("pit-stops.json"),
-  weather: formerListOf<WeatherSample>("weather.json"),
-  raceControl: formerListOf<RaceControlMessage>("race-control.json"),
   positionReplay: formerListOf<PositionReplayFrame>("position-replay.json"),
   lapTimes: formerListOf<ChartSeries>("analysis/lap-times.json"),
   racePace: formerRecordOf<RacePaceResult>("analysis/race-pace.json", ["drivers"]),
   tyreDegradation: formerRecordOf<TyreDegradationResult>("analysis/tyre-degradation.json", ["rows"]),
   idealLaps: formerRecordOf<IdealLapsResult>("analysis/ideal-laps.json", ["rows"]),
   teammateComparison: formerRecordOf<TeammateComparisonResult>("analysis/team-mate-comparison.json", ["rows"]),
-  strategy: formerRecordOf<StrategyResult>("analysis/strategy.json"),
   trackDominance: formerRecordOf<TrackDominanceResult>("analysis/track-dominance.json", ["minisectors"]),
   cornerAnalysis: formerRecordOf<CornerAnalysisResult>("analysis/corner-analysis.json", ["corners"]),
   carPerformance: formerRecordOf<CarPerformanceResult>("analysis/car-performance.json", ["drivers"]),
@@ -136,10 +141,10 @@ export function tabAvailability(view: Pick<SessionView, "has">, tab: SessionTabI
 export type SessionOverview = {
   readonly summary: SessionSummary;
   readonly drivers: ReadonlyArray<Driver>;
-  readonly laps: Lap[];
+  readonly laps: ReadonlyArray<Lap>;
   readonly racePace: RacePaceResult;
-  readonly stints: Stint[];
-  readonly pitStops: PitStop[];
+  readonly stints: ReadonlyArray<Stint>;
+  readonly pitStops: ReadonlyArray<PitStop>;
 };
 
 export async function readOverview(view: SessionView): Promise<SessionOverview> {
@@ -174,7 +179,7 @@ export async function readLapTimes(view: SessionView): Promise<SessionLapTimes> 
 export type SessionRacePace = {
   readonly racePace: RacePaceResult;
   readonly tyreDegradation: TyreDegradationResult;
-  readonly laps: Lap[];
+  readonly laps: ReadonlyArray<Lap>;
   readonly drivers: ReadonlyArray<Driver>;
 };
 
@@ -217,9 +222,9 @@ export async function readPerformance(view: SessionView): Promise<SessionPerform
 
 /** `strategy` is null when the generation does not hold the analysis. */
 export type SessionStrategy = {
-  readonly stints: Stint[];
-  readonly pitStops: PitStop[];
-  readonly strategy: StrategyResult | null;
+  readonly stints: ReadonlyArray<Stint>;
+  readonly pitStops: ReadonlyArray<PitStop>;
+  readonly strategy: Strategy | null;
 };
 
 export async function readStrategy(view: SessionView): Promise<SessionStrategy> {
@@ -244,11 +249,11 @@ export async function readPositionReplay(view: SessionView): Promise<SessionRepl
   return { frames, drivers };
 }
 
-export function readWeather(view: SessionView): Promise<WeatherSample[]> {
+export function readWeather(view: SessionView): Promise<ReadonlyArray<WeatherSample>> {
   return A.weather.read(view);
 }
 
-export function readRaceControl(view: SessionView): Promise<RaceControlMessage[]> {
+export function readRaceControl(view: SessionView): Promise<ReadonlyArray<RaceControlMessage>> {
   return A.raceControl.read(view);
 }
 

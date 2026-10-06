@@ -4,18 +4,18 @@ import { useMemo } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
-import { formatSessionClock, formatSessionClockMinutes } from "@/lib/pandas-time";
-import { describeWeatherPlot, sessionClockTicks, weatherPlot } from "@/lib/weather-chart";
-import type { WeatherSample } from "@/types/domain";
+import { formatSessionClock, formatSessionClockMinutes } from "@/lib/durations";
+import type { WeatherSample } from "@/lib/published/types";
+import { describeWeatherPlot, lapAt, sessionClockTicks, weatherPlot } from "@/lib/weather-chart";
 
 const AIR = "#2de0c8";
 const TRACK = "#f33d3d";
 
 /**
  * Air and track temperature through the session, against the session clock.
- * The samples carry no lap number, so there is no lap axis to draw.
+ * In a race a sample also says which lap the leader was on, shown on hover.
  */
-export function WeatherTimeline({ samples }: { samples: WeatherSample[] }) {
+export function WeatherTimeline({ samples }: { samples: ReadonlyArray<WeatherSample> }) {
   const plot = useMemo(() => weatherPlot(samples), [samples]);
   const ticks = useMemo(() => {
     const first = plot.points[0];
@@ -44,10 +44,13 @@ export function WeatherTimeline({ samples }: { samples: WeatherSample[] }) {
             <YAxis stroke="#94a3b8" domain={["auto", "auto"]} tickFormatter={(value) => `${value}°C`} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
-              labelFormatter={(value) => `Session clock ${formatSessionClock(Number(value))}`}
+              labelFormatter={(value) => {
+                const lap = lapAt(plot, Number(value));
+                return `Session clock ${formatSessionClock(Number(value))}${lap === null ? "" : ` · lap ${lap}`}`;
+              }}
               formatter={(value) => `${value}°C`}
             />
-            {/* Straight lines between marked samples: a sample is taken every few minutes, and a curve would draw readings nobody took. */}
+            {/* Straight lines between marked samples: a sample is taken about once a minute, and a curve would draw readings nobody took. */}
             <Line type="linear" dataKey="air_temp_c" name="Air" stroke={AIR} strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
             <Line type="linear" dataKey="track_temp_c" name="Track" stroke={TRACK} strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
           </LineChart>

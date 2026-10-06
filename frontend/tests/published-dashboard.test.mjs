@@ -35,13 +35,16 @@ import {
 
 function lap(driver, number, time, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     driver_code: driver,
     lap_number: number,
     lap_time_ms: time,
+    sector_1_ms: null,
+    sector_2_ms: null,
+    sector_3_ms: null,
     compound: "MEDIUM",
     tyre_age: number,
     stint: 1,
+    position: null,
     is_pit_in_lap: false,
     is_pit_out_lap: false,
     is_deleted: false,
@@ -95,17 +98,43 @@ const TELEMETRY_LAPS = LAPS.map((row) => ({
  */
 const SESSION_FILES = {
   "laps.json": LAPS,
-  "stints.json": [{ session_id: "2026-08-r", driver_code: "RUS", stint: 1, compound: "MEDIUM", start_lap: 1, end_lap: 3, lap_count: 3 }],
-  "pit-stops.json": [{ session_id: "2026-08-r", driver_code: "RUS", lap_number: 3, duration_ms: 21552, local_time: "0 days 01:22:52.191000" }],
-  "weather.json": [{ session_id: "2026-08-r", lap_number: null, timestamp: "0 days 00:00:38.376000", air_temp_c: 33.6, track_temp_c: 53.2, rainfall: false }],
-  "race-control.json": [{ session_id: "2026-08-r", lap_number: 1, timestamp: "2026-06-28 12:20:00", category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN" }],
+  "stints.json": [{ driver_code: "RUS", stint: 1, compound: "MEDIUM", start_lap: 1, end_lap: 3, lap_count: 3 }],
+  "pit-stops.json": [
+    {
+      driver_code: "RUS",
+      lap_number: 3,
+      entry_time_ms: 4_972_191,
+      duration_ms: 21552,
+      stationary_ms: 2400,
+      pit_lane_ms: 21480,
+      sources: { duration_ms: "timing", stationary_ms: "pit_stop_series", pit_lane_ms: "pit_stop_series" }
+    }
+  ],
+  "weather.json": [{ time_ms: 38_376, lap_number: null, air_temp_c: 33.6, track_temp_c: 53.2, humidity_pct: 30.3, wind_speed_kph: 1.0, rainfall: false }],
+  "race-control.json": [{ time_ms: 3_300_000, lap_number: 1, category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN", scope: "Track" }],
   "position-replay.json": [{ session_id: "2026-08-r", frame_index: 0, lap_number: 1, timestamp_ms: 3_425_000, positions: [{ driver_code: "RUS", x: 1, y: 2 }] }],
   "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2", metadata: {} }],
   "analysis/race-pace.json": { session_id: "2026-08-r", drivers: [{ driver_code: "RUS", median_lap_ms: 70_300, lap_count: 2 }], stints: [], caveats: [] },
   "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: [], caveats: [] },
   "analysis/ideal-laps.json": { session_id: "2026-08-r", rows: [] },
   "analysis/team-mate-comparison.json": { session_id: "2026-08-r", rows: [], caveats: [] },
-  "analysis/strategy.json": { session_id: "2026-08-r", stints: [], compound_usage: { MEDIUM: 1 }, pit_stops: [], undercut_overcut: [], race_control_overlays: [], caveats: [] },
+  "analysis/strategy.json": {
+    compound_usage: { MEDIUM: 1 },
+    pit_lane_time: { median_ms: 21552, fastest_ms: 21552, slowest_ms: 21552, timed_stop_count: 1, stop_count: 1 },
+    pit_loss: {
+      estimate_ms: null,
+      spread_ms: null,
+      qualifying_stop_count: 0,
+      stop_count: 1,
+      minimum_stop_count: 3,
+      baseline_window_laps: 5,
+      excluded_stop_counts: { too_few_baseline_laps: 1 },
+      stops: []
+    },
+    pit_loss_estimate_ms: null,
+    undercut_overcut: [],
+    caveats: []
+  },
   "analysis/track-dominance.json": { session_id: "2026-08-r", representative_laps: [], minisector_count: 0, minisectors: [], caveats: [] },
   "analysis/corner-analysis.json": { session_id: "2026-08-r", representative_laps: [], corners: [], caveats: [] },
   "analysis/car-performance.json": { session_id: "2026-08-r", drivers: [], teams: [], caveats: [] },
@@ -330,6 +359,7 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
   const wrong = {
     "weather.json": { error: "no weather" },
     "summary.json": [],
+    "analysis/strategy.json": { compound_usage: {}, caveats: [] },
     "analysis/race-pace.json": { session_id: "2026-08-r", caveats: [] },
     "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: "none" },
     "telemetry/index.json": { schema_version: 1 }
@@ -343,9 +373,12 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
   assert.equal((await failureOf(readRacePace(view))).code, "invalid_artifact");
   assert.equal((await failureOf(readTelemetry(view))).code, "invalid_artifact");
   assert.match((await failureOf(readTelemetry(view))).message, /telemetry\/index\.json has no list of laps/);
+  const strategy = await failureOf(readStrategy(view));
+  assert.equal(strategy.code, "invalid_artifact");
+  assert.match(strategy.message, /analysis\/strategy\.json has no list of undercut_overcut/);
   // The tabs that do not read those files are untouched.
   assert.equal((await readResults(view)).results.length, 2);
-  assert.equal((await readStrategy(view)).stints.length, 1);
+  assert.equal((await readRaceControl(view)).length, 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -473,7 +506,7 @@ test("the telemetry tab opens on the index and the two laps it compares", async 
     team: "Mercedes",
     lap_time_ms: 70_100,
     compound: "MEDIUM",
-    session: "2026-08-r",
+    session: null,
     lap_number: 3
   });
   assert.equal(telemetry.comparison.driver_b.team, "Red Bull");

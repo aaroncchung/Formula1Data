@@ -1,18 +1,20 @@
 /**
  * The data behind the weather chart.
  *
- * The chart is drawn against the session clock. Its X axis used to be
- * `lap_number`, which is null in every weather sample that has been published
- * (AR-12), so every point sat at the same place. A sample does carry the time
- * it was taken at, as a pandas duration, and that is what places it.
+ * The chart is drawn against the session clock, which every sample carries
+ * as `time_ms`. In a race or sprint a sample also says which lap the leader
+ * was on, and that is shown beside the time; it is not the axis, because the
+ * samples before the start and after the flag have no lap, and no other kind
+ * of session has laps to count at all.
  */
 
-import type { WeatherSample } from "@/types/domain";
-import { parsePandasDuration } from "./pandas-time.ts";
+import type { WeatherSample } from "./published/types.ts";
 
 export type WeatherPoint = {
   /** Milliseconds on the session clock, which starts with F1's timing feed. */
   time_ms: number;
+  /** The lap the leader was on; null outside a race's running and in any other session. */
+  lap_number: number | null;
   air_temp_c: number | null;
   track_temp_c: number | null;
   humidity_pct: number | null;
@@ -21,57 +23,42 @@ export type WeatherPoint = {
 };
 
 export type WeatherPlot = {
-  /** Every sample that could be placed in time, earliest first. */
+  /** Every sample, earliest first. */
   points: WeatherPoint[];
-  sampleCount: number;
-  /** Samples left out because their time could not be read. */
-  untimedCount: number;
-  /** Plotted samples taken while it was raining. */
+  /** Samples taken while it was raining. */
   rainCount: number;
 };
 
 export function weatherPlot(samples: ReadonlyArray<WeatherSample>): WeatherPlot {
-  const points: WeatherPoint[] = [];
-  for (const sample of samples) {
-    const time = parsePandasDuration(sample.timestamp);
-    if (time !== null) {
-      points.push({
-        time_ms: time,
-        air_temp_c: measured(sample.air_temp_c),
-        track_temp_c: measured(sample.track_temp_c),
-        humidity_pct: measured(sample.humidity_pct),
-        wind_speed_kph: measured(sample.wind_speed_kph),
-        rainfall: sample.rainfall === true
-      });
-    }
-  }
-  points.sort((left, right) => left.time_ms - right.time_ms);
-  return {
-    points,
-    sampleCount: samples.length,
-    untimedCount: samples.length - points.length,
-    rainCount: points.filter((point) => point.rainfall).length
-  };
+  const points = samples
+    .map((sample) => ({
+      time_ms: sample.time_ms,
+      lap_number: sample.lap_number,
+      air_temp_c: sample.air_temp_c,
+      track_temp_c: sample.track_temp_c,
+      humidity_pct: sample.humidity_pct,
+      wind_speed_kph: sample.wind_speed_kph,
+      rainfall: sample.rainfall
+    }))
+    .sort((left, right) => left.time_ms - right.time_ms);
+  return { points, rainCount: points.filter((point) => point.rainfall).length };
 }
 
-/** What is in the chart and what is not, in a sentence or two. */
+/** What is in the chart, in a sentence or two. */
 export function describeWeatherPlot(plot: WeatherPlot): string {
-  if (plot.sampleCount === 0) {
+  const total = plot.points.length;
+  if (total === 0) {
     return "No weather samples in this session.";
   }
-  const sentences = [
-    plot.untimedCount === 0
-      ? `${count(plot.sampleCount, "sample")}.`
-      : `${plot.points.length} of ${count(plot.sampleCount, "sample")} plotted; the rest carry no readable time.`
-  ];
-  if (plot.points.length > 0) {
-    sentences.push(
-      plot.rainCount === 0
-        ? "No rain was recorded."
-        : `Rain was recorded in ${plot.rainCount} of ${count(plot.points.length, "plotted sample")}.`
-    );
-  }
-  return sentences.join(" ");
+  return [
+    `${count(total, "sample")}.`,
+    plot.rainCount === 0 ? "No rain was recorded." : `Rain was recorded in ${plot.rainCount} of ${count(total, "sample")}.`
+  ].join(" ");
+}
+
+/** "Session clock 1:22:52 · lap 34" is built from this: the lap of the sample taken at a time, if it has one. */
+export function lapAt(plot: WeatherPlot, timeMs: number): number | null {
+  return plot.points.find((point) => point.time_ms === timeMs)?.lap_number ?? null;
 }
 
 const MS_PER_MINUTE = 60_000;
@@ -96,10 +83,6 @@ export function sessionClockTicks(fromMs: number, toMs: number, atMost = 8): num
     ticks.push(tick);
   }
   return ticks;
-}
-
-function measured(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function count(value: number, noun: string): string {
