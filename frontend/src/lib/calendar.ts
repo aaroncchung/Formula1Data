@@ -10,6 +10,7 @@
  * each time, for display and to follow a link that names one.
  */
 
+import type { SessionEntry } from "./published/lookup.ts";
 import type {
   IndexMeeting,
   IndexSeason,
@@ -198,16 +199,9 @@ export function findMeeting(index: PublishedIndex, year: number, round: number):
   };
 }
 
-/** A session where the calendar places it: its season, its meeting and itself. */
-export type CalendarSession = {
-  readonly year: number;
-  readonly meeting: IndexMeeting;
-  readonly session: IndexSession;
-};
-
 /** The first session that has not started, or null when the calendar holds none. */
-export function nextSession(index: PublishedIndex, now: number): CalendarSession | null {
-  let next: { entry: CalendarSession; time: number } | null = null;
+export function nextSession(index: PublishedIndex, now: number): SessionEntry | null {
+  let next: { entry: SessionEntry; time: number } | null = null;
   for (const season of index.seasons) {
     for (const meeting of season.meetings) {
       for (const session of meeting.sessions) {
