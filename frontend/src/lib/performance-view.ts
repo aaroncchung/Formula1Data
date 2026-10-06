@@ -1,15 +1,10 @@
 /**
  * How the telemetry analyses are read for display: the minisector count of a
- * track-dominance result, and which analyses a session has nothing to show
- * for and why.
+ * track-dominance result, how a corner of the corner analysis is named, and
+ * which analyses a session has nothing to show for and why.
  */
 
-import type {
-  CarPerformanceResult,
-  CornerAnalysisResult,
-  PacePredictionResult,
-  TrackDominanceResult
-} from "@/types/domain";
+import type { CarPerformance, CornerAnalysis, PacePrediction, TrackDominance } from "./published/types.ts";
 
 export type MinisectorTally = {
   driver: string;
@@ -25,7 +20,7 @@ export type MinisectorTally = {
 };
 
 /** Each driver who won a minisector, most wins first, then by code. */
-export function minisectorTally(result: TrackDominanceResult): MinisectorTally[] {
+export function minisectorTally(result: TrackDominance): MinisectorTally[] {
   const tallies = new Map<string, MinisectorTally>();
   for (const sector of result.minisectors) {
     const winner = sector.winner_driver_code;
@@ -37,23 +32,51 @@ export function minisectorTally(result: TrackDominanceResult): MinisectorTally[]
     tally.won += 1;
   }
   for (const tally of tallies.values()) {
-    tally.timed = result.minisectors.filter((sector) => isMeasured(sector.driver_times_ms?.[tally.driver])).length;
+    // A driver with no time in a minisector is not in its times at all.
+    tally.timed = result.minisectors.filter((sector) => Object.hasOwn(sector.driver_times_ms, tally.driver)).length;
   }
   return [...tallies.values()].sort(
     (left, right) => right.won - left.won || compareCodes(left.driver, right.driver)
   );
 }
 
+type AnalysedCorner = CornerAnalysis["corners"][number];
+
+/**
+ * What a corner of the corner analysis is called.
+ *
+ * With official corners the number is the circuit's own, and a letter tells
+ * apart the corners that share one: "Turn 1A". When the circuit's corner
+ * positions could not be used, the analysis finds the places cars braked and
+ * numbers them in the order they come, which is not the circuit's numbering,
+ * so it is not written as a turn.
+ */
+export function cornerName(corner: Pick<AnalysedCorner, "corner_number" | "letter">, source: CornerAnalysis["corner_source"]): string {
+  return source === "official"
+    ? `Turn ${corner.corner_number}${corner.letter ?? ""}`
+    : `Braking zone ${corner.corner_number}`;
+}
+
+/** What the corners of an analysis are, in a sentence, for the panel that lists them. */
+export function cornerSourceNote(source: CornerAnalysis["corner_source"]): string {
+  return source === "official"
+    ? "Braking, apex and exit at each of the circuit's own corners, on each driver's representative lap."
+    : "The circuit's corner positions could not be used for this session, so these are the places the telemetry shows cars braking, numbered in the order they come and not as the circuit numbers its turns.";
+}
+
 export type AnalysisNotice = { title: string; reason: string };
 
 type TelemetryAnalyses = {
-  trackDominance: TrackDominanceResult | null;
-  carPerformance: CarPerformanceResult | null;
-  cornerAnalysis: CornerAnalysisResult | null;
-  pacePrediction: PacePredictionResult | null;
+  trackDominance: TrackDominance | null;
+  carPerformance: CarPerformance | null;
+  cornerAnalysis: CornerAnalysis | null;
+  pacePrediction: PacePrediction | null;
+  /** The session's code, such as R or FP2. */
+  sessionType: string;
 };
 
 const NOT_PUBLISHED = "Not part of this session's published data.";
+const PRACTICE = /^FP[0-9]$/;
 
 /**
  * The analyses with nothing to show, each with its reason, so that a missing
@@ -63,7 +86,7 @@ const NOT_PUBLISHED = "Not part of this session's published data.";
  */
 export function unavailableAnalyses(analyses: TelemetryAnalyses): AnalysisNotice[] {
   const notices: AnalysisNotice[] = [];
-  const { trackDominance, carPerformance, cornerAnalysis, pacePrediction } = analyses;
+  const { trackDominance, carPerformance, cornerAnalysis, pacePrediction, sessionType } = analyses;
 
   if (!trackDominance) {
     notices.push({ title: "Track dominance", reason: NOT_PUBLISHED });
@@ -85,7 +108,13 @@ export function unavailableAnalyses(analyses: TelemetryAnalyses): AnalysisNotice
   }
 
   if (!pacePrediction) {
-    notices.push({ title: "Race-pace prediction", reason: NOT_PUBLISHED });
+    // The prediction is made from practice long runs, so only a practice
+    // session is published with one. For any other session its absence is
+    // how the format works and not something that went missing.
+    notices.push({
+      title: "Race-pace prediction",
+      reason: PRACTICE.test(sessionType.toUpperCase()) ? NOT_PUBLISHED : "Made from practice long runs, so only a practice session has one."
+    });
   } else if (!pacePrediction.available || pacePrediction.drivers.length === 0) {
     notices.push({ title: "Race-pace prediction", reason: lastCaveat(pacePrediction.caveats, "No long runs to estimate from.") });
   }
@@ -93,12 +122,8 @@ export function unavailableAnalyses(analyses: TelemetryAnalyses): AnalysisNotice
   return notices;
 }
 
-function lastCaveat(caveats: ReadonlyArray<string> | undefined, fallback: string): string {
-  return caveats?.at(-1)?.trim() || fallback;
-}
-
-function isMeasured(value: number | null | undefined): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+function lastCaveat(caveats: ReadonlyArray<string>, fallback: string): string {
+  return caveats.at(-1)?.trim() || fallback;
 }
 
 function compareCodes(left: string, right: string): number {

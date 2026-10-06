@@ -8,10 +8,9 @@ import { CHART_TOOLTIP_STYLE, seriesToRows } from "@/lib/chart-utils";
 import { visibleDrivers } from "@/lib/driver-selection";
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
-import type { Driver } from "@/lib/published/types";
-import type { ChartSeries } from "@/types/domain";
+import type { Driver, LapTimeSeries } from "@/lib/published/types";
 
-export function LapTimeChart({ series, drivers }: { series: ChartSeries[]; drivers: ReadonlyArray<Driver> }) {
+export function LapTimeChart({ series, drivers }: { series: ReadonlyArray<LapTimeSeries>; drivers: ReadonlyArray<Driver> }) {
   const rows = useMemo(() => seriesToRows(series), [series]);
   const codes = useMemo(() => series.map((item) => item.name), [series]);
   // Styled from the session's driver list, like every other chart of the

@@ -11,32 +11,30 @@
  * does not compile.
  */
 
-import type {
-  CarPerformanceResult,
-  ChartSeries,
-  CornerAnalysisResult,
-  IdealLapsResult,
-  PacePredictionResult,
-  PositionReplayFrame,
-  RacePaceResult,
-  TeammateComparisonResult,
-  TrackDominanceResult,
-  TyreDegradationResult
-} from "../../types/domain";
+import type { PositionReplayFrame } from "../../types/domain";
 import type { TelemetryIndex } from "../static-api-core.ts";
 import type { SessionView } from "./client.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { SessionTabId } from "./tabs.ts";
 import type {
+  CarPerformance,
+  CornerAnalysis,
   Driver,
   GenerationFiles,
+  IdealLaps,
   Lap,
+  LapTimeSeries,
+  PacePrediction,
   PitStop,
   RaceControlMessage,
+  RacePace,
   Result,
   SessionSummary,
   Stint,
   Strategy,
+  TeammateComparison,
+  TrackDominance,
+  TyreDegradation,
   WeatherSample
 } from "./types.ts";
 
@@ -65,18 +63,18 @@ export const ARTIFACTS = {
   weather: listOf("weather.json"),
   raceControl: listOf("race-control.json"),
   strategy: recordOf("analysis/strategy.json", ["undercut_overcut", "caveats"]),
+  lapTimes: listOf("analysis/lap-times.json"),
+  racePace: recordOf("analysis/race-pace.json", ["drivers", "stints", "caveats"]),
+  tyreDegradation: recordOf("analysis/tyre-degradation.json", ["rows", "caveats"]),
+  idealLaps: recordOf("analysis/ideal-laps.json", ["rows"]),
+  teammateComparison: recordOf("analysis/team-mate-comparison.json", ["rows", "caveats"]),
+  trackDominance: recordOf("analysis/track-dominance.json", ["minisectors", "excluded_drivers", "caveats"]),
+  cornerAnalysis: recordOf("analysis/corner-analysis.json", ["corners", "caveats"]),
+  carPerformance: recordOf("analysis/car-performance.json", ["drivers", "caveats"]),
+  pacePrediction: recordOf("analysis/pace-prediction.json", ["drivers", "caveats"]),
   // Still read on their format-1 shapes; each moves to its schema type with
   // the pages that show it.
   positionReplay: formerListOf<PositionReplayFrame>("position-replay.json"),
-  lapTimes: formerListOf<ChartSeries>("analysis/lap-times.json"),
-  racePace: formerRecordOf<RacePaceResult>("analysis/race-pace.json", ["drivers"]),
-  tyreDegradation: formerRecordOf<TyreDegradationResult>("analysis/tyre-degradation.json", ["rows"]),
-  idealLaps: formerRecordOf<IdealLapsResult>("analysis/ideal-laps.json", ["rows"]),
-  teammateComparison: formerRecordOf<TeammateComparisonResult>("analysis/team-mate-comparison.json", ["rows"]),
-  trackDominance: formerRecordOf<TrackDominanceResult>("analysis/track-dominance.json", ["minisectors"]),
-  cornerAnalysis: formerRecordOf<CornerAnalysisResult>("analysis/corner-analysis.json", ["corners"]),
-  carPerformance: formerRecordOf<CarPerformanceResult>("analysis/car-performance.json", ["drivers"]),
-  pacePrediction: formerRecordOf<PacePredictionResult>("analysis/pace-prediction.json", ["drivers"]),
   telemetryIndex: formerRecordOf<TelemetryIndex>("telemetry/index.json", ["laps"])
 } as const;
 
@@ -142,7 +140,7 @@ export type SessionOverview = {
   readonly summary: SessionSummary;
   readonly drivers: ReadonlyArray<Driver>;
   readonly laps: ReadonlyArray<Lap>;
-  readonly racePace: RacePaceResult;
+  readonly racePace: RacePace;
   readonly stints: ReadonlyArray<Stint>;
   readonly pitStops: ReadonlyArray<PitStop>;
 };
@@ -161,7 +159,7 @@ export async function readOverview(view: SessionView): Promise<SessionOverview> 
 }
 
 export type SessionLapTimes = {
-  readonly series: ChartSeries[];
+  readonly series: ReadonlyArray<LapTimeSeries>;
   readonly drivers: ReadonlyArray<Driver>;
 };
 
@@ -177,8 +175,8 @@ export async function readLapTimes(view: SessionView): Promise<SessionLapTimes> 
 }
 
 export type SessionRacePace = {
-  readonly racePace: RacePaceResult;
-  readonly tyreDegradation: TyreDegradationResult;
+  readonly racePace: RacePace;
+  readonly tyreDegradation: TyreDegradation;
   readonly laps: ReadonlyArray<Lap>;
   readonly drivers: ReadonlyArray<Driver>;
 };
@@ -196,13 +194,16 @@ export async function readRacePace(view: SessionView): Promise<SessionRacePace> 
 
 /** Each analysis is null when the generation does not hold it. */
 export type SessionPerformance = {
+  /** The session's code, from its pointer: which analyses a session has depends on what kind it is. */
+  readonly sessionType: string;
   readonly drivers: ReadonlyArray<Driver>;
-  readonly idealLaps: IdealLapsResult | null;
-  readonly teammateComparison: TeammateComparisonResult | null;
-  readonly trackDominance: TrackDominanceResult | null;
-  readonly cornerAnalysis: CornerAnalysisResult | null;
-  readonly carPerformance: CarPerformanceResult | null;
-  readonly pacePrediction: PacePredictionResult | null;
+  readonly idealLaps: IdealLaps | null;
+  readonly teammateComparison: TeammateComparison | null;
+  readonly trackDominance: TrackDominance | null;
+  readonly cornerAnalysis: CornerAnalysis | null;
+  readonly carPerformance: CarPerformance | null;
+  /** Published for a practice session only. */
+  readonly pacePrediction: PacePrediction | null;
 };
 
 export async function readPerformance(view: SessionView): Promise<SessionPerformance> {
@@ -217,7 +218,16 @@ export async function readPerformance(view: SessionView): Promise<SessionPerform
       readIfListed(view, A.carPerformance),
       readIfListed(view, A.pacePrediction)
     ]);
-  return { drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction };
+  return {
+    sessionType: view.pointer.identity.session_type,
+    drivers,
+    idealLaps,
+    teammateComparison,
+    trackDominance,
+    cornerAnalysis,
+    carPerformance,
+    pacePrediction
+  };
 }
 
 /** `strategy` is null when the generation does not hold the analysis. */

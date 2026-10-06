@@ -3,7 +3,7 @@ import { AnalysisCaveats } from "@/components/session/AnalysisCaveats";
 import { CompoundBadge, DriverBadge } from "@/components/session/Badges";
 import { formatNumber } from "@/lib/format";
 import { formatRate, tyreFit } from "@/lib/tyre-chart";
-import type { TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
+import type { TyreDegradation, TyreDegradationRow } from "@/lib/published/types";
 
 /**
  * Every stint's degradation fit, with what the fit rests on.
@@ -13,7 +13,8 @@ import type { TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
  * never hold a number: a slope that could not be pinned down is not a small
  * slope.
  */
-export function TyreFitTable({ degradation, colors }: { degradation: TyreDegradationResult; colors: Record<string, string | null | undefined> }) {
+export function TyreFitTable({ degradation, colors }: { degradation: TyreDegradation; colors: Record<string, string | null | undefined> }) {
+  const { model } = degradation;
   return (
     <div>
       <div className="mb-3">
@@ -21,6 +22,14 @@ export function TyreFitTable({ degradation, colors }: { degradation: TyreDegrada
         <p className="mt-1 text-sm text-slate-500">
           The fitted slope of each stint, the fuel correction added to it, and the adjusted tyre rate, with how well the
           fit is pinned down.
+        </p>
+        {/* The limits a fit was held to are the generation's own, so they are quoted and not repeated from memory. */}
+        <p className="mt-1 text-xs text-slate-500">
+          Fitted by {lowerFirst(model.method)}, over stints of at least {model.minimum_laps} clean laps. A rate is
+          reported when the slope&apos;s standard error is within {formatNumber(model.max_slope_standard_error_ms_per_lap, 0)}{" "}
+          ms/lap or {formatNumber(model.max_slope_relative_standard_error * 100, 0)}% of the slope. The fuel correction
+          is {formatNumber(model.race_fuel_correction_ms_per_lap, 0)} ms/lap in a race and{" "}
+          {formatNumber(model.sprint_fuel_correction_ms_per_lap, 0)} ms/lap in a sprint.
         </p>
       </div>
       <DataTable
@@ -34,15 +43,20 @@ export function TyreFitTable({ degradation, colors }: { degradation: TyreDegrada
           { key: "raw", header: "Raw slope", align: "right", render: (row) => <Reported row={row}>{formatRate(row.raw_slope_ms_per_lap)}</Reported> },
           { key: "fuel", header: "Fuel correction", align: "right", render: (row) => <Reported row={row}>{formatRate(row.fuel_correction_ms_per_lap)}</Reported> },
           { key: "adjusted", header: "Tyre rate", align: "right", render: (row) => <RateCell row={row} /> },
-          { key: "error", header: "Std error", align: "right", render: (row) => (row.slope_standard_error_ms_per_lap == null ? "--" : `± ${formatNumber(row.slope_standard_error_ms_per_lap, 1)}`) },
-          { key: "spread", header: "Scatter", align: "right", render: (row) => (row.residual_spread_ms == null ? "--" : `${formatNumber(row.residual_spread_ms, 0)} ms`) },
+          { key: "error", header: "Std error", align: "right", render: (row) => (row.slope_standard_error_ms_per_lap === null ? "--" : `± ${formatNumber(row.slope_standard_error_ms_per_lap, 1)}`) },
+          { key: "spread", header: "Scatter", align: "right", render: (row) => (row.residual_spread_ms === null ? "--" : `${formatNumber(row.residual_spread_ms, 0)} ms`) },
           { key: "fit", header: "R²", align: "right", render: (row) => formatNumber(row.r_squared, 2) },
-          { key: "excluded", header: "Outliers", align: "right", render: (row) => row.excluded_outlier_count ?? 0 }
+          { key: "excluded", header: "Outliers", align: "right", render: (row) => row.excluded_outlier_count }
         ]}
       />
       <AnalysisCaveats caveats={degradation.caveats} />
     </div>
   );
+}
+
+/** The method's name as part of a sentence. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /** A figure that belongs to a reported fit, and a dash for a fit that was not. */

@@ -14,15 +14,14 @@
  * leaves that figure blank.
  */
 
-import type { IdealLapsResult, RacePaceResult } from "../types/domain";
 import { ARTIFACTS, readIfListed } from "./published/artifacts.ts";
 import type { SessionView } from "./published/client.ts";
-import type { Driver, Result, SessionSummary } from "./published/types.ts";
+import type { Driver, IdealLaps, RacePace, Result, SessionSummary } from "./published/types.ts";
 import { classifiedPlace, resultPosition } from "./results-view.ts";
 
 export type SessionFigures = {
   readonly summary: SessionSummary | null;
-  readonly idealLaps: IdealLapsResult | null;
+  readonly idealLaps: IdealLaps | null;
 };
 
 /** The headline figures of a session: its size, and who left least time on the track. */
@@ -39,7 +38,7 @@ export async function readSessionFigures(view: SessionView): Promise<SessionFigu
  * tab's reader (`readRacePace` in artifacts.ts) also reads every lap of the
  * session, which the home page does not show.
  */
-export function readPaceAnalysis(view: SessionView): Promise<RacePaceResult | null> {
+export function readPaceAnalysis(view: SessionView): Promise<RacePace | null> {
   return readIfListed(view, ARTIFACTS.racePace);
 }
 
@@ -47,8 +46,8 @@ export function readPaceAnalysis(view: SessionView): Promise<RacePaceResult | nu
 export type FieldArtifacts = {
   readonly drivers: ReadonlyArray<Driver>;
   readonly results: ReadonlyArray<Result> | null;
-  readonly racePace: RacePaceResult | null;
-  readonly idealLaps: IdealLapsResult | null;
+  readonly racePace: RacePace | null;
+  readonly idealLaps: IdealLaps | null;
 };
 
 export async function readField(view: SessionView): Promise<FieldArtifacts> {

@@ -27,8 +27,7 @@ import {
   tyreFitLabel,
   tyreFitsFor
 } from "@/lib/tyre-chart";
-import type { Driver, Lap } from "@/lib/published/types";
-import type { TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
+import type { Driver, Lap, TyreDegradation, TyreDegradationRow } from "@/lib/published/types";
 
 /** Stint fits shown before the reader asks for the rest: three rows of cards. */
 const FIT_PREVIEW_COUNT = 9;
@@ -39,7 +38,7 @@ export function TyreDegradationChart({
   drivers
 }: {
   laps: ReadonlyArray<Lap>;
-  degradation: TyreDegradationResult;
+  degradation: TyreDegradation;
   drivers: ReadonlyArray<Driver>;
 }) {
   const plot = useMemo(() => tyreAgePlot(laps), [laps]);
@@ -135,7 +134,7 @@ function TyreFitCard({ row }: { row: TyreDegradationRow }) {
     <div className="rounded border border-line bg-white/[0.03] p-3" title={fit.status === "reported" ? undefined : fit.reason}>
       <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
       <div className="mt-1 text-xs text-slate-400">
-        {row.compound} · {row.sample_count} {row.sample_count === 1 ? "lap" : "laps"}
+        {row.compound ?? "Compound not reported"} · {row.sample_count} {row.sample_count === 1 ? "lap" : "laps"}
       </div>
       {fit.status === "reported" ? (
         <div className="mt-2 text-lg font-black text-aqua">

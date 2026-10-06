@@ -7,32 +7,14 @@ import { TeammateComparison } from "@/components/session/TeammateComparison";
 import { TrackDominance } from "@/components/session/TrackDominance";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
-import { unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
-import type { Driver as PublishedDriver } from "@/lib/published/types";
-import type {
-  CarPerformanceResult,
-  CornerAnalysisResult,
-  IdealLapsResult,
-  PacePredictionResult,
-  TeammateComparisonResult,
-  TrackDominanceResult
-} from "@/types/domain";
+import { cornerName, cornerSourceNote, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
+import type { SessionPerformance } from "@/lib/published/artifacts";
+import type { CarPerformance, CornerAnalysis, Driver, IdealLaps, PacePrediction } from "@/lib/published/types";
 
-type Driver = PublishedDriver;
 type Drivers = ReadonlyArray<Driver>;
 
 /** Each analysis is null when the session does not have it. */
-type PerformanceAnalysisProps = {
-  drivers: Drivers;
-  idealLaps: IdealLapsResult | null;
-  teammateComparison: TeammateComparisonResult | null;
-  trackDominance: TrackDominanceResult | null;
-  cornerAnalysis: CornerAnalysisResult | null;
-  carPerformance: CarPerformanceResult | null;
-  pacePrediction: PacePredictionResult | null;
-};
-
-export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
+export function PerformanceAnalysis(props: SessionPerformance) {
   const notices = unavailableAnalyses(props);
   return (
     <div className="space-y-5">
@@ -58,7 +40,7 @@ export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
         </ChartPanel>
       ) : null}
       {props.cornerAnalysis?.corners.length ? (
-        <ChartPanel title="Corner analysis" description="Braking, apex and exit metrics detected from representative telemetry laps.">
+        <ChartPanel title="Corner analysis" description={cornerSourceNote(props.cornerAnalysis.corner_source)}>
           <CornerAnalysisView result={props.cornerAnalysis} drivers={props.drivers} />
           <AnalysisCaveats caveats={props.cornerAnalysis.caveats} />
         </ChartPanel>
@@ -93,7 +75,7 @@ function NotShown({ notices }: { notices: AnalysisNotice[] }) {
   );
 }
 
-function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; drivers: Drivers }) {
+function IdealLapsView({ result, drivers }: { result: IdealLaps | null; drivers: Drivers }) {
   if (!result) return <EmptyState title="Ideal laps unavailable" detail="This session has no ideal-lap analysis." />;
   if (!result.rows.length) return <EmptyState title="Ideal laps unavailable" detail="No driver has a time in every sector." />;
   const colors = teamColorByDriver(drivers);
@@ -107,42 +89,63 @@ function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; dr
   );
 }
 
-function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult; drivers: Drivers }) {
+function CarPerformanceView({ result, drivers }: { result: CarPerformance; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
-    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
+    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     { key: "max", header: "Max", align: "right", render: (row) => `${formatNumber(row.max_speed_kph, 0)} km/h` },
     { key: "low", header: "Low speed", align: "right", render: (row) => formatNumber(row.low_speed_avg_kph, 0) },
     { key: "medium", header: "Medium", align: "right", render: (row) => formatNumber(row.medium_speed_avg_kph, 0) },
     { key: "high", header: "High speed", align: "right", render: (row) => formatNumber(row.high_speed_avg_kph, 0) },
-    { key: "throttle", header: "Full throttle", align: "right", render: (row) => `${formatNumber(row.full_throttle_pct, 1)}%` },
-    { key: "braking", header: "Braking", align: "right", render: (row) => `${formatNumber(row.braking_pct, 1)}%` }
+    { key: "throttle", header: "Full throttle", align: "right", render: (row) => percent(row.full_throttle_pct) },
+    { key: "braking", header: "Braking", align: "right", render: (row) => percent(row.braking_pct) }
   ]} />;
 }
 
-function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult; drivers: Drivers }) {
+function CornerAnalysisView({ result, drivers }: { result: CornerAnalysis; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
-  const rows = result.corners.flatMap((corner) => corner.drivers.map((driver) => ({ ...driver, corner_number: corner.corner_number, distance_m: corner.distance_m })));
+  const rows = result.corners.flatMap((corner) =>
+    corner.drivers.map((driver) => ({ ...driver, corner: cornerName(corner, result.corner_source) }))
+  );
   return <DataTable rows={rows} columns={[
-    { key: "corner", header: "Corner", render: (row) => `T${row.corner_number}` },
+    { key: "corner", header: "Corner", render: (row) => row.corner },
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
-    { key: "brake", header: "Brake point", align: "right", render: (row) => `${formatNumber(row.brake_start_m, 0)} m` },
-    { key: "distance", header: "Brake distance", align: "right", render: (row) => `${formatNumber(row.braking_distance_m, 0)} m` },
-    { key: "entry", header: "Entry", align: "right", render: (row) => `${formatNumber(row.entry_speed_kph, 0)} km/h` },
-    { key: "apex", header: "Apex", align: "right", render: (row) => `${formatNumber(row.apex_speed_kph, 0)} km/h` },
-    { key: "exit", header: "Exit", align: "right", render: (row) => `${formatNumber(row.exit_speed_kph, 0)} km/h` }
+    {
+      key: "brake",
+      header: "Brake point",
+      align: "right",
+      // A driver can take a corner without braking for it; the row then has an apex and an exit and no braking.
+      render: (row) => (row.brake_start_m === null ? <span className="text-slate-500">No braking</span> : `${formatNumber(row.brake_start_m, 0)} m`)
+    },
+    { key: "distance", header: "Brake distance", align: "right", render: (row) => metres(row.braking_distance_m) },
+    { key: "entry", header: "Entry", align: "right", render: (row) => speed(row.entry_speed_kph) },
+    { key: "apex", header: "Apex", align: "right", render: (row) => speed(row.apex_speed_kph) },
+    { key: "exit", header: "Exit", align: "right", render: (row) => speed(row.exit_speed_kph) }
   ]} />;
 }
 
-function PacePredictionView({ result, drivers }: { result: PacePredictionResult; drivers: Drivers }) {
+function PacePredictionView({ result, drivers }: { result: PacePrediction; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
-    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
+    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     { key: "pace", header: "Est. pace", align: "right", render: (row) => formatMs(row.estimated_race_pace_ms) },
     { key: "gap", header: "Gap", align: "right", render: (row) => formatDelta(row.gap_to_best_ms) },
-    { key: "runs", header: "Long runs", align: "right", render: (row) => row.stint_count ?? "--" },
-    { key: "laps", header: "Laps", align: "right", render: (row) => row.sample_count ?? "--" },
+    { key: "runs", header: "Long runs", align: "right", render: (row) => row.stint_count },
+    { key: "laps", header: "Laps", align: "right", render: (row) => row.sample_count },
     { key: "spread", header: "Variability", align: "right", render: (row) => formatDelta(row.variability_ms) },
-    { key: "confidence", header: "Confidence", render: (row) => String(row.confidence ?? "--") }
+    { key: "confidence", header: "Confidence", render: (row) => row.confidence }
   ]} />;
+}
+
+// A figure the analysis has none of is a dash on its own, without a unit after it.
+function speed(kph: number | null): string {
+  return kph === null ? "--" : `${formatNumber(kph, 0)} km/h`;
+}
+
+function metres(value: number | null): string {
+  return value === null ? "--" : `${formatNumber(value, 0)} m`;
+}
+
+function percent(value: number | null): string {
+  return value === null ? "--" : `${formatNumber(value, 1)}%`;
 }

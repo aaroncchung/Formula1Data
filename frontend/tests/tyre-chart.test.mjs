@@ -173,7 +173,22 @@ test("a tooltip payload is recognised only when it is a plotted lap", () => {
 });
 
 function fit(driver, stint) {
-  return { driver_code: driver, compound: "MEDIUM", stint, sample_count: 10, stint_length: 10, caveats: [] };
+  return {
+    driver_code: driver,
+    compound: "MEDIUM",
+    stint,
+    sample_count: 10,
+    stint_length: 10,
+    fit_status: "too_few_laps",
+    degradation_ms_per_lap: null,
+    raw_slope_ms_per_lap: null,
+    fuel_correction_ms_per_lap: 55,
+    r_squared: null,
+    residual_spread_ms: null,
+    slope_standard_error_ms_per_lap: null,
+    excluded_outlier_count: 0,
+    caveats: []
+  };
 }
 
 const FITS = [fit("ANT", 1), fit("ANT", 2), fit("HAM", 1), fit("RUS", 1), fit("RUS", 2), fit("RUS", 3)];

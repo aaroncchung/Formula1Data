@@ -113,11 +113,37 @@ const SESSION_FILES = {
   "weather.json": [{ time_ms: 38_376, lap_number: null, air_temp_c: 33.6, track_temp_c: 53.2, humidity_pct: 30.3, wind_speed_kph: 1.0, rainfall: false }],
   "race-control.json": [{ time_ms: 3_300_000, lap_number: 1, category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN", scope: "Track" }],
   "position-replay.json": [{ session_id: "2026-08-r", frame_index: 0, lap_number: 1, timestamp_ms: 3_425_000, positions: [{ driver_code: "RUS", x: 1, y: 2 }] }],
-  "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2", metadata: {} }],
-  "analysis/race-pace.json": { session_id: "2026-08-r", drivers: [{ driver_code: "RUS", median_lap_ms: 70_300, lap_count: 2 }], stints: [], caveats: [] },
-  "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: [], caveats: [] },
-  "analysis/ideal-laps.json": { session_id: "2026-08-r", rows: [] },
-  "analysis/team-mate-comparison.json": { session_id: "2026-08-r", rows: [], caveats: [] },
+  "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2" }],
+  "analysis/race-pace.json": {
+    drivers: [
+      {
+        driver_code: "RUS",
+        compound: "MEDIUM",
+        stint: null,
+        lap_count: 2,
+        median_lap_ms: 70_300,
+        mean_lap_ms: 70_300,
+        trimmed_mean_lap_ms: 70_300,
+        fastest_clean_lap_ms: 70_100,
+        gap_to_best_ms: 0
+      }
+    ],
+    stints: [],
+    caveats: []
+  },
+  "analysis/tyre-degradation.json": {
+    model: {
+      method: "Theil-Sen residual filter followed by ordinary least squares",
+      minimum_laps: 8,
+      max_slope_standard_error_ms_per_lap: 20,
+      max_slope_relative_standard_error: 0.25,
+      race_fuel_correction_ms_per_lap: 55,
+      sprint_fuel_correction_ms_per_lap: 35
+    },
+    rows: [],
+    caveats: []
+  },
+  "analysis/team-mate-comparison.json": { rows: [], caveats: [] },
   "analysis/strategy.json": {
     compound_usage: { MEDIUM: 1 },
     pit_lane_time: { median_ms: 21552, fastest_ms: 21552, slowest_ms: 21552, timed_stop_count: 1, stop_count: 1 },
@@ -135,10 +161,12 @@ const SESSION_FILES = {
     undercut_overcut: [],
     caveats: []
   },
-  "analysis/track-dominance.json": { session_id: "2026-08-r", representative_laps: [], minisector_count: 0, minisectors: [], caveats: [] },
-  "analysis/corner-analysis.json": { session_id: "2026-08-r", representative_laps: [], corners: [], caveats: [] },
-  "analysis/car-performance.json": { session_id: "2026-08-r", drivers: [], teams: [], caveats: [] },
-  "analysis/pace-prediction.json": { session_id: "2026-08-r", available: false, session_type: "Race", drivers: [], teams: [], caveats: [] },
+  "analysis/track-dominance.json": { representative_laps: [], excluded_drivers: [], minisector_count: 0, minisectors: [], caveats: [] },
+  "analysis/corner-analysis.json": { corner_source: "official", representative_laps: [], corners: [], caveats: [] },
+  "analysis/car-performance.json": { drivers: [], teams: [], caveats: [] },
+  // A race is published without this file; it is here so that the tab's
+  // reader has all six of its analyses to read.
+  "analysis/pace-prediction.json": { available: false, session_type: "Race", drivers: [], teams: [], caveats: [] },
   "telemetry/index.json": { schema_version: 1, generated_at: "2026-10-06T00:04:33Z", session_id: "2026-08-r", max_samples_per_lap: 300, laps: TELEMETRY_LAPS },
   ...Object.fromEntries(TELEMETRY_LAPS.map((entry) => [entry.path, telemetryLap(entry.driver_code, entry.lap_number, 17_000 + entry.lap_number * 100)]))
 };
@@ -311,6 +339,7 @@ test("an analysis the generation leaves out is absent without a request, and its
 
   const performance = await readPerformance(view);
   assert.equal(performance.drivers.length, 2);
+  assert.equal(performance.sessionType, "R");
   assert.deepEqual(
     [performance.idealLaps, performance.teammateComparison, performance.trackDominance, performance.cornerAnalysis, performance.carPerformance, performance.pacePrediction],
     [null, null, null, null, null, null]
@@ -360,8 +389,8 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
     "weather.json": { error: "no weather" },
     "summary.json": [],
     "analysis/strategy.json": { compound_usage: {}, caveats: [] },
-    "analysis/race-pace.json": { session_id: "2026-08-r", caveats: [] },
-    "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: "none" },
+    "analysis/race-pace.json": { stints: [], caveats: [] },
+    "analysis/tyre-degradation.json": { rows: "none", caveats: [] },
     "telemetry/index.json": { schema_version: 1 }
   };
   const bucket = bucketOf();

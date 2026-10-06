@@ -3,8 +3,7 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { minisectorTally } from "@/lib/performance-view";
 import { boundsOf, fitBounds, project, type Viewport } from "@/lib/track-map";
-import type { Driver } from "@/lib/published/types";
-import type { TrackDominanceResult } from "@/types/domain";
+import type { Driver, TrackDominance as TrackDominanceResult } from "@/lib/published/types";
 
 /** The dash of the second team-mate, scaled up for the thick line of the track map. */
 const TRACK_DASH = "12 7";
@@ -18,22 +17,29 @@ export function TrackDominance({ result, drivers }: { result: TrackDominanceResu
   // The map identifies a driver by the line alone, so team-mates need the
   // shared solid/dashed styles here, not just the team colour.
   const styles = teamDriverStyles(drivers);
-  const sectors = result.minisectors.filter((sector) => sector.midpoint.x != null && sector.midpoint.y != null && sector.winner_driver_code);
-  const midpoints = sectors.map((sector) => ({ x: Number(sector.midpoint.x), y: Number(sector.midpoint.y) }));
+  // A minisector has no midpoint where the representative lap has no
+  // position there, and no winner where no driver has a time through it.
+  const sectors = result.minisectors.flatMap((sector) => {
+    const { x, y } = sector.midpoint;
+    return x === null || y === null || !sector.winner_driver_code
+      ? []
+      : [{ index: sector.index, winner: sector.winner_driver_code, midpoint: { x, y } }];
+  });
+  const midpoints = sectors.map((sector) => sector.midpoint);
   const bounds = sectors.length < 2 ? null : boundsOf(midpoints);
   if (!bounds) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
   const projection = fitBounds(bounds, DOMINANCE_VIEWPORT);
   const placed = midpoints.map((midpoint) => project(projection, midpoint));
   const tally = minisectorTally(result);
   const total = result.minisectors.length;
-  const excluded = result.excluded_drivers ?? [];
+  const excluded = result.excluded_drivers;
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
       <svg viewBox="0 0 600 400" className="min-h-[280px] w-full rounded-md border border-line/70 bg-carbon/50 p-3" role="img" aria-label="Track dominance by driver">
         {sectors.slice(1).map((sector, index) => {
           const from = placed[index];
           const to = placed[index + 1];
-          const style = driverStyle(styles, sector.winner_driver_code || "");
+          const style = driverStyle(styles, sector.winner);
           return (
             <line
               key={sector.index}

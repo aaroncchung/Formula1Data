@@ -3,8 +3,7 @@ import { DriverBadge } from "@/components/session/Badges";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
 import { teammateBasis, teammateGap, teammateGapText } from "@/lib/teammate-view";
-import type { Driver } from "@/lib/published/types";
-import type { TeammateComparisonResult, TeammateComparisonRow } from "@/types/domain";
+import type { Driver, TeammateComparison as TeammateComparisonResult, TeammateComparisonRow } from "@/lib/published/types";
 
 /**
  * The two drivers of each team, compared on the laps both ran cleanly.
@@ -38,7 +37,7 @@ function TeamRow({ row, colors }: { row: TeammateComparisonRow; colors: Record<s
             <div
               key={driver.driver_code}
               className="flex items-center gap-2"
-              title={typeof driver.clean_lap_count === "number" ? `${driver.clean_lap_count} clean laps in all` : undefined}
+              title={`${driver.clean_lap_count} clean laps in all`}
             >
               <DriverBadge code={driver.driver_code} color={colors[driver.driver_code]} />
               <span className="font-mono text-xs text-slate-400">{formatMs(driver.average_lap_ms)}</span>
@@ -50,7 +49,7 @@ function TeamRow({ row, colors }: { row: TeammateComparisonRow; colors: Record<s
         </div>
       </div>
       {gap.status === "none" ? <p className="mt-2 text-xs text-slate-500">{gap.reason}</p> : null}
-      {gap.status !== "none" && basis ? <p className="mt-2 text-xs text-slate-500">Over {basis}</p> : null}
+      {gap.status !== "none" ? <p className="mt-2 text-xs text-slate-500">Over {basis}</p> : null}
     </div>
   );
 }

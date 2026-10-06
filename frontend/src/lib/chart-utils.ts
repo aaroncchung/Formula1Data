@@ -1,4 +1,5 @@
-import type { ChartSeries, TelemetryComparison } from "@/types/domain";
+import type { TelemetryComparison } from "@/types/domain";
+import type { LapTimeSeries } from "./published/types.ts";
 
 /** The Recharts tooltip box, shared so the charts cannot drift apart. */
 export const CHART_TOOLTIP_STYLE = { background: "#111722", border: "1px solid #283246", color: "#e5edf8" };
@@ -17,12 +18,16 @@ export function groupByDriver<T extends { driver_code: string }>(rows: ReadonlyA
   return Array.from(groups.entries());
 }
 
-export function seriesToRows(series: ChartSeries[]): Array<Record<string, number | string | null>> {
-  const lapNumbers = new Set<string | number>();
+/**
+ * One row for each lap, with each driver's time on it under the driver's
+ * code, or null where the driver has no time for that lap.
+ */
+export function seriesToRows(series: ReadonlyArray<LapTimeSeries>): Array<Record<string, number | null>> {
+  const lapNumbers = new Set<number>();
   // One lookup table per series keeps the pivot linear in the number of points
   // instead of scanning every series for every lap.
   const indexed = series.map((item) => {
-    const byX = new Map<string | number, number | string | null>();
+    const byX = new Map<number, number | null>();
     item.x.forEach((x, index) => {
       lapNumbers.add(x);
       if (!byX.has(x)) {
@@ -32,9 +37,9 @@ export function seriesToRows(series: ChartSeries[]): Array<Record<string, number
     return { name: item.name, byX };
   });
   return Array.from(lapNumbers)
-    .sort((a, b) => Number(a) - Number(b))
+    .sort((a, b) => a - b)
     .map((lap) => {
-      const row: Record<string, number | string | null> = { lap };
+      const row: Record<string, number | null> = { lap };
       indexed.forEach((item) => {
         row[item.name] = item.byX.get(lap) ?? null;
       });
