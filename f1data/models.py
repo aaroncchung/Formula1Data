@@ -962,6 +962,10 @@ class Pointer(Model):
         "classification. "
         "Null in this format, where a build takes nothing from the calendar."
     )
+    record: str | None = Field(
+        description="A checksum of what the snapshot's record said of its feeds when the session was "
+        "judged. A record corrected afterwards has the session decided again."
+    )
     coverage: PointerCoverage
     published_at: str
     previous_generation: Sha256 | None

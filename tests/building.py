@@ -33,12 +33,15 @@ class Loaded:
     """A FastF1 session as a build loads one from the archive."""
 
     def __init__(self, feeds, row: "Row") -> None:
-        fields = {
+        self._archived = {
             name: value.copy() if isinstance(value, pd.DataFrame) else value
             for name, value in vars(feeds).items()
         }
-        self._results = fields.pop("results")
-        self.__dict__.update(fields)
+        self._results = self._archived.pop("results")
+        # FastF1 loads the session information whatever the row says.
+        self._archived.pop("session_info", None)
+        # As FastF1 has it from the calendar row the session was made from.
+        self.f1_api_support = row.f1_api_support
         self.session_info = {
             "Key": AUSTRIA,
             "Name": "Race",
@@ -64,6 +67,22 @@ class Loaded:
             requests.Session().get("https://jolpica.invalid/ergast/f1/2026/8/results.json", timeout=5)
         except ForbiddenHostError as exc:
             self.refused.append(str(exc))
+        # And it loads the feeds only for a session it believes F1's API
+        # covers. Otherwise every one of them is left as if it had not arrived.
+        feeds = self._archived if self.f1_api_support else _no_feeds(self._archived)
+        self.__dict__.update(feeds)
+
+
+def _no_feeds(archived: dict) -> dict:
+    empty = {}
+    for name, value in archived.items():
+        if isinstance(value, pd.DataFrame):
+            empty[name] = value.iloc[0:0]
+        elif isinstance(value, dict):
+            empty[name] = {}
+        else:
+            empty[name] = None
+    return empty
 
 
 class Row:
@@ -73,6 +92,7 @@ class Row:
         self._world = world
         self.round = entry.round
         self.meeting_name = entry.meeting_name
+        self.f1_api_support = world.f1_api_support
 
     def get_session(self, name: str) -> Loaded:
         session = Loaded(self._world.feeds[self._world.restoring], self)
@@ -89,6 +109,8 @@ class Archive(World):
         self.laps = dict(laps)
         self.first_lap_ms = dict(first_lap_ms or {})
         self.row_fingerprint = "sha256:the-row-as-first-read"
+        # What the calendar's rows say of F1's API covering their sessions.
+        self.f1_api_support = True
         # Snapshot id to the session its archived feeds load as.
         self.feeds: dict[str, object] = {}
         self.restoring: str | None = None

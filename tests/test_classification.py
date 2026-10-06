@@ -81,7 +81,10 @@ class Jolpica:
         answer = self._first_laps.pop(0) if self._first_laps else None
         if isinstance(answer, Exception):
             raise answer
-        return SimpleNamespace(content=[] if answer is None else [answer])
+        # Jolpica says which race an answer is about. The same one as the
+        # result's, unless a test sets ``lap_description`` to another.
+        description = getattr(self, "lap_description", getattr(self, "description", None))
+        return SimpleNamespace(content=[] if answer is None else [answer], description=description)
 
 
 def test_the_result_is_asked_for_uncached_and_reduced_to_plain_rows():

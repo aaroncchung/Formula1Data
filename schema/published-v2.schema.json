@@ -2450,6 +2450,17 @@
         "published_at": {
           "type": "string"
         },
+        "record": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A checksum of what the snapshot's record said of its feeds when the session was judged. A record corrected afterwards has the session decided again."
+        },
         "schema_version": {
           "type": "integer"
         },
@@ -2471,6 +2482,7 @@
         "snapshot_id",
         "classification_fingerprint",
         "also",
+        "record",
         "coverage",
         "published_at",
         "previous_generation"

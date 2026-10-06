@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pandas as pd
@@ -37,7 +37,7 @@ from tests.test_archive import fetched_session
 from tests.test_build_inputs import SOON_AFTER
 from tests.test_classification import Jolpica as JolpicaClient
 from tests.test_classification import result_frame
-from tests.test_publish import AUSTRIA, snapshot
+from tests.test_publish import AUSTRIA, Interposing, snapshot
 from tests.test_second_review import fetched_at, planned
 
 EVERYONE = {"1": 10, "2": 10, "3": 10}
@@ -198,6 +198,17 @@ def results_with_ids() -> pd.DataFrame:
     return frame
 
 
+def about_the_race_of(day: str) -> pd.DataFrame:
+    """What Jolpica says an answer is about."""
+    return pd.DataFrame([{"season": 2026, "round": 8, "raceDate": pd.Timestamp(day)}])
+
+
+def jolpica_with(first_laps=()) -> JolpicaClient:
+    jolpica = JolpicaClient([results_with_ids()], first_laps=first_laps)
+    jolpica.description = about_the_race_of("2026-06-28")
+    return jolpica
+
+
 def first_laps(**seconds) -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -212,8 +223,8 @@ def first_laps(**seconds) -> pd.DataFrame:
 def test_first_lap_times_are_fetched_with_the_result_and_are_in_its_fingerprint():
     """F1's timing gives no time for the first lap of a race. Jolpica does,
     hours after the race or days."""
-    without = fetch_classification(JolpicaClient([results_with_ids()]), 2026, 8, "R")
-    jolpica = JolpicaClient([results_with_ids()], first_laps=[first_laps(russell=78.505, max_verstappen=79.1)])
+    without = fetch_classification(jolpica_with(), 2026, 8, "R")
+    jolpica = jolpica_with([first_laps(russell=78.505, max_verstappen=79.1)])
 
     with_times = fetch_classification(jolpica, 2026, 8, "R")
 
@@ -224,10 +235,7 @@ def test_first_lap_times_are_fetched_with_the_result_and_are_in_its_fingerprint(
     assert with_times.rows == without.rows
     assert with_times.fingerprint != without.fingerprint
     corrected = fetch_classification(
-        JolpicaClient([results_with_ids()], first_laps=[first_laps(russell=78.6, max_verstappen=79.1)]),
-        2026,
-        8,
-        "R",
+        jolpica_with([first_laps(russell=78.6, max_verstappen=79.1)]), 2026, 8, "R"
     )
     assert corrected.fingerprint != with_times.fingerprint
 
@@ -241,9 +249,9 @@ def test_a_sprint_has_no_first_lap_times_to_ask_for():
 
 def test_the_fetch_planner_asks_for_classified_laps_and_nothing_more():
     """It asks about a session on every run, and Jolpica counts requests."""
-    jolpica = JolpicaClient([results_with_ids()], first_laps=[first_laps(russell=78.505)])
+    jolpica = jolpica_with([first_laps(russell=78.505)])
 
-    assert fetch_classified_laps(jolpica, 2026, 8, "R") == {"63": 71, "3": 71, "77": 2}
+    assert fetch_classified_laps(jolpica, 2026, 8, "R", date(2026, 6, 28)) == {"63": 71, "3": 71, "77": 2}
     assert (jolpica.calls, jolpica.lap_calls) == ([("race", 2026, 8)], [])
     assert jolpica.cache_disabled_during_calls == [True]
 
@@ -353,6 +361,36 @@ def test_a_build_that_corrects_a_record_decides_again_in_the_same_run(tmp_path, 
     assert not corrected[a.snapshot_id].complete and corrected[b.snapshot_id].complete
 
 
+def test_a_build_judged_by_a_record_since_corrected_is_not_published_as_it_was_judged():
+    """A builds from a snapshot its record calls whole and loses the pointer
+    write. By the time it reads again the record has been corrected: the same
+    snapshot, the same result, the same calendar, and a session that is short."""
+    store = Interposing(MemoryStore())
+    whole = snapshot(snapshot_id="20261006T080000Z-bbbbbbbb")
+    record = [whole]
+
+    def someone_else_publishes_and_the_record_is_corrected():
+        older = snapshot(snapshot_id="20261005T200000Z-aaaaaaaa")
+        publish_session(
+            store, AUSTRIA, lambda key, **_: Inputs(older, "sha256:first"), lambda inputs: ({"a.json": b"1"}, None)
+        )
+        record[0] = replace(whole, coverage=measure(without_positions_for_one_driver(10)))
+
+    store.before_put[layout.pointer_key(AUSTRIA)] = someone_else_publishes_and_the_record_is_corrected
+
+    outcome = publish_session(
+        store,
+        AUSTRIA,
+        lambda key, **_: Inputs(record[0], "sha256:first"),
+        lambda inputs: ({"a.json": b"2"}, None),
+    )
+
+    assert outcome.action == "published"
+    pointer, _ = read_pointer(store, AUSTRIA)
+    assert (pointer.snapshot_id, pointer.complete) == (whole.snapshot_id, False)
+    assert [item["bar"] for item in pointer.shortfalls] == ["position"]
+
+
 def test_a_decision_that_never_settles_is_left_for_the_next_run():
     store = MemoryStore()
 
@@ -407,7 +445,12 @@ def test_a_correction_that_cannot_be_trusted_leaves_the_record_as_it_was(tmp_pat
     written = write_snapshot(store, fetched_session(tmp_path), now=FIRST_FETCH)
     key = f"{layout.snapshot_prefix(AUSTRIA, written.snapshot_id)}{layout.REMEASUREMENT_NAME}"
     short = measure(without_positions_for_one_driver(10))
-    good = {"schema_version": 1, "snapshot_id": written.snapshot_id, "coverage": short}
+    good = {
+        "schema_version": 1,
+        "snapshot_id": written.snapshot_id,
+        "pipeline_version": layout.PIPELINE_VERSION,
+        "coverage": short,
+    }
 
     for unusable in (
         b"not json",
@@ -417,6 +460,7 @@ def test_a_correction_that_cannot_be_trusted_leaves_the_record_as_it_was(tmp_pat
         dump_json({**good, "coverage": {**short, "measurement_version": 1}}),
         dump_json({**good, "coverage": {**short, "drivers": [1, 2]}}),
         dump_json({**good, "coverage": "none"}),
+        dump_json({key: value for key, value in good.items() if key != "pipeline_version"}),
     ):
         store.put(key, unusable)
         assert list_snapshots(store, AUSTRIA) == [written], unusable[:40]

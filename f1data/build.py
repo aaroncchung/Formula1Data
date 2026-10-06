@@ -45,6 +45,7 @@ from f1data.classification import (
     ClassificationUnavailable,
     fetch_classification,
     is_classified_session,
+    is_result_of,
     merge_into_session,
 )
 from f1data.coverage import feed_figures, measure_coverage
@@ -52,15 +53,14 @@ from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, format_utc, identity_from_fastf1
 from f1data.policy import (
-    CLASSIFICATION_DATE_TOLERANCE,
     CLASSIFICATION_RECHECK_WINDOW,
     SETTLED_RECHECK_EVERY_DAYS,
     SETTLED_RECHECK_FOR_DAYS,
 )
-from f1data.publish import DecideAgain, Hold, Inputs, Pointer
+from f1data.publish import DecideAgain, Hold, Inputs, NewerPipeline, Pointer
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
 from f1data.standings import fetch_standings
-from f1data.store import ObjectStore
+from f1data.store import ObjectStore, PreconditionFailed
 
 _logger = logging.getLogger(__name__)
 
@@ -163,13 +163,15 @@ class Builder:
             # An old session, published by this pipeline version. Its
             # classification is not asked for on every run; between the days
             # it is, the session is built again only if a different snapshot
-            # would now be picked or its calendar entry has changed.
+            # would now be picked, its calendar entry has changed, or the
+            # snapshot's record has been corrected.
             assert pointer is not None
             settled = select_snapshot(snapshots)
             if (
                 settled is not None
                 and settled.snapshot_id == pointer.snapshot_id
                 and also == pointer.also
+                and settled.record_fingerprint == pointer.record
             ):
                 return Inputs(
                     snapshot=settled,
@@ -254,6 +256,11 @@ class Builder:
                 # again, and after a change it answers with whichever race
                 # holds that round now.
                 session = event.get_session(context.scheduled.session_name)
+                # The row also says whether F1's API covers the session, and
+                # FastF1 loads no feed at all when it says not. The snapshot
+                # holds the feeds, so it did. Without this a row that is
+                # wrong on the point would make a full archive measure empty.
+                session.f1_api_support = True
                 # FastF1 derives this path from the event's name and date.
                 # The snapshot's own path is the one its feeds are filed
                 # under, whatever the calendar says today.
@@ -276,13 +283,28 @@ class Builder:
                     # stands. The record is put right for every reader of the
                     # archive, the fetch planner included, and the decision is
                     # taken again.
-                    write_remeasurement(self._store, snapshot, measured, now=self._now())
+                    differences = _differences(feed_figures(snapshot.coverage), feed_figures(measured))
+                    if (snapshot.corrected_by or 0) > layout.PIPELINE_VERSION:
+                        # Its measuring is newer than this one's, and this
+                        # one's is what disagrees.
+                        raise NewerPipeline(
+                            f"snapshot {snapshot.snapshot_id} was measured by pipeline version "
+                            f"{snapshot.corrected_by}, and this version measures it differently: {differences}"
+                        )
+                    try:
+                        write_remeasurement(self._store, snapshot, measured, now=self._now())
+                    except PreconditionFailed:
+                        # Another build has written one since this snapshot
+                        # was listed. It is read before anything replaces it.
+                        raise DecideAgain(
+                            f"another build corrected the record of snapshot {snapshot.snapshot_id} first"
+                        ) from None
                     _logger.warning(
                         "Snapshot %s of session %s does not hold what its record says; "
                         "the record is corrected: %s",
                         snapshot.snapshot_id,
                         snapshot.session_key,
-                        _differences(feed_figures(snapshot.coverage), feed_figures(measured)),
+                        differences,
                     )
                     raise DecideAgain(
                         f"corrected the record of snapshot {snapshot.snapshot_id}, "
@@ -352,7 +374,7 @@ def _check_same_event(
             f"Jolpica's result for {scheduled.year} round {scheduled.round} carries no race date, "
             f"so it cannot be tied to session {identity.session_key}"
         )
-    if abs(classification.race_date - session_date) > CLASSIFICATION_DATE_TOLERANCE:
+    if not is_result_of(classification.race_date, session_date):
         raise BuildError(
             f"Jolpica's {scheduled.year} round {scheduled.round} is a race on "
             f"{classification.race_date.isoformat()}, not session {identity.session_key} "
