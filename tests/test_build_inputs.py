@@ -18,7 +18,11 @@ from f1data.archive import write_snapshot
 from f1data.build import BuildError, Builder
 from f1data.classification import Classification
 from f1data.httplog import ForbiddenHostError
-from f1data.policy import CLASSIFICATION_RECHECK_WINDOW
+from f1data.policy import (
+    CLASSIFICATION_RECHECK_WINDOW,
+    SETTLED_RECHECK_EVERY_DAYS,
+    SETTLED_RECHECK_FOR_DAYS,
+)
 from f1data.publish import Inputs, publish_index, publish_session, read_pointer
 from f1data.store import MemoryStore
 from tests.test_archive import fetched_session
@@ -65,6 +69,25 @@ class StaleCalendar(World):
     def load_schedule(self, fastf1, year, fresh=False):
         self.schedule_reads.append(fresh)
         return schedule_2026(austria_round=8, italy_round=14)
+
+
+def _is_recheck_day(moment: datetime) -> bool:
+    return (moment.date().toordinal() + AUSTRIA) % SETTLED_RECHECK_EVERY_DAYS < SETTLED_RECHECK_FOR_DAYS
+
+
+def a_quiet_day(after: datetime) -> datetime:
+    """The first moment from ``after`` that is not one of this session's recheck days."""
+    moment = after
+    while _is_recheck_day(moment):
+        moment += timedelta(days=1)
+    return moment
+
+
+def a_recheck_day(after: datetime) -> datetime:
+    moment = after
+    while not _is_recheck_day(moment):
+        moment += timedelta(days=1)
+    return moment
 
 
 def archive(tmp_path, moment=RACE_START + timedelta(hours=5)) -> MemoryStore:
@@ -210,7 +233,7 @@ def test_an_old_session_is_not_asked_about_on_every_run(tmp_path, monkeypatch):
     assert publish_session(store, AUSTRIA, builder.gather, build_stub).action == "current"
     assert world.classification_requests == [8]
 
-    clock[0] = RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(hours=1)
+    clock[0] = a_quiet_day(RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(hours=1))
     world.classification_requests.clear()
     assert publish_session(store, AUSTRIA, builder.gather, build_stub).action == "current"
     assert world.classification_requests == []
@@ -219,7 +242,7 @@ def test_an_old_session_is_not_asked_about_on_every_run(tmp_path, monkeypatch):
 def test_an_old_session_is_built_again_when_a_different_snapshot_would_be_picked(tmp_path, monkeypatch):
     world = World(monkeypatch)
     store = archive(tmp_path / "first")
-    long_after = RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(days=60)
+    long_after = a_quiet_day(RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(days=60))
     builder = Builder(store, fastf1=None, now=lambda: long_after)
     first = publish_session(store, AUSTRIA, builder.gather, build_stub)
     write_snapshot(store, fetched_session(tmp_path / "second"), now=long_after - timedelta(days=1))
@@ -235,7 +258,7 @@ def test_an_old_session_is_built_again_when_a_different_snapshot_would_be_picked
 def test_an_old_session_is_built_again_by_a_newer_pipeline_version(tmp_path, monkeypatch):
     world = World(monkeypatch)
     store = archive(tmp_path)
-    long_after = RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(days=60)
+    long_after = a_quiet_day(RACE_START + CLASSIFICATION_RECHECK_WINDOW + timedelta(days=60))
     builder = Builder(store, fastf1=None, now=lambda: long_after)
     publish_session(store, AUSTRIA, builder.gather, build_stub)
     monkeypatch.setattr(layout, "PIPELINE_VERSION", layout.PIPELINE_VERSION + 1)

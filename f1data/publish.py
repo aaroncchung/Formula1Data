@@ -59,10 +59,16 @@ class Inputs:
     classification_fingerprint: str | None
     # Carried to the build; not part of what makes two sets of inputs equal.
     context: Any = field(default=None, compare=False, repr=False)
+    # Everything else the build takes from outside the archive, as a value
+    # that compares equal only when the build would come out the same. Today
+    # that is the calendar entry: its round and names go into the artifacts.
+    also: Any = None
 
     @property
-    def key(self) -> tuple[str, str | None]:
-        return (self.snapshot.snapshot_id, self.classification_fingerprint)
+    def key(self) -> tuple[str, str | None, Any]:
+        """What a candidate was built from. A candidate built before a lost
+        write is published only if this has not moved."""
+        return (self.snapshot.snapshot_id, self.classification_fingerprint, self.also)
 
 
 @dataclass(frozen=True)
@@ -148,7 +154,7 @@ class Pointer:
 class Candidate:
     """A generation that has been uploaded and is waiting for its pointer."""
 
-    inputs_key: tuple[str, str | None]
+    inputs_key: tuple[str, str | None, Any]
     generation: str
     manifest_size_bytes: int
     complete: bool

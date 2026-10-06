@@ -34,6 +34,13 @@ SLOW_RETRY_INTERVAL = timedelta(days=7)
 # Jolpica about every session of every season on every run would not be polite.
 CLASSIFICATION_RECHECK_WINDOW = timedelta(days=30)
 
+# After that window a published session's classification is still asked for,
+# on two days in every thirty, spread across sessions by their key: a result
+# can be corrected months later, and "less often" must not become "never".
+# `build --recheck` asks about every session at once.
+SETTLED_RECHECK_EVERY_DAYS = 30
+SETTLED_RECHECK_FOR_DAYS = 2
+
 # A classification belongs to a session when its race date is this close to
 # the session's start. A sprint is filed under the date of its Sunday race, and
 # no two race weekends are less than a week apart.

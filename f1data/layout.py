@@ -24,9 +24,15 @@ FORMAT_VERSION = 1
 # analysis fix, a coverage bar. A pointer written by an older pipeline version
 # is rebuilt; one written by a newer version is never replaced (rule 2).
 #
+# A coverage bar counts: a pointer records whether its session met the bars,
+# so a session judged complete under an old bar has to be judged again.
+# tests/test_layout.py fails when a bar changes and this number does not.
+#
 #   2  the analysis method fixes of AR-08: pit loss, pace change across a
 #      stop, track dominance, tyre degradation fits, team-mate comparison
-PIPELINE_VERSION = 2
+#   3  coverage: no tolerance on timing laps, the tyre bar without tyre age,
+#      bars for the pit-stop feed and the corner positions
+PIPELINE_VERSION = 3
 
 ARCHIVE_PREFIX = "archive/"
 SNAPSHOT_MARKER = "snapshot.json"

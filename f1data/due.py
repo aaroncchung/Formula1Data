@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from f1data.archive import Snapshot
-from f1data.coverage import MEASUREMENT_VERSION, refetch_could_help
+from f1data.coverage import CLASSIFICATION_BAR, refetch_could_help
 from f1data.identity import parse_utc
 from f1data.policy import (
     AVAILABLE_AFTER,
@@ -74,16 +74,22 @@ def plan_fetches(
         # A snapshot measured before a feed was added says nothing about that
         # feed. The retries, and their window, are counted afresh from the
         # first fetch that looked for it.
-        current = [
-            snapshot
-            for snapshot in mine
-            if snapshot.coverage.get("measurement_version") == MEASUREMENT_VERSION
-        ]
+        current = [snapshot for snapshot in mine if snapshot.measured_in_full]
         if not current:
             plans.append(FetchPlan(session, "fetched before the measured feeds changed"))
             continue
 
-        if now - start <= CLASSIFICATION_RECHECK_WINDOW:
+        # Recent sessions, because a result can still be corrected. And any
+        # session with a snapshot fetched before there was a result at all,
+        # however old: such a snapshot records only that the classification
+        # was missing, and cannot show timing cut short until it is judged.
+        recent = now - start <= CLASSIFICATION_RECHECK_WINDOW
+        unjudged = any(
+            shortfall.bar == CLASSIFICATION_BAR
+            for snapshot in current
+            for shortfall in snapshot.shortfalls()
+        )
+        if recent or unjudged:
             laps = classified_laps(session)
             if laps:
                 current = [snapshot.judged_against(laps) for snapshot in current]

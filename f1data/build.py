@@ -30,6 +30,7 @@ from f1data.archive import (
 )
 from f1data.classification import (
     Classification,
+    ClassificationMissing,
     ClassificationUnavailable,
     fetch_classification,
     is_classified_session,
@@ -39,7 +40,12 @@ from f1data.coverage import measure_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, format_utc, identity_from_fastf1
-from f1data.policy import CLASSIFICATION_DATE_TOLERANCE, CLASSIFICATION_RECHECK_WINDOW
+from f1data.policy import (
+    CLASSIFICATION_DATE_TOLERANCE,
+    CLASSIFICATION_RECHECK_WINDOW,
+    SETTLED_RECHECK_EVERY_DAYS,
+    SETTLED_RECHECK_FOR_DAYS,
+)
 from f1data.publish import Hold, Inputs, Pointer
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
 from f1data.standings import fetch_standings
@@ -79,10 +85,13 @@ class Builder:
         store: ObjectStore,
         fastf1: Any,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        recheck: bool = False,
     ) -> None:
         self._store = store
         self._fastf1 = fastf1
         self._now = now
+        # Ask Jolpica about every session, however old.
+        self._recheck = recheck
         self._schedules: dict[int, list[ScheduledSession]] = {}
 
     def schedule(self, year: int, fresh: bool = False) -> list[ScheduledSession]:
@@ -112,10 +121,12 @@ class Builder:
             return None
         identity = snapshots[0].identity
 
-        if self._is_settled(pointer, identity):
+        # After a lost write nothing is taken on trust, the shortcut included.
+        if not fresh and self._is_settled(pointer, identity):
             # An old session, published by this pipeline version. Its
-            # classification is no longer asked for on every run; it is built
-            # again only if a different snapshot would now be picked.
+            # classification is not asked for on every run; between the days
+            # it is, the session is built again only if a different snapshot
+            # would now be picked.
             assert pointer is not None
             settled = select_snapshot(snapshots)
             if settled is not None and settled.snapshot_id == pointer.snapshot_id:
@@ -134,13 +145,25 @@ class Builder:
                     classification = fetch_classification(
                         self._fastf1, scheduled.year, scheduled.round, identity.session_type
                     )
+            except ClassificationMissing as exc:
+                # Usual in the hours after a race: the next run asks again.
+                # But not for ever. Once the retry window has closed the
+                # session is published as partial like any other that is
+                # short, with the classification named as what is missing.
+                if self._now() < partial_publication_time(snapshots):
+                    return Hold(str(exc))
             except ClassificationUnavailable as exc:
-                # Usual in the hours after a race. Not a failure: the next run asks again.
+                # Jolpica did not answer, so nothing is known. Never a reason
+                # to publish without a result that may well exist.
                 return Hold(str(exc))
-            _check_same_event(classification, identity, scheduled)
-            # A snapshot knows the classification of the day it was fetched,
-            # which may be none. Timing is compared with the laps classified now.
-            snapshots = [snapshot.judged_against(classification.laps_by_number) for snapshot in snapshots]
+            if classification is not None:
+                _check_same_event(classification, identity, scheduled)
+                # A snapshot knows the classification of the day it was
+                # fetched, which may be none. Timing is compared with the laps
+                # classified now.
+                snapshots = [
+                    snapshot.judged_against(classification.laps_by_number) for snapshot in snapshots
+                ]
 
         snapshot = select_snapshot(snapshots)
         assert snapshot is not None
@@ -156,14 +179,20 @@ class Builder:
             snapshot=snapshot,
             classification_fingerprint=classification.fingerprint if classification else None,
             context=BuildContext(scheduled=scheduled, classification=classification),
+            # The calendar entry reaches the artifacts (the round, the names),
+            # so a build made under another entry is not this build.
+            also=(scheduled.year, scheduled.round, scheduled.meeting_name, scheduled.session_name),
         )
 
     def _is_settled(self, pointer: Pointer | None, identity: SessionIdentity) -> bool:
-        return (
-            pointer is not None
-            and pointer.pipeline_version == layout.PIPELINE_VERSION
-            and self._now() - identity.start_time > CLASSIFICATION_RECHECK_WINDOW
-        )
+        if self._recheck or pointer is None or pointer.pipeline_version != layout.PIPELINE_VERSION:
+            return False
+        now = self._now()
+        if now - identity.start_time <= CLASSIFICATION_RECHECK_WINDOW:
+            return False
+        # On its days the session is asked about like a recent one.
+        day = now.date().toordinal() + identity.session_key
+        return day % SETTLED_RECHECK_EVERY_DAYS >= SETTLED_RECHECK_FOR_DAYS
 
     def standings(self, year: int) -> dict[str, Any] | None:
         """The championship standings of ``year`` as Jolpica has them now."""

@@ -20,13 +20,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
+from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, circuit_corner_count, parse_pit_stop_series
 
 # What a measurement records. A snapshot measured by an older version says
 # nothing about a feed added since, and is fetched again (f1data/due.py).
 #
 #   2  the pit-stop feed and the circuit information; tyre age counted
 #      apart from compound and stint
+#
+# The number goes up when a fetch starts collecting something it did not
+# before, because only another fetch can supply it. A figure that can be
+# worked out from what is already archived is added without a new number, and
+# read as optional: ``circuit_corners`` is one.
 MEASUREMENT_VERSION = 2
 
 # A lap's telemetry is usable when its samples reach from the start of the lap
@@ -69,6 +74,7 @@ _NOT_HELD_STATUSES = frozenset({403, 404})
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
 CLASSIFICATION_BAR = "classification"
+REMEASURE_BAR = "measurement"
 _ENDED_STATUSES = frozenset({"Finished", "Finalised", "Ends"})
 _UNKNOWN_COMPOUNDS = frozenset({"", "NONE", "NAN", "UNKNOWN"})
 
@@ -141,6 +147,7 @@ def measure_coverage(
         # A session nobody pitted in has no pit-stop feed to miss.
         "pit_stops_in_timing": _pit_stops_in_timing(laps),
         "pit_stops_in_series": len(parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b""))),
+        "circuit_corners": circuit_corner_count(extras.get(CIRCUIT_INFO, b"")),
         "session_ended": _session_ended(_frame(session, "session_status")),
         "total_laps": _int_or_none(_safe_attr(session, "total_laps")),
         "drivers": drivers,
@@ -160,6 +167,15 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
         shortfalls.append(Shortfall("lap_count", None, "feed did not arrive"))
     if feeds.get("session_status") and not measurement.get("session_ended"):
         shortfalls.append(Shortfall("session_status", None, "feed does not show the session ended"))
+    if int(measurement.get("measurement_version") or 1) < MEASUREMENT_VERSION:
+        # An older measurement did not count what today's bars ask about, and
+        # a count that is absent is not a count of zero. Say so, and let the
+        # snapshot rank below any that was measured in full.
+        shortfalls.append(Shortfall(REMEASURE_BAR, None, "measured before the current bars existed"))
+    # The bar is that the feed arrived with at least one stop it can vouch
+    # for. The two counts are not compared: the timing counts every entry to
+    # the pit lane, and across the 21 sessions of 2026 the feed held between
+    # 25% (Monza, 8 of 32) and 100% of them.
     stops = int(measurement.get("pit_stops_in_timing") or 0)
     if race_like and stops and not measurement.get("pit_stops_in_series"):
         shortfalls.append(
@@ -168,7 +184,10 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
     # The corner analysis can fall back to inferring corners from braking, so
     # a build does not fail without this. It is still a bar: with it missing
     # the session shows inferred corners, and a later fetch may well get it.
-    if not feeds.get("circuit_info"):
+    corners = measurement.get("circuit_corners")
+    # Snapshots measured before corners were counted say only whether the
+    # file arrived.
+    if not (corners if corners is not None else feeds.get("circuit_info")):
         shortfalls.append(Shortfall("circuit_info", None, "corner positions did not arrive"))
 
     drivers = measurement.get("drivers", {})
@@ -219,10 +238,11 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
     """The measurement with each driver's classified lap count taken from today's result.
 
     ``classified_laps`` maps a driver number to the laps Jolpica classifies the
-    driver with. A snapshot records the classification as it stood when it was
-    fetched, which may be nothing at all; a session is judged against the one
-    of today. A classified driver the fetch never saw is added with nothing to
-    their name, so that their absence is a shortfall and not an omission.
+    driver with, and must be the whole result, not part of one. A snapshot
+    records the classification as it stood when it was fetched, which may be
+    nothing at all; a session is judged against the one of today. A classified
+    driver the fetch never saw is added with nothing to their name, so that
+    their absence is a shortfall and not an omission.
     """
     by_number = {str(number): int(laps) for number, laps in classified_laps.items()}
     drivers: dict[str, dict[str, Any]] = {}
@@ -230,7 +250,10 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
     for code, driver in measurement.get("drivers", {}).items():
         number = str(driver.get("number"))
         seen.add(number)
-        drivers[code] = {**driver, "classified_laps": by_number.get(number, driver.get("classified_laps"))}
+        # The result of today is the whole answer. A driver it does not list
+        # is not classified, so has no laps to account for; what the snapshot
+        # recorded for them, a count or the lack of one, no longer applies.
+        drivers[code] = {**driver, "classified_laps": by_number.get(number, 0)}
     for number, laps in sorted(by_number.items()):
         if number not in seen:
             drivers[f"#{number}"] = {
@@ -254,6 +277,15 @@ def f1_does_not_hold(shortfall: Shortfall, feed_status: dict[str, Any]) -> bool:
     for the pit-stop feed of races before late 2024. A feed that was answered
     and came up short for a driver is a different thing: it may yet be mended.
     """
+    # Only a feed that is missing outright can be one F1 does not hold. One
+    # that arrived and is short for a driver came from somewhere.
+    if shortfall.driver is not None:
+        return False
+    # A refusal looks the same as an absence, one feed at a time. It counts as
+    # an absence only from a fetch F1 was otherwise answering: the plan asks
+    # for "a fetch from a network F1 answers" (criterion 1).
+    if feed_status.get(FEED_FILE_BY_BAR["session_info"]) != 200:
+        return False
     return feed_status.get(FEED_FILE_BY_BAR.get(shortfall.bar, "")) in _NOT_HELD_STATUSES
 
 
@@ -342,11 +374,13 @@ def _tyre_laps(laps: pd.DataFrame, with_age: bool = False) -> int:
     21 of Bearman's 60 laps, and in the 2026 race at Sepang it is 152 laps
     across eleven drivers.
     """
-    if len(laps) == 0 or not {"Compound", "TyreLife", "Stint"} <= set(laps.columns):
+    if len(laps) == 0 or not {"Compound", "Stint"} <= set(laps.columns):
         return 0
     compound = laps["Compound"].astype("string").str.strip().str.upper()
     known = compound.notna() & ~compound.isin(_UNKNOWN_COMPOUNDS) & laps["Stint"].notna()
     if with_age:
+        if "TyreLife" not in laps.columns:
+            return 0
         known = known & laps["TyreLife"].notna()
     return int(known.sum())
 
