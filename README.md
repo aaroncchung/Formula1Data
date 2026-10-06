@@ -63,7 +63,7 @@ frontend static export ------> Cloudflare Pages
 ├── frontend/
 │   ├── public/data/          Generated static JSON artifacts
 │   ├── src/lib/api.ts        Browser static artifact reader
-│   ├── src/lib/api-server.ts Build-time static artifact reader
+│   ├── src/lib/published/    Runtime reader of published data (R2, through the read-only Worker)
 │   └── next.config.ts        Static export configuration
 ├── backend/                  Optional local FastAPI/FastF1 code path
 │   ├── app/                  Existing routes, ingestion, services, models
