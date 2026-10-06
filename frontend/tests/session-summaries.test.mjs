@@ -44,18 +44,36 @@ const team = (id, name, color) => ({ team_id: id, name, color });
 const MERCEDES = team("mercedes", "Mercedes", "#00D7B6");
 const RED_BULL = team("red-bull", "Red Bull", "#4781D7");
 
+const driver = (code, name, number, driverTeam) => ({
+  driver_id: code.toLowerCase(),
+  code,
+  full_name: name,
+  number,
+  country: null,
+  team: driverTeam
+});
 const DRIVERS = [
-  { driver_id: "rus", code: "RUS", full_name: "George Russell", number: 63, team: MERCEDES },
-  { driver_id: "ver", code: "VER", full_name: "Max Verstappen", number: 3, team: RED_BULL },
-  { driver_id: "ant", code: "ANT", full_name: "Andrea Kimi Antonelli", number: 12, team: MERCEDES }
+  driver("RUS", "George Russell", 63, MERCEDES),
+  driver("VER", "Max Verstappen", 3, RED_BULL),
+  driver("ANT", "Andrea Kimi Antonelli", 12, MERCEDES)
 ];
-const RESULTS = [
-  { session_id: "s", position: 1, driver_code: "RUS", points: 25 },
-  { session_id: "s", position: 2, driver_code: "VER", points: 18 },
-  { session_id: "s", position: 5, driver_code: "ANT", points: 10 }
-];
+const result = (position, code, points, fields = {}) => ({
+  position,
+  classified_position: String(position),
+  driver_code: code,
+  points,
+  grid: position,
+  laps: 71,
+  status: "Finished",
+  time_ms: null,
+  gap_ms: null,
+  laps_down: null,
+  behind_at_flag_ms: null,
+  provisional: false,
+  ...fields
+});
+const RESULTS = [result(1, "RUS", 25), result(2, "VER", 18), result(5, "ANT", 10)];
 const RACE_PACE = {
-  session_id: "s",
   drivers: [
     { driver_code: "RUS", median_lap_ms: 68100, lap_count: 60 },
     { driver_code: "ANT", median_lap_ms: 68350, lap_count: 58 }
@@ -63,7 +81,7 @@ const RACE_PACE = {
   stints: [],
   caveats: []
 };
-const IDEAL_LAPS = { session_id: "s", rows: [{ driver_code: "VER", ideal_lap_ms: 66900, delta_to_ideal_ms: 120 }] };
+const IDEAL_LAPS = { rows: [{ driver_code: "VER", ideal_lap_ms: 66900, delta_to_ideal_ms: 120 }] };
 
 // ---------------------------------------------------------------------------
 // Readers
@@ -189,6 +207,50 @@ test("a driver card carries the driver's own finish, pace and ideal lap", () => 
       ["RUS", 1, 68100, null],
       ["VER", 2, null, 66900],
       ["ANT", 5, 68350, null]
+    ]
+  );
+});
+
+test("a driver the classification gives a letter has no finishing place, and the card shows the letter", () => {
+  const retired = [RESULTS[0], result(19, "VER", 0, { classified_position: "R", status: "Retired" })];
+
+  const cards = driverCards({ drivers: DRIVERS, results: retired, racePace: null, idealLaps: null });
+
+  assert.deepEqual(
+    cards.map((card) => [card.driver.code, card.finish, card.classification]),
+    [
+      ["RUS", 1, "1"],
+      ["VER", null, "R"],
+      ["ANT", null, null]
+    ]
+  );
+  // The retirement is not the team's best finish, and it is not a 19th place.
+  const teams = teamCards({ drivers: DRIVERS, results: retired, racePace: null, idealLaps: null });
+  assert.deepEqual(teams.map((card) => [card.id, card.bestFinish]), [["mercedes", 1], ["red-bull", null]]);
+});
+
+test("a provisional order gives places and no points", () => {
+  const provisional = RESULTS.map((row) => ({ ...row, classified_position: null, points: null, provisional: true }));
+
+  const teams = teamCards({ drivers: DRIVERS, results: provisional, racePace: null, idealLaps: null });
+
+  assert.deepEqual(teams.map((card) => [card.id, card.points, card.bestFinish]), [
+    ["mercedes", null, 1],
+    ["red-bull", null, 2]
+  ]);
+});
+
+test("drivers F1's list names no team for are shown together, not left out", () => {
+  const drivers = [...DRIVERS, driver("DOO", "Jack Doohan", 7, null), driver("COL", "Franco Colapinto", 43, null)];
+
+  const teams = teamCards({ drivers, results: null, racePace: null, idealLaps: null });
+
+  assert.deepEqual(
+    teams.map((card) => [card.name, card.color, card.drivers.map((item) => item.code)]),
+    [
+      ["Mercedes", "#00D7B6", ["RUS", "ANT"]],
+      ["Red Bull", "#4781D7", ["VER"]],
+      ["No team listed", null, ["DOO", "COL"]]
     ]
   );
 });

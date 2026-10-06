@@ -4,14 +4,15 @@ import { useMemo, useState } from "react";
 
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { fitBounds, outlinePath, project, replayBounds, replayCars, type Viewport } from "@/lib/track-map";
-import type { Driver, PositionReplayFrame } from "@/types/domain";
+import type { Driver } from "@/lib/published/types";
+import type { PositionReplayFrame } from "@/types/domain";
 
 // Drawn as plain SVG, not as a chart: the viewBox keeps one scale on both
 // axes at any size on screen, which chart axes do not.
 const VIEWPORT: Viewport = { width: 1000, height: 600, padding: 40 };
 const MAP_BACKGROUND = "#0b0f17";
 
-export function PositionReplay({ frames, drivers }: { frames: PositionReplayFrame[]; drivers: Driver[] }) {
+export function PositionReplay({ frames, drivers }: { frames: PositionReplayFrame[]; drivers: ReadonlyArray<Driver> }) {
   const [index, setIndex] = useState(0);
   // Taken from every frame, once. Moving through the replay changes which
   // cars are drawn, never where a point on the circuit lands.

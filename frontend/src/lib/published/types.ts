@@ -1,18 +1,22 @@
 /**
- * What the reader hands on of the objects it validates in full: the index, a
- * session's pointer, a generation's manifest and a season's standings.
+ * The types of everything the site reads, all derived from the generated ones
+ * in schema.ts, which are the published schema.
  *
- * Every type here is derived from the generated ones in schema.ts, which are
- * the published schema, so the reader cannot describe a field the format does
- * not have, or miss one it gains: parse.ts builds these values field by
- * field, and a field that changed in the schema stops it compiling. The few
- * places the reader is deliberately narrower or wider than the schema are
- * spelled out below, each with its reason.
+ * First, what the reader validates in full: the index, a session's pointer, a
+ * generation's manifest and a season's standings. The reader cannot describe
+ * a field the format does not have, or miss one it gains: parse.ts builds
+ * these values field by field, and a field that changed in the schema stops
+ * it compiling. The few places the reader is deliberately narrower or wider
+ * than the schema are spelled out below, each with its reason. These values
+ * are frozen at runtime, so that nothing a page does can change which
+ * generation a view reads.
  *
- * Everything is read-only, and frozen at runtime, so that nothing a page does
- * can change which generation a view reads. The files of a generation are
- * not validated field by field and are not frozen; their types are used
- * straight from schema.ts (see artifacts.ts).
+ * Then the files of a generation, by their path (`GenerationFiles`), and the
+ * rows they are made of. Those are the schema's types as they are: a
+ * generation is pinned to one format by its manifest, so nothing in it is
+ * read more loosely than the schema says. They are read-only too, because a
+ * page reads each file once and every tab is handed the same object
+ * (share.ts).
  */
 
 import type * as Schema from "./schema.ts";
@@ -110,3 +114,67 @@ export type ConstructorStanding = DeepReadonly<Schema.ConstructorStanding>;
  * assumes one.
  */
 export type Standings = DeepReadonly<Schema.Standings>;
+
+// ---------------------------------------------------------------------------
+// The files of a generation
+// ---------------------------------------------------------------------------
+
+type GenerationPrefix = "generations/{session_key}/{generation}/";
+
+/**
+ * Every file a generation can hold, by its path inside the generation, with
+ * the type the schema gives it. The paths are the schema's own, so a file the
+ * format drops or renames stops whatever reads it from compiling.
+ *
+ * The manifest is not here: the client reads it to pin the generation, and no
+ * page reads it as a file. `telemetry/{driver_code}.json` is one path for
+ * every driver's file; the telemetry index says which there are.
+ */
+export type GenerationFiles = {
+  readonly [Path in keyof Schema.Formula1DataPublishedFormat2 as Path extends `${GenerationPrefix}${infer File}`
+    ? Exclude<File, "manifest.json">
+    : never]: DeepReadonly<Schema.Formula1DataPublishedFormat2[Path]>;
+};
+
+/** A path inside a generation that the schema names. */
+export type GenerationPath = keyof GenerationFiles;
+
+export type SessionSummary = GenerationFiles["summary.json"];
+export type Team = DeepReadonly<Schema.Team>;
+export type Driver = DeepReadonly<Schema.Driver>;
+export type Lap = DeepReadonly<Schema.Lap>;
+export type Result = DeepReadonly<Schema.Result>;
+export type Stint = DeepReadonly<Schema.Stint>;
+export type PitStop = DeepReadonly<Schema.PitStop>;
+export type WeatherSample = DeepReadonly<Schema.WeatherSample>;
+export type RaceControlMessage = DeepReadonly<Schema.RaceControlMessage>;
+export type Compound = Schema.Compound;
+
+export type Corners = GenerationFiles["corners.json"];
+export type Corner = DeepReadonly<Schema.Corner>;
+/** `coverage.json`: the figures behind the verdict a pointer carries. */
+export type Coverage = GenerationFiles["coverage.json"];
+
+export type PositionReplay = GenerationFiles["position-replay.json"];
+export type ReplayDriver = DeepReadonly<Schema.ReplayDriver>;
+export type TelemetryIndex = GenerationFiles["telemetry/index.json"];
+export type TelemetryDriverEntry = DeepReadonly<Schema.TelemetryDriverEntry>;
+export type DriverTelemetry = GenerationFiles["telemetry/{driver_code}.json"];
+export type TelemetryLap = DeepReadonly<Schema.TelemetryLap>;
+export type TelemetryChannel = Schema.TelemetryChannel;
+
+export type LapTimeSeries = DeepReadonly<Schema.LapTimeSeries>;
+export type RacePace = GenerationFiles["analysis/race-pace.json"];
+export type RacePaceRow = DeepReadonly<Schema.RacePaceRow>;
+export type TyreDegradation = GenerationFiles["analysis/tyre-degradation.json"];
+export type TyreDegradationRow = DeepReadonly<Schema.TyreDegradationRow>;
+export type IdealLaps = GenerationFiles["analysis/ideal-laps.json"];
+export type TeammateComparison = GenerationFiles["analysis/team-mate-comparison.json"];
+export type TeammateComparisonRow = DeepReadonly<Schema.TeammateComparisonRow>;
+export type Strategy = GenerationFiles["analysis/strategy.json"];
+export type PaceChangeAcrossStop = DeepReadonly<Schema.PaceChangeAcrossStop>;
+export type PitLossExclusion = Schema.PitLossExclusion;
+export type TrackDominance = GenerationFiles["analysis/track-dominance.json"];
+export type CornerAnalysis = GenerationFiles["analysis/corner-analysis.json"];
+export type CarPerformance = GenerationFiles["analysis/car-performance.json"];
+export type PacePrediction = GenerationFiles["analysis/pace-prediction.json"];

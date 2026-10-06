@@ -35,7 +35,8 @@ export type DriverStyles = ReadonlyMap<string, DriverStyle>;
 
 type StyledDriver = { code: string; color?: string | null };
 
-type TeamDriver = { code: string; team: { color?: string | null } };
+/** A driver as a session lists one. `team` is null when F1's driver list names no team. */
+type TeamDriver = { readonly code: string; readonly team: { readonly color?: string | null } | null };
 
 export function assignDriverStyles(drivers: ReadonlyArray<StyledDriver>): DriverStyles {
   return assignInTiers([drivers]);
@@ -53,7 +54,7 @@ export function teamDriverStyles(
   drivers: ReadonlyArray<TeamDriver>,
   others: ReadonlyArray<StyledDriver> = []
 ): DriverStyles {
-  return assignInTiers([drivers.map((driver) => ({ code: driver.code, color: driver.team.color })), others]);
+  return assignInTiers([drivers.map((driver) => ({ code: driver.code, color: driver.team?.color })), others]);
 }
 
 /**
@@ -61,7 +62,7 @@ export function teamDriverStyles(
  * code and so does not have to tell team-mates apart.
  */
 export function teamColorByDriver(drivers: ReadonlyArray<TeamDriver>): Record<string, string | null | undefined> {
-  return Object.fromEntries(drivers.map((driver) => [driver.code, driver.team.color]));
+  return Object.fromEntries(drivers.map((driver) => [driver.code, driver.team?.color]));
 }
 
 /** The style for one driver, or a plain grey one for a driver the styles do not cover. */

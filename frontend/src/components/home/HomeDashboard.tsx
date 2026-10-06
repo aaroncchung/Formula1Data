@@ -24,6 +24,7 @@ import type { SessionView } from "@/lib/published/client";
 import { sessionHref } from "@/lib/published/lookup";
 import type { ReadySession } from "@/lib/published/session";
 import type { PublishedIndex } from "@/lib/published/types";
+import { pointsLabel, resultPosition } from "@/lib/results-view";
 import { meetingHref, STANDINGS_PATH, STRATEGY_PATH, TELEMETRY_PATH } from "@/lib/routes";
 import { readPaceAnalysis, readSessionFigures } from "@/lib/session-summaries";
 
@@ -234,9 +235,9 @@ function LatestPanels({ session }: { session: ReadySession }) {
                     key={result.driver_code}
                     className="grid grid-cols-[28px_1fr_auto] items-center gap-3 rounded-md border border-line/60 bg-carbon/35 px-3 py-2.5"
                   >
-                    <span className="font-mono text-xs text-slate-500">{result.position}</span>
+                    <span className="font-mono text-xs text-slate-500">{resultPosition(result).text}</span>
                     <DriverBadge code={result.driver_code} color={colors[result.driver_code]} />
-                    <span className="font-mono text-xs font-bold text-white">{result.points ?? 0} pts</span>
+                    <span className="font-mono text-xs font-bold text-white">{pointsLabel(result.points)} pts</span>
                   </div>
                 ))}
               </div>

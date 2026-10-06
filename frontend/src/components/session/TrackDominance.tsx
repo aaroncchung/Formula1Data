@@ -3,7 +3,8 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { minisectorTally } from "@/lib/performance-view";
 import { boundsOf, fitBounds, project, type Viewport } from "@/lib/track-map";
-import type { Driver, TrackDominanceResult } from "@/types/domain";
+import type { Driver } from "@/lib/published/types";
+import type { TrackDominanceResult } from "@/types/domain";
 
 /** The dash of the second team-mate, scaled up for the thick line of the track map. */
 const TRACK_DASH = "12 7";
@@ -13,7 +14,7 @@ const DOMINANCE_VIEWPORT: Viewport = { width: 600, height: 400, padding: 25 };
  * The circuit, each minisector in the colour of the driver who was quickest
  * through it, with the count beside it.
  */
-export function TrackDominance({ result, drivers }: { result: TrackDominanceResult; drivers: Driver[] }) {
+export function TrackDominance({ result, drivers }: { result: TrackDominanceResult; drivers: ReadonlyArray<Driver> }) {
   // The map identifies a driver by the line alone, so team-mates need the
   // shared solid/dashed styles here, not just the team colour.
   const styles = teamDriverStyles(drivers);

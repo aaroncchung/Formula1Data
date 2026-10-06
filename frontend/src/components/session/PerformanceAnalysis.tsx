@@ -8,19 +8,22 @@ import { TrackDominance } from "@/components/session/TrackDominance";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import { unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
+import type { Driver as PublishedDriver } from "@/lib/published/types";
 import type {
   CarPerformanceResult,
   CornerAnalysisResult,
-  Driver,
   IdealLapsResult,
   PacePredictionResult,
   TeammateComparisonResult,
   TrackDominanceResult
 } from "@/types/domain";
 
+type Driver = PublishedDriver;
+type Drivers = ReadonlyArray<Driver>;
+
 /** Each analysis is null when the session does not have it. */
 type PerformanceAnalysisProps = {
-  drivers: Driver[];
+  drivers: Drivers;
   idealLaps: IdealLapsResult | null;
   teammateComparison: TeammateComparisonResult | null;
   trackDominance: TrackDominanceResult | null;
@@ -90,7 +93,7 @@ function NotShown({ notices }: { notices: AnalysisNotice[] }) {
   );
 }
 
-function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; drivers: Driver[] }) {
+function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; drivers: Drivers }) {
   if (!result) return <EmptyState title="Ideal laps unavailable" detail="This session has no ideal-lap analysis." />;
   if (!result.rows.length) return <EmptyState title="Ideal laps unavailable" detail="No driver has a time in every sector." />;
   const colors = teamColorByDriver(drivers);
@@ -104,7 +107,7 @@ function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; dr
   );
 }
 
-function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult; drivers: Driver[] }) {
+function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
@@ -117,7 +120,7 @@ function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult;
   ]} />;
 }
 
-function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult; drivers: Driver[] }) {
+function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   const rows = result.corners.flatMap((corner) => corner.drivers.map((driver) => ({ ...driver, corner_number: corner.corner_number, distance_m: corner.distance_m })));
   return <DataTable rows={rows} columns={[
@@ -131,7 +134,7 @@ function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult;
   ]} />;
 }
 
-function PacePredictionView({ result, drivers }: { result: PacePredictionResult; drivers: Driver[] }) {
+function PacePredictionView({ result, drivers }: { result: PacePredictionResult; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },

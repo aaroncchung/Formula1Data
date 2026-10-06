@@ -34,17 +34,21 @@ function DriverCardView({ card }: { card: DriverCard }) {
   const { driver } = card;
   return (
     <div className="surface overflow-hidden p-5">
-      <div className="-mx-5 -mt-5 mb-5 h-1" style={{ backgroundColor: driver.team.color || "#64748b" }} />
+      <div className="-mx-5 -mt-5 mb-5 h-1" style={{ backgroundColor: driver.team?.color || "#64748b" }} />
       <div className="flex items-start justify-between gap-3">
-        <DriverBadge code={driver.code} color={driver.team.color} />
+        <DriverBadge code={driver.code} color={driver.team?.color} />
         <div className="font-mono text-sm text-slate-500">#{driver.number ?? "--"}</div>
       </div>
       <div className="mt-3 text-xl font-black text-white">{driver.full_name}</div>
       <div className="mt-4">
-        <TeamColorPill name={driver.team.name} color={driver.team.color} />
+        {driver.team ? (
+          <TeamColorPill name={driver.team.name} color={driver.team.color} />
+        ) : (
+          <span className="text-xs text-slate-500">No team listed</span>
+        )}
       </div>
       <div className="mt-5 grid grid-cols-3 gap-2 border-t border-line/70 pt-4 text-center">
-        <Stat label="Finish" value={card.finish === null ? "--" : `P${card.finish}`} />
+        <Stat label="Finish" value={card.finish === null ? (card.classification ?? "--") : `P${card.finish}`} />
         <Stat label="Median pace" value={formatMs(card.medianLapMs)} />
         <Stat label="Ideal" value={formatMs(card.idealLapMs)} />
       </div>

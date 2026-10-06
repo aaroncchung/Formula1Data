@@ -27,7 +27,8 @@ import {
   tyreFitLabel,
   tyreFitsFor
 } from "@/lib/tyre-chart";
-import type { Driver, Lap, TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
+import type { Driver } from "@/lib/published/types";
+import type { Lap, TyreDegradationResult, TyreDegradationRow } from "@/types/domain";
 
 /** Stint fits shown before the reader asks for the rest: three rows of cards. */
 const FIT_PREVIEW_COUNT = 9;
@@ -39,7 +40,7 @@ export function TyreDegradationChart({
 }: {
   laps: Lap[];
   degradation: TyreDegradationResult;
-  drivers: Driver[];
+  drivers: ReadonlyArray<Driver>;
 }) {
   const plot = useMemo(() => tyreAgePlot(laps), [laps]);
   const codes = useMemo(() => plot.drivers.map((entry) => entry.driver), [plot]);

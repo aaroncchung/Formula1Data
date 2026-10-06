@@ -146,14 +146,17 @@ test("styles for a session's drivers come from the team colour", () => {
   const drivers = [
     { code: "RUS", team: { color: "#00D7B6" } },
     { code: "ANT", team: { color: "#00D7B6" } },
-    { code: "VER", team: { color: null } }
+    { code: "VER", team: { color: null } },
+    // F1's driver list can name no team for a driver.
+    { code: "DOO", team: null }
   ];
   const styles = teamDriverStyles(drivers);
 
   assert.equal(driverStyle(styles, "RUS").color, "#00d7b6");
   assert.equal(typeof driverStyle(styles, "RUS").dash, "string");
   assert.equal(driverStyle(styles, "VER").color, FALLBACK_DRIVER_COLOR);
-  assert.deepEqual(teamColorByDriver(drivers), { RUS: "#00D7B6", ANT: "#00D7B6", VER: null });
+  assert.deepEqual(teamColorByDriver(drivers), { RUS: "#00D7B6", ANT: "#00D7B6", VER: null, DOO: undefined });
+  assert.equal(driverStyle(styles, "DOO").color, FALLBACK_DRIVER_COLOR);
 });
 
 const MERCEDES = [

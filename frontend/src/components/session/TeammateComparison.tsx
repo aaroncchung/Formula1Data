@@ -3,7 +3,8 @@ import { DriverBadge } from "@/components/session/Badges";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
 import { teammateBasis, teammateGap, teammateGapText } from "@/lib/teammate-view";
-import type { Driver, TeammateComparisonResult, TeammateComparisonRow } from "@/types/domain";
+import type { Driver } from "@/lib/published/types";
+import type { TeammateComparisonResult, TeammateComparisonRow } from "@/types/domain";
 
 /**
  * The two drivers of each team, compared on the laps both ran cleanly.
@@ -11,7 +12,7 @@ import type { Driver, TeammateComparisonResult, TeammateComparisonRow } from "@/
  * A row can have no gap, when too few laps match; it then says so, with the
  * row's own reason, in place of a number.
  */
-export function TeammateComparison({ result, drivers }: { result: TeammateComparisonResult | null; drivers: Driver[] }) {
+export function TeammateComparison({ result, drivers }: { result: TeammateComparisonResult | null; drivers: ReadonlyArray<Driver> }) {
   if (!result?.rows.length) {
     return <EmptyState title="Team-mate comparison unavailable" detail="This session does not contain two comparable drivers per team." />;
   }
