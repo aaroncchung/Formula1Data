@@ -279,7 +279,7 @@ export function requireListed(view: SessionView, tab: SessionTabId): void {
 }
 
 /** Read a file the generation may leave out: null, and no request, when it did. */
-function readIfListed<T>(view: SessionView, file: ArtifactFile<T>): Promise<T | null> {
+export function readIfListed<T>(view: SessionView, file: ArtifactFile<T>): Promise<T | null> {
   return view.has(file.path) ? file.read(view) : Promise.resolve(null);
 }
 

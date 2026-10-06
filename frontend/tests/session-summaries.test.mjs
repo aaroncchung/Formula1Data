@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { latestPublishedSession } from "../src/lib/calendar.ts";
 import { PublishedDataError } from "../src/lib/published/errors.ts";
-import {
-  defaultTelemetryLaps,
-  driverCards,
-  readField,
-  readRacePace,
-  readSessionFigures,
-  readStrategy,
-  readTelemetryIndex,
-  teamCards
-} from "../src/lib/session-summaries.ts";
+import { loadSessionByKey } from "../src/lib/published/session.ts";
+import { driverCards, readField, readPaceAnalysis, readSessionFigures, teamCards } from "../src/lib/session-summaries.ts";
 import { shareWhilePending } from "../src/lib/shared-request.ts";
-import { telemetryComparerOf } from "../src/lib/view-telemetry.ts";
+import {
+  bucketOf,
+  clientOf,
+  FIRST_GENERATION,
+  generationPrefix,
+  INDEX_KEY,
+  POINTER_KEY,
+  republish,
+  reversedResults,
+  SESSION_KEY
+} from "./support/published-bucket.mjs";
 
 /** A pinned view over in-memory files. A path it does not list is refused, as the real one refuses it. */
 function viewOf(files, sessionKey = 11315) {
@@ -66,28 +69,14 @@ const IDEAL_LAPS = { session_id: "s", rows: [{ driver_code: "VER", ideal_lap_ms:
 // Readers
 // ---------------------------------------------------------------------------
 
-test("the strategy page reads its three files and nothing else", async () => {
-  const strategy = { session_id: "s", stints: [], compound_usage: {}, pit_stops: [], undercut_overcut: [], caveats: [] };
-  const view = viewOf({
-    "stints.json": [{ driver_code: "RUS", stint: 1 }],
-    "pit-stops.json": [],
-    "analysis/strategy.json": strategy,
-    "laps.json": [],
-    "position-replay.json": []
-  });
-
-  const read = await readStrategy(view);
-
-  assert.deepEqual(read, { stints: [{ driver_code: "RUS", stint: 1 }], pitStops: [], strategy });
-  assert.deepEqual([...view.reads].sort(), ["analysis/strategy.json", "pit-stops.json", "stints.json"]);
-});
-
 test("the field is the drivers, with whatever else the generation holds beside them", async () => {
   const full = viewOf({
     "drivers.json": DRIVERS,
     "results.json": RESULTS,
     "analysis/race-pace.json": RACE_PACE,
-    "analysis/ideal-laps.json": IDEAL_LAPS
+    "analysis/ideal-laps.json": IDEAL_LAPS,
+    "laps.json": [],
+    "position-replay.json": []
   });
   assert.deepEqual(await readField(full), {
     drivers: DRIVERS,
@@ -95,6 +84,13 @@ test("the field is the drivers, with whatever else the generation holds beside t
     racePace: RACE_PACE,
     idealLaps: IDEAL_LAPS
   });
+  // The page's own four files, and neither the laps nor the replay.
+  assert.deepEqual([...full.reads].sort(), [
+    "analysis/ideal-laps.json",
+    "analysis/race-pace.json",
+    "drivers.json",
+    "results.json"
+  ]);
 
   const bare = viewOf({ "drivers.json": DRIVERS });
   assert.deepEqual(await readField(bare), { drivers: DRIVERS, results: null, racePace: null, idealLaps: null });
@@ -112,19 +108,19 @@ test("a failed read is passed on, so the page can tell a missing generation from
   const gone = new PublishedDataError("generation_gone", "The generation is gone.", {});
 
   await assert.rejects(
-    () => readStrategy(viewOf({ "stints.json": gone, "pit-stops.json": [] })),
+    () => readField(viewOf({ "drivers.json": DRIVERS, "results.json": gone })),
     (error) => error.code === "generation_gone"
   );
 });
 
-test("an artifact of the wrong kind is invalid before a page maps over it", async () => {
+test("a file of the wrong kind is invalid before a page maps over it, as it is for a tab", async () => {
+  // The checks are the ones the session dashboard's tabs make: these pages
+  // read every file through the same `ARTIFACTS`.
   const cases = [
     [() => readField(viewOf({ "drivers.json": { drivers: [] } })), /drivers\.json is not a list/],
-    [() => readStrategy(viewOf({ "stints.json": "none" })), /stints\.json is not a list/],
-    [() => readStrategy(viewOf({ "analysis/strategy.json": [] })), /analysis\/strategy\.json is not an object/],
-    [() => readStrategy(viewOf({ "analysis/strategy.json": {} })), /has no list named caveats/],
-    [() => readRacePace(viewOf({ "analysis/race-pace.json": { drivers: null } })), /has no list named drivers/],
-    [() => readTelemetryIndex(viewOf({ "telemetry/index.json": { laps: {} } })), /has no list named laps/],
+    [() => readField(viewOf({ "drivers.json": DRIVERS, "results.json": "none" })), /results\.json is not a list/],
+    [() => readPaceAnalysis(viewOf({ "analysis/race-pace.json": { drivers: null } })), /has no list of drivers/],
+    [() => readSessionFigures(viewOf({ "analysis/ideal-laps.json": { rows: 3 } })), /has no list of rows/],
     [() => readSessionFigures(viewOf({ "summary.json": null })), /summary\.json is not an object/]
   ];
 
@@ -133,13 +129,51 @@ test("an artifact of the wrong kind is invalid before a page maps over it", asyn
   }
 });
 
-test("the headline figures and the telemetry index are absent when the generation has none", async () => {
+test("the home page's figures and chart are absent, with no request, when the generation has none", async () => {
   const view = viewOf({ "drivers.json": DRIVERS });
 
   assert.deepEqual(await readSessionFigures(view), { summary: null, idealLaps: null });
-  assert.equal(await readRacePace(view), null);
-  assert.equal(await readTelemetryIndex(view), null);
+  assert.equal(await readPaceAnalysis(view), null);
   assert.deepEqual(view.reads, []);
+});
+
+test("the home page's chart reads the pace analysis and not the laps the race-pace tab reads", async () => {
+  const view = viewOf({ "analysis/race-pace.json": RACE_PACE, "laps.json": [], "analysis/tyre-degradation.json": { rows: [] } });
+
+  assert.deepEqual(await readPaceAnalysis(view), RACE_PACE);
+  assert.deepEqual(view.reads, ["analysis/race-pace.json"]);
+});
+
+test("the most recent published session opens by its key, and a page's reads stay on its generation", async () => {
+  // What the home page and a summary page with no session in its address do:
+  // ask the calendar which session is the most recent, open it by its key
+  // with the loader every session page uses, and read through the view.
+  const bucket = bucketOf();
+  const client = clientOf(bucket);
+
+  const latest = latestPublishedSession(await client.index());
+  assert.equal(latest.key, SESSION_KEY);
+  const load = await loadSessionByKey(client, latest.key);
+
+  assert.equal(load.status, "ready");
+  assert.equal(load.heading.round, 8);
+  assert.equal(load.view.pointer.generation, FIRST_GENERATION);
+  assert.equal(bucket.count(POINTER_KEY), 1);
+
+  // The session is published again while the page is open.
+  republish(bucket, { "results.json": reversedResults() });
+  bucket.requests.length = 0;
+
+  const field = await readField(load.view);
+  assert.equal(field.results[0].driver_code, "RUS");
+  assert.deepEqual(await readSessionFigures(load.view), {
+    summary: JSON.parse(bucket.stored.get(`${generationPrefix(FIRST_GENERATION)}summary.json`)),
+    idealLaps: null
+  });
+  for (const key of bucket.keys()) {
+    assert.ok(key.startsWith(generationPrefix(FIRST_GENERATION)), key);
+  }
+  assert.equal(bucket.count(INDEX_KEY), 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -198,90 +232,6 @@ test("a team with no classification has no points and no best finish, not zero a
   // and it has no finish to call its best.
   const partial = teamCards({ drivers: DRIVERS, results: RESULTS.slice(0, 1), racePace: null, idealLaps: null });
   assert.deepEqual([partial[1].points, partial[1].bestFinish], [0, null]);
-});
-
-// ---------------------------------------------------------------------------
-// Telemetry
-// ---------------------------------------------------------------------------
-
-const lap = (driver, number) => ({
-  driver_code: driver,
-  lap_number: number,
-  path: `telemetry/${driver.toLowerCase()}-lap-${number}.json`
-});
-
-test("the comparison starts on the first lap and the first lap of another driver", () => {
-  const laps = [lap("ALB", 1), lap("ALB", 2), lap("ANT", 1), lap("ANT", 2)];
-
-  assert.deepEqual(defaultTelemetryLaps(laps), { a: laps[0], b: laps[2] });
-});
-
-test("one driver's laps are compared with each other, and one lap with nothing", () => {
-  const laps = [lap("ALB", 1), lap("ALB", 2)];
-
-  assert.deepEqual(defaultTelemetryLaps(laps), { a: laps[0], b: laps[1] });
-  assert.equal(defaultTelemetryLaps([lap("ALB", 1)]), null);
-  assert.equal(defaultTelemetryLaps([]), null);
-});
-
-const sample = (distance, speed, time) => ({ distance_m: distance, speed_kph: speed, relative_time_ms: time });
-
-function telemetryView() {
-  return viewOf({
-    "telemetry/index.json": { laps: [lap("RUS", 5), lap("VER", 7)] },
-    "telemetry/rus-lap-5.json": [sample(0, 200, 0), sample(100, 250, 1500)],
-    "telemetry/ver-lap-7.json": [sample(0, 190, 0), sample(100, 240, 1600)],
-    "laps.json": [
-      { session_id: "s", driver_code: "RUS", lap_number: 5, lap_time_ms: 68000, compound: "HARD" },
-      { session_id: "s", driver_code: "VER", lap_number: 7, lap_time_ms: 68200, compound: "MEDIUM" }
-    ],
-    "drivers.json": DRIVERS
-  });
-}
-
-test("two laps are compared from the files of the pinned view", async () => {
-  const view = telemetryView();
-
-  const comparison = await telemetryComparerOf(view)("RUS", 5, "VER", 7);
-
-  assert.equal(comparison.driver_a.driver_code, "RUS");
-  assert.equal(comparison.driver_a.lap_time_ms, 68000);
-  assert.equal(comparison.driver_b.team, "Red Bull");
-  assert.deepEqual(comparison.speed_a, [200, 250]);
-  assert.deepEqual(comparison.speed_b, [190, 240]);
-  assert.deepEqual(comparison.delta_time_ms, [0, 100]);
-  // Paths inside the generation, with no session id in them: the view is the session.
-  assert.deepEqual([...view.reads].sort(), [
-    "drivers.json",
-    "laps.json",
-    "telemetry/index.json",
-    "telemetry/rus-lap-5.json",
-    "telemetry/ver-lap-7.json"
-  ]);
-});
-
-test("a view without telemetry compares to an explanation, not an error", async () => {
-  const view = viewOf({ "drivers.json": DRIVERS });
-
-  const comparison = await telemetryComparerOf(view)("RUS", 5, "VER", 7);
-
-  assert.match(comparison.reason, /No telemetry lap artifacts/);
-  assert.deepEqual(view.reads, []);
-});
-
-test("a lap file that fails to load fails the comparison", async () => {
-  const view = telemetryView();
-  const comparer = telemetryComparerOf({
-    ...view,
-    read: async (path) => {
-      if (path === "telemetry/ver-lap-7.json") {
-        throw new PublishedDataError("generation_gone", "The generation is gone.", {});
-      }
-      return view.read(path);
-    }
-  });
-
-  await assert.rejects(() => comparer("RUS", 5, "VER", 7), (error) => error.code === "generation_gone");
 });
 
 // ---------------------------------------------------------------------------

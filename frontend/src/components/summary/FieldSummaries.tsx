@@ -1,9 +1,9 @@
 "use client";
 
 import { EmptyState } from "@/components/dashboard/EmptyState";
+import { ArtifactPanel } from "@/components/published/ArtifactPanel";
 import { usePublishedArtifact } from "@/components/published/usePublishedArtifact";
 import { DriverBadge, TeamColorPill } from "@/components/session/Badges";
-import { ArtifactSection } from "@/components/summary/ArtifactSection";
 import { formatMs } from "@/lib/format";
 import type { SessionView } from "@/lib/published/client";
 import { driverCards, readField, teamCards } from "@/lib/session-summaries";
@@ -13,7 +13,7 @@ import type { DriverCard, TeamCard } from "@/lib/session-summaries";
 export function DriversSummary({ view }: { view: SessionView }) {
   const { artifact, retry } = usePublishedArtifact(view, readField);
   return (
-    <ArtifactSection name="drivers" artifact={artifact} onRetry={retry}>
+    <ArtifactPanel name="drivers" artifact={artifact} onRetry={retry}>
       {(field) => {
         const cards = driverCards(field);
         return cards.length === 0 ? (
@@ -26,7 +26,7 @@ export function DriversSummary({ view }: { view: SessionView }) {
           </div>
         );
       }}
-    </ArtifactSection>
+    </ArtifactPanel>
   );
 }
 
@@ -56,7 +56,7 @@ function DriverCardView({ card }: { card: DriverCard }) {
 export function TeamsSummary({ view }: { view: SessionView }) {
   const { artifact, retry } = usePublishedArtifact(view, readField);
   return (
-    <ArtifactSection name="teams" artifact={artifact} onRetry={retry}>
+    <ArtifactPanel name="teams" artifact={artifact} onRetry={retry}>
       {(field) => {
         const cards = teamCards(field);
         return cards.length === 0 ? (
@@ -69,7 +69,7 @@ export function TeamsSummary({ view }: { view: SessionView }) {
           </div>
         );
       }}
-    </ArtifactSection>
+    </ArtifactPanel>
   );
 }
 

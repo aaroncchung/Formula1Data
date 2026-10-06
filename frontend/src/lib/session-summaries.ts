@@ -1,38 +1,22 @@
 /**
- * What the pages that summarise one session read from its view, and what they
- * make of it: the home page, `/strategy`, `/telemetry`, `/drivers` and
- * `/teams`.
+ * What the home page, `/drivers` and `/teams` read from a session's view, and
+ * what they make of it.
  *
- * Each reader asks the pinned generation for a few small files and nothing
- * else, so a summary page costs a handful of requests and never the telemetry
- * laps or the position replay (AR-07). A file the generation does not hold is
- * read as null, not as a failure: a practice session has no pit stops, and a
- * page says so in the one panel it concerns.
+ * `/strategy` and `/telemetry` show a tab of the session dashboard on a page
+ * of its own and read with that tab's reader. These three pages show
+ * something no tab does, so they have readers of their own; each file is
+ * still read through `ARTIFACTS`, which is where a file's path, its type and
+ * the check of its shape are, once for every page that reads it.
+ *
+ * Each reader asks for a few small files and never the laps, the telemetry
+ * or the position replay (AR-07). A file the generation does not hold is
+ * null, not a failure: a practice session has no classification, and the page
+ * leaves that figure blank.
  */
 
-import type {
-  Driver,
-  IdealLapsResult,
-  PitStop,
-  RacePaceResult,
-  Result,
-  SessionSummary,
-  Stint,
-  StrategyResult
-} from "../types/domain";
+import type { Driver, IdealLapsResult, RacePaceResult, Result, SessionSummary } from "../types/domain";
+import { ARTIFACTS, readIfListed } from "./published/artifacts.ts";
 import type { SessionView } from "./published/client.ts";
-import { PublishedDataError } from "./published/errors.ts";
-import type { TelemetryIndex } from "./static-api-core.ts";
-
-export const SUMMARY_PATH = "summary.json";
-export const DRIVERS_PATH = "drivers.json";
-export const RESULTS_PATH = "results.json";
-export const STINTS_PATH = "stints.json";
-export const PIT_STOPS_PATH = "pit-stops.json";
-export const STRATEGY_PATH = "analysis/strategy.json";
-export const RACE_PACE_PATH = "analysis/race-pace.json";
-export const IDEAL_LAPS_PATH = "analysis/ideal-laps.json";
-export const TELEMETRY_INDEX_PATH = "telemetry/index.json";
 
 export type SessionFigures = {
   readonly summary: SessionSummary | null;
@@ -42,29 +26,19 @@ export type SessionFigures = {
 /** The headline figures of a session: its size, and who left least time on the track. */
 export async function readSessionFigures(view: SessionView): Promise<SessionFigures> {
   const [summary, idealLaps] = await Promise.all([
-    readOptionalRecord<SessionSummary>(view, SUMMARY_PATH, []),
-    readOptionalRecord<IdealLapsResult>(view, IDEAL_LAPS_PATH, ["rows"])
+    readIfListed(view, ARTIFACTS.summary),
+    readIfListed(view, ARTIFACTS.idealLaps)
   ]);
   return { summary, idealLaps };
 }
 
-export function readRacePace(view: SessionView): Promise<RacePaceResult | null> {
-  return readOptionalRecord<RacePaceResult>(view, RACE_PACE_PATH, ["drivers"]);
-}
-
-export type StrategyArtifacts = {
-  readonly stints: Stint[] | null;
-  readonly pitStops: PitStop[] | null;
-  readonly strategy: StrategyResult | null;
-};
-
-export async function readStrategy(view: SessionView): Promise<StrategyArtifacts> {
-  const [stints, pitStops, strategy] = await Promise.all([
-    readOptionalList<Stint>(view, STINTS_PATH),
-    readOptionalList<PitStop>(view, PIT_STOPS_PATH),
-    readOptionalRecord<StrategyResult>(view, STRATEGY_PATH, ["caveats"])
-  ]);
-  return { stints, pitStops, strategy };
+/**
+ * The pace analysis on its own, for the home page's chart. The race-pace
+ * tab's reader (`readRacePace` in artifacts.ts) also reads every lap of the
+ * session, which the home page does not show.
+ */
+export function readPaceAnalysis(view: SessionView): Promise<RacePaceResult | null> {
+  return readIfListed(view, ARTIFACTS.racePace);
 }
 
 /** The drivers of a session with what the driver and team cards show beside them. */
@@ -79,16 +53,12 @@ export async function readField(view: SessionView): Promise<FieldArtifacts> {
   // The drivers are the page: without them it is a failure, where the three
   // beside them only leave a figure blank.
   const [drivers, results, racePace, idealLaps] = await Promise.all([
-    readList<Driver>(view, DRIVERS_PATH),
-    readOptionalList<Result>(view, RESULTS_PATH),
-    readRacePace(view),
-    readOptionalRecord<IdealLapsResult>(view, IDEAL_LAPS_PATH, ["rows"])
+    ARTIFACTS.drivers.read(view),
+    readIfListed(view, ARTIFACTS.results),
+    readIfListed(view, ARTIFACTS.racePace),
+    readIfListed(view, ARTIFACTS.idealLaps)
   ]);
   return { drivers, results, racePace, idealLaps };
-}
-
-export function readTelemetryIndex(view: SessionView): Promise<TelemetryIndex | null> {
-  return readOptionalRecord<TelemetryIndex>(view, TELEMETRY_INDEX_PATH, ["laps"]);
 }
 
 export type DriverCard = {
@@ -146,63 +116,4 @@ export function teamCards(field: FieldArtifacts): TeamCard[] {
       paceLaps: field.racePace ? pace.reduce((sum, row) => sum + row.lap_count, 0) : null
     };
   });
-}
-
-export type TelemetryLap = TelemetryIndex["laps"][number];
-
-/**
- * The two laps the comparison starts on: the first lap that has telemetry,
- * and the first lap of another driver. Null when fewer than two laps have any.
- */
-export function defaultTelemetryLaps(
-  laps: ReadonlyArray<TelemetryLap>
-): { readonly a: TelemetryLap; readonly b: TelemetryLap } | null {
-  const a = laps[0];
-  const b = laps.find((lap) => lap.driver_code !== a?.driver_code) ?? laps[1];
-  return a && b ? { a, b } : null;
-}
-
-async function readOptionalList<T>(view: SessionView, path: string): Promise<T[] | null> {
-  return view.has(path) ? readList<T>(view, path) : null;
-}
-
-/**
- * Read an artifact that is a list. Only that much is checked, as in
- * lib/published/artifacts.ts: a component that maps over something else takes
- * the page down, while the shape of each row is vouched for by the manifest's
- * format version (rule 7).
- */
-async function readList<T>(view: SessionView, path: string): Promise<T[]> {
-  const payload = await view.read<unknown>(path);
-  if (!Array.isArray(payload)) {
-    throw new PublishedDataError("invalid_artifact", `${path} is not a list.`, { path });
-  }
-  const rows: unknown[] = payload;
-  return rows as T[];
-}
-
-/**
- * Read an artifact that is an object, when the generation holds it. `lists`
- * names the fields a page maps over, which are checked for the same reason a
- * list artifact is.
- */
-async function readOptionalRecord<T>(
-  view: SessionView,
-  path: string,
-  lists: ReadonlyArray<string>
-): Promise<T | null> {
-  if (!view.has(path)) {
-    return null;
-  }
-  const payload = await view.read<unknown>(path);
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    throw new PublishedDataError("invalid_artifact", `${path} is not an object.`, { path });
-  }
-  const fields: Record<string, unknown> = { ...payload };
-  for (const field of lists) {
-    if (!Array.isArray(fields[field])) {
-      throw new PublishedDataError("invalid_artifact", `${path} has no list named ${field}.`, { path, field });
-    }
-  }
-  return payload as T;
 }

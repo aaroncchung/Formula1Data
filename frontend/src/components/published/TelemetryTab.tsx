@@ -17,12 +17,17 @@ export function TelemetryTab(props: TabProps) {
   const { view } = props;
   return (
     <SessionTab {...props} tab="telemetry" name="telemetry" read={readTelemetry}>
-      {(telemetry) => <Telemetry view={view} telemetry={telemetry} />}
+      {(telemetry) => <TelemetryLaps view={view} telemetry={telemetry} />}
     </SessionTab>
   );
 }
 
-function Telemetry({ view, telemetry }: { view: SessionView; telemetry: SessionTelemetry }) {
+/**
+ * The lap comparison from what `readTelemetry` read. The body of the
+ * dashboard's telemetry tab, and of the telemetry page, which shows the same
+ * thing for a session the reader chooses.
+ */
+export function TelemetryLaps({ view, telemetry }: { view: SessionView; telemetry: SessionTelemetry }) {
   // Bound to the view, so a comparison asked for later comes from the same
   // generation as the index the laps were chosen from.
   const compare = useCallback<CompareLaps>(

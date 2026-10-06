@@ -10,12 +10,12 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { LoadingState } from "@/components/dashboard/LoadingState";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { ArtifactPanel } from "@/components/published/ArtifactPanel";
 import { LoadFailure } from "@/components/published/LoadFailure";
 import { RetryButton } from "@/components/published/RetryButton";
 import { usePublishedArtifact } from "@/components/published/usePublishedArtifact";
 import { usePublishedSession } from "@/components/published/usePublishedSession";
 import { DriverBadge } from "@/components/session/Badges";
-import { ArtifactSection } from "@/components/summary/ArtifactSection";
 import { latestPublishedSession, nextSession, publishedSessions, seasonOverviews } from "@/lib/calendar";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { sessionStart } from "@/lib/format";
@@ -25,7 +25,7 @@ import { sessionHref } from "@/lib/published/lookup";
 import type { ReadySession } from "@/lib/published/session";
 import type { PublishedIndex } from "@/lib/published/types";
 import { meetingHref, STANDINGS_PATH, STRATEGY_PATH, TELEMETRY_PATH } from "@/lib/routes";
-import { readRacePace, readSessionFigures } from "@/lib/session-summaries";
+import { readPaceAnalysis, readSessionFigures } from "@/lib/session-summaries";
 
 const DESCRIPTION =
   "Explore every published session through race pace, telemetry, strategy, tyre, ideal-lap, and car-performance analysis.";
@@ -206,12 +206,12 @@ function NextUp({ index }: { index: PublishedIndex }) {
 function LatestPanels({ session }: { session: ReadySession }) {
   const { view, heading } = session;
   const name = `${heading.meetingName} · ${heading.sessionName}`;
-  const pace = usePublishedArtifact(view, readRacePace);
+  const pace = usePublishedArtifact(view, readPaceAnalysis);
   const results = usePublishedArtifact(view, readResults);
   return (
     <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
       <ChartPanel title="Latest race pace" description={name}>
-        <ArtifactSection name="race pace" artifact={pace.artifact} onRetry={pace.retry}>
+        <ArtifactPanel name="race pace" artifact={pace.artifact} onRetry={pace.retry}>
           {(racePace) =>
             racePace && racePace.drivers.length > 0 ? (
               <RacePaceChart rows={racePace.drivers} />
@@ -219,10 +219,10 @@ function LatestPanels({ session }: { session: ReadySession }) {
               <p className="py-10 text-center text-sm text-slate-500">No race pace is published for this session.</p>
             )
           }
-        </ArtifactSection>
+        </ArtifactPanel>
       </ChartPanel>
       <ChartPanel title="Latest result" description={name}>
-        <ArtifactSection name="results" artifact={results.artifact} onRetry={results.retry}>
+        <ArtifactPanel name="results" artifact={results.artifact} onRetry={results.retry}>
           {({ results: rows, drivers }) => {
             const colors = teamColorByDriver(drivers);
             return rows.length === 0 ? (
@@ -242,7 +242,7 @@ function LatestPanels({ session }: { session: ReadySession }) {
               </div>
             );
           }}
-        </ArtifactSection>
+        </ArtifactPanel>
       </ChartPanel>
     </div>
   );
