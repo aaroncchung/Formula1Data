@@ -211,7 +211,8 @@ def test_the_schema_is_plain_enough_to_generate_types_from():
     assert "x-decimals" in schema["$defs"]["Corner"]["properties"]["x"]
     assert "Milliseconds" in lap["properties"]["lap_time_ms"]["description"]
     # The index is the one object with keys that may be absent.
-    assert schema["$defs"]["IndexSession"]["required"] == ["type", "name", "start_time_utc"]
+    assert schema["$defs"]["IndexSession"]["required"] == ["type", "name", "start_time_utc", "in_scope"]
+    assert {"session_key", "complete"} <= set(schema["$defs"]["IndexSession"]["properties"])
 
 
 def test_a_published_object_is_checked_against_the_model_its_path_names():

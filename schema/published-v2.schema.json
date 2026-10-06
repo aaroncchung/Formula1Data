@@ -1297,6 +1297,27 @@
     "IndexMeeting": {
       "additionalProperties": false,
       "properties": {
+        "circuit_key": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's key for the circuit, from the same source."
+        },
+        "circuit_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "country": {
           "anyOf": [
             {
@@ -1337,6 +1358,17 @@
             }
           ]
         },
+        "meeting_key": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's key for the meeting, which does not move. Known once a session of the meeting is published."
+        },
         "name": {
           "type": "string"
         },
@@ -1351,6 +1383,7 @@
           ]
         },
         "round": {
+          "description": "As the calendar has it now. It moves when the calendar changes.",
           "type": "integer"
         },
         "sessions": {
@@ -1368,6 +1401,9 @@
         "location",
         "date",
         "format",
+        "meeting_key",
+        "circuit_key",
+        "circuit_name",
         "sessions"
       ],
       "title": "IndexMeeting",
@@ -1400,6 +1436,9 @@
         "complete": {
           "type": "boolean"
         },
+        "in_scope": {
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },
@@ -1423,7 +1462,8 @@
       "required": [
         "type",
         "name",
-        "start_time_utc"
+        "start_time_utc",
+        "in_scope"
       ],
       "title": "IndexSession",
       "type": "object"
@@ -1847,7 +1887,7 @@
     },
     "PacePrediction": {
       "additionalProperties": false,
-      "description": "analysis/pace-prediction.json. Produced for practice sessions only.",
+      "description": "analysis/pace-prediction.json. Published for practice sessions only: a race has no such file.",
       "properties": {
         "available": {
           "type": "boolean"
@@ -2135,6 +2175,17 @@
           ],
           "description": "Milliseconds from pit entry to pit exit, from the timing. Null when the car did not come back out."
         },
+        "entry_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the car crossed the pit entry, in milliseconds on the session clock. Null for a stop only F1's pit-stop feed reports."
+        },
         "lap_number": {
           "description": "The lap the car came in on.",
           "type": "integer"
@@ -2163,23 +2214,12 @@
             }
           ],
           "description": "Milliseconds the car stood still, from F1's pit-stop feed."
-        },
-        "time_ms": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "When the car crossed the pit entry, in milliseconds on the session clock. Null for a stop only F1's pit-stop feed reports."
         }
       },
       "required": [
         "driver_code",
         "lap_number",
-        "time_ms",
+        "entry_time_ms",
         "duration_ms",
         "stationary_ms",
         "pit_lane_ms",
@@ -2282,6 +2322,17 @@
       "additionalProperties": false,
       "description": "pointers/<session_key>.json: which generation is the published one.",
       "properties": {
+        "also": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Anything else the generation was built from, outside the archive and the classification. Null in this format, where a build takes nothing from the calendar."
+        },
         "classification_fingerprint": {
           "anyOf": [
             {
@@ -2345,6 +2396,7 @@
         "manifest",
         "snapshot_id",
         "classification_fingerprint",
+        "also",
         "coverage",
         "published_at",
         "previous_generation"
@@ -2748,6 +2800,17 @@
     "Result": {
       "additionalProperties": false,
       "properties": {
+        "behind_at_flag_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a driver with laps_down: milliseconds after the winner that they took the flag. Not a gap, since they had fewer laps to run: it only orders the cars on one lap."
+        },
         "classified_position": {
           "anyOf": [
             {
@@ -2771,7 +2834,7 @@
               "type": "null"
             }
           ],
-          "description": "Milliseconds behind the winner at the flag. Null for the winner and for a driver with no time. A lapped driver's is measured on the lap they finished, so it is smaller than the gap on the road."
+          "description": "Milliseconds behind the winner, for a driver who finished on the same lap. Null for everyone else."
         },
         "grid": {
           "anyOf": [
@@ -2792,7 +2855,19 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Laps completed. Null for a driver the classification leaves out."
+        },
+        "laps_down": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Laps behind the winner, for a classified driver who finished one or more down. Null for everyone else."
         },
         "points": {
           "anyOf": [
@@ -2806,10 +2881,18 @@
           ]
         },
         "position": {
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null for a driver who took part and whom the classification leaves out. Such rows come last."
         },
         "provisional": {
-          "description": "True when Jolpica has no classification for the session. The row is then the order on track from the timing alone, with no status, points or grid.",
+          "description": "True when Jolpica has no classification for the session. The rows are then the order on track from the timing alone, with no status, points or grid.",
           "type": "boolean"
         },
         "status": {
@@ -2843,6 +2926,8 @@
         "grid",
         "time_ms",
         "gap_ms",
+        "laps_down",
+        "behind_at_flag_ms",
         "laps",
         "provisional"
       ],
@@ -2850,7 +2935,7 @@
       "type": "object"
     },
     "Results": {
-      "description": "results.json: the classification, in finishing order.",
+      "description": "results.json: the classification in finishing order, then anyone it leaves out.",
       "items": {
         "$ref": "#/$defs/Result"
       },
@@ -3194,7 +3279,7 @@
     },
     "Strategy": {
       "additionalProperties": false,
-      "description": "analysis/strategy.json.",
+      "description": "analysis/strategy.json. The stints and stops themselves are in stints.json and pit-stops.json.",
       "properties": {
         "caveats": {
           "items": {
@@ -3226,24 +3311,6 @@
             }
           ]
         },
-        "pit_stops": {
-          "items": {
-            "$ref": "#/$defs/PitStop"
-          },
-          "type": "array"
-        },
-        "race_control_overlays": {
-          "items": {
-            "$ref": "#/$defs/RaceControlMessage"
-          },
-          "type": "array"
-        },
-        "stints": {
-          "items": {
-            "$ref": "#/$defs/Stint"
-          },
-          "type": "array"
-        },
         "undercut_overcut": {
           "items": {
             "$ref": "#/$defs/PaceChangeAcrossStop"
@@ -3252,14 +3319,11 @@
         }
       },
       "required": [
-        "stints",
         "compound_usage",
-        "pit_stops",
         "pit_loss_estimate_ms",
         "pit_loss",
         "pit_lane_time",
         "undercut_overcut",
-        "race_control_overlays",
         "caveats"
       ],
       "title": "Strategy",
@@ -3434,25 +3498,79 @@
     },
     "TelemetryDriverEntry": {
       "additionalProperties": false,
+      "description": "One driver's laps that have telemetry, as parallel arrays with one entry per lap.",
       "properties": {
+        "compound": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Compound"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
         "driver_code": {
           "type": "string"
         },
-        "laps": {
+        "has_position": {
+          "description": "False for a lap with no usable position data, and so no x and y.",
           "items": {
-            "$ref": "#/$defs/TelemetryLapEntry"
+            "type": "boolean"
+          },
+          "type": "array"
+        },
+        "lap_number": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "lap_time_ms": {
+          "description": "Each lap's time as in laps.json, so that a lap can be picked from here alone.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type": "array"
         },
         "path": {
           "description": "The driver's file, relative to the generation.",
           "type": "string"
+        },
+        "raw_sample_count": {
+          "description": "Samples each lap has at full resolution, which is what the analyses read.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "sample_count": {
+          "description": "Samples published for each lap.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
         }
       },
       "required": [
         "driver_code",
         "path",
-        "laps"
+        "lap_number",
+        "lap_time_ms",
+        "compound",
+        "sample_count",
+        "raw_sample_count",
+        "has_position"
       ],
       "title": "TelemetryDriverEntry",
       "type": "object"
@@ -3618,34 +3736,6 @@
         "y"
       ],
       "title": "TelemetryLap",
-      "type": "object"
-    },
-    "TelemetryLapEntry": {
-      "additionalProperties": false,
-      "properties": {
-        "has_position": {
-          "description": "False when the lap has no usable position data, and so no x and y.",
-          "type": "boolean"
-        },
-        "lap_number": {
-          "type": "integer"
-        },
-        "raw_sample_count": {
-          "description": "Samples the lap has at full resolution, which is what the analyses read.",
-          "type": "integer"
-        },
-        "sample_count": {
-          "description": "Samples published for the lap.",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "lap_number",
-        "sample_count",
-        "raw_sample_count",
-        "has_position"
-      ],
-      "title": "TelemetryLapEntry",
       "type": "object"
     },
     "TrackDominance": {
@@ -4020,7 +4110,7 @@
     },
     "generations/{session_key}/{generation}/analysis/pace-prediction.json": {
       "$ref": "#/$defs/PacePrediction",
-      "description": "analysis/pace-prediction.json. Produced for practice sessions only."
+      "description": "analysis/pace-prediction.json. Published for practice sessions only: a race has no such file."
     },
     "generations/{session_key}/{generation}/analysis/race-pace.json": {
       "$ref": "#/$defs/RacePace",
@@ -4028,7 +4118,7 @@
     },
     "generations/{session_key}/{generation}/analysis/strategy.json": {
       "$ref": "#/$defs/Strategy",
-      "description": "analysis/strategy.json."
+      "description": "analysis/strategy.json. The stints and stops themselves are in stints.json and pit-stops.json."
     },
     "generations/{session_key}/{generation}/analysis/team-mate-comparison.json": {
       "$ref": "#/$defs/TeammateComparison",
@@ -4076,7 +4166,7 @@
     },
     "generations/{session_key}/{generation}/results.json": {
       "$ref": "#/$defs/Results",
-      "description": "results.json: the classification, in finishing order."
+      "description": "results.json: the classification in finishing order, then anyone it leaves out."
     },
     "generations/{session_key}/{generation}/stints.json": {
       "$ref": "#/$defs/Stints",

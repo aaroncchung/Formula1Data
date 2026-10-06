@@ -73,7 +73,7 @@ class Publisher:
         self.files = files or {"summary.json": b'{"meeting":"Austrian Grand Prix"}\n', "laps.json": b"[]\n"}
         self.builds = 0
 
-    def gather(self, session_key, pointer=None, fresh=False):
+    def gather(self, session_key, pointer=None, retry=False):
         return Inputs(self.snapshot, self.fingerprint)
 
     def build(self, inputs):
@@ -439,16 +439,25 @@ def test_the_index_is_the_calendar_with_published_sessions_attached():
     austria, italy = season["meetings"]
     assert (austria["round"], austria["name"]) == (8, "Austrian Grand Prix")
     assert austria["sessions"] == [
-        {"type": "Q", "name": "Qualifying", "start_time_utc": "2026-06-27T14:00:00Z"},
+        # Qualifying is not published at all; the race is, and this one has been.
+        {"type": "Q", "name": "Qualifying", "start_time_utc": "2026-06-27T14:00:00Z", "in_scope": False},
         {
             "type": "R",
             "name": "Race",
             "start_time_utc": "2026-06-28T13:00:00Z",
+            "in_scope": True,
             "session_key": AUSTRIA,
             "complete": True,
         },
     ]
-    assert italy["sessions"] == [{"type": "R", "name": "Race", "start_time_utc": "2026-09-06T13:00:00Z"}]
+    # In scope and not yet published: on its way.
+    assert italy["sessions"] == [
+        {"type": "R", "name": "Race", "start_time_utc": "2026-09-06T13:00:00Z", "in_scope": True}
+    ]
+    # F1's key for a meeting does not move with the calendar. It is known from
+    # the meeting's first published session, and not before.
+    assert (austria["meeting_key"], italy["meeting_key"]) == (AUSTRIA - 10000, None)
+    assert (austria["circuit_key"], austria["circuit_name"]) == (None, None)
     assert index["unscheduled"] == []
 
 

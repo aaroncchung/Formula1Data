@@ -38,6 +38,7 @@ from f1data.coverage import (
     f1_does_not_hold,
     weakest_share,
 )
+from f1data.extras import CIRCUIT_INFO, circuit_corner_count
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
 from f1data.identity import SessionIdentity, format_utc, parse_utc
 from f1data.policy import RETRY_WINDOW
@@ -86,8 +87,11 @@ class Snapshot:
         Such a session is as whole as it can be, and asking again is pointless.
         A missing classification is left out of the reckoning: it is Jolpica's.
         """
-        feeds = [shortfall for shortfall in self.shortfalls() if shortfall.bar != CLASSIFICATION_BAR]
-        return bool(feeds) and all(f1_does_not_hold(shortfall, self.feed_status) for shortfall in feeds)
+        short = [shortfall for shortfall in self.shortfalls() if shortfall.bar != CLASSIFICATION_BAR]
+        arrived = self.coverage.get("feeds") or {}
+        return bool(short) and all(
+            f1_does_not_hold(shortfall, self.feed_status, arrived) for shortfall in short
+        )
 
     def judged_against(self, classified_laps: dict[str, int]) -> "Snapshot":
         """This snapshot as it stands against today's classification.
@@ -219,8 +223,30 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
         found = store.get(item.key)
         if found is None:
             continue
-        snapshots.append(Snapshot.from_json(json.loads(found.data)))
+        snapshots.append(_with_corner_count(store, Snapshot.from_json(json.loads(found.data))))
     return snapshots
+
+
+def _with_corner_count(store: ObjectStore, snapshot: Snapshot) -> Snapshot:
+    """The snapshot with its corners counted, if its fetch did not count them.
+
+    The count was added to the measurement after the first snapshots were
+    taken. It can be worked out from the circuit file archived with them, so
+    it is, here, where every reader of the archive gets its snapshots: the
+    fetch planner, snapshot selection and the build then judge the same
+    figure. Left unknown, it would have to be taken as passing or as failing,
+    and either is a guess about a file that is there to be read.
+    """
+    if "circuit_corners" in snapshot.coverage:
+        return snapshot
+    name = f"{EXTRA_PREFIX}{CIRCUIT_INFO}"
+    described = snapshot.objects.get(name)
+    data = b""
+    if described:
+        found = store.get(f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{name}")
+        if found is not None and hashlib.sha256(found.data).hexdigest() == described.get("sha256"):
+            data = found.data
+    return replace(snapshot, coverage={**snapshot.coverage, "circuit_corners": circuit_corner_count(data)})
 
 
 def select_snapshot(snapshots: list[Snapshot]) -> Snapshot | None:

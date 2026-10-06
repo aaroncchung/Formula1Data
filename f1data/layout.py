@@ -36,9 +36,14 @@ FORMAT_VERSION = 2
 #      stop, track dominance, tyre degradation fits, team-mate comparison
 #   3  coverage: no tolerance on timing laps, the tyre bar without tyre age,
 #      bars for the pit-stop feed and the corner positions
-#   4  format 2: analyses read full-resolution telemetry, lap times are
-#      rounded and not cut off, corners are the circuit's own where archived
-PIPELINE_VERSION = 4
+#   4  a driver that today's classification leaves out carries no result
+#      from the archive into a build; a corner count that is absent no
+#      longer passes; the pointer records the calendar entry it was built
+#      under, and a session is rebuilt when that changes
+#   5  format 2: analyses read full-resolution telemetry, lap times are
+#      rounded and not cut off, corners are the circuit's own where archived,
+#      and nothing in a build comes from the calendar
+PIPELINE_VERSION = 5
 
 ARCHIVE_PREFIX = "archive/"
 SNAPSHOT_MARKER = "snapshot.json"

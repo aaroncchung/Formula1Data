@@ -195,8 +195,10 @@ def stints(lap_rows: list[Lap]) -> list[Stint]:
 def results(classification: Classification | None, session: Any, codes: dict[str, str]) -> list[Result]:
     """The classification, or the order on track when Jolpica has none.
 
-    With a classification, the rows are Jolpica's and nothing else: a driver
-    it does not list has no row, whatever the archive recorded for them.
+    With a classification, every figure is Jolpica's and nothing else. A
+    driver with laps in the timing whom it leaves out comes after the
+    classified, with no position and no figures at all, whatever the archive
+    recorded for them.
     """
     if classification is None:
         return _provisional_results(session, codes)
@@ -217,7 +219,17 @@ def results(classification: Classification | None, session: Any, codes: dict[str
                 f"{code or f'driver number {number}'}"
             )
         position = int(row["position"])
+        laps_completed = _int(row.get("laps"))
+        # Jolpica gives the winner a race time and everyone else the time
+        # they took the flag behind, whichever lap they were on.
         race_time = _int(row.get("totalRaceTime"))
+        winner_laps = _int(rows[0].get("laps"))
+        classified = (_text(row.get("positionText")) or "").isdigit()
+        down = (
+            winner_laps - laps_completed
+            if classified and winner_laps is not None and laps_completed is not None and laps_completed < winner_laps
+            else None
+        )
         built.append(
             Result(
                 position=position,
@@ -226,25 +238,46 @@ def results(classification: Classification | None, session: Any, codes: dict[str
                 status=_text(row.get("status")),
                 points=float(row["points"]),
                 grid=_int(row.get("grid")),
-                # Jolpica gives the winner a race time and everyone else the
-                # time they finished behind.
                 time_ms=race_time if position == 1 else None,
-                gap_ms=race_time if position != 1 else None,
-                laps=_int(row.get("laps")),
+                gap_ms=race_time if position != 1 and laps_completed == winner_laps else None,
+                laps_down=down,
+                behind_at_flag_ms=race_time if down else None,
+                laps=laps_completed,
                 provisional=False,
             )
         )
     if len({row.driver_code for row in built}) != len(built):
         raise SessionDataError("The classification names a driver twice")
+    listed = {row.driver_code for row in built}
+    for code in sorted(_codes_with_laps(session) - listed):
+        built.append(
+            Result(
+                position=None, driver_code=code, classified_position=None, status=None, points=None, grid=None,
+                time_ms=None, gap_ms=None, laps_down=None, behind_at_flag_ms=None, laps=None, provisional=False,
+            )
+        )
     return built
+
+
+def _codes_with_laps(session: Any) -> set[str]:
+    """The drivers F1 timed at least one lap for."""
+    frame = _frame(session, "laps")
+    if len(frame) == 0 or "Driver" not in frame.columns:
+        return set()
+    timed = frame
+    if "FastF1Generated" in frame.columns:
+        timed = frame[~frame["FastF1Generated"].fillna(False).astype(bool)]
+    return {str(code).strip().upper() for code in timed["Driver"] if _present(code)}
 
 
 def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
     """The order on track from the timing alone, for a session with no classification.
 
     Most laps first, then whoever finished their last lap sooner. A driver who
-    took the flag after the leader has the time they took it behind; one who
-    stopped before then has none. Nothing here is official.
+    took the flag after the leader has the time they took it behind, as a gap
+    on the leader's lap and beside the laps they were down otherwise; one who
+    stopped before then has neither. Nothing here is official. For the 2026
+    Austrian GP it is the classification, all 22 places, to the millisecond.
     """
     frame = _frame(session, "laps")
     last: dict[str, tuple[int, int]] = {}
@@ -262,11 +295,13 @@ def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
                 last[number] = (lap_number, finished)
 
     order = sorted(codes, key=lambda number: (-last.get(number, (0, 0))[0], last.get(number, (0, 0))[1], _int(number) or 0, number))
-    leader_finished = last[order[0]][1] if order and order[0] in last else None
+    leader_laps, leader_finished = last[order[0]] if order and order[0] in last else (0, None)
     rows: list[Result] = []
     for position, number in enumerate(order, start=1):
         completed, finished = last.get(number, (0, None))
         behind = finished - leader_finished if finished is not None and leader_finished is not None else None
+        took_the_flag = position > 1 and behind is not None and behind >= 0
+        down = leader_laps - completed if took_the_flag and completed < leader_laps else None
         rows.append(
             Result(
                 position=position,
@@ -276,7 +311,9 @@ def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
                 points=None,
                 grid=None,
                 time_ms=None,
-                gap_ms=behind if position > 1 and behind is not None and behind >= 0 else None,
+                gap_ms=behind if took_the_flag and not down else None,
+                laps_down=down,
+                behind_at_flag_ms=behind if down else None,
                 laps=completed,
                 provisional=True,
             )
@@ -334,7 +371,7 @@ def _pit_stop(
     return PitStop(
         driver_code=code,
         lap_number=lap_number,
-        time_ms=came_in,
+        entry_time_ms=came_in,
         duration_ms=duration,
         stationary_ms=stationary,
         pit_lane_ms=pit_lane,

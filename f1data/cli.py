@@ -220,7 +220,13 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 except ClassificationUnavailable:
                     return None
 
-            plans = plan_fetches(schedule, list_snapshots(store), now, classified_laps)
+            plans = plan_fetches(
+                schedule,
+                list_snapshots(store),
+                now,
+                classified_laps,
+                published_short=_published_short(store),
+            )
             if args.limit is not None:
                 plans = plans[: args.limit]
             if not plans:
@@ -255,6 +261,28 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 finally:
                     shutil.rmtree(cache_dir, ignore_errors=True)
     return 1 if failed else 0
+
+
+def _published_short(store: ObjectStore) -> dict[int, Any]:
+    """The pointers of the sessions published short of a bar, for the planner.
+
+    Only those this pipeline version wrote. An older one judged by other
+    bars, and the build that follows this fetch replaces it; a newer one
+    judged by bars this code does not have.
+    """
+    from f1data.publish import PointerError, read_published
+
+    try:
+        return {
+            pointer.session_key: pointer
+            for pointer in read_published(store)
+            if not pointer.complete and pointer.pipeline_version == layout.PIPELINE_VERSION
+        }
+    except PointerError as exc:
+        # The build stage reads the same pointers and fails on this one. It
+        # is no reason to fetch nothing.
+        logging.getLogger(__name__).warning("Could not read what is published: %s", exc)
+        return {}
 
 
 def _print_snapshot(snapshot: Snapshot) -> None:

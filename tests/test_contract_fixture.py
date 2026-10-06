@@ -1,8 +1,9 @@
 """The contract between the publisher and whatever reads what it publishes.
 
 ``tests/fixtures/published-v2.json`` is a small bucket exactly as the publisher
-writes one in format 2: an index, a pointer and a generation, whose files
-include a nested path (``analysis/``) and a driver's telemetry. This test fails
+writes one in format 2: an index, a season's standings, a pointer and a
+generation, whose files include a nested path (``analysis/``) and a driver's
+telemetry. This test fails
 when the publisher stops producing it byte for byte, and when anything in it
 stops matching its model in ``f1data/models.py``. The Worker is tested against
 the same file (``worker/tests/data-worker.test.mjs``). A change to a published
@@ -38,13 +39,14 @@ from f1data.models import (
     TelemetryDriverEntry,
     TelemetryIndex,
     TelemetryLap,
-    TelemetryLapEntry,
     artifact_json,
 )
 from f1data.publish import Inputs, publish_index, publish_session
 from f1data.schema import validate_published
+from f1data.standings import fetch_standings, publish_standings
 from f1data.store import MemoryStore
 from tests.test_publish import AUSTRIA, NOW, schedule_2026, snapshot
+from tests.test_standings import CONSTRUCTORS, DRIVERS, Jolpica
 
 FIXTURE = Path(__file__).parent / "fixtures" / "published-v2.json"
 
@@ -86,12 +88,12 @@ FILES = {
     "results.json": Results(
         [
             Result(
-                position=1, driver_code="RUS", classified_position="1", status="Finished", points=25,
-                grid=1, time_ms=5_197_979, gap_ms=None, laps=71, provisional=False,
+                position=1, driver_code="RUS", classified_position="1", status="Finished", points=25, grid=1,
+                time_ms=5_197_979, gap_ms=None, laps_down=None, behind_at_flag_ms=None, laps=71, provisional=False,
             ),
             Result(
-                position=2, driver_code="VER", classified_position="2", status="Finished", points=18,
-                grid=5, time_ms=None, gap_ms=1_611, laps=71, provisional=False,
+                position=2, driver_code="VER", classified_position="2", status="Finished", points=18, grid=5,
+                time_ms=None, gap_ms=1_611, laps_down=None, behind_at_flag_ms=None, laps=71, provisional=False,
             ),
         ]
     ),
@@ -114,7 +116,12 @@ FILES = {
             TelemetryDriverEntry(
                 driver_code="RUS",
                 path="telemetry/RUS.json",
-                laps=[TelemetryLapEntry(lap_number=2, sample_count=4, raw_sample_count=564, has_position=True)],
+                lap_number=[2],
+                lap_time_ms=[72_037],
+                compound=["MEDIUM"],
+                sample_count=[4],
+                raw_sample_count=[564],
+                has_position=[True],
             )
         ],
     ),
@@ -142,11 +149,16 @@ FILES = {
 
 def published_bucket() -> dict[str, str]:
     store = MemoryStore()
+    # A build of this format takes nothing from the calendar, so the pointer's
+    # ``also`` is null.
     inputs = Inputs(snapshot(), "sha256:" + "c" * 64)
     files = {path: dump_json(artifact_json(artifact)) for path, artifact in FILES.items()}
     outcome = publish_session(store, AUSTRIA, lambda key, **_: inputs, lambda _: (files, None), now=lambda: NOW)
     assert outcome.action == "published"
     assert publish_index(store, lambda year, **_: schedule_2026()) == "published"
+    # The standings as the job reads them from Jolpica, through the same code.
+    tables = fetch_standings(Jolpica((DRIVERS, 16), (CONSTRUCTORS, 16)), 2026)
+    assert publish_standings(store, 2026, lambda year: tables) == "published"
     return {item.key: store.get(item.key).data.decode("utf-8") for item in store.list("")}
 
 
@@ -165,8 +177,9 @@ def test_the_committed_fixture_is_exactly_what_the_publisher_writes(monkeypatch)
 
 
 def test_everything_in_the_fixture_is_what_its_model_says(monkeypatch):
-    """The pointer, the index and the manifest are written by the publisher
-    from dictionaries, not from models. This is what ties them to the schema."""
+    """The pointer, the index, the standings and the manifest are written by
+    the publisher from dictionaries, not from models. This is what ties them to
+    the schema."""
     monkeypatch.setattr(layout, "PIPELINE_VERSION", 1)
     bucket = published_bucket()
     prefix = layout.format_prefix()
@@ -178,3 +191,5 @@ def test_everything_in_the_fixture_is_what_its_model_says(monkeypatch):
     assert len(nested) == 3
     manifest = json.loads(next(text for key, text in bucket.items() if key.endswith("/manifest.json")))
     assert manifest["format_version"] == layout.FORMAT_VERSION and "schema_version" not in manifest
+    assert json.loads(bucket[layout.standings_key(2026)])["format_version"] == layout.FORMAT_VERSION
+    assert json.loads(bucket[layout.pointer_key(AUSTRIA)])["also"] is None

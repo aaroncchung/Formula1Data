@@ -45,6 +45,7 @@ from f1data.models import artifact_json, model_for_artifact
 from f1data.publish import upload_generation
 from f1data.store import MemoryStore
 from f1data.telemetry import MAX_PUBLISHED_SAMPLES_PER_LAP, extract_telemetry
+from tests.race import index_laps
 from tests.recorded import (
     ARCHIVE_VARIABLE,
     FEED_FILES,
@@ -196,6 +197,11 @@ def test_the_austrian_race_in_figures(generation):
         (4, "PIA", None, 21_809, 71),
     ]
     assert [row["driver_code"] for row in results[-4:]] == ["STR", "SAI", "PER", "BOT"]
+    # Ninth was a lap down and took the flag 15.3 s after the winner: laps down, and no gap.
+    assert {key: results[8][key] for key in ("driver_code", "gap_ms", "laps_down", "behind_at_flag_ms", "laps")} == {
+        "driver_code": "LAW", "gap_ms": None, "laps_down": 1, "behind_at_flag_ms": 15_334, "laps": 70,
+    }
+    assert [row["laps_down"] for row in results] == [None] * 8 + [1] * 7 + [2, 2, 3] + [None] * 4
     assert sum(row["points"] for row in results) == 101 and not any(row["provisional"] for row in results)
 
     strategy = read(files, "analysis/strategy.json")
@@ -206,6 +212,7 @@ def test_the_austrian_race_in_figures(generation):
         "median_ms": 21_574.0, "fastest_ms": 21_042, "slowest_ms": 28_879, "timed_stop_count": 41, "stop_count": 44,
     }
     assert strategy["compound_usage"] == {"HARD": 24, "MEDIUM": 31, "SOFT": 8}
+    assert "pit_stops" not in strategy and "race_control_overlays" not in strategy
 
     stops = read(files, "pit-stops.json")
     assert len(stops) == 44 and sum(stop["stationary_ms"] is not None for stop in stops) == 36
@@ -228,7 +235,8 @@ def test_the_austrian_races_files(generation):
     files = generation.files
     index = read(files, "telemetry/index.json")
 
-    assert len(files) == 44
+    # 21 artifacts, the telemetry index and 22 drivers. The manifest makes 45 objects.
+    assert len(files) == 43 and "analysis/pace-prediction.json" not in files
     assert sorted(path for path in files if path.startswith("telemetry/") and path != "telemetry/index.json") == [
         f"telemetry/{code}.json"
         for code in sorted(
@@ -236,9 +244,19 @@ def test_the_austrian_races_files(generation):
         )
     ]
     assert "drs" not in index["channels"]
-    assert sum(len(entry["laps"]) for entry in index["drivers"]) == 1339
-    assert sum(lap["raw_sample_count"] for entry in index["drivers"] for lap in entry["laps"]) == 757_210
-    assert sum(lap["sample_count"] for entry in index["drivers"] for lap in entry["laps"]) == 1339 * 300
+    assert sum(len(entry["lap_number"]) for entry in index["drivers"]) == 1339
+    assert sum(sum(entry["raw_sample_count"]) for entry in index["drivers"]) == 757_210
+    assert sum(sum(entry["sample_count"]) for entry in index["drivers"]) == 1339 * 300
+    # The index is enough to offer the laps to choose from.
+    fastest = min(
+        (lap["lap_time_ms"], entry["driver_code"], lap["lap_number"], lap["compound"])
+        for entry in index["drivers"]
+        for lap in index_laps(entry)
+        if lap["lap_time_ms"]
+    )
+    assert fastest == (70_374, "ANT", 59, "HARD")
+    # 266 kB in the old format, where it listed a file for every lap.
+    assert len(files["telemetry/index.json"]) < 60_000
     replay = read(files, "position-replay.json")
     assert (len(replay["time_ms"]), len(replay["drivers"]), replay["lap_number"][-1]) == (1054, 22, 71)
     # 108 MB in 1,342 files in the old format.
@@ -290,9 +308,8 @@ def test_the_order_on_track_from_the_timing_is_the_official_result_to_the_millis
     official = normalize.results(recorded_classification(AUSTRIA), austria.session, codes)
     provisional = normalize.results(None, austria.session, codes)
 
-    assert [(row.position, row.driver_code, row.laps, row.gap_ms) for row in provisional] == [
-        (row.position, row.driver_code, row.laps, row.gap_ms) for row in official
-    ]
+    figures = lambda row: (row.position, row.driver_code, row.laps, row.gap_ms, row.laps_down, row.behind_at_flag_ms)
+    assert [figures(row) for row in provisional] == [figures(row) for row in official]
     assert all(row.provisional and row.points is None for row in provisional)
 
 
@@ -301,11 +318,12 @@ def test_a_race_with_no_classification_builds_whole(austria):
 
     assert read(files, "results.json")[0] == {
         "position": 1, "driver_code": "RUS", "classified_position": None, "status": None, "points": None,
-        "grid": None, "time_ms": None, "gap_ms": None, "laps": 71, "provisional": True,
+        "grid": None, "time_ms": None, "gap_ms": None, "laps_down": None, "behind_at_flag_ms": None,
+        "laps": 71, "provisional": True,
     }
     coverage = read(files, "coverage.json")
     assert coverage["complete"] is False and {item["bar"] for item in coverage["shortfalls"]} == {"classification"}
-    assert len(files) == 44
+    assert len(files) == 43
 
 
 def test_corners_the_build_places_itself_land_where_fastf1_put_them(austria, telemetry):
@@ -400,7 +418,7 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     changed = sorted(path for path in files if files[path] != generation.files[path])
     FEED_TABLE.append((f"extra/{PIT_STOP_SERIES}", code, f"NEITHER: complete, and {', '.join(changed)} change"))
     assert evaluate_coverage(measurement) == []
-    assert changed == ["analysis/strategy.json", "coverage.json", "pit-stops.json"]
+    assert changed == ["coverage.json", "pit-stops.json"]
     stops = [stop for stop in read(files, "pit-stops.json") if stop["driver_code"] == code]
     assert len(stops) == 3 and all(stop["stationary_ms"] is None and stop["duration_ms"] for stop in stops)
     assert read(files, "coverage.json")["pit_stops_in_series"] == 33
@@ -421,9 +439,9 @@ def test_the_monaco_race_is_built_with_its_position_data_missing(monaco):
     """F1's position feed for the 2026 Monaco race stops in lap 5 of 78."""
     files = monaco.files
     index = read(files, "telemetry/index.json")
-    laps = [lap for entry in index["drivers"] for lap in entry["laps"]]
+    laps = [lap for entry in index["drivers"] for lap in index_laps(entry)]
 
-    assert len(files) == 44 and len(laps) == 1452
+    assert len(files) == 43 and len(laps) == 1452
     assert {lap["lap_number"] for lap in laps if lap["has_position"]} == {1, 2, 3, 4, 5}
     assert sum(lap["has_position"] for lap in laps) < 90
     coverage = read(files, "coverage.json")

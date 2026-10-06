@@ -125,7 +125,31 @@ first fetch, each time from an empty cache as a new snapshot. Build picks the
 best snapshot by a fixed order. If the session is still short when the 48 hours
 are up it is published as partial, and its pointer names what is short. After
 that it is fetched weekly, unless what is missing is a feed F1 answered that it
-does not hold. The limits are in `f1data/policy.py`.
+does not hold: one that is absent outright, from a fetch F1 was otherwise
+answering. A feed that arrived and is short is always fetched again. The limits
+are in `f1data/policy.py`.
+
+A build measures the snapshot it publishes again, and judges it against the
+classification of that day, which is the whole answer: a driver it leaves out
+has no result and no laps to account for. If the build finds the snapshot short
+inside the 48 hours it publishes nothing and waits, as it would for a snapshot
+recorded as short. What it finds goes into the pointer, and `fetch-due` reads
+the pointers: a session that is published short goes on being fetched, even
+when the archive's own record of its snapshot says it is whole.
+
+## When a session is built again
+
+The pointer records what its generation was built from: the snapshot, the
+fingerprint of the classification, the calendar entry (year, round and names,
+under `also`), and the pipeline version. `build` builds a session again when
+any of them differs from what it would use now. The calendar and the
+classification are looked up after the pointer is read, on every attempt, and
+the calendar again before the index is written: a publisher never decides from
+something it looked up before the version its write is guarded by.
+
+A session more than 30 days old is looked up in the calendar on every run, but
+Jolpica is asked for its classification on two days in every thirty, after a
+lost write, and whenever `build --recheck` is given.
 
 ## Workflows
 

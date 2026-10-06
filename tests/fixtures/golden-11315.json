@@ -16,17 +16,13 @@
    "sha256": "88cac7d8e366d8dddb88e1c797cefa57fe90b6de0c935c023f119ca7de0f5c21",
    "size_bytes": 12680
   },
-  "analysis/pace-prediction.json": {
-   "sha256": "6cb08a6ddf667d847d910eaa74187211255d565f31c4f2a22c12450272a00e42",
-   "size_bytes": 414
-  },
   "analysis/race-pace.json": {
    "sha256": "b66f7ab974bc5169784c31506b0ed77fee7d4f8440a5fa6603469704b8d14258",
    "size_bytes": 16398
   },
   "analysis/strategy.json": {
-   "sha256": "2cb8ef781aaa990061c9d4e81b8b1c84f5bcb72877056393982128d12cca224e",
-   "size_bytes": 61854
+   "sha256": "05b151cfcbfe0b3304498c12c510da7faa6a10d92385dad0f87c277f5df56e93",
+   "size_bytes": 14509
   },
   "analysis/team-mate-comparison.json": {
    "sha256": "36066df2808cbec61628f0fbc7fb33527a6f0f6be451b520cfdf9b0ef2ad3be0",
@@ -57,8 +53,8 @@
    "size_bytes": 369507
   },
   "pit-stops.json": {
-   "sha256": "d4b3ee44f9dc17619921a7769f717baa350022ed7aa545efb1b864b66861d15f",
-   "size_bytes": 9361
+   "sha256": "d1181d50d7bc69b55e8d61caebd9507d9b75218ae2aad2335ac663b0e2b6030e",
+   "size_bytes": 9625
   },
   "position-replay.json": {
    "sha256": "8294d75647ae9360430696a7a7b74cab3c84fbf6538e34e197c6f4568e8579a9",
@@ -69,8 +65,8 @@
    "size_bytes": 32042
   },
   "results.json": {
-   "sha256": "e925bad262a5e199bd33cc189ad5c9693f34a6552857cc05b05f61cf265fdbe4",
-   "size_bytes": 3597
+   "sha256": "8a00d4afcef6418006671a659fcba047653f3e4bd5b8fb49931e67e9e20ec469",
+   "size_bytes": 4491
   },
   "stints.json": {
    "sha256": "9ad194cfeba57b7ef4d29a15177673329c55d342a82f351c137e6ba258b89143",
@@ -169,13 +165,13 @@
    "size_bytes": 1077056
   },
   "telemetry/index.json": {
-   "sha256": "127a13294f42bacac28d91e76dcb08c45b7bdc6f43ca26f77b79f3f0cdb067d2",
-   "size_bytes": 108365
+   "sha256": "2a08587a647fe7c5f41216ef37ae47c5a9e1f66f5c4f23afa56b5087d7e80c4b",
+   "size_bytes": 43195
   },
   "weather.json": {
    "sha256": "7dddd350e4640288fb685c10df4f2e0a7e27fb2418de36a9a782fa24929d6142",
    "size_bytes": 19770
   }
  },
- "generation": "88e24161593ebc204e355a1f479e47cac7e329e52db8504e138b06c0ad4049eb"
+ "generation": "07f228e7c7a72582de5c1b7bf4099bfb2d4294e2d746a6b2d99559e4f2cce15a"
 }

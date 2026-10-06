@@ -10,16 +10,22 @@ rule 3). One that fell short is fetched again, from an empty cache: every few
 hours while its retry window is open, and rarely after that, since F1 does
 repair its archive. The one thing that ends the retries of a short session is
 F1 answering that it does not hold what is missing.
+
+"In full" is decided twice: here, from what each fetch recorded of itself, and
+by the build, which measures the snapshot it publishes again and judges it
+against the result of its own day. The pointer holds the build's verdict, and
+where the two disagree the pointer is believed: a session that is published
+short goes on being fetched.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from f1data.archive import Snapshot
-from f1data.coverage import CLASSIFICATION_BAR, refetch_could_help
+from f1data.coverage import CLASSIFICATION_BAR, Shortfall, refetch_could_help
 from f1data.identity import parse_utc
 from f1data.policy import (
     AVAILABLE_AFTER,
@@ -30,6 +36,7 @@ from f1data.policy import (
     RETRY_WINDOW,
     SLOW_RETRY_INTERVAL,
 )
+from f1data.publish import Pointer
 from f1data.schedule import ScheduledSession
 
 
@@ -45,15 +52,20 @@ def plan_fetches(
     now: datetime,
     classified_laps: Callable[[ScheduledSession], dict[str, int] | None] = lambda session: None,
     session_types: frozenset[str] = IN_SCOPE_SESSION_TYPES,
+    published_short: Mapping[int, Pointer] | None = None,
 ) -> list[FetchPlan]:
     """The sessions to fetch now, oldest first, each with the reason.
 
-    ``classified_laps`` is asked for recent sessions only. It judges their
-    snapshots against the classification of today: a snapshot taken before
-    Jolpica had the result cannot tell that its timing is cut short, and a
-    correction after the race can leave a snapshot that was whole short of the
-    laps now classified.
+    ``classified_laps`` is not asked for every session. It judges snapshots
+    against the classification of today: a snapshot taken before Jolpica had
+    the result cannot tell that its timing is cut short, and a correction
+    after the race can leave a snapshot that was whole short of the laps now
+    classified.
+
+    ``published_short`` maps a session key to its pointer, for the sessions
+    that this pipeline version has published short of a bar.
     """
+    published_short = published_short or {}
     now = now.astimezone(timezone.utc)
     plans: list[FetchPlan] = []
     for session in sorted(schedule, key=lambda item: item.start_time_utc or ""):
@@ -83,20 +95,44 @@ def plan_fetches(
         # session with a snapshot fetched before there was a result at all,
         # however old: such a snapshot records only that the classification
         # was missing, and cannot show timing cut short until it is judged.
+        # And any session published as short, however old. A build judges
+        # against the result of its own day; when a result corrected months
+        # later is what left the session short, the pointer says so and
+        # nothing in the archive does.
         recent = now - start <= CLASSIFICATION_RECHECK_WINDOW
         unjudged = any(
             shortfall.bar == CLASSIFICATION_BAR
             for snapshot in current
             for shortfall in snapshot.shortfalls()
         )
-        if recent or unjudged:
+        pointer = next(
+            (
+                published_short[snapshot.session_key]
+                for snapshot in current
+                if snapshot.session_key in published_short
+            ),
+            None,
+        )
+        if recent or unjudged or pointer is not None:
             laps = classified_laps(session)
             if laps:
                 current = [snapshot.judged_against(laps) for snapshot in current]
-        if any(snapshot.complete for snapshot in current):
-            continue
-        best = max(current, key=Snapshot.rank)
-        if not refetch_could_help(best.shortfalls()):
+        whole = [snapshot for snapshot in current if snapshot.complete]
+        if whole:
+            # Whole by the archive's own record. That ends the fetching
+            # unless a build has measured one of these very snapshots, found
+            # it short and published it so, and nothing fetched since then
+            # looks whole. A newer one that does is the build's to try first.
+            if pointer is None or not _found_short_by_a_build(pointer, whole):
+                continue
+            shortfalls = [
+                Shortfall(str(item.get("bar")), item.get("driver"), str(item.get("detail") or ""))
+                for item in pointer.shortfalls
+                if isinstance(item, dict)
+            ]
+        else:
+            shortfalls = max(current, key=Snapshot.rank).shortfalls()
+        if not refetch_could_help(shortfalls):
             # Only the classification is missing, and that is not F1's to give.
             continue
 
@@ -110,8 +146,20 @@ def plan_fetches(
             interval = SLOW_RETRY_INTERVAL
         if now < max(fetched) + interval:
             continue
-        short = sorted({shortfall.bar for shortfall in best.shortfalls()})
-        plans.append(
-            FetchPlan(session, f"best of {len(current)} snapshot(s) is short on {', '.join(short)}")
-        )
+        short = ", ".join(sorted({shortfall.bar for shortfall in shortfalls}))
+        if whole:
+            reason = f"published short on {short}, though the archive records it as whole"
+        else:
+            reason = f"best of {len(current)} snapshot(s) is short on {short}"
+        plans.append(FetchPlan(session, reason))
     return plans
+
+
+def _found_short_by_a_build(pointer: Pointer, whole: list[Snapshot]) -> bool:
+    """Whether what is published contradicts the record of the snapshot it was built from."""
+    if pointer.snapshot_id not in {snapshot.snapshot_id for snapshot in whole}:
+        # Built from another snapshot, before one of these looked whole or
+        # under another result. The next full build picks from these.
+        return False
+    published = parse_utc(pointer.published_at)
+    return all(parse_utc(snapshot.fetched_at) <= published for snapshot in whole)

@@ -37,7 +37,7 @@ from f1data.classification import (
     is_classified_session,
     merge_into_session,
 )
-from f1data.coverage import measure_coverage
+from f1data.coverage import Shortfall, apply_classification, evaluate_coverage, measure_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, format_utc, identity_from_fastf1
@@ -47,7 +47,7 @@ from f1data.policy import (
     SETTLED_RECHECK_EVERY_DAYS,
     SETTLED_RECHECK_FOR_DAYS,
 )
-from f1data.publish import Hold, Inputs, Pointer
+from f1data.publish import Hold, Inputs, NotYetPublishable, Pointer
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
 from f1data.standings import fetch_standings
 from f1data.store import ObjectStore
@@ -65,6 +65,8 @@ class BuildContext:
 
     scheduled: ScheduledSession
     classification: Classification | None
+    # When the session may be published even if it is short of a bar.
+    publishable_from: datetime
 
 
 @contextmanager
@@ -93,52 +95,68 @@ class Builder:
         self._now = now
         # Ask Jolpica about every session, however old.
         self._recheck = recheck
-        self._schedules: dict[int, list[ScheduledSession]] = {}
 
-    def schedule(self, year: int, fresh: bool = False) -> list[ScheduledSession]:
-        """The calendar, read once per run, and read again when asked for fresh.
+    def schedule(self, year: int) -> list[ScheduledSession]:
+        """The calendar as it stands now, read from its source on every call.
 
-        A publisher that lost a conditional write has to decide again from
-        current inputs (rule 2), and the calendar is one of them: a round
-        renumbered while this run was building is exactly when another
-        publisher gets in first.
+        Nothing is kept between calls, and that is the point. A publisher
+        writes against the version of a pointer or of the index that it read
+        (rule 2), and that guard covers only what it looked up after the read.
+        A calendar held from earlier in the run would let this publisher put a
+        build, or an index, made from the old calendar over one that another
+        publisher had made from the new, with no conflict to stop it.
         """
-        if fresh or year not in self._schedules:
-            # FastF1 falls back from its schedule file to F1's own site.
-            with no_requests_to_f1():
-                self._schedules[year] = load_schedule(self._fastf1, year, fresh=fresh)
-        return self._schedules[year]
+        # FastF1 falls back from its schedule file to F1's own site.
+        with no_requests_to_f1():
+            return load_schedule(self._fastf1, year, fresh=True)
 
     def gather(
-        self, session_key: int, pointer: Pointer | None = None, fresh: bool = False
+        self, session_key: int, pointer: Pointer | None = None, retry: bool = False
     ) -> Inputs | Hold | None:
-        """Select the snapshot and fetch the classification, as of now (rules 3 and 6).
+        """Select the snapshot and look up what else a build takes, as of now (rules 3 and 6).
 
-        ``pointer`` is what is published now, if anything. ``fresh`` asks for
-        the calendar to be read again rather than taken from this run's copy.
+        ``pointer`` is what is published now, if anything, read before this is
+        called. ``retry`` says a write was just lost to another publisher.
         """
         snapshots = list_snapshots(self._store, session_key)
         if not snapshots:
             return None
         identity = snapshots[0].identity
 
-        # After a lost write nothing is taken on trust, the shortcut included.
-        if not fresh and self._is_settled(pointer, identity):
-            # An old session, published by this pipeline version. Its
-            # classification is not asked for on every run; between the days
-            # it is, the session is built again only if a different snapshot
-            # would now be picked.
-            assert pointer is not None
-            settled = select_snapshot(snapshots)
-            if settled is not None and settled.snapshot_id == pointer.snapshot_id:
-                return Inputs(snapshot=settled, classification_fingerprint=pointer.classification_fingerprint)
-
-        scheduled = find_scheduled_session(self.schedule(identity.year, fresh=fresh), identity)
+        scheduled = find_scheduled_session(self.schedule(identity.year), identity)
         if scheduled is None:
             raise BuildError(
                 f"No calendar entry for session {session_key} "
                 f"({identity.meeting_name} {identity.session_name}, {identity.start_time_utc})"
             )
+        # Nothing else. In format 2 no artifact carries anything from the
+        # calendar: what a session is comes from F1's own session information,
+        # and pages look the round up in the index. The calendar entry still
+        # says which round to ask Jolpica about, but what Jolpica answers is
+        # tied to the session by its date and recorded by its fingerprint, so a
+        # build made while the calendar said another round is the same build.
+        also = None
+
+        # After a lost write nothing is taken on trust, the shortcut included.
+        if not retry and self._is_settled(pointer, identity):
+            # An old session, published by this pipeline version. Its
+            # classification is not asked for on every run; between the days
+            # it is, the session is built again only if a different snapshot
+            # would now be picked or its calendar entry has changed.
+            assert pointer is not None
+            settled = select_snapshot(snapshots)
+            if (
+                settled is not None
+                and settled.snapshot_id == pointer.snapshot_id
+                and also == pointer.also
+            ):
+                return Inputs(
+                    snapshot=settled,
+                    classification_fingerprint=pointer.classification_fingerprint,
+                    also=also,
+                )
+
+        publishable_from = partial_publication_time(snapshots)
         classification = None
         if is_classified_session(identity.session_type):
             try:
@@ -151,7 +169,7 @@ class Builder:
                 # But not for ever. Once the retry window has closed the
                 # session is published as partial like any other that is
                 # short, with the classification named as what is missing.
-                if self._now() < partial_publication_time(snapshots):
+                if self._now() < publishable_from:
                     return Hold(str(exc))
             except ClassificationUnavailable as exc:
                 # Jolpica did not answer, so nothing is known. Never a reason
@@ -169,20 +187,15 @@ class Builder:
         snapshot = select_snapshot(snapshots)
         assert snapshot is not None
         shortfalls = snapshot.shortfalls()
-        publishable_from = partial_publication_time(snapshots)
         if shortfalls and self._now() < publishable_from:
-            short = ", ".join(sorted({shortfall.bar for shortfall in shortfalls}))
-            return Hold(
-                f"short on {short}; to be fetched again, and published as partial "
-                f"from {format_utc(publishable_from)} if still short"
-            )
+            return Hold(_not_yet(shortfalls, publishable_from))
         return Inputs(
             snapshot=snapshot,
             classification_fingerprint=classification.fingerprint if classification else None,
-            context=BuildContext(scheduled=scheduled, classification=classification),
-            # The calendar entry reaches the artifacts (the round, the names),
-            # so a build made under another entry is not this build.
-            also=(scheduled.year, scheduled.round, scheduled.meeting_name, scheduled.session_name),
+            context=BuildContext(
+                scheduled=scheduled, classification=classification, publishable_from=publishable_from
+            ),
+            also=also,
         )
 
     def _is_settled(self, pointer: Pointer | None, identity: SessionIdentity) -> bool:
@@ -228,6 +241,29 @@ class Builder:
                 # Measured again here, against the classification of today, so
                 # the pointer records what this generation was built from.
                 coverage = measure_coverage(session, snapshot.identity.session_type, extras)
+                if context.classification is not None:
+                    # By the same reckoning ``gather`` judged the snapshot by:
+                    # today's result is the whole answer, driver by driver.
+                    coverage = apply_classification(coverage, context.classification.laps_by_number)
+                shortfalls = evaluate_coverage(coverage)
+                recorded = set(snapshot.shortfalls())
+                unrecorded = [shortfall for shortfall in shortfalls if shortfall not in recorded]
+                if unrecorded:
+                    # The two are the same bytes measured by the same code,
+                    # so this is a fault somewhere. What was found stands: it
+                    # goes into the pointer, and the fetch stage reads it there.
+                    _logger.warning(
+                        "Snapshot %s of session %s is short where its record is not: %s",
+                        snapshot.snapshot_id,
+                        snapshot.session_key,
+                        "; ".join(
+                            f"{item.bar} {item.driver or 'session'}: {item.detail}" for item in unrecorded
+                        ),
+                    )
+                if shortfalls and self._now() < context.publishable_from:
+                    # The record said whole, or less short than this. Rule 6
+                    # holds either way: later fetches come first.
+                    raise NotYetPublishable(_not_yet(shortfalls, context.publishable_from))
                 files = build_artifacts(
                     session, snapshot.identity, context.classification, extras, coverage
                 )
@@ -239,6 +275,14 @@ class Builder:
                 len(guard.forbidden),
             )
         return files, replace(snapshot, coverage=coverage)
+
+
+def _not_yet(shortfalls: list[Shortfall], publishable_from: datetime) -> str:
+    short = ", ".join(sorted({shortfall.bar for shortfall in shortfalls}))
+    return (
+        f"short on {short}; to be fetched again, and published as partial "
+        f"from {format_utc(publishable_from)} if still short"
+    )
 
 
 def _check_same_event(

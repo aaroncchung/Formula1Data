@@ -27,7 +27,7 @@ from f1data.models import SESSION_ARTIFACTS, artifact_json, model_for_artifact
 from f1data.publish import upload_generation
 from f1data.store import MemoryStore
 from f1data.telemetry import MAX_PUBLISHED_SAMPLES_PER_LAP, extract_telemetry
-from tests.race import IDENTITY, LAPS, classification, extras, make_race
+from tests.race import IDENTITY, LAPS, classification, extras, index_laps, make_race
 
 
 def built(session=None, official=classification, found=None):
@@ -55,7 +55,12 @@ def flat_rows(telemetry):
 def test_a_generation_holds_every_artifact_and_one_telemetry_file_per_driver():
     files = built()
 
-    assert set(files) == set(SESSION_ARTIFACTS) | {"telemetry/AAA.json", "telemetry/BBB.json", "telemetry/CCC.json"}
+    # Every artifact but the one made for practice sessions only.
+    assert set(files) == (set(SESSION_ARTIFACTS) - {"analysis/pace-prediction.json"}) | {
+        "telemetry/AAA.json",
+        "telemetry/BBB.json",
+        "telemetry/CCC.json",
+    }
     assert all(data.endswith(b"\n") and b"\r" not in data and b"\n" not in data[:-1] for data in files.values())
 
 
@@ -113,9 +118,16 @@ def test_telemetry_is_published_per_driver_as_arrays_thinned_to_the_limit():
     assert [entry["driver_code"] for entry in index["drivers"]] == ["AAA", "BBB", "CCC"]
     entry = index["drivers"][1]
     assert entry["path"] == "telemetry/BBB.json"
-    assert [lap["lap_number"] for lap in entry["laps"]] == list(range(1, LAPS + 1))
-    assert {lap["sample_count"] for lap in entry["laps"]} == {MAX_PUBLISHED_SAMPLES_PER_LAP}
-    assert all(lap["raw_sample_count"] > 2 * lap["sample_count"] for lap in entry["laps"])
+    # Enough to offer the laps to choose from, without reading laps.json.
+    timed = {lap["lap_number"]: lap for lap in read(files, "laps.json") if lap["driver_code"] == "BBB"}
+    laps = index_laps(entry)
+    assert [(lap["lap_time_ms"], lap["compound"]) for lap in laps] == [
+        (timed[lap["lap_number"]]["lap_time_ms"], timed[lap["lap_number"]]["compound"]) for lap in laps
+    ]
+    assert laps[1]["lap_time_ms"] and laps[1]["compound"] == "MEDIUM"
+    assert entry["lap_number"] == list(range(1, LAPS + 1))
+    assert set(entry["sample_count"]) == {MAX_PUBLISHED_SAMPLES_PER_LAP}
+    assert all(lap["raw_sample_count"] > 2 * lap["sample_count"] for lap in laps)
 
     lap = driver["laps"][1]
     arrays = [name for name, value in lap.items() if isinstance(value, list)]
@@ -145,7 +157,7 @@ def test_a_driver_code_that_cannot_name_a_file_stops_the_build():
     session.laps["Driver"] = session.laps["Driver"].replace("CCC", "../C")
 
     with pytest.raises(normalize.SessionDataError, match="cannot name a telemetry file"):
-        telemetry_artifacts(extract_telemetry(session))
+        telemetry_artifacts(extract_telemetry(session), normalize.laps(session))
 
 
 # --- the analyses read every sample --------------------------------------------
@@ -219,7 +231,7 @@ def test_a_session_whose_position_feed_stops_is_built_with_what_there_is():
     assert replay["time_ms"] and replay["time_ms"][-1] < 1000 * stopped
     assert max(number for number in replay["lap_number"] if number) < 5
     index = read(files, "telemetry/index.json")
-    located = {lap["lap_number"] for entry in index["drivers"] for lap in entry["laps"] if lap["has_position"]}
+    located = {lap["lap_number"] for entry in index["drivers"] for lap in index_laps(entry) if lap["has_position"]}
     assert located == {1, 2, 3, 4}
     late = read(files, "telemetry/BBB.json")["laps"][7]
     assert late["x"] is None and late["y"] is None and len(late["speed_kph"]) == MAX_PUBLISHED_SAMPLES_PER_LAP
@@ -277,7 +289,34 @@ def test_a_race_with_no_classification_is_built_with_a_provisional_result():
     assert {item["bar"] for item in coverage["shortfalls"]} >= {"classification"}
     # Everything else is built as usual.
     assert set(files) == set(built())
-    assert read(files, "analysis/strategy.json")["pit_stops"][0]["stationary_ms"] == 2400
+    assert read(files, "pit-stops.json")[0]["stationary_ms"] == 2400
+    assert read(files, "analysis/strategy.json")["pit_loss"]["stop_count"] == 1
+
+
+def test_an_analysis_does_not_repeat_other_artifacts():
+    """The old strategy file carried every stint, every stop and every race
+    control message again: 68 kB of a race's 62."""
+    strategy = read(built(), "analysis/strategy.json")
+
+    assert sorted(strategy) == [
+        "caveats", "compound_usage", "pit_lane_time", "pit_loss", "pit_loss_estimate_ms", "undercut_overcut",
+    ]
+    assert strategy["compound_usage"] == {"MEDIUM": 3, "HARD": 1, "UNKNOWN": 1}
+
+
+def test_the_practice_only_analysis_is_published_for_practice_only():
+    """It answers "not available" for anything else, and a file that never has
+    anything in it is not published."""
+    from dataclasses import replace
+
+    session = make_race()
+    found = extras()
+    measurement = measure_coverage(session, "FP2", found)
+    practice = replace(IDENTITY, session_type="FP2", session_name="Practice 2")
+
+    assert "analysis/pace-prediction.json" not in built()
+    files = build_artifacts(session, practice, None, found, measurement)
+    assert read(files, "analysis/pace-prediction.json")["session_type"] == "Practice 2"
 
 
 def test_the_generation_is_named_by_what_is_in_it():

@@ -266,5 +266,11 @@ def make_race(position_until: float | None = None, drs: bool = False) -> SimpleN
     )
 
 
+def index_laps(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """A driver's entry in the telemetry index, which is one array per figure, as one row per lap."""
+    names = [name for name, value in entry.items() if isinstance(value, list)]
+    return [dict(zip(names, values)) for values in zip(*(entry[name] for name in names))]
+
+
 def _duration(seconds: float) -> pd.Timedelta:
     return pd.Timedelta(milliseconds=round(seconds * 1000))

@@ -31,11 +31,11 @@ from f1data.models import (
     SESSION_ARTIFACTS,
     TELEMETRY_INDEX_PATH,
     DriverTelemetry,
+    Lap,
     TelemetryChannel,
     TelemetryDriverEntry,
     TelemetryIndex,
     TelemetryLap,
-    TelemetryLapEntry,
     artifact_json,
     telemetry_path,
 )
@@ -106,12 +106,17 @@ def session_artifacts(
     }
     analyses = session_analyses(summary, drivers, laps, stints, pit_stops, race_control, corners, telemetry)
     artifacts.update({f"analysis/{name}.json": analysis for name, analysis in analyses.items()})
-    artifacts.update(telemetry_artifacts(telemetry))
+    artifacts.update(telemetry_artifacts(telemetry, laps))
     return {path: _as_model(path, artifact) for path, artifact in artifacts.items()}
 
 
-def telemetry_artifacts(telemetry: SessionTelemetry) -> dict[str, BaseModel]:
-    """The telemetry index and one file per driver, thinned to the published resolution."""
+def telemetry_artifacts(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> dict[str, BaseModel]:
+    """The telemetry index and one file per driver, thinned to the published resolution.
+
+    The index repeats each lap's time and compound from ``lap_rows``, so that
+    a page can offer the laps to choose from without reading laps.json.
+    """
+    timed = {(lap.driver_code, lap.lap_number): lap for lap in lap_rows}
     # Since 2026 the cars have no DRS and the channel is 0 in every sample
     # (AR-18). A channel that never changes says nothing, so it is left out.
     with_drs = len(telemetry.drs_values()) > 1
@@ -136,19 +141,17 @@ def telemetry_artifacts(telemetry: SessionTelemetry) -> dict[str, BaseModel]:
         path = telemetry_path(code)
         published = [_published_lap(lap, with_drs) for lap in laps]
         files[path] = DriverTelemetry(driver_code=code, laps=published)
+        rows = [timed.get((code, lap.lap_number)) for lap in laps]
         entries.append(
             TelemetryDriverEntry(
                 driver_code=code,
                 path=path,
-                laps=[
-                    TelemetryLapEntry(
-                        lap_number=lap.lap_number,
-                        sample_count=len(thinned.time_ms),
-                        raw_sample_count=lap.sample_count,
-                        has_position=lap.has_position,
-                    )
-                    for lap, thinned in zip(laps, published)
-                ],
+                lap_number=[lap.lap_number for lap in laps],
+                lap_time_ms=[row.lap_time_ms if row else None for row in rows],
+                compound=[row.compound if row else None for row in rows],
+                sample_count=[len(thinned.time_ms) for thinned in published],
+                raw_sample_count=[lap.sample_count for lap in laps],
+                has_position=[lap.has_position for lap in laps],
             )
         )
     files[TELEMETRY_INDEX_PATH] = TelemetryIndex(

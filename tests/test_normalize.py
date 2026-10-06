@@ -86,7 +86,7 @@ def test_positions_in_time_count_from_the_session_clock():
     weather = normalize.weather(session, "R")
 
     came_in = session.laps.query("Driver == 'AAA' and LapNumber == @PIT_LAP").iloc[0]["PitInTime"]
-    assert stop.time_ms == round(came_in.total_seconds() * 1000)
+    assert stop.entry_time_ms == round(came_in.total_seconds() * 1000)
     # Race control sends wall-clock times; they are put on the same clock.
     assert [message.time_ms for message in messages] == [540_000, 842_500]
     assert weather[0].time_ms == 30_000
@@ -178,32 +178,68 @@ def test_the_result_is_the_classification_with_a_time_for_the_winner_and_gaps_be
 
     assert result == [
         {
-            "position": 1, "driver_code": "AAA", "classified_position": "1", "status": "Finished",
-            "points": 25.0, "grid": 2, "time_ms": 990_500, "gap_ms": None, "laps": 12, "provisional": False,
+            "position": 1, "driver_code": "AAA", "classified_position": "1", "status": "Finished", "points": 25.0,
+            "grid": 2, "time_ms": 990_500, "gap_ms": None, "laps_down": None, "behind_at_flag_ms": None,
+            "laps": 12, "provisional": False,
         },
         {
-            "position": 2, "driver_code": "BBB", "classified_position": "2", "status": "Finished",
-            "points": 18.0, "grid": 1, "time_ms": None, "gap_ms": 4_000, "laps": 12, "provisional": False,
+            "position": 2, "driver_code": "BBB", "classified_position": "2", "status": "Finished", "points": 18.0,
+            "grid": 1, "time_ms": None, "gap_ms": 4_000, "laps_down": None, "behind_at_flag_ms": None,
+            "laps": 12, "provisional": False,
         },
         {
-            "position": 3, "driver_code": "CCC", "classified_position": "R", "status": "Retired",
-            "points": 0.0, "grid": 3, "time_ms": None, "gap_ms": None, "laps": 9, "provisional": False,
+            "position": 3, "driver_code": "CCC", "classified_position": "R", "status": "Retired", "points": 0.0,
+            "grid": 3, "time_ms": None, "gap_ms": None, "laps_down": None, "behind_at_flag_ms": None,
+            "laps": 9, "provisional": False,
         },
     ]
 
 
-def test_a_driver_todays_classification_omits_has_no_result_whatever_the_archive_recorded():
-    """Disqualified after the session was fetched: the archived result still
-    has them second with 18 points."""
+def test_a_lapped_driver_has_laps_down_and_no_gap():
+    """The old format published one duration for everyone. For a lapped driver
+    Jolpica's is the time they took the flag after the winner, a lap short: in
+    the 2026 Austrian GP ninth place, a lap down, showed 15.3 s against 45.7 s
+    for eighth."""
+    session = make_race()
+    official = classification()
+    official.rows[1].update(laps=11, status="Lapped", totalRaceTime=15_334)
+    official.rows[2].update(laps=11, positionText="3", status="Lapped", totalRaceTime=None)
+
+    _, lapped, no_time = normalize.results(official, session, normalize.driver_codes(session))
+
+    assert (lapped.gap_ms, lapped.laps_down, lapped.behind_at_flag_ms) == (None, 1, 15_334)
+    assert (no_time.gap_ms, no_time.laps_down, no_time.behind_at_flag_ms) == (None, 1, None)
+
+
+def test_a_driver_todays_classification_omits_is_unclassified_whatever_the_archive_recorded():
+    """Taken out of the result after the session was fetched: the archived
+    result still has them second with 18 points. They are published as a
+    driver with no result, not with zeros and not with what the archive said."""
     session = make_race()
     official = classification()
     official.rows[:] = [official.rows[0], {**official.rows[2], "position": 2, "positionText": "2"}]
 
-    result = normalize.results(official, session, normalize.driver_codes(session))
+    result = rows(normalize.results(official, session, normalize.driver_codes(session)))
 
-    assert [(row.position, row.driver_code) for row in result] == [(1, "AAA"), (2, "CCC")]
+    assert [(row["position"], row["driver_code"]) for row in result] == [(1, "AAA"), (2, "CCC"), (None, "BBB")]
+    assert result[2] == {
+        "position": None, "driver_code": "BBB", "classified_position": None, "status": None, "points": None,
+        "grid": None, "time_ms": None, "gap_ms": None, "laps_down": None, "behind_at_flag_ms": None,
+        "laps": None, "provisional": False,
+    }
     # They are still a driver of the session, with laps and telemetry.
     assert "BBB" in {driver.code for driver in normalize.drivers(session, normalize.driver_codes(session))}
+
+
+def test_a_driver_who_set_no_lap_and_is_not_classified_has_no_row():
+    session = make_race()
+    session.laps = session.laps[session.laps["Driver"] != "CCC"]
+    official = classification()
+    official.rows.pop()
+
+    result = normalize.results(official, session, normalize.driver_codes(session))
+
+    assert [row.driver_code for row in result] == ["AAA", "BBB"]
 
 
 @pytest.mark.parametrize(
@@ -243,6 +279,21 @@ def test_with_no_classification_the_result_is_the_order_on_track_and_says_so():
     behind = round((finished["AAA"] - finished["BBB"]).total_seconds() * 1000)
     # The leader has no gap, a finisher the time they took the flag behind, a retirement none.
     assert [row.gap_ms for row in result] == [None, behind, None]
+    assert {(row.laps_down, row.behind_at_flag_ms) for row in result} == {(None, None)}
+
+
+def test_a_provisional_result_tells_a_lapped_finisher_from_a_retirement():
+    session = make_race()
+    # CCC is still running at the end, three laps down, and takes the flag after the leader.
+    flag = session.laps[session.laps["LapNumber"] == LAPS]["Time"].min()
+    mine = (session.laps["Driver"] == "CCC") & (session.laps["LapNumber"] == 9)
+    session.laps.loc[mine, "Time"] = flag + pd.Timedelta(seconds=30)
+
+    result = normalize.results(None, session, normalize.driver_codes(session))
+
+    assert [(row.driver_code, row.gap_ms, row.laps_down, row.behind_at_flag_ms) for row in result][2] == (
+        "CCC", None, 3, 30_000,
+    )
 
 
 def test_a_driver_who_set_no_lap_is_last_in_a_provisional_result():
@@ -266,7 +317,7 @@ def test_a_pit_stop_carries_both_of_f1s_figures_beside_the_timings_and_says_whic
         {
             "driver_code": "AAA",
             "lap_number": PIT_LAP,
-            "time_ms": stops[0]["time_ms"],
+            "entry_time_ms": stops[0]["entry_time_ms"],
             "duration_ms": 20_000,
             "stationary_ms": 2_400,
             "pit_lane_ms": 19_900,
@@ -291,7 +342,7 @@ def test_a_car_that_does_not_come_back_out_has_no_duration():
 
     (stop,) = normalize.pit_stops(session, extras(pit_stops=False), normalize.driver_codes(session))
 
-    assert stop.duration_ms is None and stop.sources.duration_ms is None and stop.time_ms is not None
+    assert stop.duration_ms is None and stop.sources.duration_ms is None and stop.entry_time_ms is not None
 
 
 def test_stops_are_matched_by_driver_and_lap_and_one_only_the_feed_has_is_kept():
@@ -309,7 +360,10 @@ def test_stops_are_matched_by_driver_and_lap_and_one_only_the_feed_has_is_kept()
 
     stops = normalize.pit_stops(session, feed, normalize.driver_codes(session))
 
-    assert [(stop.driver_code, stop.lap_number, stop.duration_ms, stop.stationary_ms, stop.time_ms is None) for stop in stops] == [
+    assert [
+        (stop.driver_code, stop.lap_number, stop.duration_ms, stop.stationary_ms, stop.entry_time_ms is None)
+        for stop in stops
+    ] == [
         ("AAA", 5, 20_000, 2_400, False),
         ("AAA", 6, None, 2_000, True),
         ("BBB", 8, None, 3_100, True),

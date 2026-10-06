@@ -59,19 +59,25 @@ def planned(snapshots, now, **kwargs):
 
 
 # --- B1: the calendar is a build input ----------------------------------------
+#
+# It was in format 1, whose summary carried the round. In format 2 nothing in a
+# generation comes from the calendar, so a build made before the calendar moved
+# is still the build, and is published without being made again.
 
 
-def test_a_build_made_under_the_old_calendar_is_not_published_under_the_new_one(tmp_path, monkeypatch):
+def test_a_build_made_under_the_old_calendar_is_still_the_build_under_the_new_one(tmp_path, monkeypatch):
     """A builds with Austria at round 8. The calendar moves it to round 9 and B
     publishes from an older snapshot. A's snapshot and classification are
-    unchanged, but its build has round 8 in it."""
+    unchanged, and nothing in its build said which round it was."""
     world = World(monkeypatch)
     store = Interposing(archive(tmp_path / "older"))
     write_snapshot(store, fetched_session(tmp_path / "newer"), now=FIRST_FETCH + timedelta(hours=1))
     a = Builder(store, fastf1=None, now=lambda: SOON_AFTER)
+    builds = []
 
     def build_with_the_round_in_it(inputs):
-        return {"summary.json": f"round {inputs.context.scheduled.round}".encode()}, None
+        builds.append(inputs.context.scheduled.round)
+        return {"summary.json": b"from the newer snapshot"}, None
 
     def calendar_changes_and_another_publisher_wins():
         world.renumber()
@@ -90,7 +96,10 @@ def test_a_build_made_under_the_old_calendar_is_not_published_under_the_new_one(
     assert outcome.action == "published"
     pointer, _ = read_pointer(store, AUSTRIA)
     summary = store.get(f"{layout.generation_prefix(AUSTRIA, pointer.generation)}summary.json").data
-    assert summary == b"round 9"
+    assert summary == b"from the newer snapshot"
+    # Built once, under round 8, and not again when the calendar said 9.
+    assert builds == [8]
+    assert pointer.also is None
 
 
 def a_store_snapshots(store):
@@ -167,9 +176,9 @@ def test_after_a_lost_write_an_old_session_is_looked_up_afresh(tmp_path, monkeyp
     pointer, _ = read_pointer(store, AUSTRIA)
     world.classification_requests.clear()
 
-    builder.gather(AUSTRIA, pointer=pointer, fresh=False)
+    builder.gather(AUSTRIA, pointer=pointer, retry=False)
     assert world.classification_requests == []
-    builder.gather(AUSTRIA, pointer=pointer, fresh=True)
+    builder.gather(AUSTRIA, pointer=pointer, retry=True)
     assert world.classification_requests == [8]
 
 
@@ -321,9 +330,9 @@ def test_a_feed_refused_by_an_origin_that_was_refusing_everything_is_not_one_f1_
     answering = {"SessionInfo.jsonStream": 200, "PitStopSeries.jsonStream": 403}
     refusing = {"SessionInfo.jsonStream": 403, "PitStopSeries.jsonStream": 403}
 
-    assert f1_does_not_hold(missing, answering)
-    assert not f1_does_not_hold(missing, refusing)
-    assert not f1_does_not_hold(missing, {})
+    assert f1_does_not_hold(missing, answering, {})
+    assert not f1_does_not_hold(missing, refusing, {})
+    assert not f1_does_not_hold(missing, {}, {})
 
 
 def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_hold():
@@ -331,7 +340,7 @@ def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_
     short_for_a_driver = Shortfall("position", "AAA", "4 of 78 expected laps usable")
     status = {"SessionInfo.jsonStream": 200, "Position.z.jsonStream": 403}
 
-    assert not f1_does_not_hold(short_for_a_driver, status)
+    assert not f1_does_not_hold(short_for_a_driver, status, {"position": True})
 
     damaged = make_session()
     del damaged.pos_data["1"]

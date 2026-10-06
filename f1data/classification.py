@@ -36,6 +36,18 @@ _RESULT_COLUMNS = {
     "laps": "Laps",
 }
 
+# The columns that say how a driver was classified, as opposed to who the
+# driver is, each with what it holds for a driver who was not classified.
+_NOT_CLASSIFIED = {
+    "Position": float("nan"),
+    "ClassifiedPosition": "",
+    "GridPosition": float("nan"),
+    "Status": "",
+    "Points": float("nan"),
+    "Time": None,
+    "Laps": float("nan"),
+}
+
 
 _RETRY_PAUSES_SECONDS = (2.0, 6.0)
 
@@ -134,7 +146,10 @@ def merge_into_session(session: Any, classification: Classification) -> None:
 
     FastF1 fills these from whatever it fetched when the session was loaded,
     which for a build is the archive. The classification is the one input a
-    build takes from today.
+    build takes from today, and it is the whole answer: a driver it does not
+    list is not classified, whatever the session was loaded with. Such a
+    driver stays in the table, since the timing may still hold their laps,
+    with no position, points, status or lap count to their name.
     """
     rename = _RESULT_COLUMNS
     official = classification.frame
@@ -156,6 +171,15 @@ def merge_into_session(session: Any, classification: Classification) -> None:
     else:
         current.index = current.index.astype(str)
     combined = current.reindex(current.index.union(official.index))
+    omitted = combined.index.difference(official.index)
+    for column, nothing in _NOT_CLASSIFIED.items():
+        if column in combined and len(omitted):
+            # Otherwise a result from the archive would be published under
+            # the fingerprint of a result that no longer contains it.
+            if isinstance(nothing, str) and combined[column].dtype.kind in "fiu":
+                # A text column that loaded with nothing in it is numeric.
+                combined[column] = combined[column].astype(object)
+            combined.loc[omitted, column] = nothing
     for column in official.columns:
         if column not in combined:
             combined[column] = None

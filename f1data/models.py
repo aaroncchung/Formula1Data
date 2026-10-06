@@ -279,7 +279,9 @@ class Laps(RootModel[list[Lap]]):
 
 
 class Result(Model):
-    position: int
+    position: int | None = Field(
+        description="Null for a driver who took part and whom the classification leaves out. Such rows come last."
+    )
     driver_code: str
     classified_position: str | None = Field(
         description="The position as the classification prints it: a number, or a letter such as R for retired."
@@ -289,18 +291,24 @@ class Result(Model):
     grid: int | None = Field(description="Starting position. 0 for a start from the pit lane.")
     time_ms: int | None = Field(description="The winner's race time in milliseconds. Null for everyone else.")
     gap_ms: int | None = Field(
-        description="Milliseconds behind the winner at the flag. Null for the winner and for a driver with no time. "
-        "A lapped driver's is measured on the lap they finished, so it is smaller than the gap on the road."
+        description="Milliseconds behind the winner, for a driver who finished on the same lap. Null for everyone else."
     )
-    laps: int | None
+    laps_down: int | None = Field(
+        description="Laps behind the winner, for a classified driver who finished one or more down. Null for everyone else."
+    )
+    behind_at_flag_ms: int | None = Field(
+        description="For a driver with laps_down: milliseconds after the winner that they took the flag. "
+        "Not a gap, since they had fewer laps to run: it only orders the cars on one lap."
+    )
+    laps: int | None = Field(description="Laps completed. Null for a driver the classification leaves out.")
     provisional: bool = Field(
-        description="True when Jolpica has no classification for the session. The row is then the order "
+        description="True when Jolpica has no classification for the session. The rows are then the order "
         "on track from the timing alone, with no status, points or grid."
     )
 
 
 class Results(RootModel[list[Result]]):
-    """``results.json``: the classification, in finishing order."""
+    """``results.json``: the classification in finishing order, then anyone it leaves out."""
 
 
 class Stint(Model):
@@ -329,7 +337,7 @@ class PitStopSources(Model):
 class PitStop(Model):
     driver_code: str
     lap_number: int = Field(description="The lap the car came in on.")
-    time_ms: int | None = Field(
+    entry_time_ms: int | None = Field(
         description="When the car crossed the pit entry, in milliseconds on the session clock. "
         "Null for a stop only F1's pit-stop feed reports."
     )
@@ -461,17 +469,21 @@ class Coverage(Model):
 # --- telemetry ----------------------------------------------------------------
 
 
-class TelemetryLapEntry(Model):
-    lap_number: int
-    sample_count: int = Field(description="Samples published for the lap.")
-    raw_sample_count: int = Field(description="Samples the lap has at full resolution, which is what the analyses read.")
-    has_position: bool = Field(description="False when the lap has no usable position data, and so no x and y.")
-
-
 class TelemetryDriverEntry(Model):
+    """One driver's laps that have telemetry, as parallel arrays with one entry per lap."""
+
     driver_code: str
     path: str = Field(description="The driver's file, relative to the generation.")
-    laps: list[TelemetryLapEntry]
+    lap_number: list[int]
+    lap_time_ms: list[int | None] = Field(
+        description="Each lap's time as in laps.json, so that a lap can be picked from here alone."
+    )
+    compound: list[CompoundOrNull]
+    sample_count: list[int] = Field(description="Samples published for each lap.")
+    raw_sample_count: list[int] = Field(
+        description="Samples each lap has at full resolution, which is what the analyses read."
+    )
+    has_position: list[bool] = Field(description="False for a lap with no usable position data, and so no x and y.")
 
 
 class TelemetryIndex(Model):
@@ -649,18 +661,15 @@ class PaceChangeAcrossStop(Model):
 
 
 class Strategy(Model):
-    """``analysis/strategy.json``."""
+    """``analysis/strategy.json``. The stints and stops themselves are in stints.json and pit-stops.json."""
 
-    stints: list[Stint]
     compound_usage: dict[str, int] = Field(
         description="Stints by compound. The key UNKNOWN counts stints whose compound F1 did not report."
     )
-    pit_stops: list[PitStop]
     pit_loss_estimate_ms: Decimal1 | None
     pit_loss: PitLoss
     pit_lane_time: PitLaneTime
     undercut_overcut: list[PaceChangeAcrossStop]
-    race_control_overlays: list[RaceControlMessage]
     caveats: list[str]
 
 
@@ -821,7 +830,7 @@ class PacePredictionTeam(Model):
 
 
 class PacePrediction(Model):
-    """``analysis/pace-prediction.json``. Produced for practice sessions only."""
+    """``analysis/pace-prediction.json``. Published for practice sessions only: a race has no such file."""
 
     available: bool
     session_type: str
@@ -890,6 +899,10 @@ class Pointer(Model):
     manifest: ManifestReference
     snapshot_id: str
     classification_fingerprint: str | None
+    also: dict[str, Any] | None = Field(
+        description="Anything else the generation was built from, outside the archive and the classification. "
+        "Null in this format, where a build takes nothing from the calendar."
+    )
     coverage: PointerCoverage
     published_at: str
     previous_generation: Sha256 | None
@@ -903,18 +916,26 @@ class IndexSession(TypedDict):
     type: SessionType
     name: str
     start_time_utc: str | None
+    # Whether sessions of this type are published at all. An unpublished one
+    # that is in scope is on its way; one that is not will not come.
+    in_scope: bool
     session_key: NotRequired[int]
     complete: NotRequired[bool]
 
 
 class IndexMeeting(Model):
-    round: int
+    round: int = Field(description="As the calendar has it now. It moves when the calendar changes.")
     name: str
     official_name: str | None
     country: str | None
     location: str | None
     date: str | None
     format: str | None
+    meeting_key: int | None = Field(
+        description="F1's key for the meeting, which does not move. Known once a session of the meeting is published."
+    )
+    circuit_key: int | None = Field(description="F1's key for the circuit, from the same source.")
+    circuit_name: str | None
     sessions: list[IndexSession]
 
 

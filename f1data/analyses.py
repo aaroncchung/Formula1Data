@@ -37,6 +37,7 @@ from f1data.models import (
     RacePace,
     ReplayDriver,
     SessionSummary,
+    SessionType,
     Stint,
     Strategy,
     TeammateComparison,
@@ -66,6 +67,7 @@ from backend.app.analysis.strategy import calculate_strategy  # noqa: E402
 from backend.app.analysis.teammate_comparison import calculate_teammate_comparison  # noqa: E402
 
 _UNKNOWN_COMPOUND = "UNKNOWN"
+_PRACTICE = frozenset({SessionType.FP1, SessionType.FP2, SessionType.FP3})
 _REPLAY_CHANNELS = ("x", "y", "speed_kph", "distance_m")
 
 
@@ -157,7 +159,7 @@ def session_analyses(
     for row in teammates["rows"]:
         row.setdefault("caveat", None)
 
-    return {
+    analyses: dict[str, Any] = {
         "lap-times": LapTimes.model_validate(
             [_without(series, "metadata") for series in lap_time_series(lap_rows, driver_rows)]
         ),
@@ -165,7 +167,15 @@ def session_analyses(
         "tyre-degradation": TyreDegradation.model_validate(
             _result(calculate_fuel_adjusted_tyre_degradation(session_id, summary_row, lap_rows))
         ),
-        "strategy": Strategy.model_validate(_result(strategy)),
+        # The analysis echoes the stints, the stops and race control's
+        # messages it was given. They are artifacts of their own.
+        "strategy": Strategy.model_validate(
+            {
+                name: value
+                for name, value in _result(strategy).items()
+                if name not in ("stints", "pit_stops", "race_control_overlays")
+            }
+        ),
         "ideal-laps": IdealLaps.model_validate(_result(calculate_ideal_laps(session_id, lap_rows))),
         "team-mate-comparison": TeammateComparison.model_validate(_result(teammates)),
         "track-dominance": TrackDominance.model_validate(
@@ -177,10 +187,15 @@ def session_analyses(
         "car-performance": CarPerformance.model_validate(
             _result(calculate_car_performance(session_id, lap_rows, by_lap, driver_rows))
         ),
-        "pace-prediction": PacePrediction.model_validate(
-            _result(calculate_pace_prediction(session_id, summary_row, lap_rows, driver_rows))
-        ),
     }
+    if summary.session_type in _PRACTICE:
+        # A long-run estimate is made from practice only. For any other
+        # session the analysis says "not available", and a file that never
+        # has anything in it is not published.
+        analyses["pace-prediction"] = PacePrediction.model_validate(
+            _result(calculate_pace_prediction(session_id, summary_row, lap_rows, driver_rows))
+        )
+    return analyses
 
 
 def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
