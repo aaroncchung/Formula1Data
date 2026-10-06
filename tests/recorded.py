@@ -10,6 +10,11 @@ refused. Here both are stood in for: the calendar row is made from what the
 snapshot recorded of the session, and the Austrian race's result is a fixture
 (``tests/fixtures/classification-11315.json``). With those, ``Builder.build``
 itself runs on the archive and reads nothing else.
+
+It writes nothing either. A build that finds a snapshot's record does not
+describe its feeds corrects the record in the archive, and the archive here is
+somebody's real one, so it is opened through ``ReadOnly``: such a build fails
+the test instead.
 """
 
 from __future__ import annotations
@@ -57,11 +62,39 @@ FEED_FILES = {
 PER_DRIVER_FEEDS = ("driver_list", "timing_data", "tyre_data", "car_data", "position")
 
 
+class ReadOnly:
+    """A store that is read and never written."""
+
+    def __init__(self, store: ObjectStore) -> None:
+        self._store = store
+
+    def get(self, key: str) -> Any:
+        return self._store.get(key)
+
+    def head(self, key: str) -> Any:
+        return self._store.head(key)
+
+    def list(self, prefix: str) -> Any:
+        return self._store.list(prefix)
+
+    def download_file(self, key: str, path: Path) -> bool:
+        return self._store.download_file(key, path)
+
+    def put(self, key: str, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError(f"a test tried to write {key} to the archive it reads")
+
+    def put_file(self, key: str, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError(f"a test tried to write {key} to the archive it reads")
+
+    def delete(self, key: str) -> None:
+        raise AssertionError(f"a test tried to delete {key} from the archive it reads")
+
+
 def archive_store() -> ObjectStore:
     spec = os.environ.get(ARCHIVE_VARIABLE)
     if not spec:
         pytest.skip(f"set {ARCHIVE_VARIABLE} to a store holding the 2026 archive (a directory, or r2)")
-    return open_store(spec)
+    return ReadOnly(open_store(spec))
 
 
 def restore(store: ObjectStore, session_key: int, cache_dir: Path) -> tuple[Snapshot, dict[str, bytes]]:

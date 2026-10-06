@@ -29,6 +29,7 @@ from f1data.publish import upload_generation
 from f1data.store import MemoryStore
 from f1data.telemetry import MAX_PUBLISHED_SAMPLES_PER_LAP, extract_telemetry
 from tests.race import IDENTITY, LAPS, classification, extras, index_laps, make_race
+from tests.recorded import ReadOnly
 
 
 def built(session=None, official=classification, found=None):
@@ -284,6 +285,25 @@ def test_corners_that_do_not_lie_on_the_track_are_not_what_the_laps_are_segmente
     assert analysis["corner_source"] == "inferred"
     assert "do not lie on the line of the lap" in analysis["caveats"][-1] and "m off it" in analysis["caveats"][-1]
     assert read(built(), "corners.json")["fits_track"] is True
+
+
+def test_the_recorded_race_tests_cannot_write_to_the_archive_they_read():
+    """A build corrects a snapshot's record when the feeds say otherwise
+    (rule 3). The archive those tests read is a real one."""
+    held = MemoryStore()
+    held.put("archive/sessions/1/a/snapshot.json", b"{}")
+    store = ReadOnly(held)
+
+    assert store.get("archive/sessions/1/a/snapshot.json").data == b"{}"
+    assert [item.key for item in store.list("archive/")] == ["archive/sessions/1/a/snapshot.json"]
+    for write in (
+        lambda: store.put("archive/sessions/1/a/remeasured.json", b"{}"),
+        lambda: store.put_file("archive/sessions/1/a/fastf1-cache.tar.gz", "anywhere"),
+        lambda: store.delete("archive/sessions/1/a/snapshot.json"),
+    ):
+        with pytest.raises(AssertionError, match="the archive it reads"):
+            write()
+    assert [item.key for item in held.list("")] == ["archive/sessions/1/a/snapshot.json"]
 
 
 def test_a_race_with_no_classification_is_built_with_a_provisional_result():
