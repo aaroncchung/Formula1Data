@@ -1,5 +1,5 @@
-import type { TelemetryComparison } from "@/types/domain";
 import type { LapTimeSeries } from "./published/types.ts";
+import type { TelemetryComparison } from "./telemetry-compare.ts";
 
 /** The Recharts tooltip box, shared so the charts cannot drift apart. */
 export const CHART_TOOLTIP_STYLE = { background: "#111722", border: "1px solid #283246", color: "#e5edf8" };
@@ -47,6 +47,7 @@ export function seriesToRows(series: ReadonlyArray<LapTimeSeries>): Array<Record
     });
 }
 
+/** One row for each distance of a comparison, for charts that share a distance axis. */
 export function telemetryRows(compare: TelemetryComparison) {
   return compare.distance_m.map((distance, index) => ({
     distance,
@@ -60,10 +61,10 @@ export function telemetryRows(compare: TelemetryComparison) {
     rpmB: compare.rpm_b[index],
     gearA: compare.gear_a[index],
     gearB: compare.gear_b[index],
-    drsA: compare.drs_a[index],
-    drsB: compare.drs_b[index],
+    drsA: compare.drs_a?.[index] ?? null,
+    drsB: compare.drs_b?.[index] ?? null,
     delta: compare.delta_speed_kph[index],
-    deltaTime: compare.delta_time_ms?.[index] ?? null
+    deltaTime: compare.delta_time_ms[index]
   }));
 }
 

@@ -5,35 +5,25 @@ import { useState } from "react";
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { TelemetryCharts } from "@/components/charts/TelemetryCharts";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { isEmptyState } from "@/lib/static-api-core";
-import type { TelemetryIndex } from "@/lib/static-api-core";
-import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
+import { formatMs } from "@/lib/format";
+import { isTelemetryNotice } from "@/lib/published/telemetry";
+import type { LapRef, TelemetryLapChoice, TelemetryNotice } from "@/lib/published/telemetry";
+import type { TelemetryComparison } from "@/lib/telemetry-compare";
 
-/** Loads the comparison of two laps: driver and lap number of each. */
-export type CompareLaps = (
-  driverA: string,
-  lapA: number,
-  driverB: string,
-  lapB: number
-) => Promise<TelemetryComparison | EmptyStateResponse>;
+/** Loads the comparison of two laps. */
+export type CompareLaps = (first: LapRef, second: LapRef) => Promise<TelemetryComparison | TelemetryNotice>;
 
 export function TelemetryComparePanel({
-  initialDriverA,
-  initialDriverB,
-  initialLapA,
-  initialLapB,
+  initialPair,
   initialComparison,
-  initialEmptyState,
-  availableLaps = [],
+  initialNotice,
+  availableLaps,
   compare
 }: {
-  initialDriverA?: string;
-  initialDriverB?: string;
-  initialLapA?: number;
-  initialLapB?: number;
-  initialComparison?: TelemetryComparison | null;
-  initialEmptyState?: EmptyStateResponse | null;
-  availableLaps?: TelemetryIndex["laps"];
+  initialPair: readonly [LapRef, LapRef] | null;
+  initialComparison: TelemetryComparison | null;
+  initialNotice: TelemetryNotice | null;
+  availableLaps: ReadonlyArray<TelemetryLapChoice>;
   /**
    * Loads a comparison. The page passes one bound to the generation it has
    * pinned, so the laps compared come from the publication the rest of the
@@ -41,50 +31,50 @@ export function TelemetryComparePanel({
    */
   compare: CompareLaps;
 }) {
-  const [driverA, setDriverA] = useState(initialDriverA || initialComparison?.driver_a.driver_code || "");
-  const [driverB, setDriverB] = useState(initialDriverB || initialComparison?.driver_b.driver_code || "");
-  const [lapA, setLapA] = useState<number | "">(initialLapA || initialComparison?.driver_a.lap_number || "");
-  const [lapB, setLapB] = useState<number | "">(initialLapB || initialComparison?.driver_b.lap_number || "");
-  const [comparison, setComparison] = useState<TelemetryComparison | null>(initialComparison || null);
-  const [emptyState, setEmptyState] = useState<EmptyStateResponse | null>(initialEmptyState || null);
+  const [driverA, setDriverA] = useState(initialPair?.[0].driver ?? "");
+  const [driverB, setDriverB] = useState(initialPair?.[1].driver ?? "");
+  const [lapA, setLapA] = useState<number | "">(initialPair?.[0].lap ?? "");
+  const [lapB, setLapB] = useState<number | "">(initialPair?.[1].lap ?? "");
+  const [comparison, setComparison] = useState<TelemetryComparison | null>(initialComparison);
+  const [notice, setNotice] = useState<TelemetryNotice | null>(initialNotice);
   const [isLoading, setIsLoading] = useState(false);
-  const canCompare = Boolean(driverA && driverB && lapA && lapB);
+  const canCompare = driverA !== "" && driverB !== "" && lapA !== "" && lapB !== "";
   const drivers = [...new Set(availableLaps.map((item) => item.driver_code))];
   const lapsA = availableLaps.filter((item) => item.driver_code === driverA);
   const lapsB = availableLaps.filter((item) => item.driver_code === driverB);
 
   function changeDriverA(value: string) {
     setDriverA(value);
-    setLapA(availableLaps.find((item) => item.driver_code === value)?.lap_number || "");
+    setLapA(quickestLap(availableLaps, value) ?? "");
   }
 
   function changeDriverB(value: string) {
     setDriverB(value);
-    setLapB(availableLaps.find((item) => item.driver_code === value)?.lap_number || "");
+    setLapB(quickestLap(availableLaps, value) ?? "");
   }
 
   function submit() {
-    if (!canCompare) {
-      setEmptyState({
-        reason: "Choose two telemetry lap artifacts before comparing.",
-        action: "Telemetry comparisons require a driver and lap for both sides."
+    if (lapA === "" || lapB === "" || !canCompare) {
+      setNotice({
+        reason: "Choose two laps before comparing.",
+        action: "A comparison needs a driver and a lap on both sides."
       });
       setComparison(null);
       return;
     }
     setIsLoading(true);
-    setEmptyState(null);
-    compare(driverA, Number(lapA), driverB, Number(lapB)).then((result) => {
-      if (isEmptyState(result)) {
-        setEmptyState(result);
+    setNotice(null);
+    compare({ driver: driverA, lap: lapA }, { driver: driverB, lap: lapB }).then((result) => {
+      if (isTelemetryNotice(result)) {
+        setNotice(result);
         setComparison(null);
       } else {
-        setEmptyState(null);
+        setNotice(null);
         setComparison(result);
       }
     }).catch((error: unknown) => {
       setComparison(null);
-      setEmptyState({
+      setNotice({
         reason: "The selected telemetry comparison could not be loaded.",
         action: error instanceof Error ? error.message : "Try another pair of laps."
       });
@@ -93,7 +83,7 @@ export function TelemetryComparePanel({
 
   return (
     <div className="space-y-4">
-      <div className="surface grid gap-3 p-4 md:grid-cols-[1fr_120px_1fr_120px_auto]">
+      <div className="surface grid gap-3 p-4 md:grid-cols-[110px_1fr_110px_1fr_auto]">
         <label className="text-sm text-slate-400">
           Driver A
           <select
@@ -111,7 +101,7 @@ export function TelemetryComparePanel({
             value={lapA}
             onChange={(event) => setLapA(event.target.value ? Number(event.target.value) : "")}
           >
-            {lapsA.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>Lap {lap.lap_number}</option>)}
+            {lapsA.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>{lapLabel(lap)}</option>)}
           </select>
         </label>
         <label className="text-sm text-slate-400">
@@ -131,7 +121,7 @@ export function TelemetryComparePanel({
             value={lapB}
             onChange={(event) => setLapB(event.target.value ? Number(event.target.value) : "")}
           >
-            {lapsB.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>Lap {lap.lap_number}</option>)}
+            {lapsB.map((lap) => <option key={lap.lap_number} value={lap.lap_number}>{lapLabel(lap)}</option>)}
           </select>
         </label>
         <button
@@ -143,16 +133,16 @@ export function TelemetryComparePanel({
           {isLoading ? "Loading…" : "Compare"}
         </button>
       </div>
-      {emptyState ? (
+      {notice ? (
         <EmptyState
           title="Telemetry unavailable"
-          detail={[emptyState.reason, emptyState.action].filter(Boolean).join(" ")}
+          detail={[notice.reason, notice.action].filter(Boolean).join(" ")}
         />
       ) : null}
       {comparison ? (
         <ChartPanel
           title={`${comparison.driver_a.driver_code} · Lap ${comparison.driver_a.lap_number}  vs  ${comparison.driver_b.driver_code} · Lap ${comparison.driver_b.lap_number}`}
-          description="Traces share one distance cursor. Positive time delta means Driver B is behind Driver A."
+          description={`Traces share one distance cursor. A positive time delta means ${comparison.driver_b.driver_code} is behind ${comparison.driver_a.driver_code}.`}
         >
           <TelemetryCharts comparison={comparison} />
         </ChartPanel>
@@ -161,3 +151,20 @@ export function TelemetryComparePanel({
   );
 }
 
+/** A lap as the index describes it, so it can be chosen without knowing its number: "Lap 59 · 1:08.412 · HARD". */
+function lapLabel(lap: TelemetryLapChoice): string {
+  return [`Lap ${lap.lap_number}`, lap.lap_time_ms === null ? "no time" : formatMs(lap.lap_time_ms), lap.compound]
+    .filter((part) => part !== null)
+    .join(" · ");
+}
+
+/** The lap a driver is first offered: their quickest, or the first listed when none has a time. */
+function quickestLap(laps: ReadonlyArray<TelemetryLapChoice>, driver: string): number | null {
+  const own = laps.filter((lap) => lap.driver_code === driver);
+  const timed = own.filter((lap): lap is TelemetryLapChoice & { lap_time_ms: number } => lap.lap_time_ms !== null && lap.lap_time_ms > 0);
+  const quickest = timed.reduce<(typeof timed)[number] | null>(
+    (best, lap) => (best === null || lap.lap_time_ms < best.lap_time_ms ? lap : best),
+    null
+  );
+  return quickest?.lap_number ?? own[0]?.lap_number ?? null;
+}

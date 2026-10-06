@@ -12,7 +12,6 @@
  */
 
 import type { PositionReplayFrame } from "../../types/domain";
-import type { TelemetryIndex } from "../static-api-core.ts";
 import type { SessionView } from "./client.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { SessionTabId } from "./tabs.ts";
@@ -45,8 +44,8 @@ export type ArtifactFile<T> = {
 };
 
 /**
- * Every file a session page reads, except the telemetry laps, which are named
- * by the telemetry index and read two at a time (telemetry.ts).
+ * Every file a session page reads, except the drivers' telemetry, which the
+ * telemetry index names and which is read a driver at a time (telemetry.ts).
  *
  * An object artifact names the fields a component maps over. Only that much
  * of a shape is checked, because a component that maps over a missing list
@@ -72,10 +71,10 @@ export const ARTIFACTS = {
   cornerAnalysis: recordOf("analysis/corner-analysis.json", ["corners", "caveats"]),
   carPerformance: recordOf("analysis/car-performance.json", ["drivers", "caveats"]),
   pacePrediction: recordOf("analysis/pace-prediction.json", ["drivers", "caveats"]),
-  // Still read on their format-1 shapes; each moves to its schema type with
-  // the pages that show it.
-  positionReplay: formerListOf<PositionReplayFrame>("position-replay.json"),
-  telemetryIndex: formerRecordOf<TelemetryIndex>("telemetry/index.json", ["laps"])
+  telemetryIndex: recordOf("telemetry/index.json", ["channels", "drivers"]),
+  // Still read on its format-1 shape; it moves to its schema type with the
+  // page that shows it.
+  positionReplay: formerListOf<PositionReplayFrame>("position-replay.json")
 } as const;
 
 type TabFiles = {
@@ -93,8 +92,8 @@ const A = ARTIFACTS;
  * knows which a generation holds before it asks, so a missing one costs no
  * request and is not an error.
  *
- * The telemetry tab also reads two telemetry laps for each comparison, which
- * no table can list.
+ * The telemetry tab also reads the telemetry of the drivers it compares,
+ * which no table can list: the index says which files there are.
  */
 const TAB_FILES: Readonly<Record<SessionTabId, TabFiles>> = {
   overview: { required: [A.summary, A.drivers, A.laps, A.racePace, A.stints, A.pitStops], optional: [] },
@@ -105,7 +104,7 @@ const TAB_FILES: Readonly<Record<SessionTabId, TabFiles>> = {
     optional: [A.idealLaps, A.teammateComparison, A.trackDominance, A.cornerAnalysis, A.carPerformance, A.pacePrediction]
   },
   strategy: { required: [A.stints, A.pitStops], optional: [A.strategy] },
-  telemetry: { required: [A.telemetryIndex, A.laps, A.drivers], optional: [] },
+  telemetry: { required: [A.telemetryIndex, A.drivers], optional: [] },
   "position-replay": { required: [A.positionReplay, A.drivers], optional: [] },
   weather: { required: [A.weather], optional: [] },
   "race-control": { required: [A.raceControl], optional: [] },
@@ -366,9 +365,6 @@ function formerListOf<T>(path: string): ArtifactFile<T[]> {
   return { path, read: (view) => readList<T[]>(view, path) };
 }
 
-function formerRecordOf<T>(path: string, lists: ReadonlyArray<string> = []): ArtifactFile<T> {
-  return { path, read: (view) => checkedRecord<T>(view, path, lists) };
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

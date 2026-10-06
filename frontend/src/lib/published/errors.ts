@@ -1,10 +1,9 @@
 /**
  * How the published-data reader reports a failure.
  *
- * The model is the one in static-api-core.ts: a reader throws a typed error
- * that carries `{code, message, details}`, and `safePublished` turns a loader
- * that throws into a discriminated result, as `safeApi` does. The code is a
- * closed set here because the page has to treat the cases differently. "Not
+ * A reader throws a typed error that carries `{code, message, details}`, and
+ * `safePublished` turns a loader that throws into a discriminated result. The
+ * code is a closed set because the page has to treat the cases differently. "Not
  * published" is a normal state, "the pointer is invalid" is a fault, and "the
  * generation is gone" asks for a reload; collapsing any two of them shows the
  * user the wrong thing.

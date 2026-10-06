@@ -1,39 +1,50 @@
 /**
  * The telemetry tab's reads.
  *
- * A race has over a thousand telemetry laps, of about 100 kB each. The tab
- * reads the index that lists them when it opens, and after that only the two
- * laps being compared.
+ * A session's telemetry is one file for each driver, holding every lap of
+ * theirs that has any, at about a megabyte for a race distance; twenty or so
+ * of them is most of what a session weighs. The tab reads the index that
+ * lists the laps when it opens, and after that only the files of the drivers
+ * it is asked to compare. A view that shares its reads (share.ts) keeps a
+ * driver's file once it has it, so comparing another lap of the same driver
+ * asks for nothing.
  *
- * The comparison itself is `telemetryCompare` in static-api-core.ts, which
- * was written for the build-time site and reads paths of the form
- * `sessions/<id>/<file>`. It is reused here unchanged through a reader that
- * maps those paths onto a pinned view, so that both sites align and thin two
- * laps the same way.
+ * The index says everything a lap is chosen by: its time and its compound.
+ * The laps of the session are not read here.
  */
 
-import type { EmptyStateResponse, Lap, TelemetryComparison } from "../../types/domain";
-import { ApiClientError, createStaticApi, isEmptyState } from "../static-api-core.ts";
-import type { ArtifactReader, TelemetryIndex } from "../static-api-core.ts";
-import { ARTIFACTS, requireListed } from "./artifacts.ts";
+import { compareLaps } from "../telemetry-compare.ts";
+import type { ComparedLap, TelemetryComparison } from "../telemetry-compare.ts";
+import { ARTIFACTS, readRecord, requireListed } from "./artifacts.ts";
 import type { SessionView } from "./client.ts";
 import { isPublishedError } from "./errors.ts";
-
-export type TelemetryLap = TelemetryIndex["laps"][number];
+import type { Compound, Driver, DriverTelemetry, TelemetryDriverEntry, TelemetryIndex } from "./types.ts";
 
 /** One lap of one driver. */
 export type LapRef = { readonly driver: string; readonly lap: number };
 
 export type LapPair = readonly [LapRef, LapRef];
 
+/** A lap that has telemetry, with what the index says of it. */
+export type TelemetryLapChoice = {
+  readonly driver_code: string;
+  readonly lap_number: number;
+  /** As in the session's laps; null for a lap F1 did not time. */
+  readonly lap_time_ms: number | null;
+  readonly compound: Compound | null;
+};
+
+/** Why there is no comparison, in words for the page; `action` is anything more to add. */
+export type TelemetryNotice = { readonly reason: string; readonly action?: string | null };
+
 export type SessionTelemetry = {
-  /** Every lap that has telemetry, as the index lists them. */
-  readonly laps: TelemetryLap[];
+  /** Every lap that has telemetry, driver by driver, as the index lists them. */
+  readonly laps: TelemetryLapChoice[];
   /** The two laps compared when the tab opens; null when the session has fewer than two. */
   readonly pair: LapPair | null;
   /** The comparison of `pair`, or null with `notice` saying why there is none. */
   readonly comparison: TelemetryComparison | null;
-  readonly notice: EmptyStateResponse | null;
+  readonly notice: TelemetryNotice | null;
 };
 
 /**
@@ -46,15 +57,12 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
   requireListed(view, "telemetry");
   // The drivers are read here although only the comparison uses them: without
   // them a comparison fails, and the tab should say so before offering one.
-  const [index, laps] = await Promise.all([
-    ARTIFACTS.telemetryIndex.read(view),
-    ARTIFACTS.laps.read(view),
-    ARTIFACTS.drivers.read(view)
-  ]);
-  const pair = defaultComparison(index.laps, laps);
+  const [index] = await Promise.all([ARTIFACTS.telemetryIndex.read(view), ARTIFACTS.drivers.read(view)]);
+  const laps = telemetryLaps(index);
+  const pair = defaultComparison(laps);
   if (!pair) {
     return {
-      laps: index.laps,
+      laps,
       pair: null,
       comparison: null,
       notice: { reason: "A comparison needs two laps with telemetry, and this session has fewer." }
@@ -62,9 +70,9 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
   }
   try {
     const result = await compareTelemetry(view, pair[0], pair[1]);
-    return isEmptyState(result)
-      ? { laps: index.laps, pair, comparison: null, notice: result }
-      : { laps: index.laps, pair, comparison: result, notice: null };
+    return isTelemetryNotice(result)
+      ? { laps, pair, comparison: null, notice: result }
+      : { laps, pair, comparison: result, notice: null };
   } catch (error) {
     // The session is being opened again on another generation, and this tab
     // with it; that is not something to report inside the tab.
@@ -72,7 +80,7 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
       throw error;
     }
     return {
-      laps: index.laps,
+      laps,
       pair,
       comparison: null,
       notice: {
@@ -84,46 +92,65 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
 }
 
 /**
- * Compare two laps. Reads the two lap files; the index, the laps and the
- * drivers it also needs are the ones the tab already read, when the view
- * shares its reads (`shareReads`).
+ * Compare two laps. Reads the files of the two drivers, or of the one when
+ * both laps are theirs; the index and the drivers it also needs are the ones
+ * the tab already read, when the view shares its reads (`shareReads`).
  */
 export async function compareTelemetry(
   view: SessionView,
   first: LapRef,
   second: LapRef
-): Promise<TelemetryComparison | EmptyStateResponse> {
-  const sessionId = String(view.pointer.session_key);
-  const result = await createStaticApi(staticReaderOver(view, sessionId)).telemetryCompare(
-    sessionId,
-    first.driver,
-    first.lap,
-    second.driver,
-    second.lap
+): Promise<TelemetryComparison | TelemetryNotice> {
+  const [index, drivers] = await Promise.all([ARTIFACTS.telemetryIndex.read(view), ARTIFACTS.drivers.read(view)]);
+  const a = listedLap(index, drivers, first);
+  const b = listedLap(index, drivers, second);
+  // Decided from the index, before either driver's file is asked for.
+  if (!a || !b) {
+    return { reason: "Telemetry is unavailable for one or both selected laps." };
+  }
+  const [fileA, fileB] = await Promise.all([readDriverTelemetry(view, a.entry), readDriverTelemetry(view, b.entry)]);
+  const lapA = fileA.laps.find((lap) => lap.lap_number === first.lap);
+  const lapB = fileB.laps.find((lap) => lap.lap_number === second.lap);
+  if (!lapA || !lapB) {
+    // The index and the files are one generation's, so this is a fault in
+    // what was published and not something a reader can choose around.
+    const missing = lapA ? second : first;
+    return {
+      reason: `The telemetry of ${describe(missing)} is listed for this session and is not in ${missing.driver}'s file.`
+    };
+  }
+  return compareLaps({ meta: a.meta, lap: lapA }, { meta: b.meta, lap: lapB }, index.max_samples_per_lap);
+}
+
+/** One driver's telemetry, from the path the index gives for it. */
+export function readDriverTelemetry(view: SessionView, entry: Pick<TelemetryDriverEntry, "path">): Promise<DriverTelemetry> {
+  return readRecord<"telemetry/{driver_code}.json">(view, entry.path, ["laps"]);
+}
+
+/** The laps of an index, one row for each: its drivers hold them as parallel arrays. */
+export function telemetryLaps(index: TelemetryIndex): TelemetryLapChoice[] {
+  return index.drivers.flatMap((entry) =>
+    entry.lap_number.map((lap, position) => ({
+      driver_code: entry.driver_code,
+      lap_number: lap,
+      lap_time_ms: entry.lap_time_ms[position] ?? null,
+      compound: entry.compound[position] ?? null
+    }))
   );
-  // The old reader's advice is for whoever runs the pipeline ("Generate
-  // telemetry artifacts ..."), which a visitor to the site cannot do.
-  return isEmptyState(result) ? { reason: result.reason } : result;
 }
 
 /**
  * The laps a telemetry tab compares first: the fastest lap of each of the two
  * drivers with the quickest laps.
  *
- * The old dashboard compared the first two entries of the index, which are
- * lap 1 for the first two drivers in alphabetical order: two standing starts.
- * When the lap times cannot rank the laps, that is still the fallback, with
- * the second lap taken from another driver where there is one.
+ * When no lap has a time to rank it by, it is the first lap listed of each of
+ * the first two drivers, or the first two laps of the only one.
  */
-export function defaultComparison(
-  indexed: ReadonlyArray<TelemetryLap>,
-  laps: ReadonlyArray<Pick<Lap, "driver_code" | "lap_number" | "lap_time_ms" | "is_deleted">>
-): LapPair | null {
-  const withTelemetry = new Set(indexed.map((lap) => lapKey(lap.driver_code, lap.lap_number)));
+export function defaultComparison(laps: ReadonlyArray<TelemetryLapChoice>): LapPair | null {
   const fastest = new Map<string, { lap: number; time: number }>();
   for (const lap of laps) {
     const time = lap.lap_time_ms;
-    if (typeof time !== "number" || time <= 0 || lap.is_deleted || !withTelemetry.has(lapKey(lap.driver_code, lap.lap_number))) {
+    if (time === null || time <= 0) {
       continue;
     }
     const best = fastest.get(lap.driver_code);
@@ -142,8 +169,8 @@ export function defaultComparison(
     ];
   }
 
-  const first = indexed[0];
-  const second = indexed.find((lap) => lap.driver_code !== first?.driver_code) ?? indexed[1];
+  const first = laps[0];
+  const second = laps.find((lap) => lap.driver_code !== first?.driver_code) ?? laps[1];
   if (!first || !second) {
     return null;
   }
@@ -153,41 +180,36 @@ export function defaultComparison(
   ];
 }
 
-/**
- * A reader for `createStaticApi` over one pinned view. A path the generation
- * does not list becomes the old reader's "not found", which is the case it
- * already handles: a session without a telemetry index compares to an empty
- * state, not to a failure.
- */
-function staticReaderOver(view: SessionView, sessionId: string): ArtifactReader {
-  const prefix = `sessions/${sessionId}/`;
-  return async <T>(path: string): Promise<T> => {
-    // The catalog and the season files are not part of a session view.
-    if (!path.startsWith(prefix)) {
-      throw notFound(path);
-    }
-    try {
-      return await view.read<T>(path.slice(prefix.length));
-    } catch (error) {
-      if (isPublishedError(error, "not_in_manifest")) {
-        throw notFound(path);
-      }
-      throw error;
+export function isTelemetryNotice(value: TelemetryComparison | TelemetryNotice): value is TelemetryNotice {
+  return "reason" in value;
+}
+
+/** A lap the index lists, with the driver's entry and what the comparison says of the lap. */
+function listedLap(
+  index: TelemetryIndex,
+  drivers: ReadonlyArray<Driver>,
+  ref: LapRef
+): { entry: TelemetryDriverEntry; meta: ComparedLap } | null {
+  const code = ref.driver.toUpperCase();
+  const entry = index.drivers.find((item) => item.driver_code === code);
+  const position = entry ? entry.lap_number.indexOf(ref.lap) : -1;
+  if (!entry || position < 0) {
+    return null;
+  }
+  return {
+    entry,
+    meta: {
+      driver_code: code,
+      team: drivers.find((driver) => driver.code === code)?.team?.name ?? null,
+      lap_number: ref.lap,
+      lap_time_ms: entry.lap_time_ms[position] ?? null,
+      compound: entry.compound[position] ?? null
     }
   };
 }
 
-function notFound(path: string): ApiClientError {
-  const message = `${path} is not part of this session's published data.`;
-  return new ApiClientError(message, { code: "artifact_not_found", message, details: { path } }, "published");
-}
-
 function describe(lap: LapRef): string {
   return `${lap.driver} lap ${lap.lap}`;
-}
-
-function lapKey(driver: string, lap: number): string {
-  return `${driver.toUpperCase()}/${lap}`;
 }
 
 function compareCodes(left: string, right: string): number {
