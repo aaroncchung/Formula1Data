@@ -18,7 +18,11 @@ import re
 
 # The artifact format: file names, shapes and units. A change here is published
 # under a new prefix before the frontend that reads it is deployed.
-FORMAT_VERSION = 1
+#
+#   2  one model per artifact (f1data/models.py): columnar telemetry bundled
+#      per driver, whole milliseconds, null for a missing value, floats
+#      rounded as they are written, nothing taken from the calendar
+FORMAT_VERSION = 2
 
 # Everything that changes what a build produces without changing the format: an
 # analysis fix, a coverage bar. A pointer written by an older pipeline version
@@ -32,7 +36,9 @@ FORMAT_VERSION = 1
 #      stop, track dominance, tyre degradation fits, team-mate comparison
 #   3  coverage: no tolerance on timing laps, the tyre bar without tyre age,
 #      bars for the pit-stop feed and the corner positions
-PIPELINE_VERSION = 3
+#   4  format 2: analyses read full-resolution telemetry, lap times are
+#      rounded and not cut off, corners are the circuit's own where archived
+PIPELINE_VERSION = 4
 
 ARCHIVE_PREFIX = "archive/"
 SNAPSHOT_MARKER = "snapshot.json"

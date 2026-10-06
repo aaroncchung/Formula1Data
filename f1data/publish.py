@@ -231,7 +231,7 @@ def build_manifest(identity: SessionIdentity, files: dict[str, bytes]) -> bytes:
         raise ValueError(f"{layout.MANIFEST_NAME} is written by the publisher, not the build")
     return dump_json(
         {
-            "schema_version": layout.FORMAT_VERSION,
+            "format_version": layout.FORMAT_VERSION,
             "pipeline_version": layout.PIPELINE_VERSION,
             "session_key": identity.session_key,
             "identity": identity.to_json(),

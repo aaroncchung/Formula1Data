@@ -143,7 +143,7 @@ def test_a_first_publication_uploads_a_generation_and_then_points_at_it():
     prefix = layout.generation_prefix(AUSTRIA, pointer.generation)
     assert store.get(f"{prefix}summary.json").data == b'{"meeting":"Austrian Grand Prix"}\n'
     manifest = json.loads(store.get(f"{prefix}manifest.json").data)
-    assert manifest["schema_version"] == layout.FORMAT_VERSION
+    assert manifest["format_version"] == layout.FORMAT_VERSION
     assert [item["path"] for item in manifest["files"]] == ["laps.json", "summary.json"]
 
 

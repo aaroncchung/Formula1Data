@@ -19,7 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from f1data import layout, legacy
+from f1data import layout
+from f1data.artifacts import build_artifacts
 from f1data.archive import (
     Snapshot,
     list_snapshots,
@@ -227,12 +228,8 @@ class Builder:
                 # Measured again here, against the classification of today, so
                 # the pointer records what this generation was built from.
                 coverage = measure_coverage(session, snapshot.identity.session_type, extras)
-                files = legacy.build_legacy_artifacts(
-                    session,
-                    snapshot.identity,
-                    context.scheduled.round,
-                    generated_at=snapshot.fetched_at,
-                    scratch=Path(scratch) / "artifacts",
+                files = build_artifacts(
+                    session, snapshot.identity, context.classification, extras, coverage
                 )
         if guard.forbidden:
             # Refused, not sent. Expected for a snapshot that lacks a feed.
