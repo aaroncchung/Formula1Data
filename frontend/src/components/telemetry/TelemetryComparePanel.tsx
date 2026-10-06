@@ -5,9 +5,9 @@ import { useState } from "react";
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { TelemetryCharts } from "@/components/charts/TelemetryCharts";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { api, isEmptyState } from "@/lib/api";
-import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
+import { isEmptyState } from "@/lib/static-api-core";
 import type { TelemetryIndex } from "@/lib/static-api-core";
+import type { EmptyStateResponse, TelemetryComparison } from "@/types/domain";
 
 /** Loads the comparison of two laps: driver and lap number of each. */
 export type CompareLaps = (
@@ -24,7 +24,6 @@ export function TelemetryComparePanel({
   initialLapB,
   initialComparison,
   initialEmptyState,
-  sessionId,
   availableLaps = [],
   compare
 }: {
@@ -34,14 +33,13 @@ export function TelemetryComparePanel({
   initialLapB?: number;
   initialComparison?: TelemetryComparison | null;
   initialEmptyState?: EmptyStateResponse | null;
-  sessionId: string;
   availableLaps?: TelemetryIndex["laps"];
   /**
-   * Where a comparison is loaded from. Left out, it is the build-time site's
-   * `/data` under `sessionId`; a page that reads published data passes a
-   * loader bound to the generation it has pinned.
+   * Loads a comparison. The page passes one bound to the generation it has
+   * pinned, so the laps compared come from the publication the rest of the
+   * page was read from.
    */
-  compare?: CompareLaps;
+  compare: CompareLaps;
 }) {
   const [driverA, setDriverA] = useState(initialDriverA || initialComparison?.driver_a.driver_code || "");
   const [driverB, setDriverB] = useState(initialDriverB || initialComparison?.driver_b.driver_code || "");
@@ -76,10 +74,7 @@ export function TelemetryComparePanel({
     }
     setIsLoading(true);
     setEmptyState(null);
-    const loading = compare
-      ? compare(driverA, Number(lapA), driverB, Number(lapB))
-      : api.telemetryCompare(sessionId, driverA, Number(lapA), driverB, Number(lapB));
-    loading.then((result) => {
+    compare(driverA, Number(lapA), driverB, Number(lapB)).then((result) => {
       if (isEmptyState(result)) {
         setEmptyState(result);
         setComparison(null);

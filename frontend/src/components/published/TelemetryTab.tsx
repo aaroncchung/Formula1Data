@@ -46,8 +46,6 @@ export function TelemetryLaps({ view, telemetry }: { view: SessionView; telemetr
         the two laps it compares.
       </p>
       <TelemetryComparePanel
-        // Only names the build-time site's files, which this page does not read.
-        sessionId={String(view.pointer.session_key)}
         availableLaps={laps}
         initialDriverA={pair?.[0].driver}
         initialLapA={pair?.[0].lap}
