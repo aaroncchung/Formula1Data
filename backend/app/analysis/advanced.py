@@ -12,12 +12,48 @@ import math
 from statistics import mean, median
 from typing import Any
 
-from .common import clean_laps
+from .common import clean_laps, lap_number
 
 
 DEFAULT_MINISECTOR_COUNT = 25
 DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP = 55.0
 DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP = 35.0
+
+# Session types, as FastF1 names them and as the session code, that are run on
+# a race fuel load. "Sprint Qualifying" and "Sprint Shootout" are not.
+RACE_SESSION_TYPES = {"race", "r"}
+SPRINT_SESSION_TYPES = {"sprint", "s"}
+
+# A lap's telemetry is complete when it runs from line to line: its clock
+# matches the timed lap and its distance matches a normal lap. On the 2026
+# Austrian GP all 1,149 clean laps match their lap time to the millisecond and
+# measure 97.6% to 101.5% of the median lap; lap 1 measures 101.7% to 105.9%.
+TELEMETRY_LAP_TIME_TOLERANCE = 0.02
+TELEMETRY_LAP_DISTANCE_TOLERANCE = 0.03
+# How far the nearest sample may be from a minisector boundary. Laps arrive
+# with holes of a second or more (the widest in a clean lap of that race is
+# 141 m), and a boundary time interpolated across one depends on the guess
+# made about the speed in between. Within 20 m of a sample two reasonable
+# guesses (constant speed, constant acceleration) agree to a median of under
+# 2 ms; beyond it they differ by 5 to 10 ms at the median and up to 82 ms,
+# against a typical winning margin of about 25 ms. 0.9% of boundaries are
+# further than that.
+MAX_BOUNDARY_SAMPLE_DISTANCE_M = 20.0
+
+# A degradation fit needs enough laps for its own quality figure to mean
+# something: with fewer than eight, the residual spread rests on under six
+# degrees of freedom.
+MIN_DEGRADATION_LAPS = 8
+# A rate is reported when the fitted slope is pinned down, which is judged by
+# its standard error: at most 20 ms/lap, or at most a quarter of the slope
+# itself. At 20 ms/lap the 95% interval is about +/-40 ms/lap, the size of a
+# typical slope (the median in the 2026 Austrian GP is about 45 ms/lap); past
+# that the figure cannot tell a tyre that is wearing from one that is not. The
+# relative limit keeps short, steep stints, whose slope is uncertain in ms but
+# not in doubt: Leclerc's opening stint in that race is 156 +/- 25 ms/lap. Of
+# its 60 fits with enough laps, 47 pass the first limit and 5 more the second.
+MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP = 20.0
+MAX_SLOPE_RELATIVE_STANDARD_ERROR = 0.25
 
 
 def calculate_track_dominance(
@@ -26,31 +62,45 @@ def calculate_track_dominance(
     telemetry: list[dict[str, Any]],
     minisector_count: int = DEFAULT_MINISECTOR_COUNT,
 ) -> dict[str, Any]:
-    representatives, samples = representative_telemetry_laps(laps, telemetry)
+    representatives, samples, left_out = fastest_complete_telemetry_laps(laps, telemetry)
+    result: dict[str, Any] = {
+        "session_id": session_id,
+        "representative_laps": representatives,
+        "excluded_drivers": left_out,
+        "minisector_count": 0,
+        "minisectors": [],
+    }
     caveats = [
-        "Each driver's fastest non-deleted lap with telemetry is compared.",
+        "Each driver's fastest clean lap with complete telemetry is compared: accurate, not "
+        "deleted, not a pit lap, not lap 1 and not run under a safety car, VSC or red flag.",
         "Minisector time is interpolated at distance boundaries; it is not an FIA timing sector.",
+        "Each lap's distance is scaled to a common lap length, so a boundary sits at the same "
+        "share of every lap. Distance is integrated from speed, so the same corner can still "
+        "sit several metres apart between two laps, and through a slow corner that moves "
+        "tenths of a second between neighbouring minisectors.",
+        "A driver has no time in a minisector where their telemetry has no sample within "
+        f"{MAX_BOUNDARY_SAMPLE_DISTANCE_M:.0f} m of one of its boundaries.",
     ]
     if not samples:
-        return {
-            "session_id": session_id,
-            "representative_laps": representatives,
-            "minisector_count": 0,
-            "minisectors": [],
-            "caveats": caveats + ["No usable telemetry laps were available."],
-        }
+        return {**result, "caveats": caveats + ["No usable telemetry laps were available."]}
+    if left_out:
+        caveats.append(f"Left out, having no such lap: {', '.join(left_out)}.")
 
-    common_distance = min(float(rows[-1]["distance_m"]) for rows in samples.values())
-    if common_distance <= 0:
+    # Each lap's distance is its own integral of speed, and those integrals
+    # disagree: the 21 representative laps of the 2026 Austrian GP measure
+    # 4,274 to 4,311 m for the same 4,318 m of track. Cutting every lap at the
+    # shortest one's length compared different places and dropped the end of
+    # the longer laps (444 ms of Alonso's). Placing boundaries at the same
+    # share of each lap makes a driver's minisectors sum to the lap, and took
+    # the largest winning margin in that race from 485 ms to 280 ms.
+    reference_length = float(median(_lap_length(rows) for rows in samples.values()))
+    if reference_length <= 0:
         return {
-            "session_id": session_id,
-            "representative_laps": representatives,
-            "minisector_count": 0,
-            "minisectors": [],
+            **result,
             "caveats": caveats + ["Telemetry did not contain a usable distance axis."],
         }
 
-    count = max(1, min(int(minisector_count), int(common_distance // 100) or 1))
+    count = max(1, min(int(minisector_count), int(reference_length // 100) or 1))
     reference_driver = min(
         representatives,
         key=lambda row: (row.get("lap_time_ms") is None, row.get("lap_time_ms") or math.inf),
@@ -58,24 +108,24 @@ def calculate_track_dominance(
     reference = samples[reference_driver]
     sectors = []
     for index in range(count):
-        start = common_distance * index / count
-        end = common_distance * (index + 1) / count
+        start_share = index / count
+        end_share = (index + 1) / count
         driver_times: dict[str, float] = {}
         for driver, rows in samples.items():
-            start_time = _interpolate(rows, start, "_elapsed_ms")
-            end_time = _interpolate(rows, end, "_elapsed_ms")
+            start_time = _boundary_time(rows, start_share)
+            end_time = _boundary_time(rows, end_share)
             if start_time is None or end_time is None or end_time < start_time:
                 continue
             driver_times[driver] = round(end_time - start_time, 1)
 
         ordered = sorted(driver_times.items(), key=lambda item: (item[1], item[0]))
         winner = ordered[0] if ordered else (None, None)
-        midpoint = (start + end) / 2
+        midpoint = _distance_at(reference, (start_share + end_share) / 2)
         sectors.append(
             {
                 "index": index + 1,
-                "start_distance_m": round(start, 1),
-                "end_distance_m": round(end, 1),
+                "start_distance_m": round(reference_length * start_share, 1),
+                "end_distance_m": round(reference_length * end_share, 1),
                 "midpoint": {
                     "x": _round_or_none(_interpolate(reference, midpoint, "x"), 2),
                     "y": _round_or_none(_interpolate(reference, midpoint, "y"), 2),
@@ -89,8 +139,7 @@ def calculate_track_dominance(
             }
         )
     return {
-        "session_id": session_id,
-        "representative_laps": representatives,
+        **result,
         "minisector_count": len(sectors),
         "minisectors": sectors,
         "caveats": caveats,
@@ -374,14 +423,7 @@ def calculate_fuel_adjusted_tyre_degradation(
     summary: dict[str, Any],
     laps: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    session_type = str(summary.get("session") or summary.get("type") or "Unknown")
-    normalized = session_type.lower()
-    if "race" in normalized or session_id.lower().endswith("-r"):
-        fuel_correction = DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP
-    elif "sprint" in normalized or session_id.lower().endswith("-s"):
-        fuel_correction = DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP
-    else:
-        fuel_correction = 0.0
+    fuel_correction = _fuel_correction(summary, session_id)
 
     rows = []
     groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
@@ -393,58 +435,99 @@ def calculate_fuel_adjusted_tyre_degradation(
             for lap in group
             if lap.get("tyre_age") is not None and lap.get("lap_time_ms") is not None
         ]
-        base = {
+        # Every row carries every field; a fit that is not reported keeps its
+        # rate fields empty and says why in ``fit_status`` and ``caveats``.
+        row: dict[str, Any] = {
             "driver_code": str(driver),
             "compound": str(compound),
             "stint": int(stint or 0),
             "sample_count": len(samples),
             "stint_length": len(group),
+            "degradation_ms_per_lap": None,
+            "raw_slope_ms_per_lap": None,
+            "fuel_correction_ms_per_lap": fuel_correction,
+            "r_squared": None,
+            "residual_spread_ms": None,
+            "slope_standard_error_ms_per_lap": None,
+            "excluded_outlier_count": 0,
         }
-        if len(samples) < 3 or len({sample[0] for sample in samples}) < 2:
+        if len(samples) < MIN_DEGRADATION_LAPS:
             rows.append(
                 {
-                    **base,
-                    "degradation_ms_per_lap": None,
-                    "raw_slope_ms_per_lap": None,
-                    "fuel_correction_ms_per_lap": fuel_correction,
-                    "r_squared": None,
-                    "excluded_outlier_count": 0,
-                    "caveats": ["At least three clean laps at distinct tyre ages are required."],
+                    **row,
+                    "fit_status": "too_few_laps",
+                    "caveats": [
+                        f"No rate reported: {len(samples)} clean laps, and at least "
+                        f"{MIN_DEGRADATION_LAPS} are required."
+                    ],
                 }
             )
             continue
 
-        initial_slope = _theil_sen_slope(samples)
-        intercept = median(y - initial_slope * x for x, y in samples)
-        residuals = [y - (initial_slope * x + intercept) for x, y in samples]
-        residual_center = median(residuals)
-        residual_mad = median(abs(value - residual_center) for value in residuals)
-        threshold = max(750.0, 3.5 * 1.4826 * residual_mad)
-        inliers = [
-            sample
-            for sample, residual in zip(samples, residuals, strict=True)
-            if abs(residual - residual_center) <= threshold
-        ]
-        if len(inliers) < 3 or len({sample[0] for sample in inliers}) < 2:
-            inliers = samples
-        slope, r_squared = _linear_fit(inliers)
+        inliers = _without_residual_outliers(samples)
+        excluded = len(samples) - len(inliers)
+        row["excluded_outlier_count"] = excluded
+        # Laps that share a tyre age say nothing about the slope between them.
+        usable = min(len(inliers), len({age for age, _ in inliers}))
+        if usable < MIN_DEGRADATION_LAPS:
+            rows.append(
+                {
+                    **row,
+                    "fit_status": "too_few_laps",
+                    "caveats": [
+                        f"No rate reported: {usable} laps at distinct tyre ages remain after "
+                        f"excluding {excluded} as outliers, and at least "
+                        f"{MIN_DEGRADATION_LAPS} are required."
+                    ],
+                }
+            )
+            continue
+
+        slope, r_squared, residual_spread, slope_error = _linear_fit(inliers)
+        row.update(
+            {
+                "r_squared": _round_or_none(r_squared, 3),
+                "residual_spread_ms": _round_or_none(residual_spread, 1),
+                "slope_standard_error_ms_per_lap": _round_or_none(slope_error, 2),
+            }
+        )
+        slope_error_limit = max(
+            MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP, MAX_SLOPE_RELATIVE_STANDARD_ERROR * abs(slope)
+        )
+        if slope_error is None or slope_error > slope_error_limit:
+            rows.append(
+                {
+                    **row,
+                    "fit_status": "poor_fit",
+                    "caveats": [
+                        "No rate reported: the lap times scatter too much to fix the slope. "
+                        f"Its standard error is {_float(slope_error, math.inf):.0f} ms/lap, "
+                        f"over the limit of {MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP:.0f} ms/lap "
+                        f"or {MAX_SLOPE_RELATIVE_STANDARD_ERROR:.0%} of the slope."
+                    ],
+                }
+            )
+            continue
+
+        degradation = slope + fuel_correction
         caveats = []
-        if r_squared is not None and r_squared < 0.5:
-            caveats.append("Low fit quality; treat the degradation estimate as directional only.")
         if fuel_correction == 0:
             caveats.append("No fuel correction is applied outside races because run fuel loads are unknown.")
         else:
             caveats.append(
                 f"Includes an assumed {fuel_correction:.0f} ms/lap fuel-burn correction."
             )
+        if degradation < 0:
+            caveats.append(
+                "A negative rate means lap times fell through the stint for a reason other "
+                "than the tyres (clearing traffic, track evolution, tyre management)."
+            )
         rows.append(
             {
-                **base,
-                "degradation_ms_per_lap": round(slope + fuel_correction, 2),
+                **row,
+                "degradation_ms_per_lap": round(degradation, 2),
                 "raw_slope_ms_per_lap": round(slope, 2),
-                "fuel_correction_ms_per_lap": fuel_correction,
-                "r_squared": round(r_squared, 3) if r_squared is not None else None,
-                "excluded_outlier_count": len(samples) - len(inliers),
+                "fit_status": "ok",
                 "caveats": caveats,
             }
         )
@@ -455,13 +538,56 @@ def calculate_fuel_adjusted_tyre_degradation(
             "method": "Theil-Sen residual filter followed by ordinary least squares",
             "race_fuel_correction_ms_per_lap": DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP,
             "sprint_fuel_correction_ms_per_lap": DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP,
+            "minimum_laps": MIN_DEGRADATION_LAPS,
+            "max_slope_standard_error_ms_per_lap": MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP,
+            "max_slope_relative_standard_error": MAX_SLOPE_RELATIVE_STANDARD_ERROR,
         },
         "caveats": [
             "Fuel correction is an explicit generic assumption, not measured car fuel mass.",
             "Pit, deleted, inaccurate, neutralized, and statistical outlier laps are excluded.",
             "Track evolution, traffic, weather, and tyre management remain confounding factors.",
+            f"A rate is reported only for a stint with at least {MIN_DEGRADATION_LAPS} clean "
+            "laps whose fitted slope has a standard error of at most "
+            f"{MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP:.0f} ms/lap or "
+            f"{MAX_SLOPE_RELATIVE_STANDARD_ERROR:.0%} of the slope. R² is shown but does not "
+            "decide this: a tyre that barely degrades has an R² near zero however clean the "
+            "stint.",
         ],
     }
+
+
+def _fuel_correction(summary: dict[str, Any], session_id: str) -> float:
+    """Fuel-burn correction for the session, matched on its exact type.
+
+    This used to test whether the name contained "sprint", which is also true
+    of "Sprint Qualifying" and "Sprint Shootout": qualifying sessions, run on
+    a few laps of fuel, were given the 35 ms/lap sprint-race correction.
+    """
+    session_type = str(summary.get("session") or summary.get("type") or "").strip().lower()
+    if session_type in ("", "unknown"):
+        # The API calls this with an empty summary. The last part of a session
+        # id is the session code ("2026-08-r", "2026-08-sq"), matched whole.
+        session_type = session_id.strip().lower().rsplit("-", 1)[-1]
+    if session_type in RACE_SESSION_TYPES:
+        return DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP
+    if session_type in SPRINT_SESSION_TYPES:
+        return DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP
+    return 0.0
+
+
+def _without_residual_outliers(samples: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Drop laps far from a robust first fit, so one slow lap cannot tilt the line."""
+    initial_slope = _theil_sen_slope(samples)
+    intercept = median(y - initial_slope * x for x, y in samples)
+    residuals = [y - (initial_slope * x + intercept) for x, y in samples]
+    residual_center = median(residuals)
+    residual_mad = median(abs(value - residual_center) for value in residuals)
+    threshold = max(750.0, 3.5 * 1.4826 * residual_mad)
+    return [
+        sample
+        for sample, residual in zip(samples, residuals, strict=True)
+        if abs(residual - residual_center) <= threshold
+    ]
 
 
 def representative_telemetry_laps(
@@ -507,6 +633,114 @@ def representative_telemetry_laps(
             }
         )
     return representatives, selected
+
+
+def fastest_complete_telemetry_laps(
+    laps: list[dict[str, Any]], telemetry: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[str]]:
+    """Pick each driver's fastest clean lap whose telemetry runs line to line.
+
+    ``representative_telemetry_laps`` takes the fastest non-deleted lap that
+    has any telemetry, which for a driver who retires early is whatever they
+    managed. In the 2026 Austrian GP Bottas completed lap 1 and an in-lap, so
+    his lap 1 (84.016 s) was compared with flying laps of 70 to 74 s and won
+    6 of 25 minisectors. Its telemetry measures 4,495 m against 4,287 m for a
+    normal lap, so his distance axis was up to 208 m, more than a minisector,
+    out of step: his straights were timed against everyone else's corners.
+
+    Here a lap must pass ``clean_laps`` (accurate, not deleted, not a pit lap,
+    not lap 1, not neutralised) and its telemetry must be complete. A driver
+    with no such lap is left out and named in the third return value. Yellow
+    flags are allowed: the status is session-wide, and a lap that is still the
+    driver's fastest was evidently not slowed by one.
+    """
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in telemetry:
+        driver = str(row.get("driver_code") or "").upper()
+        number = lap_number(row) or 0
+        if driver and number > 0 and _number(row.get("distance_m")):
+            grouped[(driver, number)].append(row)
+
+    drivers = {key[0] for key in grouped}
+    drivers.update(str(lap["driver_code"]).upper() for lap in laps if lap.get("driver_code"))
+
+    # (lap time, lap number, lap) per driver: sorts fastest first, earliest on a tie.
+    candidates: dict[str, list[tuple[float, int, dict[str, Any]]]] = defaultdict(list)
+    ends = []
+    for lap in clean_laps(laps):
+        driver = str(lap.get("driver_code") or "").upper()
+        number = lap_number(lap) or 0
+        lap_time = _float(lap.get("lap_time_ms"))
+        rows = grouped.get((driver, number))
+        if not rows or lap_time is None:
+            continue
+        candidates[driver].append((lap_time, number, lap))
+        ends.append(max(float(row["distance_m"]) for row in rows))
+    # The length of a normal lap is not an input, so take it from the laps
+    # themselves: most clean laps are complete, and the median ignores the rest.
+    usual_end = float(median(ends)) if ends else 0.0
+
+    representatives = []
+    selected: dict[str, list[dict[str, Any]]] = {}
+    for driver, driver_laps in sorted(candidates.items()):
+        for lap_time, number, lap in sorted(driver_laps, key=lambda item: item[:2]):
+            rows = _prepare_samples(grouped[(driver, number)])
+            if not _covers_lap(rows, lap_time, usual_end):
+                continue
+            selected[driver] = rows
+            representatives.append(
+                {"driver_code": driver, "lap_number": number, "lap_time_ms": lap["lap_time_ms"]}
+            )
+            break
+    return representatives, selected, sorted(drivers - set(selected))
+
+
+def _covers_lap(rows: list[dict[str, Any]], lap_time_ms: float, usual_end: float) -> bool:
+    """True when prepared telemetry runs the whole lap, in distance and on the clock."""
+    if len(rows) < 3 or usual_end <= 0 or lap_time_ms <= 0:
+        return False
+    slack = TELEMETRY_LAP_DISTANCE_TOLERANCE * usual_end
+    if rows[0]["distance_m"] > slack or abs(rows[-1]["distance_m"] - usual_end) > slack:
+        return False
+    if any(_float(row.get("relative_time_ms")) is None for row in (rows[0], rows[-1])):
+        # No clock was recorded and ``_prepare_samples`` rebuilt one from
+        # speed and distance; that is the same information as the distance
+        # check, so there is nothing independent to compare.
+        return True
+    elapsed = rows[-1]["_elapsed_ms"] - rows[0]["_elapsed_ms"]
+    return abs(elapsed - lap_time_ms) <= TELEMETRY_LAP_TIME_TOLERANCE * lap_time_ms
+
+
+def _lap_length(rows: list[dict[str, Any]]) -> float:
+    return float(rows[-1]["distance_m"] - rows[0]["distance_m"])
+
+
+def _distance_at(rows: list[dict[str, Any]], share: float) -> float:
+    """The lap's own distance at a share (0 to 1) of the way round it."""
+    first, last = rows[0]["distance_m"], rows[-1]["distance_m"]
+    return min(max(first + share * (last - first), first), last)
+
+
+def _boundary_time(rows: list[dict[str, Any]], share: float) -> float | None:
+    """Elapsed time at a share of the lap, or None where the lap has a hole there.
+
+    ``_interpolate`` always answers: it draws a straight line across any gap
+    and clamps beyond the ends, so a lap that never sampled a stretch of track
+    still gets a time for it and can win the minisector.
+    """
+    distance = _distance_at(rows, share)
+    for index in range(1, len(rows)):
+        right = rows[index]
+        if right["distance_m"] < distance:
+            continue
+        left = rows[index - 1]
+        nearest = min(distance - left["distance_m"], right["distance_m"] - distance)
+        if nearest > MAX_BOUNDARY_SAMPLE_DISTANCE_M:
+            return None
+        span = right["distance_m"] - left["distance_m"]
+        ratio = (distance - left["distance_m"]) / span if span else 0.0
+        return left["_elapsed_ms"] + (right["_elapsed_ms"] - left["_elapsed_ms"]) * ratio
+    return None
 
 
 def _prepare_samples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -648,7 +882,18 @@ def _theil_sen_slope(samples: list[tuple[float, float]]) -> float:
     return float(median(slopes)) if slopes else 0.0
 
 
-def _linear_fit(samples: list[tuple[float, float]]) -> tuple[float, float | None]:
+def _linear_fit(
+    samples: list[tuple[float, float]],
+) -> tuple[float, float | None, float | None, float | None]:
+    """Least-squares line: slope, R², residual spread and the slope's standard error.
+
+    The standard error is the fit-quality figure that decides whether a rate
+    is reported. R² cannot do that job: it measures how much of the variation
+    the slope explains, so a stint with almost no degradation scores near zero
+    however tightly its laps sit on the line. In the 2026 Austrian GP
+    Hulkenberg's second stint is among the cleanest in the race (19 laps, 197 ms
+    residual spread, slope standard error 8 ms/lap) and has an R² of 0.08.
+    """
     x_values = [sample[0] for sample in samples]
     y_values = [sample[1] for sample in samples]
     x_mean = mean(x_values)
@@ -663,7 +908,16 @@ def _linear_fit(samples: list[tuple[float, float]]) -> tuple[float, float | None
     fitted = [slope * x + intercept for x in x_values]
     residual = sum((y - fit) ** 2 for y, fit in zip(y_values, fitted, strict=True))
     total = sum((y - y_mean) ** 2 for y in y_values)
-    return float(slope), float(1 - residual / total) if total else None
+    r_squared = float(1 - residual / total) if total else None
+    # Two parameters are fitted, so the spread has n - 2 degrees of freedom.
+    freedom = len(samples) - 2
+    residual_spread = math.sqrt(residual / freedom) if freedom > 0 else None
+    slope_error = (
+        residual_spread / math.sqrt(denominator)
+        if residual_spread is not None and denominator
+        else None
+    )
+    return float(slope), r_squared, residual_spread, slope_error
 
 
 def _bucket_average(values: list[float], minimum: float, maximum: float) -> float | None:
