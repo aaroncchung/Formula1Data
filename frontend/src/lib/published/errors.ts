@@ -33,6 +33,8 @@ export type PublishedErrorCode =
   | "not_in_manifest"
   /** An artifact arrived and is not what its name promises. */
   | "invalid_artifact"
+  /** A season's standings exist and cannot be trusted. Absent standings are not an error. */
+  | "invalid_standings"
   /** Something that is not the reader's own error; a bug rather than a state of the data. */
   | "unknown";
 

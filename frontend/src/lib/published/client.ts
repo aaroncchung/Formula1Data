@@ -16,9 +16,9 @@
 
 import { PublishedDataError } from "./errors.ts";
 import type { PublishedErrorCode } from "./errors.ts";
-import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey } from "./layout.ts";
-import { parseIndex, parseManifest, parsePointer } from "./parse.ts";
-import type { Manifest, Pointer, PublishedIndex } from "./types.ts";
+import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey, standingsKey } from "./layout.ts";
+import { parseIndex, parseManifest, parsePointer, parseStandings } from "./parse.ts";
+import type { Manifest, Pointer, PublishedIndex, Standings } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -61,6 +61,13 @@ export type SessionView = {
 export type PublishedClient = {
   index(): Promise<PublishedIndex>;
   openSession(sessionKey: number, options?: OpenSessionOptions): Promise<SessionView>;
+  /**
+   * The championship standings of a season, or null when none are published.
+   * Null is a normal state: before a season's first round Jolpica has no
+   * table and the publisher writes nothing. An outage or a broken file throws
+   * instead, so neither is ever shown as "no standings yet".
+   */
+  standings(year: number): Promise<Standings | null>;
 };
 
 type Answer =
@@ -115,6 +122,19 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
       });
     }
     return parseIndex(decode(answer, "invalid_index", "The index of published data"));
+  }
+
+  // Standings are one object per season that is rewritten in place, like the
+  // index, so they are read by their own key and never through a generation.
+  async function standings(year: number): Promise<Standings | null> {
+    if (!Number.isSafeInteger(year) || year < 0) {
+      throw new RangeError(`Not a season: ${String(year)}`);
+    }
+    const answer = await get(standingsKey(year));
+    if (!answer.found) {
+      return null;
+    }
+    return parseStandings(decode(answer, "invalid_standings", `The standings file for ${year}`), year);
   }
 
   async function openSession(sessionKey: number, { revalidate = false }: OpenSessionOptions = {}): Promise<SessionView> {
@@ -179,7 +199,7 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
     return Object.freeze(view);
   }
 
-  return Object.freeze({ index, openSession });
+  return Object.freeze({ index, openSession, standings });
 }
 
 function decode(

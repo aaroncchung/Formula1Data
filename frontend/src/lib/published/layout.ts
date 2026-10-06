@@ -5,6 +5,7 @@
  *   v<F>/index.json                                 the calendar, rewritten in place
  *   v<F>/pointers/<session_key>.json                one per published session, rewritten in place
  *   v<F>/generations/<session_key>/<generation>/    written once, never changed
+ *   v<F>/standings/<year>.json                      one per season, rewritten in place
  */
 
 import { FORMAT_VERSION } from "./config.ts";
@@ -46,4 +47,8 @@ export function pointerKey(sessionKey: number): string {
 
 export function generationPrefix(sessionKey: number, generation: string): string {
   return `v${FORMAT_VERSION}/generations/${sessionKey}/${generation}/`;
+}
+
+export function standingsKey(year: number): string {
+  return `v${FORMAT_VERSION}/standings/${year}.json`;
 }

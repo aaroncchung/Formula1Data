@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { publishedData } from "@/lib/published/browser";
 import { toPublishedFailure } from "@/lib/published/errors";
 import type { PublishedFailure } from "@/lib/published/errors";
-import type { Standings } from "@/lib/published/standings";
-import { publishedStandings } from "@/lib/published-source";
+import type { Standings } from "@/lib/published/types";
 import { createOrderedRunner } from "@/lib/request-generation";
 
 export type StandingsState =
@@ -33,7 +33,7 @@ export function usePublishedStandings(year: number) {
   const key = `${year}/${attempt}`;
 
   useEffect(() => {
-    void requests.run(() => publishedStandings.read(year), {
+    void requests.run(() => publishedData.standings(year), {
       onResult: (standings) => setSettled({ key, state: { status: "ready", standings } }),
       onError: (error) => setSettled({ key, state: { status: "failed", failure: toPublishedFailure(error) } })
     });

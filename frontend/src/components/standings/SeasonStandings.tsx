@@ -12,8 +12,7 @@ import { LoadingState } from "@/components/dashboard/LoadingState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { usePublishedStandings } from "@/components/standings/usePublishedStandings";
 import { findSeason, seasonOverviews } from "@/lib/calendar";
-import type { ConstructorStanding, Standings } from "@/lib/published/standings";
-import type { IndexSeason, PublishedIndex } from "@/lib/published/types";
+import type { ConstructorStanding, IndexSeason, PublishedIndex, Standings } from "@/lib/published/types";
 import { standingsHref, yearParam } from "@/lib/routes";
 import { defaultStandingsYear, driverName, roundLabel, standingsRounds } from "@/lib/standings-view";
 import type { StandingsRound } from "@/lib/standings-view";
@@ -82,11 +81,7 @@ function StandingsOfYear({ year, index }: { year: number; index: PublishedIndex 
       {index ? <SeasonLinks index={index} current={year} /> : null}
       {state.status === "loading" ? <LoadingState label="Loading standings" /> : null}
       {state.status === "failed" ? (
-        <LoadFailure
-          failure={state.failure}
-          onRetry={retry}
-          title={state.failure.code === "invalid_artifact" ? "The published standings are invalid" : undefined}
-        />
+        <LoadFailure failure={state.failure} onRetry={retry} />
       ) : null}
       {state.status === "ready" && !state.standings ? (
         <EmptyState

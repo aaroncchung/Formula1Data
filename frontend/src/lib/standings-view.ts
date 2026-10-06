@@ -3,8 +3,7 @@
  * themselves: which round they are after, and how a driver is named.
  */
 
-import type { DriverStanding, Standings } from "./published/standings.ts";
-import type { IndexSeason, PublishedIndex } from "./published/types.ts";
+import type { DriverStanding, IndexSeason, PublishedIndex, Standings } from "./published/types.ts";
 
 export type StandingsRound = {
   readonly round: number;

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createStandingsReader, parseStandings, standingsKey } from "../src/lib/published/standings.ts";
+import { standingsKey } from "../src/lib/published/layout.ts";
+import { parseStandings } from "../src/lib/published/parse.ts";
 import { defaultStandingsYear, driverName, roundLabel, standingsRounds } from "../src/lib/standings-view.ts";
-import { BASE_URL, bucketOf, edit, failureOf } from "./support/published-bucket.mjs";
+import { BASE_URL, bucketOf, clientOf, edit, failureOf } from "./support/published-bucket.mjs";
 import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./support/sample-index.mjs";
 
 // The shape f1data/standings.py writes (`fetch_standings`). The figures are
@@ -58,10 +59,6 @@ function publishedWith(standings = STANDINGS) {
   return bucketOf({ [KEY]: JSON.stringify(standings) });
 }
 
-function readerOf(bucket, options = {}) {
-  return createStandingsReader({ baseUrl: BASE_URL, fetch: bucket.fetch, ...options });
-}
-
 function changed(change) {
   const copy = structuredClone(STANDINGS);
   change(copy);
@@ -75,7 +72,7 @@ function changed(change) {
 test("the standings are read from their own key and shown as published", async () => {
   const bucket = publishedWith();
 
-  const standings = await readerOf(bucket).read(2026);
+  const standings = await clientOf(bucket).standings(2026);
 
   assert.deepEqual(bucket.keys(), [KEY]);
   assert.equal(standingsKey(2026), KEY);
@@ -89,7 +86,7 @@ test("the published order and points are kept, not worked out again", async () =
     value.drivers.reverse();
   });
 
-  const standings = await readerOf(publishedWith(reordered)).read(2026);
+  const standings = await clientOf(publishedWith(reordered)).standings(2026);
 
   assert.deepEqual(
     standings.drivers.map((row) => [row.driver_code, row.position, row.points]),
@@ -104,20 +101,20 @@ test("the published order and points are kept, not worked out again", async () =
 test("standings that are not published are null, not a failure", async () => {
   const bucket = bucketOf({});
 
-  assert.equal(await readerOf(bucket).read(2026), null);
+  assert.equal(await clientOf(bucket).standings(2026), null);
   assert.deepEqual(bucket.keys(), [KEY]);
 });
 
 test("an outage is not shown as a season without standings", async () => {
   const offline = publishedWith();
   offline.fault = () => new TypeError("Failed to fetch");
-  const failure = await failureOf(readerOf(offline).read(2026));
+  const failure = await failureOf(clientOf(offline).standings(2026));
   assert.equal(failure.code, "unavailable");
   assert.match(failure.message, /Failed to fetch/);
 
   const broken = publishedWith();
   broken.fault = () => new Response("upstream error", { status: 502 });
-  const badGateway = await failureOf(readerOf(broken).read(2026));
+  const badGateway = await failureOf(clientOf(broken).standings(2026));
   assert.equal(badGateway.code, "unavailable");
   assert.equal(badGateway.details.status, 502);
 });
@@ -125,7 +122,7 @@ test("an outage is not shown as a season without standings", async () => {
 test("a reader with no base URL says so and makes no request", async () => {
   const bucket = publishedWith();
 
-  const failure = await failureOf(createStandingsReader({ baseUrl: "", fetch: bucket.fetch }).read(2026));
+  const failure = await failureOf(clientOf(bucket, { baseUrl: "" }).standings(2026));
 
   assert.equal(failure.code, "not_configured");
   assert.deepEqual(bucket.keys(), []);
@@ -134,7 +131,7 @@ test("a reader with no base URL says so and makes no request", async () => {
 test("a base URL with a trailing slash reads the same key", async () => {
   const bucket = publishedWith();
 
-  await createStandingsReader({ baseUrl: `${BASE_URL}/`, fetch: bucket.fetch }).read(2026);
+  await clientOf(bucket, { baseUrl: `${BASE_URL}/` }).standings(2026);
 
   assert.deepEqual(bucket.keys(), [KEY]);
 });
@@ -142,8 +139,8 @@ test("a base URL with a trailing slash reads the same key", async () => {
 test("a season that is not a year is refused before any request", async () => {
   const bucket = publishedWith();
 
-  await assert.rejects(() => readerOf(bucket).read(Number.NaN), RangeError);
-  await assert.rejects(() => readerOf(bucket).read(2026.5), RangeError);
+  await assert.rejects(() => clientOf(bucket).standings(Number.NaN), RangeError);
+  await assert.rejects(() => clientOf(bucket).standings(2026.5), RangeError);
   assert.deepEqual(bucket.keys(), []);
 });
 
@@ -154,37 +151,37 @@ test("a season that is not a year is refused before any request", async () => {
 test("standings that are not JSON are invalid, not missing", async () => {
   const bucket = bucketOf({ [KEY]: "<html>not found</html>" });
 
-  const failure = await failureOf(readerOf(bucket).read(2026));
+  const failure = await failureOf(clientOf(bucket).standings(2026));
 
-  assert.equal(failure.code, "invalid_artifact");
-  assert.match(failure.message, /standings of 2026 are not JSON/);
+  assert.equal(failure.code, "invalid_standings");
+  assert.match(failure.message, /standings file for 2026 is not JSON/);
 });
 
 test("standings in another format say which side is behind", async () => {
   const newer = await failureOf(
-    readerOf(publishedWith(changed((value) => { value.format_version = 2; }))).read(2026)
+    clientOf(publishedWith(changed((value) => { value.format_version = 2; }))).standings(2026)
   );
   assert.equal(newer.code, "format_mismatch");
   assert.equal(newer.details.site, "older");
   assert.equal(newer.details.object, "standings");
 
   const older = await failureOf(
-    readerOf(publishedWith(changed((value) => { value.format_version = 0; }))).read(2026)
+    clientOf(publishedWith(changed((value) => { value.format_version = 0; }))).standings(2026)
   );
   assert.equal(older.details.site, "newer");
 });
 
 test("standings with another schema version are not read", async () => {
   const failure = await failureOf(
-    readerOf(publishedWith(changed((value) => { value.schema_version = 2; }))).read(2026)
+    clientOf(publishedWith(changed((value) => { value.schema_version = 2; }))).standings(2026)
   );
 
-  assert.equal(failure.code, "invalid_artifact");
+  assert.equal(failure.code, "invalid_standings");
   assert.match(failure.message, /schema_version is 2, and this site reads 1/);
 });
 
 test("standings filed under another season are a fault", () => {
-  assert.throws(() => parseStandings(STANDINGS, 2025), /they are the standings of 2026/);
+  assert.throws(() => parseStandings(STANDINGS, 2025), /it holds the standings of 2026/);
 });
 
 test("each field the page shows is checked before the table is trusted", () => {
@@ -206,7 +203,7 @@ test("each field the page shows is checked before the table is trusted", () => {
   for (const [change, message] of cases) {
     assert.throws(
       () => parseStandings(changed(change), 2026),
-      (error) => error.code === "invalid_artifact" && message.test(error.message),
+      (error) => error.code === "invalid_standings" && message.test(error.message),
       String(message)
     );
   }
@@ -250,14 +247,14 @@ test("a correction that does not advance the round is read on the next visit", a
   // Done-when 2: nothing is kept between reads, so a penalty applied after
   // the race changes the table without the round or the site changing.
   const bucket = publishedWith();
-  const reader = readerOf(bucket);
-  assert.equal((await reader.read(2026)).drivers[1].points, 154);
+  const client = clientOf(bucket);
+  assert.equal((await client.standings(2026)).drivers[1].points, 154);
 
   edit(bucket, KEY, (value) => {
     value.drivers[1].points = 151;
   });
 
-  const corrected = await reader.read(2026);
+  const corrected = await client.standings(2026);
   assert.equal(corrected.drivers[1].points, 151);
   assert.equal(corrected.rounds.drivers, 9);
   assert.equal(bucket.count(KEY), 2);
