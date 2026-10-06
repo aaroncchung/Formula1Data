@@ -13,7 +13,7 @@ from typing import Any
 
 from f1data import layout
 from f1data.archive import ArchiveError, Snapshot, archive_directory, list_snapshots, write_snapshot
-from f1data.classification import ClassificationUnavailable, fetch_classification
+from f1data.classification import ClassificationUnavailable, fetch_classified_laps
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
 from f1data.due import plan_fetches
@@ -205,9 +205,9 @@ def run_fetch_due(args: argparse.Namespace) -> int:
 
             def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
                 try:
-                    return fetch_classification(
+                    return fetch_classified_laps(
                         fastf1, session.year, session.round, session.session_type
-                    ).laps_by_number
+                    )
                 except ClassificationUnavailable:
                     return None
 
@@ -254,26 +254,17 @@ def run_fetch_due(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def _published_short(store: ObjectStore) -> dict[int, Any]:
-    """The pointers of the sessions published short of a bar, for the planner.
-
-    Only those this pipeline version wrote. An older one judged by other
-    bars, and the build that follows this fetch replaces it; a newer one
-    judged by bars this code does not have.
-    """
+def _published_short(store: ObjectStore) -> set[int]:
+    """The sessions published short of a bar, for the planner to look at again."""
     from f1data.publish import PointerError, read_published
 
     try:
-        return {
-            pointer.session_key: pointer
-            for pointer in read_published(store)
-            if not pointer.complete and pointer.pipeline_version == layout.PIPELINE_VERSION
-        }
+        return {pointer.session_key for pointer in read_published(store) if not pointer.complete}
     except PointerError as exc:
         # The build stage reads the same pointers and fails on this one. It
         # is no reason to fetch nothing.
         logging.getLogger(__name__).warning("Could not read what is published: %s", exc)
-        return {}
+        return set()
 
 
 def _print_snapshot(snapshot: Snapshot) -> None:

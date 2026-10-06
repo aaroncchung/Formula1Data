@@ -95,21 +95,25 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
     """
     stops: list[dict[str, Any]] = []
     for line in data.decode("utf-8-sig", errors="replace").splitlines():
+        # Any exception at all, not the ones a broken line has raised so far:
+        # the promise is to the fetch, and a line nested a thousand deep
+        # raises RecursionError, which is none of the usual ones.
         try:
             payload = json.loads(line[_STREAM_TIMESTAMP_CHARS:])
             pit_times = payload.get("PitTimes") or {}
-            by_driver = list(pit_times.items())
-        except (ValueError, AttributeError, TypeError):
+            found = []
+            for number, entries in list(pit_times.items()):
+                if isinstance(entries, dict):
+                    entries = list(entries.values())
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    stop = _stop(number, entry)
+                    if stop is not None:
+                        found.append(stop)
+        except Exception:
             continue
-        for number, entries in by_driver:
-            if isinstance(entries, dict):
-                entries = list(entries.values())
-            if not isinstance(entries, list):
-                continue
-            for entry in entries:
-                stop = _stop(number, entry)
-                if stop is not None:
-                    stops.append(stop)
+        stops.extend(found)
     return stops
 
 
@@ -133,17 +137,17 @@ def circuit_corner_count(data: bytes) -> int:
     """How many corners with a position an archived circuit-info file holds. Never raises."""
     try:
         corners = json.loads(data.decode("utf-8", errors="replace")).get("corners")
-    except (ValueError, AttributeError):
+        if not isinstance(corners, list):
+            return 0
+        return sum(
+            1
+            for corner in corners
+            if isinstance(corner, dict)
+            and isinstance(corner.get("x"), (int, float))
+            and isinstance(corner.get("y"), (int, float))
+        )
+    except Exception:
         return 0
-    if not isinstance(corners, list):
-        return 0
-    return sum(
-        1
-        for corner in corners
-        if isinstance(corner, dict)
-        and isinstance(corner.get("x"), (int, float))
-        and isinstance(corner.get("y"), (int, float))
-    )
 
 
 def circuit_info_json(info: Any) -> dict[str, Any]:
@@ -175,7 +179,8 @@ def _markers(frame: Any) -> list[dict[str, Any]]:
 def _seconds_to_ms(value: Any) -> int | None:
     try:
         seconds = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: a whole number too large for a float, such as 10**400.
         return None
     # "Infinity" and "NaN" are floats to Python and durations to nobody, and
     # so is anything longer than a day: "1e308" is finite until it is
@@ -193,7 +198,7 @@ def _int(value: Any) -> int | None:
 def _number(value: Any) -> float | None:
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     return round(number, 3) if math.isfinite(number) else None
 

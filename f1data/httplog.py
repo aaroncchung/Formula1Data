@@ -49,13 +49,15 @@ class HttpRecorder:
     ``forbid_hosts`` turns it into a guard as well: a request to one of those
     hosts is refused before it is sent and kept in ``forbidden``. FastF1
     swallows the exception and carries on with an empty feed, so the caller has
-    to check ``forbidden`` afterwards.
+    to check ``forbidden`` afterwards. ``forbid_all`` refuses every request,
+    whatever its host.
     """
 
-    def __init__(self, forbid_hosts: frozenset[str] = frozenset()) -> None:
+    def __init__(self, forbid_hosts: frozenset[str] = frozenset(), forbid_all: bool = False) -> None:
         self.records: list[HttpRecord] = []
         self.forbidden: list[str] = []
         self._forbid_hosts = forbid_hosts
+        self._forbid_all = forbid_all
         self._original_send: Any = None
 
     def __enter__(self) -> "HttpRecorder":
@@ -66,7 +68,7 @@ class HttpRecorder:
 
         def send(session: requests.Session, request: requests.PreparedRequest, **kwargs: Any):
             host = urlsplit(request.url or "").netloc
-            if host in recorder._forbid_hosts:
+            if recorder._forbid_all or host in recorder._forbid_hosts:
                 recorder.forbidden.append(request.url or host)
                 raise ForbiddenHostError(f"This stage must not contact {host}")
             started = time.perf_counter()

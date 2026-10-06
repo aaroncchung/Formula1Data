@@ -12,18 +12,17 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
-from f1data import build as build_module
 from f1data import cli as cli_module
 from f1data import layout
 from f1data.archive import list_snapshots, write_snapshot
 from f1data.build import Builder
-from f1data.classification import Classification, fetch_classification, merge_into_session
+from f1data.classification import fetch_classification, merge_into_session
 from f1data.cli import main
 from f1data.coverage import evaluate_coverage
 from f1data.due import plan_fetches
@@ -31,8 +30,9 @@ from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
 from f1data.policy import RETRY_INTERVAL, RETRY_WINDOW, SLOW_RETRY_INTERVAL
 from f1data.publish import Hold, Inputs, publish_index, publish_session, read_pointer
 from f1data.store import DirectoryStore, MemoryStore
+from tests.building import Archive
 from tests.fakes import EXTRAS, make_session, measure
-from tests.test_archive import ARCHIVE_PATH, fetched_session
+from tests.test_archive import fetched_session
 from tests.test_build_inputs import (
     AUSTRIA_RESULT,
     RACE_START,
@@ -56,6 +56,7 @@ def calendar_entry(round_number: int) -> dict:
             "round": round_number,
             "meeting_name": "Austrian Grand Prix",
             "session_name": "Race",
+            "row": None,
         }
     }
 
@@ -221,85 +222,23 @@ def test_a_driver_todays_result_leaves_out_keeps_no_result_from_the_archive():
     assert list(merged.loc[["63", "3"], "Laps"]) == [71, 71]
 
 
-class Result(World):
-    """Jolpica with a result that can be merged into a session: who is
-    classified, and with how many laps."""
-
-    def __init__(self, monkeypatch, laps):
-        super().__init__(monkeypatch)
-        self.laps = dict(laps)
-
-    def fetch_classification(self, fastf1, year, round_number, session_type):
-        self.classification_requests.append(round_number)
-        rows = [
-            {"number": int(number), "laps": laps, "position": place, "points": 0.0}
-            for place, (number, laps) in enumerate(sorted(self.laps.items()), start=1)
-        ]
-        return Classification(
-            rows=rows,
-            fingerprint=f"sha256:{sorted(self.laps.items())}",
-            frame=pd.DataFrame(rows),
-            race_date=AUSTRIA_RESULT["date"],
-        )
-
-
-class Loaded:
-    """A FastF1 session as a build loads one from the archive."""
-
-    def __init__(self, fake):
-        fields = dict(vars(fake))
-        self._results = fields.pop("results")
-        self.__dict__.update(fields)
-        self.session_info = {
-            "Key": AUSTRIA,
-            "Name": "Race",
-            "Path": ARCHIVE_PATH,
-            "Meeting": {"Key": 1288, "Name": "Austrian Grand Prix"},
-        }
-        self.event = {"RoundNumber": 8, "EventName": "Austrian Grand Prix"}
-        self.date = datetime(2026, 6, 28, 13, 0)
-        self.name = "Race"
-
-    @property
-    def results(self):
-        return self._results
-
-    def load(self, **kwargs):
-        pass
-
-
-def archive_holding(tmp_path, monkeypatch, in_the_archive, recorded=None) -> MemoryStore:
-    """One snapshot whose record is the measurement of ``recorded``, and a build
-    that loads ``in_the_archive`` when it restores it."""
-    store = MemoryStore()
-    write_snapshot(store, fetched_session(tmp_path, recorded), now=FIRST_FETCH)
-
-    @contextmanager
-    def restored_cache(cache_dir):
-        yield SimpleNamespace(get_session=lambda year, round_number, name: Loaded(in_the_archive))
-
-    monkeypatch.setattr(build_module, "fastf1_cache", restored_cache)
-    monkeypatch.setattr(
-        build_module.legacy, "build_legacy_artifacts", lambda *args, **kwargs: {"summary.json": b"{}\n"}
-    )
-    return store
-
-
-def test_a_build_measures_a_driver_the_result_leaves_out_as_gather_judged_them(tmp_path, monkeypatch):
+def test_a_driver_the_result_leaves_out_is_no_fault_in_the_record(tmp_path, monkeypatch):
     """Driver 3 has ten laps in the archive and is not in today's result. The
-    snapshot was judged whole on that footing; the build's own measurement,
-    which is what the pointer records, has to come out the same."""
-    Result(monkeypatch, {"1": 10, "2": 10})
-    store = archive_holding(tmp_path, monkeypatch, make_session())
-    builder = Builder(store, fastf1=None, now=lambda: SOON_AFTER)
+    snapshot was judged whole on that footing, and the pointer says what was
+    judged. The record is about the feeds, and the feeds are as recorded."""
+    world = Archive(monkeypatch, {"1": 10, "2": 10})
+    world.snapshot(tmp_path)
+    builder = Builder(world.store, fastf1=None, now=lambda: SOON_AFTER)
 
-    inputs = builder.gather(AUSTRIA)
-    _, measured = builder.build(inputs)
+    outcome = publish_session(world.store, AUSTRIA, builder.gather, builder.build)
 
-    assert inputs.snapshot.complete
-    assert measured.coverage["drivers"]["CCC"]["classified_laps"] == 0
-    assert measured.shortfalls() == []
-    assert measured.coverage == inputs.snapshot.coverage
+    assert outcome.action == "published"
+    pointer, _ = read_pointer(world.store, AUSTRIA)
+    assert (pointer.complete, pointer.shortfalls) == (True, [])
+    assert not [item.key for item in world.store.list("archive/") if item.key.endswith("remeasured.json")]
+    # And the session the artifacts were made from has no result for that driver.
+    (built,) = world.built
+    assert pd.isna(built.results.loc["3", "Laps"]) and built.results.loc["1", "Laps"] == 10
 
 
 # --- C4: a session published short is looked at again, however old --------------
@@ -310,20 +249,21 @@ def test_a_result_corrected_months_later_makes_the_session_due_for_another_fetch
     gives one driver eleven, and the session is published short of that lap.
     The archive's record of the snapshot has not changed: only the pointer
     says the session is short."""
-    result = Result(monkeypatch, {"1": 10, "2": 10, "3": 10})
-    store = archive(tmp_path)
+    result = Archive(monkeypatch, {"1": 10, "2": 10, "3": 10})
+    result.snapshot(tmp_path)
+    store = result.store
     clock = [SOON_AFTER]
     builder = Builder(store, fastf1=None, now=lambda: clock[0])
     publish = lambda: publish_session(store, AUSTRIA, builder.gather, build_stub, now=lambda: clock[0])
     assert publish().action == "published"
-    assert cli_module._published_short(store) == {}
+    assert cli_module._published_short(store) == set()
 
     result.laps["1"] = 11
     clock[0] = a_recheck_day(RACE_START + timedelta(days=100))
     assert publish().action == "published"
     assert read_pointer(store, AUSTRIA)[0].complete is False
     short = cli_module._published_short(store)
-    assert list(short) == [AUSTRIA]
+    assert short == {AUSTRIA}
 
     asked = []
 
@@ -357,10 +297,8 @@ def test_fetch_due_looks_again_at_a_session_published_short(tmp_path, monkeypatc
     monkeypatch.setattr(cli_module, "load_schedule", lambda fastf1, year: ONE_RACE)
     monkeypatch.setattr(
         cli_module,
-        "fetch_classification",
-        lambda fastf1, year, round_number, session_type: SimpleNamespace(
-            laps_by_number={"1": 11, "2": 10, "3": 10}
-        ),
+        "fetch_classified_laps",
+        lambda fastf1, year, round_number, session_type: {"1": 11, "2": 10, "3": 10},
     )
     arguments = ["fetch-due", "--store", str(tmp_path / "bucket"), "--season", "2026", "--dry-run"]
 
@@ -424,13 +362,15 @@ def test_a_snapshot_from_before_corners_were_counted_has_them_counted_from_its_f
 
 
 def test_a_build_that_finds_its_snapshot_short_waits_like_any_other_short_session(tmp_path, monkeypatch):
-    """The record says whole. The archive itself, measured again by the build,
-    has no positions for one driver. Rule 6 holds either way: nothing is
-    published as partial while later fetches may still do better."""
-    Result(monkeypatch, {"1": 10, "2": 10, "3": 10})
+    """The record says whole. The feeds themselves, measured by the build,
+    have no positions for one driver. The record is corrected and the decision
+    taken again from it, so rule 6 holds as for any short session: nothing is
+    published while later fetches may do better, and they are asked for."""
+    world = Archive(monkeypatch, {"1": 10, "2": 10, "3": 10})
     damaged = make_session()
     del damaged.pos_data["2"]
-    store = archive_holding(tmp_path, monkeypatch, in_the_archive=damaged, recorded=make_session())
+    world.snapshot(tmp_path, recorded=make_session(), feeds=damaged)
+    store = world.store
     clock = [FIRST_FETCH + timedelta(hours=1)]
     builder = Builder(store, fastf1=None, now=lambda: clock[0])
     assert isinstance(builder.gather(AUSTRIA), Inputs)
@@ -440,6 +380,12 @@ def test_a_build_that_finds_its_snapshot_short_waits_like_any_other_short_sessio
     assert waiting.action == "waiting"
     assert waiting.reason.startswith("short on position; to be fetched again")
     assert read_pointer(store, AUSTRIA) == (None, None)
+    assert world.built == []
+    # Every reader of the archive now sees what the feeds hold, the fetch
+    # planner among them: the retries happen while the window is open.
+    (corrected,) = list_snapshots(store)
+    assert [(item.bar, item.driver) for item in corrected.shortfalls()] == [("position", "BBB")]
+    assert planned([corrected], FIRST_FETCH + RETRY_INTERVAL) == [8]
 
     clock[0] = FIRST_FETCH + RETRY_WINDOW
     published = publish_session(store, AUSTRIA, builder.gather, builder.build)
@@ -448,61 +394,9 @@ def test_a_build_that_finds_its_snapshot_short_waits_like_any_other_short_sessio
     pointer, _ = read_pointer(store, AUSTRIA)
     assert pointer.complete is False
     assert [item["bar"] for item in pointer.shortfalls] == ["position"]
-
-
-def test_a_session_published_short_of_what_its_record_says_goes_on_being_fetched(tmp_path, monkeypatch):
-    """What follows the test above. The fetch stage plans from the record, and
-    the record says whole. The pointer says what the build found, and a
-    session that is published short is not one to stop fetching."""
-    Result(monkeypatch, {"1": 10, "2": 10, "3": 10})
-    damaged = make_session()
-    del damaged.pos_data["2"]
-    store = archive_holding(tmp_path, monkeypatch, in_the_archive=damaged, recorded=make_session())
-    window_closed = FIRST_FETCH + RETRY_WINDOW
-    builder = Builder(store, fastf1=None, now=lambda: window_closed)
-    publish_session(store, AUSTRIA, builder.gather, builder.build, now=lambda: window_closed)
-    snapshots = list_snapshots(store)
-    assert [recorded.complete for recorded in snapshots] == [True]
-    short = cli_module._published_short(store)
-    result_of_today = lambda session: {"1": 10, "2": 10, "3": 10}
-
-    def plans(held, now, published_short=short):
-        return [
-            plan.reason
-            for plan in plan_fetches(ONE_RACE, held, now, result_of_today, published_short=published_short)
-        ]
-
-    # Rarely, as for any session short after its window, and for as long as it is.
-    assert plans(snapshots, window_closed + timedelta(days=1)) == []
+    # Published short, and fetched again for as long as it is.
     for weeks in (1, 5, 20):
-        assert plans(snapshots, FIRST_FETCH + weeks * SLOW_RETRY_INTERVAL) == [
-            "published short on position, though the archive records it as whole"
-        ]
-    assert plans(snapshots, FIRST_FETCH + SLOW_RETRY_INTERVAL, published_short=None) == []
-
-    # A fetch since then that looks whole is the build's to try before another is made.
-    newer = snapshot(snapshot_id=fetched_at(FIRST_FETCH + SLOW_RETRY_INTERVAL))
-    assert plans([*snapshots, newer], FIRST_FETCH + 3 * SLOW_RETRY_INTERVAL) == []
-
-    # A pointer built from some other snapshot says nothing about these.
-    elsewhere = {AUSTRIA: replace(short[AUSTRIA], snapshot_id=fetched_at(FIRST_FETCH - timedelta(hours=1)))}
-    assert plans(snapshots, FIRST_FETCH + SLOW_RETRY_INTERVAL, published_short=elsewhere) == []
-
-
-def test_only_what_this_pipeline_version_published_is_taken_as_its_verdict(tmp_path, monkeypatch):
-    store = MemoryStore()
-    damaged = make_session()
-    del damaged.pos_data["2"]
-    write_snapshot(store, fetched_session(tmp_path, damaged), now=FIRST_FETCH)
-    (short,) = list_snapshots(store)
-    publish_session(
-        store, AUSTRIA, lambda key, **_: Inputs(short, None), lambda inputs: ({"summary.json": b"{}\n"}, None)
-    )
-    assert list(cli_module._published_short(store)) == [AUSTRIA]
-
-    monkeypatch.setattr(layout, "PIPELINE_VERSION", layout.PIPELINE_VERSION + 1)
-
-    assert cli_module._published_short(store) == {}
+        assert planned(list_snapshots(store), FIRST_FETCH + weeks * SLOW_RETRY_INTERVAL) == [8]
 
 
 # --- C6: a feed that arrived is not one F1 does not hold -------------------------

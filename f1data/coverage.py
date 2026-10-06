@@ -71,6 +71,12 @@ FEED_FILE_BY_BAR = {
     "circuit_info": CIRCUIT_INFO,
 }
 _NOT_HELD_STATUSES = frozenset({403, 404})
+# Bars whose feed has no entry of its own under ``feeds``, and the per-driver
+# figure that shows whether anything of it arrived.
+_FIGURE_OF_A_FEED_WITH_NO_ENTRY = {"tyre_data": "tyre_laps", "driver_list": "in_driver_list"}
+# What a measurement holds per driver that does not come from F1's feeds, or
+# is no bar: the classification of the day, and laps FastF1 made up.
+_NOT_OF_THE_FEEDS = frozenset({"classified_laps", "generated_laps"})
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
 CLASSIFICATION_BAR = "classification"
@@ -271,8 +277,37 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
     return {**measurement, "drivers": drivers}
 
 
+def feed_figures(measurement: dict[str, Any]) -> dict[str, Any]:
+    """What a measurement says of the feeds, and nothing of the classification.
+
+    Two measurements of the same archived feeds by the same code agree on
+    this, whenever they are taken. They need not agree on the rest: the laps
+    a driver is classified with come from Jolpica as it stood that day, and a
+    driver known from the result alone is there or not with the result.
+    """
+    drivers = {}
+    for driver in measurement.get("drivers", {}).values():
+        if not (driver.get("in_driver_list") or driver.get("timing_laps") or driver.get("generated_laps")):
+            continue
+        drivers[str(driver.get("number"))] = {
+            key: value for key, value in driver.items() if key not in _NOT_OF_THE_FEEDS
+        }
+    return {**{key: value for key, value in measurement.items() if key != "drivers"}, "drivers": drivers}
+
+
+def feed_is_absent(measurement: dict[str, Any], bar: str) -> bool:
+    """Whether the feed behind ``bar`` is missing outright, for every driver."""
+    feeds = measurement.get("feeds", {})
+    if bar in feeds:
+        return not feeds[bar]
+    figure = _FIGURE_OF_A_FEED_WITH_NO_ENTRY.get(bar)
+    if figure is None:
+        return False
+    return not any(driver.get(figure) for driver in measurement.get("drivers", {}).values())
+
+
 def f1_does_not_hold(
-    shortfall: Shortfall, feed_status: dict[str, Any], feeds: dict[str, Any]
+    shortfall: Shortfall, feed_status: dict[str, Any], measurement: dict[str, Any]
 ) -> bool:
     """Whether the feed behind a shortfall is one F1 answered that it does not have.
 
@@ -280,17 +315,16 @@ def f1_does_not_hold(
     for the pit-stop feed of races before late 2024. A feed that was answered
     and came up short is a different thing: it may yet be mended.
 
-    ``feeds`` is the measurement's record of which feeds arrived.
+    ``measurement`` is the one the shortfall was found in.
     """
     # Only a feed that is missing outright can be one F1 does not hold. One
-    # that arrived and is short for a driver came from somewhere.
-    if shortfall.driver is not None:
-        return False
-    # The same goes for a feed that arrived and is short as a whole: a
-    # session status that never reaches the end, a pit-stop feed with no
-    # stop in it. FastF1 asks its mirror when F1 refuses, so F1's refusal and
-    # the feed's arrival can sit side by side in one fetch.
-    if feeds.get(shortfall.bar):
+    # that arrived and is short came from somewhere: short for a driver, or
+    # as a whole, like a session status that never reaches the end or a
+    # pit-stop feed with no stop in it. FastF1 asks its mirror when F1
+    # refuses, so F1's refusal and the feed's arrival can sit side by side in
+    # one fetch. A feed that is absent for everyone shows as a shortfall for
+    # each driver, and those count here like any other.
+    if not feed_is_absent(measurement, shortfall.bar):
         return False
     # A refusal looks the same as an absence, one feed at a time. It counts as
     # an absence only from a fetch F1 was otherwise answering: the plan asks

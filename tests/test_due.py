@@ -196,7 +196,7 @@ class Jolpica:
     def __init__(self, monkeypatch, laps=None, available=True):
         self.laps = laps or {"1": 10, "2": 10, "3": 10}
         self.available = available
-        monkeypatch.setattr(build_module, "load_schedule", lambda fastf1, year, fresh=False: schedule_2026())
+        monkeypatch.setattr(build_module, "load_schedule", lambda fastf1, year, fresh=False, backend=None: schedule_2026())
         monkeypatch.setattr(build_module, "fetch_classification", self.fetch)
 
     def fetch(self, fastf1, year, round_number, session_type):

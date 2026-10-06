@@ -321,9 +321,11 @@ def test_a_feed_refused_by_an_origin_that_was_refusing_everything_is_not_one_f1_
     answering = {"SessionInfo.jsonStream": 200, "PitStopSeries.jsonStream": 403}
     refusing = {"SessionInfo.jsonStream": 403, "PitStopSeries.jsonStream": 403}
 
-    assert f1_does_not_hold(missing, answering, {})
-    assert not f1_does_not_hold(missing, refusing, {})
-    assert not f1_does_not_hold(missing, {}, {})
+    absent = {"feeds": {"pit_stop_series": False}}
+
+    assert f1_does_not_hold(missing, answering, absent)
+    assert not f1_does_not_hold(missing, refusing, absent)
+    assert not f1_does_not_hold(missing, {}, absent)
 
 
 def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_hold():
@@ -331,7 +333,7 @@ def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_
     short_for_a_driver = Shortfall("position", "AAA", "4 of 78 expected laps usable")
     status = {"SessionInfo.jsonStream": 200, "Position.z.jsonStream": 403}
 
-    assert not f1_does_not_hold(short_for_a_driver, status, {"position": True})
+    assert not f1_does_not_hold(short_for_a_driver, status, {"feeds": {"position": True}})
 
     damaged = make_session()
     del damaged.pos_data["1"]

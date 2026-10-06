@@ -33,8 +33,12 @@ def result_frame(**overrides):
 class Jolpica:
     """Stands in for ``fastf1``: its Ergast client and its cache switch."""
 
-    def __init__(self, answers):
+    def __init__(self, answers, first_laps=()):
         self._answers = list(answers)
+        # What each request for first-lap times is answered with. Past the
+        # end of the list Jolpica has no lap times.
+        self._first_laps = list(first_laps)
+        self.lap_calls: list[tuple[int, int, int, bool]] = []
         self.calls: list[tuple[str, int, int]] = []
         self.cache_disabled_during_calls: list[bool] = []
         self._disabled = False
@@ -49,6 +53,9 @@ class Jolpica:
 
             def get_sprint_results(self, season, round):
                 return outer._answer("sprint", season, round)
+
+            def get_lap_times(self, season, round, lap_number):
+                return outer._first_lap_answer(season, round, lap_number)
 
         @contextmanager
         def disabled():
@@ -68,6 +75,13 @@ class Jolpica:
         if isinstance(answer, Exception):
             raise answer
         return SimpleNamespace(content=[answer], description=getattr(self, "description", None))
+
+    def _first_lap_answer(self, season, round_number, lap_number):
+        self.lap_calls.append((season, round_number, lap_number, self._disabled))
+        answer = self._first_laps.pop(0) if self._first_laps else None
+        if isinstance(answer, Exception):
+            raise answer
+        return SimpleNamespace(content=[] if answer is None else [answer])
 
 
 def test_the_result_is_asked_for_uncached_and_reduced_to_plain_rows():

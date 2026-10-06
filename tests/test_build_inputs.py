@@ -44,6 +44,7 @@ class World:
         self.austria_round = 8
         self.results_by_round = {8: AUSTRIA_RESULT}
         self.schedule_reads: list[bool] = []
+        self.backends: list[str | None] = []
         self.classification_requests: list[int] = []
         monkeypatch.setattr(build_module, "load_schedule", self.load_schedule)
         monkeypatch.setattr(build_module, "fetch_classification", self.fetch_classification)
@@ -52,8 +53,9 @@ class World:
         self.austria_round = 9
         self.results_by_round = {8: OTHER_RESULT, 9: AUSTRIA_RESULT}
 
-    def load_schedule(self, fastf1, year, fresh=False):
+    def load_schedule(self, fastf1, year, fresh=False, backend=None):
         self.schedule_reads.append(fresh)
+        self.backends.append(backend)
         return schedule_2026(austria_round=self.austria_round, italy_round=self.austria_round + 6)
 
     def fetch_classification(self, fastf1, year, round_number, session_type):
@@ -66,7 +68,7 @@ class World:
 class StaleCalendar(World):
     """A publisher whose calendar will not refresh, whatever it asks for."""
 
-    def load_schedule(self, fastf1, year, fresh=False):
+    def load_schedule(self, fastf1, year, fresh=False, backend=None):
         self.schedule_reads.append(fresh)
         return schedule_2026(austria_round=8, italy_round=14)
 
@@ -191,7 +193,7 @@ def test_looking_up_the_calendar_cannot_reach_f1(tmp_path, monkeypatch):
     let it would be fetching from F1 on a runner F1 refuses."""
     attempts = []
 
-    def schedule_that_falls_back_to_f1(fastf1, year, fresh=False):
+    def schedule_that_falls_back_to_f1(fastf1, year, fresh=False, backend=None):
         try:
             requests.Session().get("https://livetiming.formula1.com/static/2026/Index.json", timeout=5)
         except ForbiddenHostError as exc:

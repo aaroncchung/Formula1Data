@@ -92,6 +92,7 @@ CALENDAR_ENTRY = {
         "round": 8,
         "meeting_name": "Austrian Grand Prix",
         "session_name": "Race",
+        "row": "sha256:" + "d" * 64,
     }
 }
 

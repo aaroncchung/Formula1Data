@@ -27,6 +27,7 @@ archive/sessions/<session_key>/<snapshot_id>/     never served
     http-cache.sqlite.gz       the raw HTTP responses
     extra/PitStopSeries.jsonStream, extra/circuit-info.json
     snapshot.json              written last; without it the snapshot does not exist
+    remeasured.json            only where a build found the snapshot's record wrong
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
 
 v1/pointers/<session_key>.json                    one per published session
@@ -129,23 +130,34 @@ does not hold: one that is absent outright, from a fetch F1 was otherwise
 answering. A feed that arrived and is short is always fetched again. The limits
 are in `f1data/policy.py`.
 
-A build measures the snapshot it publishes again, and judges it against the
-classification of that day, which is the whole answer: a driver it leaves out
-has no result and no laps to account for. If the build finds the snapshot short
-inside the 48 hours it publishes nothing and waits, as it would for a snapshot
-recorded as short. What it finds goes into the pointer, and `fetch-due` reads
-the pointers: a session that is published short goes on being fetched, even
-when the archive's own record of its snapshot says it is whole.
+A snapshot is judged against the classification of the day, which is the whole
+answer: a driver it leaves out has no result and no laps to account for. A
+session published short stays on the fetch stage's list however old it is,
+because a result corrected months later can be what left it short.
+
+The figures a snapshot is judged by were recorded when it was fetched. A build
+measures the feeds again once it has loaded them, and if they are not what the
+record says it writes the figures it measured beside the snapshot, as
+`remeasured.json`, publishes nothing from that judgement and decides again.
+Every reader of the archive is given a corrected snapshot with the corrected
+figures, so the fetch stage, the choice of snapshot and the build always judge
+the same thing.
 
 ## When a session is built again
 
 The pointer records what its generation was built from: the snapshot, the
-fingerprint of the classification, the calendar entry (year, round and names,
-under `also`), and the pipeline version. `build` builds a session again when
-any of them differs from what it would use now. The calendar and the
-classification are looked up after the pointer is read, on every attempt, and
-the calendar again before the index is written: a publisher never decides from
-something it looked up before the version its write is guarded by.
+fingerprint of what Jolpica supplied (the classification and, for a race, each
+driver's first-lap time), the calendar entry (year, round, names and a checksum
+of the whole calendar row, under `also`), and the pipeline version. `build`
+builds a session again when any of them differs from what it would use now.
+
+Those are looked up once, after the pointer is read, on every attempt, and the
+calendar again before the index is written: a publisher never decides from
+something it looked up before the version its write is guarded by. The
+artifacts are then made with every network request refused. FastF1 would
+otherwise fetch the result and the first-lap times itself while loading, and
+look the round up in the calendar a second time; a build is made of what was
+gathered and of the archive, and of nothing else.
 
 A session more than 30 days old is looked up in the calendar on every run, but
 Jolpica is asked for its classification on two days in every thirty, after a
