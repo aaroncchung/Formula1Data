@@ -104,13 +104,21 @@ export type PitStop = {
   session_id: string;
   driver_code: string;
   lap_number: number;
+  /** Pit-lane transit, entry to exit. Not the stationary time and not pit loss. */
   duration_ms?: number | null;
+  /**
+   * When the car entered the pit lane, on the session clock, as pandas prints
+   * a duration (`0 days 01:22:52.191000`). Not a time of day, whatever the
+   * name says; read it with lib/pandas-time.ts.
+   */
   local_time?: string | null;
 };
 
 export type WeatherSample = {
   session_id: string;
+  /** Null in every sample published so far, so nothing may be plotted against it. */
   lap_number?: number | null;
+  /** The session clock as a pandas duration; read it with lib/pandas-time.ts. */
   timestamp?: string | null;
   air_temp_c?: number | null;
   track_temp_c?: number | null;
@@ -122,6 +130,7 @@ export type WeatherSample = {
 export type RaceControlMessage = {
   session_id: string;
   lap_number?: number | null;
+  /** A UTC date and time as pandas prints one, `2026-06-28 12:20:00`, with no zone. */
   timestamp?: string | null;
   category: string;
   message: string;
@@ -137,6 +146,10 @@ export type Result = {
   status?: string | null;
   points?: number | null;
   grid?: number | null;
+  /**
+   * A pandas duration that is the winner's race time, a gap, or for a lapped
+   * driver neither; lib/results-view.ts turns it into what a table shows.
+   */
   gap?: string | null;
   laps?: number | null;
 };
@@ -168,23 +181,41 @@ export type RacePaceResult = {
   caveats: string[];
 };
 
+/**
+ * One stint's degradation fit (`calculate_fuel_adjusted_tyre_degradation` in
+ * backend/app/analysis/advanced.py).
+ *
+ * The fields marked "pipeline 2" are absent from a generation built before
+ * the analysis methods were fixed, which reported a rate for any three laps.
+ * Read a row through `tyreFit` in lib/tyre-chart.ts, which decides whether it
+ * holds a rate at all.
+ */
 export type TyreDegradationRow = {
   driver_code: string;
   compound: string;
   stint: number;
+  /** The fuel-adjusted rate. Null when the fit is not reported. */
   degradation_ms_per_lap?: number | null;
   r_squared?: number | null;
   sample_count: number;
   stint_length: number;
   caveats: string[];
+  /** The fitted slope before the fuel correction. Null when the fit is not reported. */
   raw_slope_ms_per_lap?: number | null;
   fuel_correction_ms_per_lap?: number | null;
   excluded_outlier_count?: number | null;
+  /** Pipeline 2. Scatter of the laps about the fitted line. */
+  residual_spread_ms?: number | null;
+  /** Pipeline 2. What decides whether a rate is reported. */
+  slope_standard_error_ms_per_lap?: number | null;
+  /** Pipeline 2: `ok`, `poor_fit` or `too_few_laps`. Only `ok` comes with a rate. */
+  fit_status?: string | null;
 };
 
 export type TyreDegradationResult = {
   session_id: string;
   rows: TyreDegradationRow[];
+  caveats?: string[];
 };
 
 export type TelemetryComparison = {
@@ -228,14 +259,31 @@ export type IdealLapsResult = {
 
 export type TeammateComparisonDriver = {
   driver_code: string;
+  /**
+   * From pipeline 2 this and `lap_count` are over the laps both team-mates ran
+   * cleanly and that were kept after trimming, so the gap is the difference
+   * between the two averages. Before, they were over the driver's own laps.
+   */
   average_lap_ms?: number | null;
   lap_count: number;
+  /** Pipeline 2. Every clean lap the driver ran, matched or not. */
+  clean_lap_count?: number;
 };
 
+/** One team (`calculate_teammate_comparison` in backend/app/analysis/teammate_comparison.py). */
 export type TeammateComparisonRow = {
   team: string;
+  /** The quicker driver first, so the gap is never negative. */
   drivers: TeammateComparisonDriver[];
+  /** Null from pipeline 2 when too few laps match; `caveat` then says how many did. */
   gap_ms?: number | null;
+  /** Pipeline 2. Lap-to-lap spread of the matched differences. */
+  gap_spread_ms?: number | null;
+  /** Pipeline 2. Laps both drivers ran cleanly. */
+  matched_lap_count?: number;
+  /** Pipeline 2. Matched laps dropped as the most extreme differences. */
+  trimmed_lap_count?: number;
+  caveat?: string | null;
 };
 
 export type TeammateComparisonResult = {
@@ -244,19 +292,74 @@ export type TeammateComparisonResult = {
   caveats: string[];
 };
 
+/**
+ * The change in pace across a driver's first stop.
+ *
+ * `first_clean_lap_gain_ms` is the lap before minus the lap after, so a
+ * POSITIVE value means the driver was quicker on the new tyres. Read it
+ * through `paceChange` in lib/strategy-view.ts.
+ */
 export type StrategyEstimate = {
   driver_code: string;
   stop_lap: number;
   first_clean_lap_gain_ms?: number | null;
+  /** Pipeline 2: the two laps compared. Null when there is no such lap. */
+  before_lap_number?: number | null;
+  before_lap_ms?: number | null;
+  after_lap_number?: number | null;
+  after_lap_ms?: number | null;
   caveat?: string | null;
 };
 
+/** One stop as the pit-loss estimate saw it. */
+export type PitLossStop = {
+  driver_code?: string | null;
+  lap_number?: number | null;
+  /** In-lap plus out-lap minus twice the baseline lap. Null when the stop does not qualify. */
+  pit_loss_ms?: number | null;
+  in_lap_ms?: number | null;
+  out_lap_ms?: number | null;
+  baseline_lap_ms?: number | null;
+  baseline_lap_count?: number;
+  /** Why the stop does not qualify, as a code; see `pitLossExclusionLabel`. */
+  excluded_reason?: string | null;
+};
+
+/** What a stop costs against staying out, estimated from lap times (pipeline 2). */
+export type PitLoss = {
+  /** The median over the qualifying stops. Null when too few qualify. */
+  estimate_ms?: number | null;
+  spread_ms?: number | null;
+  qualifying_stop_count: number;
+  stop_count: number;
+  minimum_stop_count?: number;
+  excluded_stop_counts?: Record<string, number>;
+  stops?: PitLossStop[];
+};
+
+/** Pit-lane transit times, summarised as what they are (pipeline 2). */
+export type PitLaneTime = {
+  median_ms?: number | null;
+  fastest_ms?: number | null;
+  slowest_ms?: number | null;
+  timed_stop_count: number;
+  stop_count: number;
+};
+
+/** `calculate_strategy` in backend/app/analysis/strategy.py. */
 export type StrategyResult = {
   session_id: string;
   stints: Stint[];
   compound_usage: Record<string, number>;
   pit_stops: PitStop[];
+  /**
+   * Equal to `pit_loss.estimate_ms` from pipeline 2. Before that it was the
+   * mean pit-lane time under the wrong name, so it is only a pit loss when
+   * `pit_loss` is there too.
+   */
   pit_loss_estimate_ms?: number | null;
+  pit_loss?: PitLoss | null;
+  pit_lane_time?: PitLaneTime | null;
   undercut_overcut: StrategyEstimate[];
   race_control_overlays: RaceControlMessage[];
   caveats: string[];
@@ -270,12 +373,19 @@ export type TrackDominanceMinisector = {
   winner_driver_code: string | null;
   segment_time_ms?: number | null;
   gap_to_next_ms?: number | null;
-  driver_times_ms: Record<string, number | null>;
+  /**
+   * From pipeline 2 a driver is left out of a minisector where their
+   * telemetry has no sample near one of its boundaries, so a missing driver
+   * is the normal case and not every driver has a time everywhere.
+   */
+  driver_times_ms: { [driver: string]: number | null | undefined };
 };
 
 export type TrackDominanceResult = {
   session_id: string;
   representative_laps: Array<{ driver_code: string; lap_number: number; lap_time_ms?: number | null }>;
+  /** Pipeline 2. Drivers with no clean lap whose telemetry runs line to line. */
+  excluded_drivers?: string[];
   minisector_count: number;
   minisectors: TrackDominanceMinisector[];
   caveats: string[];

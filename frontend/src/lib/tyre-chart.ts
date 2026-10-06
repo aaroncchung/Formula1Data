@@ -125,6 +125,84 @@ export function tyreFitsFor(
   return { shown: matching.slice(0, Math.max(limit, 0)), total: matching.length };
 }
 
+/** How many of these drivers' stints have a reported rate, as opposed to a row that says there is none. */
+export function reportedFitCount(rows: ReadonlyArray<TyreDegradationRow>, drivers: ReadonlyArray<string>): number {
+  const wanted = new Set(drivers);
+  return rows.filter((row) => wanted.has(row.driver_code) && tyreFit(row).status === "reported").length;
+}
+
+export type TyreFit =
+  | {
+      status: "reported";
+      /** The fuel-adjusted rate. Positive is a tyre getting slower. */
+      rate_ms_per_lap: number;
+      /** One standard error of the fitted slope; null when it was not published. */
+      standard_error_ms_per_lap: number | null;
+    }
+  /**
+   * No rate. `poor_fit`: the laps scatter too much to fix the slope.
+   * `too_few_laps`: too few clean laps to fit. `not_reported`: the row holds
+   * no rate and does not say why. `reason` is the publisher's own sentence.
+   */
+  | { status: "poor_fit" | "too_few_laps" | "not_reported"; reason: string };
+
+/**
+ * Whether a degradation row holds a rate, and if not, why not.
+ *
+ * A fit the analysis did not report has to stay unreported on the page: its
+ * row still carries a stint and a lap count, and a table that prints "-- ms/lap"
+ * or a zero for it reads as a measured rate. The status decides first, so a
+ * row marked as a poor fit shows no rate even if it carries a number. A row
+ * with no status is one from before there was a status, and has a rate when
+ * it has a number.
+ */
+export function tyreFit(row: TyreDegradationRow): TyreFit {
+  const reason = row.caveats?.find((caveat) => caveat.trim() !== "");
+  if (row.fit_status === "poor_fit" || row.fit_status === "too_few_laps") {
+    return { status: row.fit_status, reason: reason ?? UNREPORTED_REASONS[row.fit_status] };
+  }
+  if (isMeasured(row.degradation_ms_per_lap)) {
+    return {
+      status: "reported",
+      rate_ms_per_lap: row.degradation_ms_per_lap,
+      standard_error_ms_per_lap: isMeasured(row.slope_standard_error_ms_per_lap)
+        ? row.slope_standard_error_ms_per_lap
+        : null
+    };
+  }
+  return { status: "not_reported", reason: reason ?? UNREPORTED_REASONS.not_reported };
+}
+
+const UNREPORTED_REASONS = {
+  poor_fit: "No rate reported: the lap times scatter too much to fix the slope.",
+  too_few_laps: "No rate reported: too few clean laps in the stint.",
+  not_reported: "No rate was published for this stint."
+} as const;
+
+/** A fit in a few words, for a card or a table cell. */
+export function tyreFitLabel(fit: TyreFit): string {
+  switch (fit.status) {
+    case "reported":
+      return formatRate(fit.rate_ms_per_lap);
+    case "poor_fit":
+      return "No rate: laps too scattered";
+    case "too_few_laps":
+      return "No rate: too few laps";
+    case "not_reported":
+      return "No rate";
+  }
+}
+
+/** A rate with its sign, `+45.2 ms/lap`: the sign is the finding. */
+export function formatRate(value: number | null | undefined): string {
+  if (!isMeasured(value)) {
+    return "--";
+  }
+  const rounded = Number(value.toFixed(1));
+  // Rounded before the sign is chosen, so -0.04 reads "0.0" and not "-0.0".
+  return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} ms/lap`;
+}
+
 function isMeasured(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
