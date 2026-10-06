@@ -113,3 +113,43 @@ export type PublishedIndex = {
   readonly seasons: ReadonlyArray<IndexSeason>;
   readonly unscheduled: ReadonlyArray<UnscheduledSession>;
 };
+
+export type DriverStanding = {
+  /** Null when Jolpica lists the driver without a classified position. */
+  readonly position: number | null;
+  readonly points: number;
+  readonly wins: number;
+  readonly driver_code: string | null;
+  readonly driver_number: number | null;
+  readonly given_name: string | null;
+  readonly family_name: string | null;
+  /** Every constructor the driver has entered for this season, in Jolpica's order. */
+  readonly constructors: ReadonlyArray<string>;
+};
+
+export type ConstructorStanding = {
+  readonly position: number | null;
+  readonly points: number;
+  readonly wins: number;
+  readonly constructor_id: string | null;
+  readonly name: string;
+};
+
+/**
+ * The championship standings of one season, as the publisher took them from
+ * Jolpica (`fetch_standings` in f1data/standings.py). They are shown as
+ * published: the site used to add up points over the sessions it held, which
+ * was wrong for 12 of 22 drivers (AR-15).
+ */
+export type Standings = {
+  readonly schema_version: number;
+  readonly format_version: number;
+  readonly year: number;
+  /**
+   * The round each table is after. They are two requests to Jolpica and can be
+   * a round apart for a moment, so a page states each and never assumes one.
+   */
+  readonly rounds: { readonly drivers: number; readonly constructors: number };
+  readonly drivers: ReadonlyArray<DriverStanding>;
+  readonly constructors: ReadonlyArray<ConstructorStanding>;
+};

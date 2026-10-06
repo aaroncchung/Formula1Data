@@ -18,6 +18,10 @@ export const FORMAT_VERSION = 1;
 export const POINTER_SCHEMA_VERSION = 1;
 export const INDEX_SCHEMA_VERSION = 1;
 
+// The version of a season's standings. Mirrors STANDINGS_SCHEMA_VERSION in
+// f1data/standings.py.
+export const STANDINGS_SCHEMA_VERSION = 1;
+
 /**
  * The URL the versioned layout hangs off, for example `https://host/data`.
  * Empty when the build was not given one; the client reports that as its own

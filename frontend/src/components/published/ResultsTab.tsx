@@ -1,27 +1,23 @@
 "use client";
 
 import { DataTable } from "@/components/data-table/DataTable";
-import { ArtifactPanel } from "@/components/published/ArtifactPanel";
-import { usePublishedArtifact } from "@/components/published/usePublishedArtifact";
+import { SessionTab, type TabProps } from "@/components/published/SessionTab";
 import { DriverBadge, TeamColorPill } from "@/components/session/Badges";
 import { readResults } from "@/lib/published/artifacts";
 import type { SessionResults } from "@/lib/published/artifacts";
-import type { SessionView } from "@/lib/published/client";
+import { formatResultGap, leaderLapCount } from "@/lib/results-view";
 
-export function ResultsTab({ view, active }: { view: SessionView; active: boolean }) {
-  const { artifact, retry } = usePublishedArtifact(view, readResults);
-  if (!active) {
-    return null;
-  }
+export function ResultsTab(props: TabProps) {
   return (
-    <ArtifactPanel tab="results" name="results" artifact={artifact} onRetry={retry}>
+    <SessionTab {...props} tab="results" name="results" read={readResults}>
       {(data) => <ResultsTable results={data.results} drivers={data.drivers} />}
-    </ArtifactPanel>
+    </SessionTab>
   );
 }
 
 function ResultsTable({ results, drivers }: SessionResults) {
   const byCode = new Map(drivers.map((driver) => [driver.code, driver]));
+  const leaderLaps = leaderLapCount(results);
   return (
     <DataTable
       rows={results}
@@ -51,6 +47,12 @@ function ResultsTable({ results, drivers }: SessionResults) {
         },
         { key: "grid", header: "Grid", align: "right", render: (row) => row.grid ?? "--" },
         { key: "laps", header: "Laps", align: "right", render: (row) => row.laps ?? "--" },
+        {
+          key: "gap",
+          header: "Time / gap",
+          align: "right",
+          render: (row) => <span className="font-mono">{formatResultGap(row, leaderLaps)}</span>
+        },
         { key: "status", header: "Status", render: (row) => row.status || "--" },
         { key: "points", header: "Pts", align: "right", render: (row) => row.points ?? 0 }
       ]}

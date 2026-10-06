@@ -188,12 +188,33 @@ After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/da
    archive is never served.
 5. After a second publication of the same session, the first generation's paths
    still answer 200. Nothing is pruned.
-6. The page `/session?year=<year>&round=<round>&session=<type>` shows the
-   session, and opening a tab requests only that tab's artifacts.
+6. The page `/session?key=<key>` shows the session, and so does
+   `/session?year=<year>&round=<round>&session=<type>`. Opening a tab requests
+   only that tab's artifacts: the position replay and the telemetry laps are
+   not requested until their tabs are opened.
 
 ## What is not here yet
 
 The artifact contents are still in the old format, reached through
-`f1data/legacy.py`. Only `/session` loads at runtime; every other page still
-reads `frontend/public/data` at build time. Nothing runs `run` on a schedule
-yet. See section 10 of the findings document for the state of each step.
+`f1data/legacy.py`. Every page now loads its data in the browser and the site
+builds without `frontend/public/data`, but that directory is still in git, and
+the old build-time dashboard code it fed is still in the tree, unreachable.
+Nothing runs `run` on a schedule yet. See section 10 of the findings document
+for the state of each step.
+
+## The pages
+
+Every page reads the published data at runtime, from the base URL in
+`NEXT_PUBLIC_PUBLISHED_DATA_BASE_URL`.
+
+| Page | Address | Reads |
+| --- | --- | --- |
+| Home | `/` | The index, then the latest published session's summary files |
+| Seasons, season, meeting, circuits | `/seasons`, `/season?year=`, `/meeting?year=&round=`, `/circuits` | The index only |
+| Session | `/session?key=<session key>` | The index and the pointer, then each tab's files when the tab is opened |
+| Strategy, telemetry, drivers, teams | `/strategy?key=`, and so on | One session's files; the latest published session when no key is given |
+| Standings | `/standings?year=` | The index and `v1/standings/<year>.json` |
+
+A session is linked by its key. `/session?year=&round=&session=` still opens
+one, and the page then offers the link by key, since a round moves when the
+calendar changes.

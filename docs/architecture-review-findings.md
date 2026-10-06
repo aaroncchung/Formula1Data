@@ -1623,7 +1623,7 @@ rewritten.
 | 2. One session end to end | Done | Fetch, archive, build on a hosted runner, publish, Worker, and `/session` loading a tab at a time |
 | 3. New artifact format and typed contract | Not started | Artifacts are still in the old format, through `f1data/legacy.py`. The pit-stop feed and the corner positions are already archived with each fetch |
 | 4. The batch command | Partly done | `fetch-due`, `build` and standings from Jolpica exist. Nothing runs them on a schedule yet |
-| 5. Every page loads at runtime | Not started | Only `/session` does |
+| 5. Every page loads at runtime | Partly done | All eleven build-time readers are gone: every page loads in the browser, sessions are addressed by key, and the site builds with `frontend/public/data` moved aside. Still to do: remove that directory from git and the deploy, and keep a sample dataset in the published layout for local development |
 | 6. Remove the old path | Not started | |
 | 7. Product quality | Partly done | Six analysis methods fixed (AR-08, AR-16). `/live` and `/settings` removed, chart fixes, dead code removed (AR-12) |
 

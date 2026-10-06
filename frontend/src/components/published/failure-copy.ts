@@ -31,6 +31,8 @@ export function failureTitle(failure: PublishedFailure): string {
       return "Not part of this session's published data";
     case "invalid_artifact":
       return "This part of the session's data is invalid";
+    case "invalid_standings":
+      return "The published standings are invalid";
     case "unknown":
       return "Something went wrong";
   }

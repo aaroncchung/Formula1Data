@@ -1,140 +1,202 @@
 "use client";
 
-import { ArrowRight, CalendarRange } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ArrowRight, CalendarRange, Database } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
-import { latestSession, SESSION_TYPE_ORDER, type CatalogArtifact } from "@/lib/static-api-core";
+import { usePublishedIndex } from "@/components/calendar/usePublishedIndex";
+import type { IndexState } from "@/components/calendar/usePublishedIndex";
+import { failureDetail, failureTitle } from "@/components/published/failure-copy";
+import { publishedDataBaseUrl } from "@/lib/published/config";
+import { sessionHref } from "@/lib/published/lookup";
+import { pickerKeyForQuery, pickerSelection, pickerYears } from "@/lib/session-picker";
+import type { PickerSelection, PickerYear } from "@/lib/session-picker";
 
+type Choice = { readonly location: string; readonly key: number };
+
+/**
+ * The session picker in the bar at the top of every page.
+ *
+ * It offers the sessions the published calendar lists as published, read in
+ * the browser, and opens the chosen one by its key. It used to read the
+ * catalog that was in the repository when the site was built, so a session
+ * published later could not be picked (AR-07).
+ */
 export function GlobalSessionPicker() {
   const pathname = usePathname();
+  const query = useSearchParams();
   const router = useRouter();
-  const [catalog, setCatalog] = useState<CatalogArtifact | null>(null);
-  const [year, setYear] = useState("");
-  const [meetingId, setMeetingId] = useState("");
-  const [sessionId, setSessionId] = useState("");
 
-  useEffect(() => {
-    let ignore = false;
-    api.catalog().then((nextCatalog) => {
-      if (ignore) return;
-      setCatalog(nextCatalog);
-      const route = pathname.match(/^\/seasons\/(\d{4})\/(\d+)\/([^/]+)/);
-      const routeSession = route
-        ? nextCatalog.sessions.find(
-            (item) => item.year === Number(route[1]) && item.round === Number(route[2]) && item.type.toLowerCase() === route[3].toLowerCase() && item.status !== "missing"
-          )
-        : null;
-      const selected =
-        routeSession || latestSession(nextCatalog.sessions.filter((item) => item.status !== "missing"));
-      if (selected) {
-        setYear(String(selected.year));
-        setMeetingId(selected.meeting_id);
-        setSessionId(selected.session_id);
-      }
-    }).catch(() => setCatalog(null));
-    return () => {
-      ignore = true;
-    };
-  }, [pathname]);
+  // Where the reader is. The bar outlives the page under it, so the calendar
+  // is read again whenever this changes, and a choice made in the picker
+  // lasts only until then: on a new page the picker shows that page's session.
+  const location = `${pathname}?${query.toString()}`;
+  const { state } = usePublishedIndex(location);
+  const [choice, setChoice] = useState<Choice | null>(null);
 
-  const years = useMemo(
-    () => [...new Set((catalog?.sessions || []).map((item) => item.year))].sort((a, b) => b - a),
-    [catalog]
-  );
-  const meetings = useMemo(
-    () => (catalog?.meetings || [])
-      .filter((item) => item.year === Number(year) && catalog?.sessions.some((session) => session.meeting_id === item.meeting_id && session.status !== "missing"))
-      .sort((a, b) => a.round - b.round),
-    [catalog, year]
-  );
-  const meeting = meetings.find((item) => item.meeting_id === meetingId);
-  const sessions = useMemo(
-    () => (catalog?.sessions || [])
-      .filter((item) => item.meeting_id === meetingId && item.status !== "missing")
-      .sort((a, b) => sessionOrder(a.type) - sessionOrder(b.type)),
-    [catalog, meetingId]
-  );
+  const index = state.status === "ready" ? state.index : null;
+  const years = useMemo(() => (index ? pickerYears(index) : []), [index]);
+  // The one thing held is a session key. The season and the event shown are
+  // read back from the calendar for it, so nothing here keeps a round.
+  const chosenKey = choice?.location === location ? choice.key : index ? pickerKeyForQuery(index, query) : null;
+  const selection = pickerSelection(years, chosenKey);
 
-  function changeYear(nextYear: string) {
-    const availableSessions = (catalog?.sessions || []).filter((item) => item.year === Number(nextYear) && item.status !== "missing");
-    const nextMeeting = (catalog?.meetings || [])
-      .filter((item) => item.year === Number(nextYear) && availableSessions.some((session) => session.meeting_id === item.meeting_id))
-      .sort((a, b) => b.round - a.round)[0];
-    const nextSession = availableSessions
-      .filter((item) => item.meeting_id === nextMeeting?.meeting_id)
-      .sort((a, b) => sessionOrder(a.type) - sessionOrder(b.type))[0];
-    setYear(nextYear);
-    setMeetingId(nextMeeting?.meeting_id || "");
-    setSessionId(nextSession?.session_id || "");
+  return (
+    <>
+      <SessionPickerControls
+        years={years}
+        selection={selection}
+        placeholder={placeholderFor(state, years)}
+        onChoose={(key) => setChoice({ location, key })}
+        onOpen={(key) => router.push(sessionHref({ kind: "key", sessionKey: key }))}
+      />
+      <DataSourceStatus state={state} />
+    </>
+  );
+}
+
+/** What the bar shows before the query string can be read, which is also what the exported HTML holds. */
+export function SessionPickerFallback() {
+  return (
+    <SessionPickerControls years={[]} selection={null} placeholder="Loading sessions" onChoose={noop} onOpen={noop} />
+  );
+}
+
+function noop() {}
+
+function placeholderFor(state: IndexState, years: ReadonlyArray<PickerYear>): string | null {
+  if (state.status === "loading") {
+    return "Loading sessions";
   }
-
-  function changeMeeting(nextMeetingId: string) {
-    const nextSession = (catalog?.sessions || [])
-      .filter((item) => item.meeting_id === nextMeetingId && item.status !== "missing")
-      .sort((a, b) => sessionOrder(a.type) - sessionOrder(b.type))[0];
-    setMeetingId(nextMeetingId);
-    setSessionId(nextSession?.session_id || "");
+  if (state.status === "failed") {
+    return "Sessions unavailable";
   }
+  return years.length === 0 ? "No sessions published" : null;
+}
 
-  function openSession() {
-    const selected = catalog?.sessions.find((item) => item.session_id === sessionId);
-    if (selected) {
-      const section = pathname.startsWith("/telemetry") ? "#telemetry" : pathname.startsWith("/strategy") ? "#strategy" : "";
-      router.push(`/seasons/${selected.year}/${selected.round}/${selected.type}${section}`);
+type SessionPickerControlsProps = {
+  years: ReadonlyArray<PickerYear>;
+  selection: PickerSelection | null;
+  /** Shown in the event control when there is nothing to choose, saying why. */
+  placeholder: string | null;
+  onChoose: (sessionKey: number) => void;
+  onOpen: (sessionKey: number) => void;
+};
+
+function SessionPickerControls({ years, selection, placeholder, onChoose, onOpen }: SessionPickerControlsProps) {
+  const disabled = selection === null;
+
+  function chooseYear(value: string) {
+    // Choosing a season is choosing its most recent session.
+    const year = years.find((item) => String(item.year) === value);
+    if (year) {
+      onChoose(year.key);
     }
   }
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2" aria-label="Global session selection">
+    <div className="flex min-w-0 flex-1 items-center gap-2" role="group" aria-label="Session selection">
       <CalendarRange className="hidden shrink-0 text-slate-500 xl:block" size={16} aria-hidden="true" />
-      <label className="sr-only" htmlFor="global-season">Season</label>
+      <label className="sr-only" htmlFor="global-season">
+        Season
+      </label>
       <select
         id="global-season"
         className="control hidden h-9 w-[82px] shrink-0 sm:block"
-        value={year}
-        onChange={(event) => changeYear(event.target.value)}
-        disabled={!catalog}
+        value={selection ? String(selection.year.year) : ""}
+        onChange={(event) => chooseYear(event.target.value)}
+        disabled={disabled}
       >
-        {years.map((item) => <option key={item} value={item}>{item}</option>)}
+        {years.map((year) => (
+          <option key={year.year} value={year.year}>
+            {year.year}
+          </option>
+        ))}
       </select>
-      <label className="sr-only" htmlFor="global-event">Event</label>
+      <label className="sr-only" htmlFor="global-event">
+        Event
+      </label>
       <select
         id="global-event"
         className="control h-9 min-w-0 flex-1 sm:max-w-[250px]"
-        value={meetingId}
-        onChange={(event) => changeMeeting(event.target.value)}
-        disabled={!catalog}
+        value={selection ? String(selection.event.key) : ""}
+        // An event's value is the key of its last published session, so
+        // choosing an event is choosing that session.
+        onChange={(event) => onChoose(Number(event.target.value))}
+        disabled={disabled}
       >
-        {meetings.map((item) => <option key={item.meeting_id} value={item.meeting_id}>R{item.round} · {item.name}</option>)}
+        {selection ? (
+          selection.year.events.map((event) => (
+            <option key={event.key} value={event.key}>
+              {event.label}
+            </option>
+          ))
+        ) : (
+          <option value="">{placeholder ?? ""}</option>
+        )}
       </select>
-      <label className="sr-only" htmlFor="global-session">Session</label>
+      <label className="sr-only" htmlFor="global-session">
+        Session
+      </label>
       <select
         id="global-session"
         className="control h-9 w-[90px] shrink-0 sm:w-[132px]"
-        value={sessionId}
-        onChange={(event) => setSessionId(event.target.value)}
-        disabled={!catalog || !meeting}
+        value={selection ? String(selection.session.key) : ""}
+        onChange={(event) => onChoose(Number(event.target.value))}
+        disabled={disabled}
       >
-        {sessions.map((item) => <option key={item.session_id} value={item.session_id}>{item.type} · {item.name}</option>)}
+        {(selection?.event.sessions ?? []).map((session) => (
+          <option key={session.key} value={session.key}>
+            {session.label}
+          </option>
+        ))}
       </select>
       <button
         className="icon-button h-9 w-9 shrink-0"
         type="button"
-        onClick={openSession}
-        disabled={!sessionId}
+        onClick={() => {
+          if (selection) {
+            onOpen(selection.session.key);
+          }
+        }}
+        disabled={disabled}
         aria-label="Open selected session"
         title="Open selected session"
       >
-        <ArrowRight size={16} />
+        <ArrowRight size={16} aria-hidden="true" />
       </button>
     </div>
   );
 }
 
-// Unlike `latestSession`, an unknown session type sorts last here: this orders
-// the sessions of one weekend for the picker.
-function sessionOrder(type: string) {
-  return SESSION_TYPE_ORDER[type.toUpperCase()] || 99;
+/**
+ * Whether published data can be read at all, where it is visible from every
+ * page. A failure is shown at every width; the page under the bar says the
+ * same thing in full.
+ */
+function DataSourceStatus({ state }: { state: IndexState }) {
+  if (state.status === "failed") {
+    return (
+      <div
+        className="flex shrink-0 items-center gap-2 text-xs font-semibold text-redline"
+        role="status"
+        title={`${failureTitle(state.failure)}. ${failureDetail(state.failure)}`}
+      >
+        <AlertTriangle size={14} aria-hidden="true" />
+        <span className="sr-only sm:not-sr-only">Data unavailable</span>
+      </div>
+    );
+  }
+  if (state.status === "loading") {
+    return null;
+  }
+  return (
+    <div
+      className="hidden shrink-0 items-center gap-2 text-xs text-slate-500 2xl:flex"
+      title={`Data source: ${publishedDataBaseUrl()}`}
+    >
+      <Database size={14} className="text-aqua" aria-hidden="true" />
+      <span>Published data</span>
+    </div>
+  );
 }

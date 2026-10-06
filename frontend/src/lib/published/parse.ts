@@ -1,5 +1,6 @@
 /**
- * Validation of the three published envelopes: index, pointer and manifest.
+ * Validation of what is published outside a generation: the index, a
+ * session's pointer, a generation's manifest and a season's standings.
  *
  * Each parser takes parsed JSON of unknown shape and returns the typed,
  * frozen value, or throws a PublishedDataError. Nothing is read from a
@@ -7,12 +8,19 @@
  * half-understood pointer shows wrong data with no sign that it is wrong.
  */
 
-import { FORMAT_VERSION, INDEX_SCHEMA_VERSION, POINTER_SCHEMA_VERSION } from "./config.ts";
+import {
+  FORMAT_VERSION,
+  INDEX_SCHEMA_VERSION,
+  POINTER_SCHEMA_VERSION,
+  STANDINGS_SCHEMA_VERSION
+} from "./config.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { PublishedErrorCode } from "./errors.ts";
 import { isArtifactPath, isGenerationId, isSessionKey } from "./layout.ts";
 import type {
+  ConstructorStanding,
   Coverage,
+  DriverStanding,
   IndexMeeting,
   IndexSeason,
   IndexSession,
@@ -20,6 +28,7 @@ import type {
   Pointer,
   PublishedIndex,
   SessionIdentity,
+  Standings,
   UnscheduledSession
 } from "./types.ts";
 
@@ -200,6 +209,78 @@ function parseUnscheduled(value: unknown, index: number): UnscheduledSession {
   };
 }
 
+/**
+ * The standings of the season that was asked for. They are checked before
+ * anything is read from them: a table that is half understood would be shown
+ * as the championship with no sign that it is wrong. The rows keep the
+ * published order and points, and nothing is added up (AR-15).
+ */
+export function parseStandings(payload: unknown, year: number): Standings {
+  return parsed("invalid_standings", `The standings file for ${year}`, { year }, () => {
+    const source = record(payload, "the standings");
+    const schemaVersion = integer(source, "schema_version");
+    if (schemaVersion !== STANDINGS_SCHEMA_VERSION) {
+      throw new Malformed(`schema_version is ${schemaVersion}, and this site reads ${STANDINGS_SCHEMA_VERSION}`);
+    }
+    const formatVersion = integer(source, "format_version");
+    requireFormat("standings", formatVersion);
+
+    const found = integer(source, "year");
+    if (found !== year) {
+      throw new Malformed(`it holds the standings of ${found}`);
+    }
+    const rounds = record(source.rounds, "rounds");
+    return {
+      schema_version: schemaVersion,
+      format_version: formatVersion,
+      year: found,
+      rounds: {
+        drivers: integer(rounds, "drivers", "rounds"),
+        constructors: integer(rounds, "constructors", "rounds")
+      },
+      drivers: list(source, "drivers").map(parseDriverStanding),
+      constructors: list(source, "constructors").map(parseConstructorStanding)
+    };
+  });
+}
+
+/**
+ * What Jolpica can leave out for a driver is null and the row is still read:
+ * a driver it has not classified has no position, and an older season has
+ * neither codes nor permanent numbers.
+ */
+function parseDriverStanding(value: unknown, index: number): DriverStanding {
+  const where = `drivers[${index}]`;
+  const source = record(value, where);
+  return {
+    position: optionalInteger(source, "position", where),
+    points: number(source, "points", where),
+    wins: integer(source, "wins", where),
+    driver_code: optionalText(source, "driver_code", where),
+    driver_number: optionalInteger(source, "driver_number", where),
+    given_name: optionalText(source, "given_name", where),
+    family_name: optionalText(source, "family_name", where),
+    constructors: list(source, "constructors", where).map((name, position) => {
+      if (typeof name !== "string") {
+        throw new Malformed(`${where}.constructors[${position}] is not a string`);
+      }
+      return name;
+    })
+  };
+}
+
+function parseConstructorStanding(value: unknown, index: number): ConstructorStanding {
+  const where = `constructors[${index}]`;
+  const source = record(value, where);
+  return {
+    position: optionalInteger(source, "position", where),
+    points: number(source, "points", where),
+    wins: integer(source, "wins", where),
+    constructor_id: optionalText(source, "constructor_id", where),
+    name: text(source, "name", where)
+  };
+}
+
 function parseIdentity(value: unknown): SessionIdentity {
   const where = "identity";
   const source = record(value, where);
@@ -242,14 +323,15 @@ function parseCoverage(value: unknown): Coverage {
  * fails here, with which side is behind, instead of being rendered as if its
  * fields meant what this build thinks they mean.
  */
-function requireFormat(object: "index" | "pointer" | "manifest", found: number): void {
+function requireFormat(object: "index" | "pointer" | "manifest" | "standings", found: number): void {
   if (found === FORMAT_VERSION) {
     return;
   }
   const site = found > FORMAT_VERSION ? "older" : "newer";
+  const verb = object === "standings" ? "are" : "is";
   throw new PublishedDataError(
     "format_mismatch",
-    `This site reads published data in format ${FORMAT_VERSION}, and the ${object} is in format ${found}: the site is ${site} than the data.`,
+    `This site reads published data in format ${FORMAT_VERSION}, and the ${object} ${verb} in format ${found}: the site is ${site} than the data.`,
     { object, expected: FORMAT_VERSION, found, site }
   );
 }
@@ -321,6 +403,20 @@ function integer(source: Fields, field: string, where?: string): number {
   const value = source[field];
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     throw new Malformed(`${named(field, where)} is not an integer`);
+  }
+  return value;
+}
+
+function optionalInteger(source: Fields, field: string, where?: string): number | null {
+  const value = source[field];
+  return value === undefined || value === null ? null : integer(source, field, where);
+}
+
+/** A number that need not be whole: championship points can be halves. */
+function number(source: Fields, field: string, where?: string): number {
+  const value = source[field];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Malformed(`${named(field, where)} is not a number`);
   }
   return value;
 }
