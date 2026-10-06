@@ -18,8 +18,11 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import secrets
 import threading
+import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -29,6 +32,10 @@ JSON_CONTENT_TYPE = "application/json; charset=utf-8"
 SINGLE_PART_LIMIT_BYTES = 1024 * 1024 * 1024
 _KEY_PART = re.compile(r"^[A-Za-z0-9._-]+$")
 BINARY_CONTENT_TYPE = "application/octet-stream"
+# The file a directory store's writers lock, and how long one waits for it.
+# It is held for a comparison and a rename.
+_DIRECTORY_LOCK = ".f1data-lock"
+_DIRECTORY_LOCK_WAIT_SECONDS = 60.0
 
 
 class PreconditionFailed(Exception):
@@ -131,13 +138,49 @@ class MemoryStore:
 class DirectoryStore:
     """Objects as files under a directory, with the key as the relative path.
 
-    Conditional writes hold within one process. That is enough for what this is
-    used for: the sample dataset, a local build, and a fetch waiting for upload.
+    Conditional writes hold for everything that writes to the directory:
+    another instance of this class, another process. Each write takes a lock
+    on a file in the root for the moment of its check and its rename, and the
+    operating system releases that lock if the writer dies holding it. A
+    scheduled run and one started by hand can therefore share a directory, as
+    two publishers share the bucket (rule 2).
     """
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
-        self._lock = threading.Lock()
+
+    @contextmanager
+    def _writing(self) -> Iterator[None]:
+        """Hold the directory's lock. One writer at a time, whoever it is."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + _DIRECTORY_LOCK_WAIT_SECONDS
+        with (self.root / _DIRECTORY_LOCK).open("a+b") as handle:
+            while not _try_lock(handle):
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"{self.root} has been locked by another writer for too long")
+                time.sleep(0.005)
+            try:
+                yield
+            finally:
+                _unlock(handle)
+
+    def _replace(self, key: str, temporary: Path, if_match: str | None, if_absent: bool) -> None:
+        """Put a finished file in place under the lock, if the precondition still holds."""
+        path = self._path(key)
+        try:
+            with self._writing():
+                if if_match is not None or if_absent:
+                    current = self.get(key)
+                    _check_precondition(key, None if current is None else current.data, if_match, if_absent)
+                os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def _temporary(self, key: str) -> Path:
+        # A name of its own: two threads of one process may write one key.
+        path = self._path(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path.with_name(f"{path.name}.{os.getpid()}-{secrets.token_hex(4)}.tmp")
 
     def _path(self, key: str) -> Path:
         # A key is slash-separated names of letters, digits, dots, hyphens and
@@ -145,7 +188,7 @@ class DirectoryStore:
         # replaces the root on Windows), an alternate data stream, a backslash
         # and every other way a key could name something outside the root.
         parts = key.split("/")
-        if any(part in {".", ".."} or not _KEY_PART.match(part) for part in parts):
+        if any(part in {".", ".."} or not _KEY_PART.match(part) for part in parts) or parts[0] == _DIRECTORY_LOCK:
             raise ValueError(f"Invalid object key: {key!r}")
         return self.root.joinpath(*parts)
 
@@ -171,24 +214,21 @@ class DirectoryStore:
         if_match: str | None = None,
         if_absent: bool = False,
     ) -> str:
-        path = self._path(key)
-        with self._lock:
-            current = self.get(key)
-            _check_precondition(key, None if current is None else current.data, if_match, if_absent)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-            temporary.write_bytes(data)
-            os.replace(temporary, path)
+        if if_match is not None and if_absent:
+            raise ValueError("if_match and if_absent cannot be combined")
+        # Written in full beside its place first, so the lock is held only
+        # for the check and the rename, and a reader never sees half a file.
+        temporary = self._temporary(key)
+        temporary.write_bytes(data)
+        self._replace(key, temporary, if_match, if_absent)
         return _etag(data)
 
     def put_file(self, key: str, path: Path, *, content_type: str = BINARY_CONTENT_TYPE) -> None:
-        target = self._path(key)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+        temporary = self._temporary(key)
         with Path(path).open("rb") as source, temporary.open("wb") as sink:
             while chunk := source.read(1024 * 1024):
                 sink.write(chunk)
-        os.replace(temporary, target)
+        self._replace(key, temporary, None, False)
 
     def download_file(self, key: str, path: Path) -> bool:
         source = self._path(key)
@@ -206,7 +246,7 @@ class DirectoryStore:
         keys = sorted(
             path.relative_to(self.root).as_posix()
             for path in self.root.rglob("*")
-            if path.is_file() and not path.name.endswith(".tmp")
+            if path.is_file() and not path.name.endswith(".tmp") and path.name != _DIRECTORY_LOCK
         )
         for key in keys:
             if key.startswith(prefix):
@@ -317,6 +357,40 @@ class S3Store:
     def delete(self, key: str) -> None:
         """Only the contract tests delete, to clean up after themselves."""
         self._client.delete_object(Bucket=self._bucket, Key=self._key(key))
+
+
+def _try_lock(handle: Any) -> bool:
+    """Take an exclusive lock on an open file without waiting. False if another holds it.
+
+    The lock belongs to this open file: another thread's own handle, or
+    another process's, is refused while it is held, and the operating system
+    drops it when the file is closed, however that comes about.
+    """
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def _unlock(handle: Any) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _check_precondition(key: str, current: bytes | None, if_match: str | None, if_absent: bool) -> None:

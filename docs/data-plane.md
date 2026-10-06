@@ -103,14 +103,21 @@ defaults to the `F1DATA_STORE` environment variable.
 | `fetch --year Y --event E --session S` | Fetch one session as a new snapshot |
 | `build` | Build and publish every archived session that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
-| `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2` |
+| `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves |
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
 | `schema` | Write the published format's JSON Schema from the models. `--check` to fail when the committed file is out of date |
 
 Every command is safe to repeat. A snapshot and a generation are written once
 under a name of their own. A pointer, the index and the standings are written
 against the version that was read, so two runs at once cannot lose each other's
-work: the one that loses a write reads again and decides again.
+work: the one that loses a write reads again and decides again. That holds for
+a directory as it does for `r2`: two runs sharing a directory take a lock on
+it for each write.
+
+One session failing to fetch does not stop the others. After two failures in
+a row `fetch-due` asks F1's archive for the season's index: if that answers,
+the fault is with those sessions and the batch carries on; if it does not,
+nothing can be fetched and the batch stops until the next run.
 
 ## Credentials
 

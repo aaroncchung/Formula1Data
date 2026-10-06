@@ -157,6 +157,25 @@ def fetch_session(
     )
 
 
+def f1_is_answering(year: int, timeout: float = 30.0) -> bool:
+    """Whether F1's archive answers at all just now, asked for a season's index.
+
+    For telling "these sessions cannot be fetched" from "nothing can": a
+    network that is down and a host that refuses this address (AR-13) fail
+    every session alike, and neither answers this.
+    """
+    import requests
+    from fastf1 import _api
+
+    try:
+        with requests.get(
+            f"{_api.base_url}/static/{year}/Index.json", headers=_api.headers, stream=True, timeout=timeout
+        ) as response:
+            return response.status_code == 200
+    except requests.RequestException:
+        return False
+
+
 def _feed_status(recorder: HttpRecorder) -> dict[str, Any]:
     """F1's own last answer for each feed, and MultiViewer's for the circuit.
 
