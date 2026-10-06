@@ -18,6 +18,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import re
 import secrets
 import shutil
 import tarfile
@@ -36,6 +37,7 @@ from f1data.store import ObjectStore
 SNAPSHOT_SCHEMA_VERSION = 1
 PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
+_LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 class ArchiveError(RuntimeError):
@@ -193,6 +195,51 @@ def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) ->
         with tarfile.open(archive_path, "r:gz") as archive:
             archive.extractall(cache_dir, filter="data")
     return cache_dir
+
+
+def archive_directory(
+    store: ObjectStore, source: Path, name: str, now: datetime | None = None
+) -> dict[str, Any]:
+    """Keep a whole directory in the archive as one compressed file.
+
+    For data that exists on one machine only and is not yet in snapshot form:
+    the FastF1 cache the sessions before the rewrite were built from (AR-11).
+    Nothing is parsed, so nothing has to load for the copy to succeed. A
+    description of the contents is written beside it, last.
+    """
+    if not _LEGACY_NAME.match(name):
+        raise ValueError(f"Use lowercase letters, digits and hyphens for the name, not {name!r}")
+    source = source.resolve()
+    if not source.is_dir():
+        raise ArchiveError(f"{source} is not a directory")
+    files = sorted(path for path in source.rglob("*") if path.is_file())
+    if not files:
+        raise ArchiveError(f"{source} holds no files")
+
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    key = f"{layout.ARCHIVE_PREFIX}legacy/{name}-{now.strftime('%Y%m%dT%H%M%SZ')}"
+    with tempfile.TemporaryDirectory(prefix="f1data-legacy-") as scratch:
+        packed = Path(scratch) / "directory.tar.gz"
+        with tarfile.open(packed, "w:gz", compresslevel=6) as archive:
+            for path in files:
+                archive.add(path, arcname=path.relative_to(source).as_posix())
+        description = {
+            "name": name,
+            "created_at": format_utc(now),
+            "archive": {"key": f"{key}.tar.gz", **_describe(packed)},
+            "file_count": len(files),
+            "total_bytes": sum(path.stat().st_size for path in files),
+            "files": [
+                {"path": path.relative_to(source).as_posix(), "size_bytes": path.stat().st_size}
+                for path in files
+            ],
+        }
+        store.put_file(f"{key}.tar.gz", packed, content_type="application/gzip")
+    uploaded = store.head(f"{key}.tar.gz")
+    if uploaded is None or uploaded.size != description["archive"]["size_bytes"]:
+        raise ArchiveError(f"{key}.tar.gz did not arrive whole")
+    store.put(f"{key}.json", dump_json(description), if_absent=True)
+    return description
 
 
 def dump_json(payload: Any) -> bytes:

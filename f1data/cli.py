@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.archive import list_snapshots, write_snapshot
+from f1data.archive import ArchiveError, archive_directory, list_snapshots, write_snapshot
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, fastf1_cache, fetch_session
@@ -79,6 +79,15 @@ def main(argv: list[str] | None = None) -> None:
     copy.add_argument("--from", dest="source", required=True, help="Directory, or r2.")
     copy.add_argument("--to", dest="destination", required=True, help="Directory, or r2.")
     copy.set_defaults(func=run_copy_archive)
+
+    keep = subparsers.add_parser(
+        "archive-directory",
+        help="Keep a whole directory in the archive as one compressed file, such as an old FastF1 cache.",
+    )
+    _add_store_argument(keep)
+    keep.add_argument("--path", type=Path, required=True, help="The directory to keep.")
+    keep.add_argument("--name", required=True, help="A short name, such as legacy-fastf1-cache.")
+    keep.set_defaults(func=run_archive_directory)
 
     args = parser.parse_args(argv)
     load_env_file(Path(".env"))
@@ -206,6 +215,21 @@ def run_copy_archive(args: argparse.Namespace) -> int:
             copied += 1
             print(f"copied {item.key} ({item.size} bytes)")
     print(f"Copied {copied} object(s); {skipped} already there.")
+    return 0
+
+
+def run_archive_directory(args: argparse.Namespace) -> int:
+    store = _store(args.store)
+    print(f"Packing {args.path} ...")
+    try:
+        description = archive_directory(store, args.path, args.name)
+    except (ArchiveError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    archive = description["archive"]
+    print(
+        f"Archived {description['file_count']} file(s), {description['total_bytes']} bytes, "
+        f"as {archive['key']} ({archive['size_bytes']} bytes, sha256 {archive['sha256']})"
+    )
     return 0
 
 
