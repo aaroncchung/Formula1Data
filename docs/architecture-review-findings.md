@@ -1621,7 +1621,7 @@ rewritten.
 | --- | --- | --- |
 | 1. Secure the source, settle where fetching runs | Partly done | The probe ran and settled AR-13. The 2026 races and sprints were fetched afresh and are in the R2 archive. The old FastF1 cache, the only source for the 2025 sessions, is still on one machine: `python -m f1data archive-directory` copies it |
 | 2. One session end to end | Done | Fetch, archive, build on a hosted runner, publish, Worker, and `/session` loading a tab at a time |
-| 3. New artifact format and typed contract | Not started | Artifacts are still in the old format, through `f1data/legacy.py`. The pit-stop feed and the corner positions are already archived with each fetch |
+| 3. New artifact format and typed contract | Done on the publishing side | Format 2, published under `v2/`: one model per artifact (`f1data/models.py`), exported as `schema/published-v2.schema.json`. Telemetry per driver as arrays, whole milliseconds, both pit-stop durations, official corners, coverage, analyses on full telemetry. `f1data/legacy.py` is gone. The frontend still reads `v1/` and has not been moved |
 | 4. The batch command | Partly done | `fetch-due`, `build` and standings from Jolpica exist. Nothing runs them on a schedule yet |
 | 5. Every page loads at runtime | Not started | Only `/session` does |
 | 6. Remove the old path | Not started | |
@@ -1640,6 +1640,10 @@ rewritten.
 | 6a | The same page on the Pages preview of the branch, in headless Edge | Rendered the session header, "Complete data" and the 22-row classification, loaded at runtime from the Worker |
 | 7 | F1's session key for the 21 races and sprints of 2026 | Present for all 21 |
 | 8 | The same snapshot built on Windows and on Linux | Different generations: 1,324 of 1,342 files differ, by float noise of about 1e-12 in telemetry distance and position. Rounding in the new format (step 3) should remove it |
+| 9 | Format 2: five sessions (11315, 11240, 11299, 11731, 11342) each built twice on Windows, in separate processes with different hash seeds | The same generation both times, for all five. Not yet built on Linux; `tests/fixtures/golden-11315.json` holds the checksum of every file of the Austrian race, so running `tests/test_recorded_race.py` there is the check |
+| 10 | Format 2: every lap's telemetry of the Austrian race against FastF1's per-lap call | 1,339 laps, 757,210 samples, nine channels: no value differs. The build takes 2.6 s for what took FastF1 about six minutes, which went on a car-ahead channel nothing uses |
+| 11 | Format 2: the Austrian race built from the archive | 9 s to build, against 369 s. 44 objects and 21.5 MB, against 1,343 and 108.5 MB. The manifest is 5.9 kB against 177 kB |
+| 12 | Format 2: each of the eleven feeds and both extras removed from the recorded Austrian race, whole and where it applies for one driver | Every removal leaves the session incomplete but one: a single driver's stops missing from F1's pit-stop feed |
 
 ### What real data changed
 
@@ -1666,6 +1670,29 @@ rewritten.
 - **Jolpica's burst limit is easy to reach.** Asking for the classification of
   21 sessions in a row earned a 429 on the next request. The job now asks only
   for sessions of the last 30 days, and waits and asks again on a failure.
+- **F1's pit-stop feed leaves whole drivers out.** In the Austrian race it has
+  36 of the timing's 44 pit-lane entries, and nothing at all for three
+  drivers. A stop it does not cover is published with the timing's figure and
+  `stationary_ms` null. No bar can ask for every driver's stops, so one
+  driver's stops going missing is the one removal no bar notices (rule 6).
+- **F1 sends (0, 0) for a car it has no position for, on track as well as in
+  the garage.** At Monaco it did so for the cars on the grid until up to 4.7 s
+  into the race, and FastF1 merges those samples as positions. Format 2 leaves
+  them out, never extrapolates a position past the last real sample, and
+  publishes null where there is none.
+- **The inferred corner analysis found eleven corners at a circuit with ten.**
+  Five of the eleven in the Austrian race were one driver each: Bottas, whose
+  only complete lap was the first, with a distance axis 200 m out of step. By
+  the official corner positions every driver's figures sit under the right
+  corner.
+- **The old format's numbers were off in two more places.** 152 sector times
+  of the Austrian race were a millisecond low, cut off instead of rounded.
+  Wind speed was published as `wind_speed_kph` in metres a second.
+- **The order on track is the classification.** Taken from the timing alone
+  (most laps, then who took the flag first), the Austrian race comes out as
+  Jolpica's result for all 22 places, laps and gaps, to the millisecond. That
+  is what a session is published with, marked provisional, when Jolpica has no
+  result.
 
 ### Reviews of the code
 

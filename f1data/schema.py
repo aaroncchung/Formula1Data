@@ -39,6 +39,17 @@ SCHEMA_PATH = (
 
 _GENERATION = "generations/{session_key}/{generation}/"
 
+# The unit a field's name ends in, longest first.
+_UNITS = (
+    ("_ms_per_lap", "Milliseconds a lap."),
+    ("_ms", "Milliseconds."),
+    ("_kph", "Kilometres an hour."),
+    ("_m", "Metres."),
+    ("_pct", "Per cent, from 0 to 100."),
+    ("_c", "Degrees Celsius."),
+    ("_utc", "UTC, as ISO 8601."),
+)
+
 
 def published_paths() -> dict[str, type]:
     """Every kind of published object by its path under the format's prefix.
@@ -146,12 +157,27 @@ def _tidied(definition: dict[str, Any]) -> dict[str, Any]:
                 tidied[key] = _plain(value)
             elif key == "properties":
                 # The keys here are field names, and a field may be called "title".
-                tidied[key] = {name: tidy(item, False) for name, item in value.items()}
+                tidied[key] = {name: _with_unit(name, tidy(item, False)) for name, item in value.items()}
             else:
                 tidied[key] = tidy(value, False)
         return tidied
 
     return tidy(definition, True)
+
+
+def _with_unit(name: str, field: dict[str, Any]) -> dict[str, Any]:
+    """A field's schema, with its unit as the description when it has none.
+
+    Every field with a unit is named for it (``lap_time_ms``, ``speed_kph``).
+    The models describe the fields that need more than that said; the rest
+    get the unit spelt out here, so that no number in the schema is bare.
+    """
+    if "description" in field or "$ref" in field:
+        return field
+    for suffix, unit in _UNITS:
+        if name.endswith(suffix):
+            return {**field, "description": unit}
+    return field
 
 
 def _plain(text: str) -> str:

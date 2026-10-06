@@ -29,15 +29,65 @@ archive/sessions/<session_key>/<snapshot_id>/     never served
     snapshot.json              written last; without it the snapshot does not exist
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
 
-v1/pointers/<session_key>.json                    one per published session
-v1/generations/<session_key>/<generation>/        immutable; manifest.json written last
-v1/index.json                                     the calendar, with published sessions attached
-v1/standings/<year>.json
+v2/pointers/<session_key>.json                    one per published session
+v2/generations/<session_key>/<generation>/        immutable; manifest.json written last
+v2/index.json                                     the calendar, with published sessions attached
+v2/standings/<year>.json
 ```
 
 A session is named by F1's session key, not by its round: rounds move when the
-calendar changes. `v1` is the artifact format; a new format is published under
-a new prefix before the site that reads it is deployed.
+calendar changes. `v2` is the artifact format; a new format is published under
+a new prefix before the site that reads it is deployed. What was published
+under `v1/` stays where it is until nothing reads it.
+
+## The published format
+
+Every object under `v2/` has a model in `f1data/models.py`, and that file is
+the contract: an artifact is built as its model and written from it, so a field
+that is not declared cannot be published and a value of the wrong kind stops
+the build. `python -m f1data schema` writes the models out as
+`schema/published-v2.schema.json`, which is what the frontend's types are
+generated from. A test fails when the committed file and the models disagree.
+
+A generation of a race is about 45 objects and 20 MB:
+
+```text
+summary.json  drivers.json  laps.json  results.json  stints.json  pit-stops.json
+weather.json  race-control.json  corners.json  coverage.json  position-replay.json
+analysis/<name>.json              nine analyses; a tenth for practice sessions
+telemetry/index.json              which laps have telemetry, with each lap's time
+telemetry/<driver_code>.json      every lap of one driver, as parallel arrays
+manifest.json                     every file with its size and SHA-256
+```
+
+What holds for all of them:
+
+- A missing value is `null`. Times are whole milliseconds; a position in time
+  counts from the moment the session clock read zero, which `summary.json`
+  gives in UTC.
+- Every other number that is not whole is rounded as it is written, to the
+  precision its field states. With keys sorted and one newline at the end,
+  that makes two builds of one snapshot and one classification the same bytes
+  on any machine, and so the same generation.
+- Nothing comes from the calendar. A session is described in F1's own words,
+  and its round is looked up in the index.
+- Telemetry is published at up to 300 samples a lap. The analyses read every
+  sample.
+
+## Testing against recorded races
+
+`tests/test_recorded_race.py` builds real sessions from the source archive: it
+compares the telemetry with FastF1's own, checks a golden build of the 2026
+Austrian GP file by file, and removes each feed in turn to show that a
+coverage bar notices. It needs no network, and runs when it is told where the
+archive is:
+
+```text
+F1DATA_TEST_ARCHIVE=<a directory store, or r2> python -m pytest tests/test_recorded_race.py -s
+```
+
+After an intended change to what a build produces, record the golden file
+again by adding `F1DATA_WRITE_FIXTURES=1`.
 
 ## Commands
 
@@ -54,6 +104,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
 | `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2` |
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
+| `schema` | Write the published format's JSON Schema from the models. `--check` to fail when the committed file is out of date |
 
 Every command is safe to repeat. A snapshot and a generation are written once
 under a name of their own. A pointer, the index and the standings are written
@@ -140,9 +191,11 @@ when the archive's own record of its snapshot says it is whole.
 ## When a session is built again
 
 The pointer records what its generation was built from: the snapshot, the
-fingerprint of the classification, the calendar entry (year, round and names,
-under `also`), and the pipeline version. `build` builds a session again when
-any of them differs from what it would use now. The calendar and the
+fingerprint of the classification, anything else from outside the archive
+(under `also`), and the pipeline version. `build` builds a session again when
+any of them differs from what it would use now. In format 2 `also` is null:
+no artifact carries anything from the calendar, so a renumbered calendar moves
+the index and leaves the session's generation alone. The calendar and the
 classification are looked up after the pointer is read, on every attempt, and
 the calendar again before the index is written: a publisher never decides from
 something it looked up before the version its write is guarded by.
@@ -165,12 +218,12 @@ lost write, and whenever `build --recheck` is given.
 
 After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/data`:
 
-1. `curl -s $B/v1/index.json` lists the calendar, and the session has a
+1. `curl -s $B/v2/index.json` lists the calendar, and the session has a
    `session_key` and `complete`.
-2. `curl -si $B/v1/pointers/<key>.json` is a 200 with
+2. `curl -si $B/v2/pointers/<key>.json` is a 200 with
    `cache-control: public, max-age=30, ...`. Its `generation` is 64 hex
    characters and equals `manifest.sha256`.
-3. `curl -si $B/v1/generations/<key>/<generation>/manifest.json` is a 200, not a
+3. `curl -si $B/v2/generations/<key>/<generation>/manifest.json` is a 200, not a
    206, with `cache-control: ... immutable`.
 4. `curl -si $B/archive/sessions/<key>/` and any `archive/` path is a 404. The
    archive is never served.
@@ -181,7 +234,9 @@ After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/da
 
 ## What is not here yet
 
-The artifact contents are still in the old format, reached through
-`f1data/legacy.py`. Only `/session` loads at runtime; every other page still
-reads `frontend/public/data` at build time. Nothing runs `run` on a schedule
-yet. See section 10 of the findings document for the state of each step.
+The site still reads format 1. The build now publishes format 2 only, so the
+frontend's reader has to move to `v2/` and to the types generated from the
+schema before a newly built session appears on a page. Only `/session` loads at
+runtime; every other page still reads `frontend/public/data` at build time.
+Nothing runs `run` on a schedule yet. See section 10 of the findings document
+for the state of each step.

@@ -210,6 +210,17 @@ def test_the_schema_is_plain_enough_to_generate_types_from():
     # Units and precision are said where a reader looks for them.
     assert "x-decimals" in schema["$defs"]["Corner"]["properties"]["x"]
     assert "Milliseconds" in lap["properties"]["lap_time_ms"]["description"]
+    assert lap["properties"]["sector_1_ms"]["description"] == "Milliseconds."
+    assert schema["$defs"]["RacePaceRow"]["properties"]["median_lap_ms"]["description"] == "Milliseconds."
+    assert schema["$defs"]["TyreDegradationRow"]["properties"]["raw_slope_ms_per_lap"]["description"] == "Milliseconds a lap."
+    assert schema["$defs"]["CarPerformanceDriver"]["properties"]["max_speed_kph"]["description"] == "Kilometres an hour."
+    undescribed = [
+        f"{name}.{field}"
+        for name, definition in schema["$defs"].items()
+        for field, spec in definition.get("properties", {}).items()
+        if field.endswith(("_ms", "_kph", "_m", "_pct", "_c")) and "description" not in spec
+    ]
+    assert undescribed == []
     # The index is the one object with keys that may be absent.
     assert schema["$defs"]["IndexSession"]["required"] == ["type", "name", "start_time_utc", "in_scope"]
     assert {"session_key", "complete"} <= set(schema["$defs"]["IndexSession"]["properties"])

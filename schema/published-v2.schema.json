@@ -16,7 +16,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Metres."
         },
         "drivers": {
           "items": {
@@ -111,7 +112,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Per cent, from 0 to 100."
         },
         "driver_code": {
           "type": "string"
@@ -125,7 +127,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Per cent, from 0 to 100."
         },
         "high_speed_avg_kph": {
           "anyOf": [
@@ -136,7 +139,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "lap_number": {
           "anyOf": [
@@ -157,9 +161,11 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "max_speed_kph": {
+          "description": "Kilometres an hour.",
           "type": "number",
           "x-decimals": 1
         },
@@ -172,9 +178,11 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "p95_speed_kph": {
+          "description": "Kilometres an hour.",
           "type": "number",
           "x-decimals": 1
         },
@@ -209,7 +217,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Per cent, from 0 to 100."
         },
         "drivers": {
           "items": {
@@ -226,7 +235,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Per cent, from 0 to 100."
         },
         "high_speed_avg_kph": {
           "anyOf": [
@@ -237,7 +247,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "low_speed_avg_kph": {
           "anyOf": [
@@ -248,7 +259,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "max_speed_kph": {
           "anyOf": [
@@ -259,7 +271,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "medium_speed_avg_kph": {
           "anyOf": [
@@ -270,7 +283,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "p95_speed_kph": {
           "anyOf": [
@@ -281,7 +295,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "team": {
           "type": "string"
@@ -493,10 +508,12 @@
       "additionalProperties": false,
       "properties": {
         "apex_distance_m": {
+          "description": "Metres.",
           "type": "number",
           "x-decimals": 1
         },
         "apex_speed_kph": {
+          "description": "Kilometres an hour.",
           "type": "number",
           "x-decimals": 1
         },
@@ -509,7 +526,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "brake_start_m": {
           "anyOf": [
@@ -532,7 +550,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Metres."
         },
         "driver_code": {
           "type": "string"
@@ -546,7 +565,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "exit_speed_kph": {
           "anyOf": [
@@ -557,7 +577,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         },
         "speed_loss_kph": {
           "anyOf": [
@@ -568,7 +589,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Kilometres an hour."
         }
       },
       "required": [
@@ -1068,7 +1090,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "best_sector_1_ms": {
           "anyOf": [
@@ -1078,7 +1101,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "best_sector_2_ms": {
           "anyOf": [
@@ -1088,7 +1112,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "best_sector_3_ms": {
           "anyOf": [
@@ -1098,7 +1123,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "delta_to_ideal_ms": {
           "anyOf": [
@@ -1108,7 +1134,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "driver_code": {
           "type": "string"
@@ -1121,7 +1148,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         }
       },
       "required": [
@@ -1237,6 +1265,7 @@
           "$ref": "#/$defs/SessionType"
         },
         "start_time_utc": {
+          "description": "UTC, as ISO 8601.",
           "type": "string"
         },
         "year": {
@@ -1453,7 +1482,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "UTC, as ISO 8601."
         },
         "type": {
           "$ref": "#/$defs/SessionType"
@@ -1532,7 +1562,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "sector_2_ms": {
           "anyOf": [
@@ -1542,7 +1573,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "sector_3_ms": {
           "anyOf": [
@@ -1552,7 +1584,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "stint": {
           "anyOf": [
@@ -1749,6 +1782,7 @@
           "type": "object"
         },
         "end_distance_m": {
+          "description": "Metres.",
           "type": "number",
           "x-decimals": 1
         },
@@ -1761,7 +1795,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "index": {
           "type": "integer"
@@ -1778,9 +1813,11 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "start_distance_m": {
+          "description": "Metres.",
           "type": "number",
           "x-decimals": 1
         },
@@ -1819,7 +1856,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "after_lap_number": {
           "anyOf": [
@@ -1839,7 +1877,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "before_lap_number": {
           "anyOf": [
@@ -1940,6 +1979,7 @@
           "type": "string"
         },
         "estimated_race_pace_ms": {
+          "description": "Milliseconds.",
           "type": "number",
           "x-decimals": 1
         },
@@ -1952,7 +1992,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "sample_count": {
           "type": "integer"
@@ -1964,6 +2005,7 @@
           "type": "string"
         },
         "variability_ms": {
+          "description": "Milliseconds.",
           "type": "number",
           "x-decimals": 1
         }
@@ -1995,6 +2037,7 @@
           "type": "array"
         },
         "estimated_race_pace_ms": {
+          "description": "Milliseconds.",
           "type": "number",
           "x-decimals": 1
         },
@@ -2007,7 +2050,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "sample_count": {
           "type": "integer"
@@ -2039,7 +2083,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "median_ms": {
           "anyOf": [
@@ -2050,7 +2095,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "slowest_ms": {
           "anyOf": [
@@ -2060,7 +2106,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "stop_count": {
           "type": "integer"
@@ -2094,7 +2141,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "excluded_stop_counts": {
           "additionalProperties": {
@@ -2120,7 +2168,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "stop_count": {
           "type": "integer"
@@ -2595,7 +2644,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "gap_to_best_ms": {
           "anyOf": [
@@ -2606,7 +2656,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "lap_count": {
           "type": "integer"
@@ -2620,7 +2671,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "median_lap_ms": {
           "anyOf": [
@@ -2631,7 +2683,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "stint": {
           "anyOf": [
@@ -2653,7 +2706,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         }
       },
       "required": [
@@ -2716,6 +2770,7 @@
           "type": "string"
         },
         "speed_kph": {
+          "description": "Kilometres an hour.",
           "items": {
             "anyOf": [
               {
@@ -2786,7 +2841,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         }
       },
       "required": [
@@ -3200,7 +3256,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "driver_code": {
           "anyOf": [
@@ -3230,7 +3287,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "lap_number": {
           "anyOf": [
@@ -3250,7 +3308,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "pit_loss_ms": {
           "anyOf": [
@@ -3261,7 +3320,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         }
       },
       "required": [
@@ -3309,7 +3369,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "undercut_overcut": {
           "items": {
@@ -3395,7 +3456,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "clean_lap_count": {
           "type": "integer"
@@ -3444,7 +3506,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "gap_spread_ms": {
           "anyOf": [
@@ -3455,7 +3518,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "matched_lap_count": {
           "type": "integer"
@@ -3653,6 +3717,7 @@
           "type": "array"
         },
         "speed_kph": {
+          "description": "Kilometres an hour.",
           "items": {
             "type": "number"
           },
@@ -3816,6 +3881,7 @@
           "x-decimals": 2
         },
         "max_slope_standard_error_ms_per_lap": {
+          "description": "Milliseconds a lap.",
           "type": "number",
           "x-decimals": 1
         },
@@ -3826,10 +3892,12 @@
           "type": "integer"
         },
         "race_fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
           "type": "number",
           "x-decimals": 1
         },
         "sprint_fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
           "type": "number",
           "x-decimals": 1
         }
@@ -3886,6 +3954,7 @@
           "$ref": "#/$defs/FitStatus"
         },
         "fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
           "type": "number",
           "x-decimals": 1
         },
@@ -3909,7 +3978,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds a lap."
         },
         "residual_spread_ms": {
           "anyOf": [
@@ -3920,7 +3990,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds."
         },
         "sample_count": {
           "type": "integer"
@@ -3934,7 +4005,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Milliseconds a lap."
         },
         "stint": {
           "type": "integer"
@@ -3979,6 +4051,7 @@
           "type": "integer"
         },
         "start_time_utc": {
+          "description": "UTC, as ISO 8601.",
           "type": "string"
         },
         "type": {
@@ -4020,7 +4093,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Degrees Celsius."
         },
         "humidity_pct": {
           "anyOf": [
@@ -4031,7 +4105,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Per cent, from 0 to 100."
         },
         "lap_number": {
           "anyOf": [
@@ -4060,7 +4135,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Degrees Celsius."
         },
         "wind_speed_kph": {
           "anyOf": [
