@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { ErrorState } from "@/components/dashboard/ErrorState";
 import { LoadingState } from "@/components/dashboard/LoadingState";
@@ -11,7 +13,9 @@ import { SessionHeader } from "@/components/published/SessionHeader";
 import { usePublishedSession } from "@/components/published/usePublishedSession";
 import { compactDate } from "@/lib/format";
 import type { SessionView } from "@/lib/published/client";
-import type { SessionRoute } from "@/lib/published/lookup";
+import { sessionHref } from "@/lib/published/lookup";
+import type { SessionAddress } from "@/lib/published/lookup";
+import type { SessionLoad } from "@/lib/published/session";
 
 /**
  * One session, loaded in the browser from published data.
@@ -22,24 +26,19 @@ import type { SessionRoute } from "@/lib/published/lookup";
  * different things from the person looking: wait, pick another session, come
  * back later, or report a fault.
  */
-export function PublishedSession({ year, round, sessionType }: SessionRoute) {
-  const { state, retry } = usePublishedSession(year, round, sessionType);
+export function PublishedSession({ address }: { address: SessionAddress }) {
+  const { state, retry } = usePublishedSession(address);
 
   if (state.status === "loading") {
     return <LoadingState label="Loading session" />;
   }
   if (state.status === "unknown") {
-    return (
-      <EmptyState
-        title="Session not found"
-        detail={unknownDetail(state.missing, { year, round, sessionType })}
-      />
-    );
+    return <EmptyState title="Session not found" detail={unknownDetail(state.missing, address)} />;
   }
   if (state.status === "unpublished") {
     return (
       <div>
-        <SessionHeader entry={state.entry} />
+        <SessionHeader heading={state.heading} />
         <div className="space-y-3">
           <EmptyState
             title="Not published yet"
@@ -55,7 +54,7 @@ export function PublishedSession({ year, round, sessionType }: SessionRoute) {
   if (state.status === "failed") {
     return (
       <div>
-        {state.entry ? <SessionHeader entry={state.entry} /> : null}
+        {state.heading ? <SessionHeader heading={state.heading} /> : null}
         <div className="space-y-3">
           <ErrorState title={failureTitle(state.failure)} detail={failureDetail(state.failure)} />
           <RetryButton onClick={retry} />
@@ -67,15 +66,21 @@ export function PublishedSession({ year, round, sessionType }: SessionRoute) {
   const { pointer } = state.view;
   return (
     <div>
-      <SessionHeader entry={state.entry} actions={<CoverageBadge coverage={pointer.coverage} />} />
+      <SessionHeader heading={state.heading} actions={<CoverageBadge coverage={pointer.coverage} />} />
       <CoverageShortfalls coverage={pointer.coverage} />
       <PublishedSessionTabs view={state.view} />
-      <GenerationNote view={state.view} />
+      <GenerationNote view={state.view} byRound={address.kind === "route"} />
     </div>
   );
 }
 
-function unknownDetail(missing: "year" | "round" | "session", route: SessionRoute): string {
+type Missing = Extract<SessionLoad, { status: "unknown" }>["missing"];
+
+function unknownDetail(missing: Missing, address: SessionAddress): string {
+  if (address.kind === "key") {
+    return `No published session has the key ${address.sessionKey}.`;
+  }
+  const { route } = address;
   if (missing === "year") {
     return `There is no ${route.year} season in the published calendar.`;
   }
@@ -85,13 +90,30 @@ function unknownDetail(missing: "year" | "round" | "session", route: SessionRout
   return `Round ${route.round} of ${route.year} has no ${route.sessionType} session.`;
 }
 
-/** Which publication is on screen: everything above was read from this one generation. */
-function GenerationNote({ view }: { view: SessionView }) {
+/**
+ * Which publication is on screen: everything above was read from this one
+ * generation. A page reached by year and round also offers its address by
+ * key, which is the one to keep: a round names another race once the calendar
+ * moves (AR-20).
+ */
+function GenerationNote({ view, byRound }: { view: SessionView; byRound: boolean }) {
   const { pointer, manifest } = view;
   return (
     <p className="mt-6 text-xs text-slate-600">
       Published {compactDate(pointer.published_at)} · generation{" "}
-      <span className="font-mono">{pointer.generation.slice(0, 12)}</span> · {manifest.files.length} files
+      <span className="font-mono">{pointer.generation.slice(0, 12)}</span> · {manifest.files.length} files · session key{" "}
+      <span className="font-mono">{pointer.session_key}</span>
+      {byRound ? (
+        <>
+          {" · "}
+          <Link
+            className="text-slate-400 underline decoration-slate-600 underline-offset-2 hover:text-white"
+            href={sessionHref({ kind: "key", sessionKey: pointer.session_key })}
+          >
+            Permanent link
+          </Link>
+        </>
+      ) : null}
     </p>
   );
 }
