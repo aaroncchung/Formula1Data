@@ -27,7 +27,11 @@ export function LapTimeChart({ series, drivers }: { series: ChartSeries[]; drive
           <LineChart data={rows} margin={{ top: 8, right: 18, left: 8, bottom: 8 }}>
             <CartesianGrid stroke="#293246" strokeDasharray="3 3" />
             <XAxis dataKey="lap" stroke="#94a3b8" />
-            <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
+            <YAxis
+              stroke="#94a3b8"
+              domain={["auto", "auto"]}
+              tickFormatter={(value) => formatMs(Number(value))}
+            />
             <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => formatMs(Number(value))} />
             {visibleDrivers(codes, selection.hidden).map((code) => {
               const style = driverStyle(styles, code);

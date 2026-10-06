@@ -56,6 +56,7 @@ export function TyreDegradationChart({
               dataKey="lap_time_ms"
               name="Lap time"
               type="number"
+              domain={["auto", "auto"]}
               stroke="#94a3b8"
               tickFormatter={(value) => formatMs(Number(value))}
             />
