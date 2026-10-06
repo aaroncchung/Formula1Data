@@ -345,6 +345,14 @@ def run_job(args: argparse.Namespace) -> int:
 def run_copy_archive(args: argparse.Namespace) -> int:
     source, destination = _store(args.source), _store(args.destination)
     items = sorted(source.list(layout.ARCHIVE_PREFIX), key=lambda item: item.key)
+    # A snapshot is copied; what a build has since written about it is not.
+    # A correction belongs to the store whose builds measured the snapshot,
+    # and is written there against the one before it. Copied in from another
+    # store it would replace whatever the destination holds, a newer pipeline
+    # version's included. The destination's own build measures the snapshot
+    # and writes its own.
+    corrections = [item for item in items if _is_correction(item.key)]
+    items = [item for item in items if not _is_correction(item.key)]
     # The marker goes last, as it did when the snapshot was first written: a
     # snapshot is only visible once all of it is there.
     ordered = [item for item in items if not _is_marker(item.key)]
@@ -364,6 +372,11 @@ def run_copy_archive(args: argparse.Namespace) -> int:
             copied += 1
             print(f"copied {item.key} ({item.size} bytes)")
     print(f"Copied {copied} object(s); {skipped} already there.")
+    if corrections:
+        print(
+            f"Left {len(corrections)} correction(s) of a snapshot's record where they are: "
+            "the destination measures for itself."
+        )
     return 0
 
 
@@ -411,6 +424,10 @@ def _same_bytes(destination: ObjectStore, existing: Any, local: Path, scratch: P
 
 def _is_marker(key: str) -> bool:
     return key.endswith(f"/{layout.SNAPSHOT_MARKER}")
+
+
+def _is_correction(key: str) -> bool:
+    return key.endswith(f"/{layout.REMEASUREMENT_NAME}")
 
 
 def _add_store_argument(parser: argparse.ArgumentParser) -> None:
