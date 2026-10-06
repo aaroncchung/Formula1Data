@@ -155,3 +155,32 @@ test("styles for a session's drivers come from the team colour", () => {
   assert.equal(driverStyle(styles, "VER").color, FALLBACK_DRIVER_COLOR);
   assert.deepEqual(teamColorByDriver(drivers), { RUS: "#00D7B6", ANT: "#00D7B6", VER: null });
 });
+
+const MERCEDES = [
+  { code: "RUS", team: { color: "#00D7B6" } },
+  { code: "ANT", team: { color: "#00D7B6" } }
+];
+
+test("a driver a chart has data for but the session does not list is styled too", () => {
+  const styles = teamDriverStyles(MERCEDES, [{ code: "DOO", color: "#00A1E8" }]);
+
+  assert.deepEqual(driverStyle(styles, "DOO"), { color: "#00a1e8", variant: 0, dash: undefined, hollow: false });
+});
+
+// A chart must not redraw the listed drivers because its own data names an
+// extra one: "AAA" sorts before both Mercedes drivers and shares their colour.
+test("an unlisted driver never changes how a listed driver looks", () => {
+  const listedOnly = teamDriverStyles(MERCEDES);
+  const withExtra = teamDriverStyles(MERCEDES, [{ code: "AAA", color: "#00D7B6" }]);
+
+  assert.deepEqual(driverStyle(withExtra, "ANT"), driverStyle(listedOnly, "ANT"));
+  assert.deepEqual(driverStyle(withExtra, "RUS"), driverStyle(listedOnly, "RUS"));
+  assert.equal(driverStyle(withExtra, "AAA").variant, 2);
+});
+
+test("a listed driver keeps the team colour when a chart's own data disagrees", () => {
+  const styles = teamDriverStyles(MERCEDES, [{ code: "RUS", color: "#ff0000" }]);
+
+  assert.equal(driverStyle(styles, "RUS").color, "#00d7b6");
+  assert.equal(styles.size, 2);
+});

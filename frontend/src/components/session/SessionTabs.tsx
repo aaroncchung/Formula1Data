@@ -122,7 +122,7 @@ export function SessionTabs(props: SessionTabsProps) {
       {active === "Overview" ? <Overview {...props} /> : null}
       {active === "Lap Times" ? (
         <ChartPanel title="Lap Time Evolution" description="All available lap times by driver.">
-          <LapTimeChart series={props.lapTimes} />
+          <LapTimeChart series={props.lapTimes} drivers={props.drivers} />
         </ChartPanel>
       ) : null}
       {active === "Race Pace" ? <RacePaceView {...props} /> : null}
@@ -203,14 +203,14 @@ function Overview({ summary, drivers, laps, racePace, stints, pitStops }: Sessio
   );
 }
 
-function RacePaceView({ racePace, tyreDegradation, laps }: SessionTabsProps) {
+function RacePaceView({ racePace, tyreDegradation, laps, drivers }: SessionTabsProps) {
   return (
     <div className="space-y-5">
       <ChartPanel title="Driver Race Pace" description={racePace.caveats.join(" ")}>
         <RacePaceChart rows={racePace.drivers} />
       </ChartPanel>
-      <ChartPanel title="Tyre Degradation" description="Clean laps plotted by tyre age with fitted slope summaries.">
-        <TyreDegradationChart laps={laps} degradation={tyreDegradation} />
+      <ChartPanel title="Tyre Degradation" description="Lap time against tyre age for every driver, with the fitted slope of each stint.">
+        <TyreDegradationChart laps={laps} degradation={tyreDegradation} drivers={drivers} />
       </ChartPanel>
       <DataTable
         rows={racePace.drivers}

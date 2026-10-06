@@ -37,9 +37,23 @@ type StyledDriver = { code: string; color?: string | null };
 
 type TeamDriver = { code: string; team: { color?: string | null } };
 
-/** Styles for a session's drivers, each in their team's colour. */
-export function teamDriverStyles(drivers: ReadonlyArray<TeamDriver>): DriverStyles {
-  return assignDriverStyles(drivers.map((driver) => ({ code: driver.code, color: driver.team.color })));
+export function assignDriverStyles(drivers: ReadonlyArray<StyledDriver>): DriverStyles {
+  return assignInTiers([drivers]);
+}
+
+/**
+ * Styles for a session's drivers, each in their team's colour.
+ *
+ * Every chart of a session starts from the same driver list, so a driver is
+ * drawn the same way in all of them. `others` is for the drivers a chart has
+ * data for that the list does not name: they are styled too, after the listed
+ * drivers, and never change how a listed driver looks.
+ */
+export function teamDriverStyles(
+  drivers: ReadonlyArray<TeamDriver>,
+  others: ReadonlyArray<StyledDriver> = []
+): DriverStyles {
+  return assignInTiers([drivers.map((driver) => ({ code: driver.code, color: driver.team.color })), others]);
 }
 
 /**
@@ -50,40 +64,45 @@ export function teamColorByDriver(drivers: ReadonlyArray<TeamDriver>): Record<st
   return Object.fromEntries(drivers.map((driver) => [driver.code, driver.team.color]));
 }
 
-export function assignDriverStyles(drivers: ReadonlyArray<StyledDriver>): DriverStyles {
-  const codesByColor = new Map<string, string[]>();
-  const seen = new Set<string>();
-  for (const driver of drivers) {
-    if (seen.has(driver.code)) {
-      continue;
-    }
-    seen.add(driver.code);
-    const color = normalizeColor(driver.color);
-    const codes = codesByColor.get(color);
-    if (codes) {
-      codes.push(driver.code);
-    } else {
-      codesByColor.set(color, [driver.code]);
-    }
-  }
-
-  const styles = new Map<string, DriverStyle>();
-  for (const [color, codes] of codesByColor) {
-    [...codes].sort(compareCodes).forEach((code, variant) => {
-      styles.set(code, {
-        color,
-        variant,
-        dash: DASH_PATTERNS[variant % DASH_PATTERNS.length],
-        hollow: variant % 2 === 1
-      });
-    });
-  }
-  return styles;
-}
-
 /** The style for one driver, or a plain grey one for a driver the styles do not cover. */
 export function driverStyle(styles: DriverStyles, code: string): DriverStyle {
   return styles.get(code) ?? { color: FALLBACK_DRIVER_COLOR, variant: 0, dash: undefined, hollow: false };
+}
+
+/**
+ * Within a colour, drivers of an earlier tier come first and each tier is in
+ * code order. A driver named in more than one place keeps its first entry.
+ */
+function assignInTiers(tiers: ReadonlyArray<ReadonlyArray<StyledDriver>>): DriverStyles {
+  const entriesByColor = new Map<string, Array<{ code: string; tier: number }>>();
+  const seen = new Set<string>();
+  tiers.forEach((drivers, tier) => {
+    for (const driver of drivers) {
+      if (seen.has(driver.code)) {
+        continue;
+      }
+      seen.add(driver.code);
+      const color = normalizeColor(driver.color);
+      const entries = entriesByColor.get(color) ?? [];
+      entriesByColor.set(color, entries);
+      entries.push({ code: driver.code, tier });
+    }
+  });
+
+  const styles = new Map<string, DriverStyle>();
+  for (const [color, entries] of entriesByColor) {
+    entries
+      .sort((left, right) => left.tier - right.tier || compareCodes(left.code, right.code))
+      .forEach((entry, variant) => {
+        styles.set(entry.code, {
+          color,
+          variant,
+          dash: DASH_PATTERNS[variant % DASH_PATTERNS.length],
+          hollow: variant % 2 === 1
+        });
+      });
+  }
+  return styles;
 }
 
 function normalizeColor(color: string | null | undefined): string {

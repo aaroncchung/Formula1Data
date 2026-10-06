@@ -6,18 +6,20 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { DriverLegend, useDriverSelection } from "@/components/charts/DriverLegend";
 import { CHART_TOOLTIP_STYLE, seriesToRows } from "@/lib/chart-utils";
 import { visibleDrivers } from "@/lib/driver-selection";
-import { assignDriverStyles, driverStyle } from "@/lib/driver-style";
+import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
-import type { ChartSeries } from "@/types/domain";
+import type { ChartSeries, Driver } from "@/types/domain";
 
-export function LapTimeChart({ series }: { series: ChartSeries[] }) {
+export function LapTimeChart({ series, drivers }: { series: ChartSeries[]; drivers: Driver[] }) {
   const rows = useMemo(() => seriesToRows(series), [series]);
-  const drivers = useMemo(() => series.map((item) => item.name), [series]);
+  const codes = useMemo(() => series.map((item) => item.name), [series]);
+  // Styled from the session's driver list, like every other chart of the
+  // session. A series the list does not name keeps the colour it came with.
   const styles = useMemo(
-    () => assignDriverStyles(series.map((item) => ({ code: item.name, color: item.color }))),
-    [series]
+    () => teamDriverStyles(drivers, series.map((item) => ({ code: item.name, color: item.color }))),
+    [drivers, series]
   );
-  const selection = useDriverSelection(drivers);
+  const selection = useDriverSelection(codes);
   return (
     <div className="space-y-3">
       <div className="h-80">
@@ -27,13 +29,13 @@ export function LapTimeChart({ series }: { series: ChartSeries[] }) {
             <XAxis dataKey="lap" stroke="#94a3b8" />
             <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
             <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => formatMs(Number(value))} />
-            {visibleDrivers(drivers, selection.hidden).map((driver) => {
-              const style = driverStyle(styles, driver);
+            {visibleDrivers(codes, selection.hidden).map((code) => {
+              const style = driverStyle(styles, code);
               return (
                 <Line
-                  key={driver}
+                  key={code}
                   type="monotone"
-                  dataKey={driver}
+                  dataKey={code}
                   dot={false}
                   stroke={style.color}
                   strokeDasharray={style.dash}
@@ -46,7 +48,7 @@ export function LapTimeChart({ series }: { series: ChartSeries[] }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <DriverLegend drivers={drivers} styles={styles} selection={selection} mark="line" />
+      <DriverLegend drivers={codes} styles={styles} selection={selection} mark="line" />
     </div>
   );
 }
