@@ -40,6 +40,15 @@ class Classification:
     # As Jolpica returned it, for merging into a FastF1 session's results.
     frame: Any = field(default=None, compare=False, repr=False)
 
+    @property
+    def laps_by_number(self) -> dict[str, int]:
+        """Driver number to classified laps, for judging a snapshot's timing."""
+        return {
+            str(row["number"]): int(row["laps"])
+            for row in self.rows
+            if row.get("number") is not None and row.get("laps") is not None
+        }
+
 
 def is_classified_session(session_type: str) -> bool:
     return session_type.upper() in RACE_LIKE_SESSION_TYPES

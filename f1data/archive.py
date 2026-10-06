@@ -23,21 +23,26 @@ import secrets
 import shutil
 import tarfile
 import tempfile
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.coverage import Shortfall, evaluate_coverage, weakest_share
+from f1data.coverage import Shortfall, apply_classification, evaluate_coverage, weakest_share
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
-from f1data.identity import SessionIdentity, format_utc
+from f1data.identity import SessionIdentity, format_utc, parse_utc
 from f1data.store import ObjectStore
 
 SNAPSHOT_SCHEMA_VERSION = 1
 PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
 _LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+# How long after its first fetch a session short of a bar keeps being fetched
+# again before it is published as partial (rule 6). The acceptance bar for a
+# complete session is 48 hours when fetching runs on a local machine.
+RETRY_WINDOW = timedelta(hours=48)
 
 
 class ArchiveError(RuntimeError):
@@ -67,6 +72,15 @@ class Snapshot:
     @property
     def complete(self) -> bool:
         return not self.shortfalls()
+
+    def judged_against(self, classified_laps: dict[str, int]) -> "Snapshot":
+        """This snapshot as it stands against today's classification.
+
+        What a snapshot recorded of the classification is what Jolpica had when
+        it was fetched, which for a session fetched soon after it ended is
+        nothing. Timing is compared with the laps classified now.
+        """
+        return replace(self, coverage=apply_classification(self.coverage, classified_laps))
 
     def rank(self) -> tuple[bool, int, float, str]:
         """Higher is better. The order in which build picks a snapshot (rule 6).
@@ -174,6 +188,15 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
 def select_snapshot(snapshots: list[Snapshot]) -> Snapshot | None:
     """The snapshot a build should use, or ``None`` when there is none."""
     return max(snapshots, key=Snapshot.rank, default=None)
+
+
+def partial_publication_time(snapshots: list[Snapshot]) -> datetime:
+    """When a session still short of a bar may be published as partial (rule 6).
+
+    Until then later fetches may still do better, and a partial publication is
+    not what anyone is waiting for.
+    """
+    return min(parse_utc(snapshot.fetched_at) for snapshot in snapshots) + RETRY_WINDOW
 
 
 def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:

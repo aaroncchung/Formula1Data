@@ -60,6 +60,17 @@ class Inputs:
 
 
 @dataclass(frozen=True)
+class Hold:
+    """The session cannot be published yet, and why.
+
+    Either Jolpica has no classification for it, or its best snapshot is short
+    of a bar while later fetches may still do better (rule 6).
+    """
+
+    reason: str
+
+
+@dataclass(frozen=True)
 class Pointer:
     session_key: int
     identity: SessionIdentity
@@ -146,6 +157,8 @@ class Outcome:
     ``current``     the published session already matches the inputs
     ``superseded``  another publisher got there first with what was needed
     ``newer``       a newer pipeline version published it; left alone
+    ``waiting``     not publishable yet: no classification, or short of a bar
+                    with the retry window still open
     ``no_snapshot`` nothing in the archive to build from
     ``conflict``    lost the pointer write every time; the next run decides again
     """
@@ -257,7 +270,7 @@ def upload_generation(
 def publish_session(
     store: ObjectStore,
     session_key: int,
-    gather: Callable[[int], Inputs | None],
+    gather: Callable[[int], Inputs | Hold | None],
     build: Callable[[Inputs], tuple[dict[str, bytes], Snapshot | None]],
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     max_attempts: int = MAX_ATTEMPTS,
@@ -276,6 +289,13 @@ def publish_session(
         inputs = gather(session_key)
         if inputs is None:
             return Outcome("no_snapshot", session_key)
+        if isinstance(inputs, Hold):
+            return Outcome(
+                "waiting",
+                session_key,
+                reason=inputs.reason,
+                generation=pointer.generation if pointer is not None else None,
+            )
         if pointer is not None and pointer.pipeline_version > layout.PIPELINE_VERSION:
             return Outcome(
                 "newer",

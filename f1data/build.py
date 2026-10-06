@@ -11,14 +11,23 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from f1data import legacy
-from f1data.archive import Snapshot, list_snapshots, restore_snapshot, select_snapshot
+from f1data.archive import (
+    Snapshot,
+    list_snapshots,
+    partial_publication_time,
+    restore_snapshot,
+    select_snapshot,
+)
 from f1data.classification import (
     Classification,
+    ClassificationUnavailable,
     fetch_classification,
     is_classified_session,
     merge_into_session,
@@ -26,8 +35,8 @@ from f1data.classification import (
 from f1data.coverage import measure_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
-from f1data.identity import identity_from_fastf1
-from f1data.publish import Inputs
+from f1data.identity import format_utc, identity_from_fastf1
+from f1data.publish import Hold, Inputs
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
 from f1data.store import ObjectStore
 
@@ -53,9 +62,15 @@ class Builder:
     go through FastF1, which needs a cache directory of its own for the run.
     """
 
-    def __init__(self, store: ObjectStore, fastf1: Any) -> None:
+    def __init__(
+        self,
+        store: ObjectStore,
+        fastf1: Any,
+        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    ) -> None:
         self._store = store
         self._fastf1 = fastf1
+        self._now = now
         self._schedules: dict[int, list[ScheduledSession]] = {}
 
     def schedule(self, year: int) -> list[ScheduledSession]:
@@ -63,12 +78,12 @@ class Builder:
             self._schedules[year] = load_schedule(self._fastf1, year)
         return self._schedules[year]
 
-    def gather(self, session_key: int) -> Inputs | None:
+    def gather(self, session_key: int) -> Inputs | Hold | None:
         """Select the snapshot and fetch the classification, as of now (rules 3 and 6)."""
-        snapshot = select_snapshot(list_snapshots(self._store, session_key))
-        if snapshot is None:
+        snapshots = list_snapshots(self._store, session_key)
+        if not snapshots:
             return None
-        identity = snapshot.identity
+        identity = snapshots[0].identity
         scheduled = find_scheduled_session(self.schedule(identity.year), identity)
         if scheduled is None:
             raise BuildError(
@@ -77,8 +92,26 @@ class Builder:
             )
         classification = None
         if is_classified_session(identity.session_type):
-            classification = fetch_classification(
-                self._fastf1, scheduled.year, scheduled.round, identity.session_type
+            try:
+                classification = fetch_classification(
+                    self._fastf1, scheduled.year, scheduled.round, identity.session_type
+                )
+            except ClassificationUnavailable as exc:
+                # Usual in the hours after a race. Not a failure: the next run asks again.
+                return Hold(str(exc))
+            # A snapshot knows the classification of the day it was fetched,
+            # which may be none. Timing is compared with the laps classified now.
+            snapshots = [snapshot.judged_against(classification.laps_by_number) for snapshot in snapshots]
+
+        snapshot = select_snapshot(snapshots)
+        assert snapshot is not None
+        shortfalls = snapshot.shortfalls()
+        publishable_from = partial_publication_time(snapshots)
+        if shortfalls and self._now() < publishable_from:
+            short = ", ".join(sorted({shortfall.bar for shortfall in shortfalls}))
+            return Hold(
+                f"short on {short}; to be fetched again, and published as partial "
+                f"from {format_utc(publishable_from)} if still short"
             )
         return Inputs(
             snapshot=snapshot,
