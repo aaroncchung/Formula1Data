@@ -1,3 +1,4 @@
+import { serveR2Object } from "./r2-response.mjs";
 import { sanitizeArtifactPath } from "./session-utils.mjs";
 
 const MAX_VERIFIED_ARTIFACT_BYTES = 8 * 1024 * 1024;
@@ -43,17 +44,9 @@ export function createArtifactStore(env) {
     async get(path, request = null) {
       const key = sanitizeArtifactPath(path);
       const method = request?.method === "HEAD" ? "HEAD" : "GET";
-      if (method === "HEAD" && env.ARTIFACTS_BUCKET?.head) {
-        const object = await env.ARTIFACTS_BUCKET.head(key);
-        if (object) {
-          return r2ObjectResponse(object, key, true, request?.headers);
-        }
-      } else if (env.ARTIFACTS_BUCKET?.get) {
-        const options = r2GetOptions(request?.headers);
-        const object = await env.ARTIFACTS_BUCKET.get(key, options);
-        if (object) {
-          return r2ObjectResponse(object, key, false, request?.headers);
-        }
+      const stored = await serveR2Object(env.ARTIFACTS_BUCKET, key, request, cacheControlForKey(key));
+      if (stored) {
+        return stored;
       }
 
       const fallback = await fetchFallback(env, key, {
@@ -174,68 +167,6 @@ async function sha256Checksum(bytes) {
   return `sha256:${Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function r2GetOptions(headers) {
-  if (!headers) {
-    return undefined;
-  }
-  const options = {};
-  if (headers.has("range")) {
-    options.range = headers;
-  }
-  if (
-    headers.has("if-match") ||
-    headers.has("if-none-match") ||
-    headers.has("if-modified-since") ||
-    headers.has("if-unmodified-since")
-  ) {
-    options.onlyIf = headers;
-  }
-  return Object.keys(options).length ? options : undefined;
-}
-
-function r2ObjectResponse(object, key, headOnly, requestHeaders) {
-  const headers = new Headers();
-  object.writeHttpMetadata?.(headers);
-  if (!headers.has("content-type")) {
-    headers.set("content-type", contentTypeForKey(key));
-  }
-  if (object.httpEtag) {
-    headers.set("etag", object.httpEtag);
-  }
-  if (object.uploaded instanceof Date) {
-    headers.set("last-modified", object.uploaded.toUTCString());
-  }
-  headers.set("cache-control", cacheControlForKey(key));
-  headers.set("accept-ranges", "bytes");
-
-  const preconditionStatus = failedPreconditionStatus(object, requestHeaders);
-  if (preconditionStatus !== null) {
-    headers.delete("content-length");
-    return new Response(null, { status: preconditionStatus, headers });
-  }
-
-  if (headOnly) {
-    headers.set("content-length", String(object.size));
-    return new Response(null, { status: 200, headers });
-  }
-
-  if (!object.body) {
-    headers.delete("content-length");
-    const status = requestHeaders?.has("if-match") || requestHeaders?.has("if-unmodified-since") ? 412 : 304;
-    return new Response(null, { status, headers });
-  }
-
-  const range = object.range;
-  if (range && Number.isFinite(range.offset) && Number.isFinite(range.length)) {
-    const end = range.offset + range.length - 1;
-    headers.set("content-range", `bytes ${range.offset}-${end}/${object.size}`);
-    headers.set("content-length", String(range.length));
-    return new Response(object.body, { status: 206, headers });
-  }
-  headers.set("content-length", String(object.size));
-  return new Response(object.body, { status: 200, headers });
-}
-
 function forwardedRequestHeaders(headers) {
   const forwarded = new Headers();
   for (const name of ["range", "if-match", "if-none-match", "if-modified-since", "if-unmodified-since"]) {
@@ -245,51 +176,6 @@ function forwardedRequestHeaders(headers) {
     }
   }
   return forwarded;
-}
-
-function contentTypeForKey(key) {
-  if (key.endsWith(".json")) {
-    return "application/json; charset=utf-8";
-  }
-  if (key.endsWith(".csv")) {
-    return "text/csv; charset=utf-8";
-  }
-  if (key.endsWith(".gz")) {
-    return "application/gzip";
-  }
-  return "application/octet-stream";
-}
-
-function failedPreconditionStatus(object, headers) {
-  if (!headers) {
-    return null;
-  }
-  const etag = object.httpEtag;
-  const ifMatch = headers.get("if-match");
-  if (ifMatch && etag && !etagListMatches(ifMatch, etag)) {
-    return 412;
-  }
-  const uploadedAt = object.uploaded instanceof Date ? object.uploaded.getTime() : null;
-  const ifUnmodifiedSince = Date.parse(headers.get("if-unmodified-since") || "");
-  if (!ifMatch && uploadedAt !== null && Number.isFinite(ifUnmodifiedSince) && uploadedAt > ifUnmodifiedSince) {
-    return 412;
-  }
-  const ifNoneMatch = headers.get("if-none-match");
-  if (ifNoneMatch && etag) {
-    return etagListMatches(ifNoneMatch, etag) ? 304 : null;
-  }
-  const ifModifiedSince = Date.parse(headers.get("if-modified-since") || "");
-  if (uploadedAt !== null && Number.isFinite(ifModifiedSince) && uploadedAt <= ifModifiedSince) {
-    return 304;
-  }
-  return null;
-}
-
-function etagListMatches(headerValue, etag) {
-  return String(headerValue)
-    .split(",")
-    .map((value) => value.trim())
-    .some((value) => value === "*" || value === etag || value.replace(/^W\//, "") === etag);
 }
 
 function totalSizeFromContentRange(value) {
