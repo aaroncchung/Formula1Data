@@ -18,6 +18,7 @@ import { WeatherTimeline } from "@/components/session/WeatherTimeline";
 import { PerformanceAnalysis } from "@/components/session/PerformanceAnalysis";
 import { StrategyAnalysis } from "@/components/session/StrategyAnalysis";
 import { TelemetryComparePanel } from "@/components/telemetry/TelemetryComparePanel";
+import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import { isEmptyState } from "@/lib/api";
 import type { TelemetryIndex } from "@/lib/static-api-core";
@@ -285,7 +286,7 @@ function ReplayView({ positionReplay }: SessionTabsProps) {
 }
 
 function ResultsView({ results, drivers }: { results: Result[]; drivers: Driver[] }) {
-  const colors = Object.fromEntries(drivers.map((driver) => [driver.code, driver.team.color]));
+  const colors = teamColorByDriver(drivers);
   return (
     <DataTable
       rows={results}

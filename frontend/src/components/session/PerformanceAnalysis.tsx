@@ -1,7 +1,9 @@
 import { ChartPanel } from "@/components/charts/ChartPanel";
+import { DriverMark } from "@/components/charts/DriverMark";
 import { DataTable } from "@/components/data-table/DataTable";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { DriverBadge } from "@/components/session/Badges";
+import { driverStyle, teamColorByDriver, teamDriverStyles } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import type {
   CarPerformanceResult,
@@ -12,6 +14,9 @@ import type {
   TeammateComparisonResult,
   TrackDominanceResult
 } from "@/types/domain";
+
+/** The dash of the second team-mate, scaled up for the thick line of the track map. */
+const TRACK_DASH = "12 7";
 
 type PerformanceAnalysisProps = {
   drivers: Driver[];
@@ -75,7 +80,7 @@ export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
 
 function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; drivers: Driver[] }) {
   if (!result?.rows.length) return <EmptyState title="Ideal laps unavailable" detail="No sector-combination artifact exists for this session." />;
-  const colors = driverColors(drivers);
+  const colors = teamColorByDriver(drivers);
   return (
     <DataTable rows={result.rows} columns={[
       { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
@@ -88,7 +93,7 @@ function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; dr
 
 function TeammateView({ result, drivers }: { result: TeammateComparisonResult | null; drivers: Driver[] }) {
   if (!result?.rows.length) return <EmptyState title="Team-mate comparison unavailable" detail="This session does not contain two comparable drivers per team." />;
-  const colors = driverColors(drivers);
+  const colors = teamColorByDriver(drivers);
   return (
     <div className="space-y-2">
       {result.rows.map((row) => (
@@ -110,7 +115,9 @@ function TeammateView({ result, drivers }: { result: TeammateComparisonResult | 
 }
 
 function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+  // The map identifies a driver by the line alone, so team-mates need the
+  // shared solid/dashed styles here, not just the team colour.
+  const styles = teamDriverStyles(drivers);
   const sectors = result.minisectors.filter((sector) => sector.midpoint.x != null && sector.midpoint.y != null && sector.winner_driver_code);
   if (sectors.length < 2) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
   const minX = Math.min(...sectors.map((sector) => Number(sector.midpoint.x)));
@@ -127,7 +134,20 @@ function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult;
         {sectors.slice(1).map((sector, index) => {
           const from = point(Number(sectors[index].midpoint.x), Number(sectors[index].midpoint.y));
           const to = point(Number(sector.midpoint.x), Number(sector.midpoint.y));
-          return <line key={sector.index} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={colors[sector.winner_driver_code || ""] || "#94a3b8"} strokeWidth="10" strokeLinecap="round" />;
+          const style = driverStyle(styles, sector.winner_driver_code || "");
+          return (
+            <line
+              key={sector.index}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke={style.color}
+              strokeWidth="10"
+              strokeLinecap={style.dash ? "butt" : "round"}
+              strokeDasharray={style.dash ? TRACK_DASH : undefined}
+            />
+          );
         })}
       </svg>
       <div className="space-y-2">
@@ -136,7 +156,10 @@ function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult;
           const count = sectors.filter((sector) => sector.winner_driver_code === winner).length;
           return (
             <div key={winner} className="flex items-center justify-between rounded-md border border-line/70 bg-carbon/40 p-3">
-              <DriverBadge code={winner} color={colors[winner]} />
+              <span className="inline-flex items-center gap-2 font-mono font-semibold text-white">
+                <DriverMark style={driverStyle(styles, winner)} mark="line" />
+                {winner}
+              </span>
               <span className="font-mono text-sm font-bold text-white">{count}</span>
             </div>
           );
@@ -147,7 +170,7 @@ function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult;
 }
 
 function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+  const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
     { key: "max", header: "Max", align: "right", render: (row) => `${formatNumber(row.max_speed_kph, 0)} km/h` },
@@ -160,7 +183,7 @@ function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult;
 }
 
 function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+  const colors = teamColorByDriver(drivers);
   const rows = result.corners.flatMap((corner) => corner.drivers.map((driver) => ({ ...driver, corner_number: corner.corner_number, distance_m: corner.distance_m })));
   return <DataTable rows={rows} columns={[
     { key: "corner", header: "Corner", render: (row) => `T${row.corner_number}` },
@@ -174,7 +197,7 @@ function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult;
 }
 
 function PacePredictionView({ result, drivers }: { result: PacePredictionResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+  const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
     { key: "pace", header: "Est. pace", align: "right", render: (row) => formatMs(row.estimated_race_pace_ms) },
@@ -184,21 +207,6 @@ function PacePredictionView({ result, drivers }: { result: PacePredictionResult;
     { key: "spread", header: "Variability", align: "right", render: (row) => formatDelta(row.variability_ms) },
     { key: "confidence", header: "Confidence", render: (row) => String(row.confidence ?? "--") }
   ]} />;
-}
-
-function driverColors(drivers: Driver[]) {
-  const used = new Set<string>();
-  return Object.fromEntries(drivers.map((driver) => {
-    const teamColor = driver.team.color || "#94a3b8";
-    const color = used.has(teamColor) ? distinctColor(driver.code) : teamColor;
-    used.add(color);
-    return [driver.code, color];
-  }));
-}
-
-function distinctColor(code: string) {
-  const hue = [...code].reduce((sum, char) => sum + char.charCodeAt(0) * 17, 0) % 360;
-  return `hsl(${hue} 78% 64%)`;
 }
 
 function AnalysisCaveats({ caveats }: { caveats?: string[] }) {
