@@ -274,13 +274,13 @@ function TelemetryView({ telemetryComparison, telemetryIndex, summary }: Session
   return <TelemetryComparePanel sessionId={summary.session_id} initialComparison={telemetryComparison} availableLaps={telemetryIndex?.laps || []} />;
 }
 
-function ReplayView({ positionReplay }: SessionTabsProps) {
+function ReplayView({ positionReplay, drivers }: SessionTabsProps) {
   if (isEmptyState(positionReplay)) {
     return <EmptyState title="Position replay unavailable" detail={positionReplay.reason} />;
   }
   return (
     <ChartPanel title="Position Replay" description="Frame-based x/y replay from location telemetry.">
-      <PositionReplay frames={positionReplay} />
+      <PositionReplay frames={positionReplay} drivers={drivers} />
     </ChartPanel>
   );
 }
