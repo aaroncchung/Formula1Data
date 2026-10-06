@@ -45,3 +45,8 @@ SETTLED_RECHECK_FOR_DAYS = 2
 # the session's start. A sprint is filed under the date of its Sunday race, and
 # no two race weekends are less than a week apart.
 CLASSIFICATION_DATE_TOLERANCE = timedelta(days=3)
+
+# A fetch is stamped by the machine that made it. A stamp further ahead of
+# this machine's clock than this was written by a clock that was wrong, and
+# says nothing about when the fetch was made.
+CLOCK_TOLERANCE = timedelta(hours=1)

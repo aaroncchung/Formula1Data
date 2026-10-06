@@ -36,6 +36,11 @@ v1/index.json                                     the calendar, with published s
 v1/standings/<year>.json
 ```
 
+A snapshot's marker has to describe the snapshot it is filed as: the session
+key and the snapshot id in its key. One that does not, or that cannot be read,
+is passed over with an error in the log, like an upload that never finished,
+and the rest of the archive is read as usual.
+
 A session is named by F1's session key, not by its round: rounds move when the
 calendar changes. `v1` is the artifact format; a new format is published under
 a new prefix before the site that reads it is deployed.
@@ -64,9 +69,15 @@ a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
 One session failing to fetch does not stop the others. After two failures in
-a row `fetch-due` asks F1's archive for the season's index: if that answers,
-the fault is with those sessions and the batch carries on; if it does not,
-nothing can be fetched and the batch stops until the next run.
+a row `fetch-due` asks F1's archive for this season's index, and last
+season's: if either answers, the fault is with those sessions and the batch
+carries on; if neither does, nothing can be fetched and the batch stops until
+the next run.
+
+Retries are timed from when a session was last fetched, by the stamp of the
+machine that fetched it. A stamp more than an hour ahead of this machine's
+clock is not believed, and a session with no believable stamp is fetched again
+at once.
 
 ## Credentials
 
@@ -138,7 +149,9 @@ answering. A feed that arrived and is short is always fetched again. The limits
 are in `f1data/policy.py`.
 
 A snapshot is judged against the classification of the day, which is the whole
-answer: a driver it leaves out has no result and no laps to account for. A
+answer: a driver it leaves out has no result and no laps to account for. An
+answer from Jolpica is used only if it is whole and gives every driver a number
+and a lap count; otherwise the session waits. A
 session published short stays on the fetch stage's list however old it is,
 because a result corrected months later can be what left it short.
 

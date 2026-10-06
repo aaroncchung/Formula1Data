@@ -59,6 +59,9 @@ _NOT_CLASSIFIED = {
 
 
 _RETRY_PAUSES_SECONDS = (2.0, 6.0)
+# Jolpica answers in pages of thirty unless asked for more, and a hundred is
+# the most it gives. No result or first lap has that many drivers.
+_PAGE_LIMIT = 100
 
 
 class ClassificationUnavailable(RuntimeError):
@@ -108,11 +111,17 @@ def fetch_classification(
     response, frame, rows = _result(fastf1, ergast, year, round_number, code, sleep)
     first_lap_ms: dict[str, int] = {}
     if code == "R":
-        laps = _ask(
-            fastf1,
-            lambda: ergast.get_lap_times(season=year, round=round_number, lap_number=1),
-            f"first-lap times for {year} round {round_number}",
-            sleep,
+        what = f"first-lap times for {year} round {round_number}"
+        laps = _whole(
+            _ask(
+                fastf1,
+                lambda: ergast.get_lap_times(
+                    season=year, round=round_number, lap_number=1, limit=_PAGE_LIMIT
+                ),
+                what,
+                sleep,
+            ),
+            what,
         )
         first_lap_ms = _first_lap_ms(laps, frame, _race_date(response))
     return Classification(
@@ -165,10 +174,11 @@ def _result(
 
     def results() -> Any:
         if code == "R":
-            return ergast.get_race_results(season=year, round=round_number)
-        return ergast.get_sprint_results(season=year, round=round_number)
+            return ergast.get_race_results(season=year, round=round_number, limit=_PAGE_LIMIT)
+        return ergast.get_sprint_results(season=year, round=round_number, limit=_PAGE_LIMIT)
 
-    response = _ask(fastf1, results, f"a classification for {year} round {round_number} {code}", sleep)
+    what = f"a classification for {year} round {round_number} {code}"
+    response = _whole(_ask(fastf1, results, what, sleep), what)
     frames = getattr(response, "content", None) or []
     if not frames or frames[0].empty:
         raise ClassificationMissing(
@@ -179,7 +189,22 @@ def _result(
         {column: _plain(row.get(column)) for column in _RESULT_COLUMNS if column in frame.columns}
         for _, row in frame.iterrows()
     ]
+    # The result is used as the whole answer: a driver it does not give a lap
+    # count for is taken to have none to account for. So it has to give one
+    # for every driver it lists, or it is not an answer to that question, and
+    # every driver would pass every bar with nothing.
+    if any(row.get("number") is None or not isinstance(row.get("laps"), int) for row in rows):
+        raise ClassificationUnavailable(
+            f"Jolpica's {what[2:]} does not give every driver a number and a lap count"
+        )
     return response, frame, rows
+
+
+def _whole(response: Any, what: str) -> Any:
+    """The response, if it is all of what was asked for and not the first page of it."""
+    if not getattr(response, "is_complete", True):
+        raise ClassificationUnavailable(f"Jolpica returned only part of {what}")
+    return response
 
 
 def _ask(fastf1: Any, request: Any, what: str, sleep: Any) -> Any:

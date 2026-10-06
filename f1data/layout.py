@@ -53,6 +53,16 @@ _GENERATION_ID = re.compile(r"^[a-f0-9]{64}$")
 _SNAPSHOT_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$")
 
 
+def snapshot_from_marker_key(key: str) -> tuple[int, str] | None:
+    """The session key and snapshot id a marker's key places it under, or ``None``
+    for a key that is not where a snapshot's marker goes."""
+    prefix = f"{ARCHIVE_PREFIX}sessions/"
+    parts = key[len(prefix):].split("/") if key.startswith(prefix) else []
+    if len(parts) != 3 or parts[2] != SNAPSHOT_MARKER or not parts[0].isdigit() or not is_snapshot_id(parts[1]):
+        return None
+    return int(parts[0]), parts[1]
+
+
 def format_prefix(format_version: int = FORMAT_VERSION) -> str:
     return f"v{format_version}/"
 

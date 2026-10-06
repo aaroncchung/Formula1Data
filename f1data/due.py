@@ -24,9 +24,8 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from f1data.archive import Snapshot
+from f1data.archive import Snapshot, plausible_fetch_time
 from f1data.coverage import CLASSIFICATION_BAR, refetch_could_help
-from f1data.identity import parse_utc
 from f1data.policy import (
     AVAILABLE_AFTER,
     CLASSIFICATION_RECHECK_WINDOW,
@@ -115,16 +114,23 @@ def plan_fetches(
             # Only the classification is missing, and that is not F1's to give.
             continue
 
-        fetched = [parse_utc(snapshot.fetched_at) for snapshot in current]
-        if now < min(fetched) + RETRY_WINDOW:
-            interval = RETRY_INTERVAL
-        else:
-            latest = max(current, key=lambda snapshot: snapshot.fetched_at)
-            if latest.missing_only_what_f1_does_not_hold():
+        # The retry clocks run from when the fetches were made. A fetch
+        # stamped with a time that has not come tells nothing, and if none
+        # tells anything the session is fetched again now: that fetch gets a
+        # stamp from this machine, and the clocks start from it.
+        fetched = [
+            stamp for snapshot in current if (stamp := plausible_fetch_time(snapshot, now)) is not None
+        ]
+        if fetched:
+            if now < min(fetched) + RETRY_WINDOW:
+                interval = RETRY_INTERVAL
+            else:
+                latest = max(current, key=lambda snapshot: snapshot.fetched_at)
+                if latest.missing_only_what_f1_does_not_hold():
+                    continue
+                interval = SLOW_RETRY_INTERVAL
+            if now < max(fetched) + interval:
                 continue
-            interval = SLOW_RETRY_INTERVAL
-        if now < max(fetched) + interval:
-            continue
         short = sorted({shortfall.bar for shortfall in best.shortfalls()})
         plans.append(
             FetchPlan(session, f"best of {len(current)} snapshot(s) is short on {', '.join(short)}")

@@ -128,10 +128,10 @@ class Jolpica:
             def __init__(self, **kwargs):
                 pass
 
-            def get_driver_standings(self, season):
+            def get_driver_standings(self, season, limit=None):
                 return outer._answer(drivers)
 
-            def get_constructor_standings(self, season):
+            def get_constructor_standings(self, season, limit=None):
                 return outer._answer(constructors)
 
         @contextmanager

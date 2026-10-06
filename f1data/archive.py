@@ -20,6 +20,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 import re
 import secrets
 import shutil
@@ -44,7 +45,7 @@ from f1data.coverage import (
 from f1data.extras import CIRCUIT_INFO, circuit_corner_count
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
 from f1data.identity import SessionIdentity, format_utc, parse_utc
-from f1data.policy import RETRY_WINDOW
+from f1data.policy import CLOCK_TOLERANCE, RETRY_WINDOW
 from f1data.store import ObjectStore
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -52,6 +53,8 @@ PARSED_ARCHIVE = "fastf1-cache.tar.gz"
 HTTP_ARCHIVE = "http-cache.sqlite.gz"
 EXTRA_PREFIX = "extra/"
 _LEGACY_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+_logger = logging.getLogger(__name__)
 
 
 class ArchiveError(RuntimeError):
@@ -241,12 +244,36 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
         found = store.get(key)
         if found is None:
             continue
-        snapshot = Snapshot.from_json(json.loads(found.data))
+        snapshot = _snapshot_at(key, found.data)
+        if snapshot is None:
+            continue
         correction = f"{key[: -len(layout.SNAPSHOT_MARKER)]}{layout.REMEASUREMENT_NAME}"
         if correction in remeasured:
             snapshot = _as_remeasured(store, snapshot, correction)
         snapshots.append(_with_corner_count(store, snapshot))
     return snapshots
+
+
+def _snapshot_at(key: str, data: bytes) -> Snapshot | None:
+    """The snapshot a marker describes, if it is the snapshot its key says.
+
+    Everything after this trusts the marker: which session it is listed
+    under, where its parts are restored from, whose pointer it is published
+    to. A marker that describes another session than the one it is filed
+    under, or that is not a marker at all, is no snapshot. It is passed over
+    and said so, as an upload that never finished is, and the rest of the
+    archive is read as usual.
+    """
+    placed = layout.snapshot_from_marker_key(key)
+    try:
+        snapshot = Snapshot.from_json(json.loads(data)) if placed is not None else None
+    except (ValueError, KeyError, TypeError, AttributeError, ArchiveError) as exc:
+        _logger.error("%s is not a snapshot marker and is passed over: %s", key, exc)
+        return None
+    if snapshot is None or (snapshot.session_key, snapshot.snapshot_id) != placed:
+        _logger.error("%s does not describe the snapshot it is filed as, and is passed over", key)
+        return None
+    return snapshot
 
 
 def write_remeasurement(
@@ -308,17 +335,26 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         payload = json.loads(found.data)
         if payload["schema_version"] != SNAPSHOT_SCHEMA_VERSION or payload["snapshot_id"] != snapshot.snapshot_id:
             return snapshot
-        snapshot = replace(snapshot, corrected_by=int(payload["pipeline_version"]))
+        written_by = int(payload["pipeline_version"])
         coverage = payload["coverage"]
-        if coverage["measurement_version"] != MEASUREMENT_VERSION:
-            return snapshot
+        measured_by = int(coverage["measurement_version"])
+        if not isinstance(coverage["feeds"], dict):
+            raise TypeError("feeds is not a mapping")
         drivers = {
             code: {**driver, "classified_laps": recorded.get(str(driver.get("number")))}
             for code, driver in coverage["drivers"].items()
         }
     except (ValueError, KeyError, TypeError, AttributeError):
         # Not something a build wrote. The snapshot stands as it was recorded,
-        # and the next build of it writes the figures again.
+        # and the next build of it writes the figures again. Nothing the
+        # object claims is believed, the pipeline version least of all: a
+        # broken correction that passed for a newer version's would never be
+        # replaced.
+        return snapshot
+    # Whole, so the version that wrote it is on record, whether or not this
+    # version can use its figures.
+    snapshot = replace(snapshot, corrected_by=written_by)
+    if measured_by != MEASUREMENT_VERSION:
         return snapshot
     return replace(snapshot, coverage={**coverage, "drivers": drivers})
 
@@ -350,16 +386,35 @@ def select_snapshot(snapshots: list[Snapshot]) -> Snapshot | None:
     return max(snapshots, key=Snapshot.rank, default=None)
 
 
-def partial_publication_time(snapshots: list[Snapshot]) -> datetime:
+def partial_publication_time(snapshots: list[Snapshot], now: datetime | None = None) -> datetime:
     """When a session still short of a bar may be published as partial (rule 6).
 
     Until then later fetches may still do better, and a partial publication is
     not what anyone is waiting for. The window runs from the first fetch that
     was measured in full, the same clock the fetch planner retries by; before
     there is one, from the first fetch of any kind.
+
+    ``now`` is this machine's clock. A fetch stamped with a time that has not
+    come was stamped by a clock that was wrong, and counts as made now: the
+    window is then still open, and the fetch planner, which cannot tell when
+    such a fetch was made either, fetches again at once.
     """
     counted = [snapshot for snapshot in snapshots if snapshot.measured_in_full] or snapshots
-    return min(parse_utc(snapshot.fetched_at) for snapshot in counted) + RETRY_WINDOW
+    if now is None:
+        return min(parse_utc(snapshot.fetched_at) for snapshot in counted) + RETRY_WINDOW
+    now = now.astimezone(timezone.utc)
+    return min(plausible_fetch_time(snapshot, now) or now for snapshot in counted) + RETRY_WINDOW
+
+
+def plausible_fetch_time(snapshot: Snapshot, now: datetime) -> datetime | None:
+    """When the snapshot was fetched, or ``None`` if its stamp cannot be right.
+
+    The stamp is the fetching machine's. One whose clock ran two weeks fast
+    would otherwise put off every retry, and the partial publication, by two
+    weeks on every other machine.
+    """
+    fetched = parse_utc(snapshot.fetched_at)
+    return fetched if fetched <= now + CLOCK_TOLERANCE else None
 
 
 def restore_snapshot(store: ObjectStore, snapshot: Snapshot, cache_dir: Path) -> Path:

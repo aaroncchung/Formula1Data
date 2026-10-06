@@ -368,6 +368,13 @@ def publish_session(
                 reason=inputs.reason,
                 generation=pointer.generation if pointer is not None else None,
             )
+        if inputs.snapshot.session_key != int(session_key):
+            # Never one session's snapshot under another session's pointer,
+            # whatever handed it over.
+            raise PointerError(
+                f"Snapshot {inputs.snapshot.snapshot_id} is of session {inputs.snapshot.session_key}, "
+                f"not session {session_key}"
+            )
         if pointer is not None and pointer.pipeline_version > layout.PIPELINE_VERSION:
             return Outcome(
                 "newer",
