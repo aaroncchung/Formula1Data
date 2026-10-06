@@ -154,8 +154,8 @@ def session_analyses(
     corner_analysis = calculate_corner_analysis(session_id, lap_rows, by_lap, official, reference_length)
     if not fitting:
         corner_analysis["caveats"].append(
-            "The circuit's archived corner positions do not lie on the track this session was driven "
-            f"on (up to {corners.off_track_m:.0f} m off it), so they are not used."
+            "The circuit's archived corner positions do not lie on the line of the lap they were "
+            f"checked against (up to {corners.off_track_m:.0f} m off it), so they are not used."
         )
 
     strategy = calculate_strategy(

@@ -8,6 +8,7 @@ duration), AR-17 (no official corners), AR-20 (identity from the round).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ from f1data import normalize
 from f1data.coverage import apply_classification, measure_coverage
 from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES
 from f1data.models import Compound, DistanceSource, artifact_json
-from f1data.telemetry import extract_telemetry
+from f1data.telemetry import SessionTelemetry, extract_telemetry
 from tests.race import (
     CORNERS,
     IDENTITY,
@@ -457,9 +458,58 @@ def test_corners_cannot_be_placed_without_a_lap_that_has_position_data():
     assert (corners.fits_track, corners.off_track_m) == (None, None)
 
 
+def repeating_itself(lap, from_m, to_m):
+    """The lap with its position held where it was at ``from_m`` until ``to_m``: F1's
+    position feed in the 2026 Hungarian race, which repeats itself for seconds at a time."""
+    held = (lap.distance_m >= from_m) & (lap.distance_m <= to_m)
+    x, y = lap.x.copy(), lap.y.copy()
+    x[held], y[held] = x[held][0], y[held][0]
+    return replace(lap, x=x, y=y)
+
+
+def test_the_corners_are_checked_against_a_lap_whose_position_data_is_whole():
+    """In the 2026 Hungarian race the fastest lap's position data has a hole
+    of 347 m. Measured against it the corners looked up to 116 m off a track
+    they are within a metre of."""
+    session = make_race()
+    telemetry = extract_telemetry(session)
+    # The fastest lap's position data stops for 300 m around the first corner.
+    laps = {**telemetry.laps, ("AAA", 2): repeating_itself(telemetry.laps[("AAA", 2)], 1_100.0, 1_400.0)}
+
+    corners = normalize.circuit_corners(extras(), SessionTelemetry(laps), normalize.laps(session))
+
+    assert (corners.reference_lap.driver_code, corners.reference_lap.lap_number) != ("AAA", 2)
+    assert corners.fits_track is True and corners.off_track_m < 5.0
+
+
+def test_with_no_lap_whose_position_data_is_whole_the_corners_are_measured_against_what_there_is():
+    session = make_race()
+    telemetry = extract_telemetry(session)
+    laps = {key: repeating_itself(lap, 1_100.0, 1_400.0) for key, lap in telemetry.laps.items()}
+
+    corners = normalize.circuit_corners(extras(), SessionTelemetry(laps), normalize.laps(session))
+
+    # The fastest lap again, and the corner in the hole is 150 m from its nearest sample.
+    assert (corners.reference_lap.driver_code, corners.reference_lap.lap_number) == ("AAA", 2)
+    assert corners.fits_track is False and corners.off_track_m == pytest.approx(150.0, abs=15.0)
+
+
+def test_archived_distances_that_do_not_go_round_the_lap_in_order_are_measured_again():
+    """Hungary again: FastF1 placed the corners along that fastest lap, and
+    put two pairs of them at one point of it."""
+    archived = [dict(CORNERS[0]), dict(CORNERS[1], distance_m=CORNERS[0]["distance_m"]), dict(CORNERS[2])]
+    found = {CIRCUIT_INFO: json.dumps({"corners": archived}).encode()}
+
+    corners = corners_of(make_race(), found)
+
+    assert corners.distance_source is DistanceSource.TELEMETRY
+    for corner, expected in zip(corners.corners, (1250.0, 2500.0, 3750.0)):
+        assert corner.distance_m == pytest.approx(expected, abs=25.0)
+
+
 def test_corners_of_another_layout_are_published_as_not_fitting_this_track():
-    """The Hungaroring in 2026: the archived map puts its corners 44 m off the
-    track at the median and up to 116 m, and two pairs at one point of the lap."""
+    """No session has had such a map yet. If one does, its corners are tens
+    of metres from every lap, and are not what the laps are segmented by."""
     elsewhere = [{**corner, "x": corner["x"] * 1.12, "y": corner["y"] * 1.12} for corner in CORNERS]
     found = {CIRCUIT_INFO: json.dumps({"rotation": 12.0, "corners": elsewhere}).encode()}
 

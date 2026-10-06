@@ -282,7 +282,7 @@ def test_corners_that_do_not_lie_on_the_track_are_not_what_the_laps_are_segmente
     assert read(files, "corners.json")["fits_track"] is False
     analysis = read(files, "analysis/corner-analysis.json")
     assert analysis["corner_source"] == "inferred"
-    assert "do not lie on the track" in analysis["caveats"][-1] and "m off it" in analysis["caveats"][-1]
+    assert "do not lie on the line of the lap" in analysis["caveats"][-1] and "m off it" in analysis["caveats"][-1]
     assert read(built(), "corners.json")["fits_track"] is True
 
 

@@ -438,24 +438,31 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     assert read(files, "coverage.json")["pit_stops_in_series"] == 33
 
 
-# --- a circuit whose archived corners are of another layout ------------------------
+# --- a race whose feeds repeat themselves --------------------------------------------
 
 
-def test_the_hungarian_races_corners_do_not_fit_its_track_and_are_not_used(tmp_path):
-    """MultiViewer's map of the Hungaroring puts the 2026 race's corners 44 m
-    off the track at the median. Every other circuit of the season is within
-    20 m at its worst corner."""
+def test_the_hungarian_races_corners_are_placed_on_a_lap_whose_position_data_is_whole(tmp_path):
+    """From lap 15 of the 2026 Hungarian race F1's position feed repeats nine
+    samples in ten, for every car. The fastest lap is one of those, with a
+    hole of 347 m in it: FastF1 placed the corners along it and put two pairs
+    of them at one point, and measured against it they look up to 116 m off
+    the track. The build takes the fastest lap whose position data is whole,
+    and places them along that."""
     store = archive_store()
-    snapshot, _ = restore(store, HUNGARY, tmp_path / "cache")
+    snapshot, extras = restore(store, HUNGARY, tmp_path / "cache")
+    archived = [corner["distance_m"] for corner in json.loads(extras[CIRCUIT_INFO])["corners"]]
+    assert archived != sorted(set(archived))
 
     files = build_offline(store, snapshot, None)
 
     circuit = read(files, "corners.json")
-    assert circuit["fits_track"] is False and circuit["off_track_m"] > 100
-    assert len(circuit["corners"]) == 16
-    analysis = read(files, "analysis/corner-analysis.json")
-    assert analysis["corner_source"] == "inferred"
-    assert "do not lie on the track" in analysis["caveats"][-1]
+    assert circuit["reference_lap"]["lap_number"] < 15
+    assert 4_250 < circuit["reference_lap"]["length_m"] < 4_450
+    assert (circuit["fits_track"], circuit["distance_source"]) == (True, "telemetry")
+    assert circuit["off_track_m"] < 20
+    distances = [corner["distance_m"] for corner in circuit["corners"]]
+    assert len(distances) == 16 and distances == sorted(set(distances))
+    assert read(files, "analysis/corner-analysis.json")["corner_source"] == "official"
 
 
 # --- a race F1 holds only part of ------------------------------------------------
@@ -556,7 +563,7 @@ def test_a_lap_that_ends_at_the_chicane_has_no_figures_for_the_corners_after_it(
     assert his == list(range(1, 12))
     for corner in analysis["corners"]:
         assert len(corner["drivers"]) == (22 if corner["corner_number"] <= 11 else 21), corner["corner_number"]
-    assert any("Not the length of a normal lap" in caveat and "VER" in caveat for caveat in analysis["caveats"])
+    assert any("Not a whole timed lap: VER" in caveat for caveat in analysis["caveats"])
 
 
 def test_monaco_without_its_circuit_file_has_its_corners_inferred(monaco):

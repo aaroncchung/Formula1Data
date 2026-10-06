@@ -1687,27 +1687,65 @@ rewritten.
   only complete lap was the first, with a distance axis 200 m out of step. By
   the official corner positions every driver's figures sit under the right
   corner.
-- **One circuit's archived corner positions are of another layout.** For 17
-  of the 18 sessions archived with corner positions, every corner lies within
-  20 m of the track the fastest lap drove, at a median of 1 to 3 m. The
-  Hungaroring's are 44 m off at the median and up to 116 m, and FastF1 placed
-  two pairs of them at one point of the lap. The build measures this, says so
-  in `corners.json` (`fits_track`), and infers that race's corners instead.
-  The `circuit_info` bar does not see it: the file arrived and holds corners.
-- **Monaco is the one race whose corners the build has to place.** FastF1
-  places a circuit's corners along the session's fastest lap, which at Monaco
-  has no position data, so the 19 corners are archived without distances. The
-  build places them on the fastest lap that has position data (lap 5), all
-  within 15 m of its line, and the other 21 cars' laps are read by distance:
-  the hairpin at a median of 43 kph, the tunnel at 252.
+- **Two of five sessions have feeds that repeat themselves, and no bar sees
+  it.** F1's car and position feeds send a sample about four times a second.
+  In the Hungarian race the car feed from lap 7 and the position feed from
+  lap 15 send the sample before again most of the time, for nearly every car,
+  to the flag: at the median lap six car samples in ten and nine position
+  samples in ten are repeats, and more than a quarter are on 1,169 and 998 of
+  the 1,279 clean laps. In the Chinese sprint it is the car feed, on 163 of
+  296 clean laps. The samples arrive on time, so the bars on car and position
+  data pass. The telemetry of such a lap is wrong: the speed stands still, so
+  the lap measures anywhere from 1,745 to 5,214 m at the Hungaroring and
+  4,352 to 6,459 m in Shanghai, and the car stands still on the map and then
+  jumps, 347 m on Hungary's fastest lap. FastF1's own telemetry is the same,
+  sample for sample, on the five such laps compared. The Austrian and Sepang
+  races have none of it, nor has Monaco's car feed. Left alone: a bar for it,
+  which is a publication rule, and which lap the analyses read (below).
+- **Corners are checked against, and placed on, a lap whose position data is
+  whole.** Measured against Hungary's fastest lap the 16 corners looked 44 m
+  off the track at the median and up to 116 m, and FastF1, which places
+  corners along the fastest lap, had put two pairs of them at one point of it.
+  The map is right: the corners are within a metre of the line of each of
+  the 40 laps of that race with the most complete position data, at the
+  median lap, and within 5 m at the worst. The reference lap is now the
+  fastest clean lap whose position samples are never more than 150 m apart,
+  which all but one of the 2,260 clean laps of the other four sessions are,
+  and archived distances that do not go round the lap in the order of the
+  corners are measured again on it. Of the 49 circuit files archived for 2025
+  and 2026, Hungary's is the one whose distances do not, and Monaco's the one
+  with none. `corners.json` still says whether the corners lie on the
+  reference lap's line (`fits_track`), for a map of another layout and for a
+  session with no whole lap. No session fails it.
+- **Monaco is the one race whose corners the build has to place for want of
+  distances.** FastF1 places a circuit's corners along the session's fastest
+  lap, which at Monaco has no position data, so the 19 corners are archived
+  without distances. The build places them on the fastest lap that has
+  position data (lap 5), all within 15 m of its samples, and the other 21
+  cars' laps are read by distance: the hairpin at a median of 43 kph, the
+  tunnel at 252.
 - **A lap that stops short was read as going everywhere.** Verstappen's only
-  lap of that race ends at the chicane, 2,107 m into a lap of 3,278 m. Tabac
-  and the swimming pool, which he never reached, are within 50 m of the road
-  out of Sainte Devote and of the grid, where he had been at the start of the
-  lap, so he had figures for both. A corner is now found on a lap only where
-  the lap comes within 50 m of it and within 200 m of where it should be, and
-  a lap that is not the length of a normal lap is never read by distance
-  alone. He has figures for the eleven corners he drove through.
+  lap of that race ends at the chicane, 2,107 m into a lap of 3,278 m, and he
+  had figures for all 19 corners: the nearest of his samples to each one he
+  never reached was taken for it. For Tabac and the swimming pool those are
+  within 50 m, on the road out of Sainte Devote and on the grid. A sample is
+  now a corner only if it is within 50 m of it, and on a lap that was not
+  timed all the way round it must also be within 200 m of where a normal lap
+  has the corner. He has figures for the eleven corners he drove through.
+- **A lap's distance can be far out.** In the Chinese sprint eight drivers'
+  fastest laps are among those whose car feed repeats itself, for many
+  seconds at a time, and measure the 5.4 km lap from 8% short to 15% long.
+  Looking for a corner only near where the lap's distance put it found the
+  edge of the search, hundreds of metres from the corner. A lap that was
+  timed all the way round passed every corner, so a sample at a corner is now
+  taken for it wherever the lap's distance says it is. What is left alone:
+  the corner analysis and the car performance take each driver's fastest lap
+  whatever the state of its telemetry, so in that sprint they report braking
+  that lasts up to 25 seconds, and in the Hungarian race a slowest speed
+  through turn 1 of anything from 80 to 335 kph. Track dominance already
+  takes the fastest lap whose telemetry is the length of a lap (AR-08). The
+  same choice here, with a test for a feed that repeats itself, would put it
+  right.
 - **The old format's numbers were off in two more places.** 152 sector times
   of the Austrian race were a millisecond low, cut off instead of rounded.
   Wind speed was published as `wind_speed_kph` in metres a second.

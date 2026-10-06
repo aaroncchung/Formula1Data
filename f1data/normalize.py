@@ -54,13 +54,24 @@ from f1data.telemetry import LapSamples, SessionTelemetry
 _NS_PER_MS = 1_000_000
 _METRES_PER_SECOND_IN_KPH = 3.6
 # A circuit's archived corner positions are taken to be of the track a session
-# drove when they lie on it. Of the 18 races and sprints of 2026 archived with
-# corner positions, 17 have every corner within 20 m of the fastest lap's line,
-# at a median of 1 to 3 m. The Hungaroring's are 44 m off at the median and up
-# to 116 m: the map is of another layout, and FastF1 placed two pairs of its
-# corners at the same point of the lap.
+# drove when they lie on it: on the line of the reference lap, measured to its
+# nearest sample. In the 18 races and sprints of 2026 archived with corner
+# positions every corner is within 20 m of that, at a median of 1 to 3 m. No
+# session has failed this yet. It is here for a map of another layout, and for
+# a session with no lap whose position data is whole.
 CORNERS_FIT_WITHIN_MEDIAN_M = 10.0
 CORNERS_FIT_WITHIN_M = 50.0
+# The reference lap is one whose position samples are never further apart than
+# this. In four of five sessions measured they never are: the largest step of
+# a clean lap is 60 m at the median lap and 124 m at the worst. In the 2026
+# Hungarian race F1's position feed repeats itself for most of every lap after
+# the first few, so that 1,168 of 1,279 clean laps have a step of over 150 m,
+# and the fastest lap one of 347 m. Measured against that lap the corners
+# looked 44 m off the track at the median and up to 116 m, and FastF1, which
+# places corners along the fastest lap, put two pairs of them at one point of
+# it. They are within a metre of the line of the laps whose position data is
+# whole, and within 14 m of the nearest sample of the fastest of those.
+REFERENCE_LAP_MAX_STEP_M = 150.0
 _HEX_COLOUR = re.compile(r"^#?([0-9A-Fa-f]{6})$")
 # A classification has to have these for every driver before it is published.
 _REQUIRED_OF_A_RESULT = ("positionText", "status", "points", "grid", "laps")
@@ -511,10 +522,12 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
     FastF1 places each along the lap using the fastest lap's position data,
     and when that fails the corners are archived without distances
     (f1data/extras.py). The build then places them itself, on the fastest
-    clean lap of the session that has position data.
+    clean lap of the session whose position data is whole. It does the same
+    when the archived distances do not go round the lap in the order of the
+    corners: they were measured on a lap that did not show the corners.
 
-    The same lap says whether the corners are of this track at all: a map of
-    another layout puts them tens of metres off it, and the artifact says so.
+    The same lap says whether the corners lie on the track at all, and the
+    artifact says so.
     """
     try:
         archived = json.loads(extras.get(CIRCUIT_INFO, b"{}").decode("utf-8", errors="replace"))
@@ -555,7 +568,8 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
         off_track = [float(np.sqrt(np.nanmin(each))) / POSITION_UNITS_PER_METRE for each in squared]
         furthest = max(off_track)
         fits = float(np.median(off_track)) <= CORNERS_FIT_WITHIN_MEDIAN_M and furthest <= CORNERS_FIT_WITHIN_M
-    if found and all(corner["distance_m"] is not None for corner in found):
+    archived_distances = [corner["distance_m"] for corner in found]
+    if found and _goes_round_the_lap(archived_distances):
         source = DistanceSource.ARCHIVE
     elif lap is not None:
         source = DistanceSource.TELEMETRY
@@ -573,8 +587,19 @@ def circuit_corners(extras: dict[str, bytes], telemetry: SessionTelemetry, lap_r
     )
 
 
+def _goes_round_the_lap(distances: list[float | None]) -> bool:
+    """True when every corner has a distance and each is further round than the one before."""
+    if any(distance is None for distance in distances):
+        return False
+    return all(one < other for one, other in zip(distances, distances[1:]))
+
+
 def _reference_lap(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> LapSamples | None:
-    """The fastest accurate, undeleted lap that has position data all the way round."""
+    """The fastest accurate, undeleted lap whose position data is whole.
+
+    Failing that, the fastest that has position data at all: the corners are
+    then measured against what there is, and may not appear to fit.
+    """
     candidates = sorted(
         (lap.lap_time_ms, lap.driver_code, lap.lap_number)
         for lap in lap_rows
@@ -584,11 +609,17 @@ def _reference_lap(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> LapSampl
         and not lap.is_pit_in_lap
         and not lap.is_pit_out_lap
     )
-    for _, driver, number in candidates:
-        samples = telemetry.laps.get((driver, number))
-        if samples is not None and samples.has_position:
+    placed = [
+        samples
+        for _, driver, number in candidates
+        if (samples := telemetry.laps.get((driver, number))) is not None and samples.has_position
+    ]
+    for samples in placed:
+        steps = np.hypot(np.diff(samples.x), np.diff(samples.y)) / POSITION_UNITS_PER_METRE
+        # A sample with no position has no step to it or from it, and is not held against the lap.
+        if not (steps > REFERENCE_LAP_MAX_STEP_M).any():
             return samples
-    return None
+    return placed[0] if placed else None
 
 
 # --- coverage ------------------------------------------------------------------

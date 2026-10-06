@@ -34,8 +34,8 @@ CORNERS = [
     {"number": 2, "letter": "A", "x": 20_000.0, "y": 0.0, "distance_m": 2_000.0},
     {"number": 3, "letter": "", "x": 30_000.0, "y": 0.0, "distance_m": 3_000.0},
 ]
-# How the result names a lap that stops short or started from the grid.
-SHORT_LAP = "Not the length of a normal lap"
+# How the result names a lap that was not timed, or whose telemetry stops short.
+SHORT_LAP = "Not a whole timed lap"
 
 
 def lap_rows(
@@ -80,7 +80,21 @@ def lap_rows(
     return rows
 
 
-def lap(driver, lap_number=5, lap_time_ms=80_000):
+# What the lap above takes: a timed lap's telemetry runs the length of its time.
+LAP_TIME_MS = round(lap_rows("AAA")[-1]["relative_time_ms"])
+
+
+def passing_close_to(corner, rows, at_m=500):
+    """The lap with a stretch of it, ``at_m`` round, moved to run 30 m from a corner it is not at."""
+    return [
+        {**row, "x": corner["x"] + (row["distance_m"] - at_m) * 10, "y": 300.0}
+        if row["x"] is not None and abs(row["distance_m"] - at_m) <= 50
+        else row
+        for row in rows
+    ]
+
+
+def lap(driver, lap_number=5, lap_time_ms=LAP_TIME_MS):
     return {
         "driver_code": driver, "lap_number": lap_number, "lap_time_ms": lap_time_ms, "is_pit_in_lap": False,
         "is_pit_out_lap": False, "is_deleted": False, "is_accurate": True, "track_status": "1",
@@ -146,6 +160,24 @@ class OfficialCornerTests(unittest.TestCase):
         # Every driver is in every corner, under the corner's own number.
         self.assertTrue(all(set(drivers) == {"AAA", "BBB"} for drivers in by_corner(result).values()))
 
+    def test_a_timed_lap_is_read_by_position_however_far_out_its_distance_is(self):
+        """The 2026 Chinese sprint: F1's car feed repeats itself on eight
+        drivers' fastest laps, which then measure the lap from 8% short to 15%
+        long. The lap went all the way round, so a sample at a corner is that
+        corner."""
+        laps = [lap("AAA"), lap("BBB")]
+        telemetry = lap_rows("AAA") + lap_rows("BBB", stretch=1.15)
+
+        result = calculate_corner_analysis("s", laps, telemetry, CORNERS)
+
+        corners = by_corner(result)
+        self.assertEqual(
+            [corners[key]["BBB"]["apex_distance_m"] for key in ((1, None), (2, "A"), (3, None))],
+            [1150.0, 2300.0, 3450.0],
+        )
+        self.assertEqual(corners[(3, None)]["BBB"]["apex_speed_kph"], 90.0)
+        self.assertEqual(len(result["caveats"]), 3)
+
     def test_a_lap_with_no_position_data_is_matched_by_distance_and_the_result_names_it(self):
         """The 2026 Monaco race: no position data after lap 5."""
         laps = [lap("AAA"), lap("BBB")]
@@ -208,19 +240,25 @@ class OfficialCornerTests(unittest.TestCase):
 
     def test_a_stretch_of_track_that_passes_a_corner_it_is_not_is_never_taken_for_it(self):
         """Monaco again: Tabac and the swimming pool are within 50 m of the road
-        out of Sainte Devote and of the grid. Corner 4 here is 3,500 m round,
-        and its marker is 30 m from the track at 500 m."""
-        nearby = [*CORNERS, {"number": 4, "letter": "", "x": 5_000.0, "y": 300.0, "distance_m": 3_500.0}]
+        out of Sainte Devote and of the grid. Here every lap runs 30 m from
+        corner 3 when it is 500 m round, 2,500 m before it gets there."""
+        third = CORNERS[2]
         laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
-        telemetry = lap_rows("AAA") + lap_rows("BBB") + lap_rows("CCC", lap_number=1, stops_at=2_500)
+        telemetry = (
+            passing_close_to(third, lap_rows("AAA"))
+            + lap_rows("BBB")
+            + passing_close_to(third, lap_rows("CCC", lap_number=1, stops_at=2_500))
+        )
 
-        result = calculate_corner_analysis("s", laps, telemetry, nearby, reference_lap_length_m=LAP_LENGTH_M)
+        result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
 
-        fourth = by_corner(result)[(4, None)]
-        # The lap that stopped at 2,500 m never reached it.
-        self.assertEqual(set(fourth), {"AAA", "BBB"})
-        # And a whole lap reads it where it is, not where the lap first passed the marker.
-        self.assertEqual(fourth["AAA"]["apex_distance_m"], 3500.0)
+        corners = by_corner(result)
+        # The lap that stopped at 2,500 m never reached the corner.
+        self.assertEqual(set(corners[(3, None)]), {"AAA", "BBB"})
+        self.assertEqual(set(corners[(2, "A")]), {"AAA", "BBB", "CCC"})
+        # And a whole lap has it where it is, not where the lap first ran past it.
+        self.assertEqual(corners[(3, None)]["AAA"], {**corners[(3, None)]["BBB"], "driver_code": "AAA"})
+        self.assertEqual(corners[(3, None)]["AAA"]["apex_distance_m"], 3000.0)
 
     def test_a_corner_is_only_found_where_the_lap_passes_it(self):
         """A corner a kilometre off the track is on no lap by position. With a

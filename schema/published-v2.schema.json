@@ -646,7 +646,7 @@
               "type": "null"
             }
           ],
-          "description": "False when the corner positions do not lie on the track this session was driven on: the archived map is of another layout. They should not be drawn over this session's position data, and the corner analysis infers its corners instead. Null when there is no lap to check against."
+          "description": "False when the corner positions do not lie on the line reference_lap drove: the archived map is not of this track, or no lap of the session has position data that is whole. They should not be drawn over this session's position data, and the corner analysis infers its corners instead. Null when there is no lap to check against."
         },
         "off_track_m": {
           "anyOf": [
@@ -669,7 +669,7 @@
               "type": "null"
             }
           ],
-          "description": "The lap the corners were checked against, and placed along when distance_source is telemetry: the fastest clean lap with position data. Null when no lap has any."
+          "description": "The lap the corners were checked against, and placed along when distance_source is telemetry: the fastest clean lap whose position data is whole, or failing that the fastest that has any. Null when no lap has any."
         },
         "rotation": {
           "anyOf": [
