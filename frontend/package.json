@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "npx --yes serve out",
     "lint": "eslint .",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test \"tests/*.test.mjs\""
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test \"tests/*.test.mjs\"",
+    "types": "node scripts/published-types.mjs"
   },
   "overrides": {
     "postcss": "8.5.16"
@@ -28,6 +29,7 @@
     "autoprefixer": "10.4.20",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.9",
+    "json-schema-to-typescript": "16.0.0",
     "postcss": "8.5.16",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.2"
