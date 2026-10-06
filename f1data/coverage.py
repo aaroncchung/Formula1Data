@@ -184,10 +184,11 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
     # The corner analysis can fall back to inferring corners from braking, so
     # a build does not fail without this. It is still a bar: with it missing
     # the session shows inferred corners, and a later fetch may well get it.
-    corners = measurement.get("circuit_corners")
-    # Snapshots measured before corners were counted say only whether the
-    # file arrived.
-    if not (corners if corners is not None else feeds.get("circuit_info")):
+    #
+    # A count that is absent is not a count that passes. Snapshots measured
+    # before corners were counted have theirs filled in from the archived
+    # file when they are listed (f1data/archive.py).
+    if not measurement.get("circuit_corners"):
         shortfalls.append(Shortfall("circuit_info", None, "corner positions did not arrive"))
 
     drivers = measurement.get("drivers", {})
@@ -270,16 +271,26 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
     return {**measurement, "drivers": drivers}
 
 
-def f1_does_not_hold(shortfall: Shortfall, feed_status: dict[str, Any]) -> bool:
+def f1_does_not_hold(
+    shortfall: Shortfall, feed_status: dict[str, Any], feeds: dict[str, Any]
+) -> bool:
     """Whether the feed behind a shortfall is one F1 answered that it does not have.
 
     F1 answers 403 for a feed that is not in a session's archive, as it does
     for the pit-stop feed of races before late 2024. A feed that was answered
-    and came up short for a driver is a different thing: it may yet be mended.
+    and came up short is a different thing: it may yet be mended.
+
+    ``feeds`` is the measurement's record of which feeds arrived.
     """
     # Only a feed that is missing outright can be one F1 does not hold. One
     # that arrived and is short for a driver came from somewhere.
     if shortfall.driver is not None:
+        return False
+    # The same goes for a feed that arrived and is short as a whole: a
+    # session status that never reaches the end, a pit-stop feed with no
+    # stop in it. FastF1 asks its mirror when F1 refuses, so F1's refusal and
+    # the feed's arrival can sit side by side in one fetch.
+    if feeds.get(shortfall.bar):
         return False
     # A refusal looks the same as an absence, one feed at a time. It counts as
     # an absence only from a fetch F1 was otherwise answering: the plan asks

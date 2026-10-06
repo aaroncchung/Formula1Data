@@ -21,6 +21,8 @@ CIRCUIT_INFO = "circuit-info.json"
 
 # Each line of an F1 stream starts with the session time, as HH:MM:SS.mmm.
 _STREAM_TIMESTAMP_CHARS = 12
+# No stop and no drive down the pit lane lasts longer than the day it is in.
+_LONGEST_DURATION_SECONDS = 24 * 60 * 60.0
 
 _logger = logging.getLogger(__name__)
 
@@ -175,8 +177,10 @@ def _seconds_to_ms(value: Any) -> int | None:
         seconds = float(value)
     except (TypeError, ValueError):
         return None
-    # "Infinity" and "NaN" are floats to Python and durations to nobody.
-    return round(seconds * 1000) if math.isfinite(seconds) and seconds >= 0 else None
+    # "Infinity" and "NaN" are floats to Python and durations to nobody, and
+    # so is anything longer than a day: "1e308" is finite until it is
+    # multiplied. The comparison is false for NaN.
+    return round(seconds * 1000) if 0 <= seconds <= _LONGEST_DURATION_SECONDS else None
 
 
 def _int(value: Any) -> int | None:

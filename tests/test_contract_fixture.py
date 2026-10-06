@@ -85,9 +85,20 @@ FILES = {
 }
 
 
+# What a build took from the calendar, as the builder records it in the pointer.
+CALENDAR_ENTRY = {
+    "calendar": {
+        "year": 2026,
+        "round": 8,
+        "meeting_name": "Austrian Grand Prix",
+        "session_name": "Race",
+    }
+}
+
+
 def published_bucket() -> dict[str, str]:
     store = MemoryStore()
-    inputs = Inputs(snapshot(), "sha256:" + "c" * 64)
+    inputs = Inputs(snapshot(), "sha256:" + "c" * 64, also=CALENDAR_ENTRY)
     files = {path: dump_json(payload) for path, payload in FILES.items()}
     outcome = publish_session(store, AUSTRIA, lambda key, **_: inputs, lambda _: (files, None), now=lambda: NOW)
     assert outcome.action == "published"

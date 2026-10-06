@@ -59,9 +59,11 @@ class Inputs:
     classification_fingerprint: str | None
     # Carried to the build; not part of what makes two sets of inputs equal.
     context: Any = field(default=None, compare=False, repr=False)
-    # Everything else the build takes from outside the archive, as a value
+    # Everything else the build takes from outside the archive, as plain JSON
     # that compares equal only when the build would come out the same. Today
     # that is the calendar entry: its round and names go into the artifacts.
+    # It is recorded in the pointer, so it has to survive being written and
+    # read back unchanged: mappings, strings and whole numbers only.
     also: Any = None
 
     @property
@@ -82,6 +84,16 @@ class Hold:
     reason: str
 
 
+class NotYetPublishable(RuntimeError):
+    """Raised by a build that found its session short while it may still improve.
+
+    ``gather`` holds a short session back from what the archive recorded of
+    it. A build measures the snapshot again, and can find it short where the
+    record said whole. The same rule applies then (rule 6): nothing is
+    published until later fetches have had their chance.
+    """
+
+
 @dataclass(frozen=True)
 class Pointer:
     session_key: int
@@ -97,6 +109,9 @@ class Pointer:
     shortfalls: list[dict[str, Any]]
     published_at: str
     previous_generation: str | None = None
+    # ``Inputs.also`` of the build this points at. With the snapshot and the
+    # classification it is everything the generation was made from.
+    also: Any = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -109,6 +124,7 @@ class Pointer:
             "manifest": {"sha256": self.manifest_sha256, "size_bytes": self.manifest_size_bytes},
             "snapshot_id": self.snapshot_id,
             "classification_fingerprint": self.classification_fingerprint,
+            "also": self.also,
             "coverage": {"complete": self.complete, "shortfalls": self.shortfalls},
             "published_at": self.published_at,
             "previous_generation": self.previous_generation,
@@ -135,6 +151,7 @@ class Pointer:
                 shortfalls=list(coverage.get("shortfalls") or []),
                 published_at=str(payload["published_at"]),
                 previous_generation=payload.get("previous_generation"),
+                also=payload.get("also"),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise PointerError(f"Pointer for session {session_key} is invalid: {exc}") from exc
@@ -218,6 +235,10 @@ def rebuild_reason(pointer: Pointer | None, inputs: Inputs) -> str | None:
         return "the classification changed"
     if pointer.snapshot_id != inputs.snapshot.snapshot_id:
         return "a different snapshot is now selected"
+    if pointer.also != inputs.also:
+        # The same snapshot and the same result, built under another calendar
+        # entry, is a build with another round or another name in it.
+        return "the calendar entry changed"
     return None
 
 
@@ -291,20 +312,24 @@ def publish_session(
 ) -> Outcome:
     """Bring one session's publication up to date with the archive.
 
-    ``gather(session_key, pointer=..., fresh=...)`` selects the snapshot and
-    fetches the classification, as of the moment it is called. It is given the
-    pointer now in place, and ``fresh`` is true on every attempt after the
-    first. ``build`` turns those inputs into the generation's
-    files; it may also return the snapshot re-measured from the archive, whose
-    coverage is then what the pointer records.
+    ``gather(session_key, pointer=..., retry=...)`` selects the snapshot and
+    looks up the calendar and the classification, as of the moment it is
+    called: it must not answer from anything it looked up before the pointer
+    was read. It is given the pointer now in place, and ``retry`` is true on
+    every attempt after the first. ``build`` turns those inputs into the
+    generation's files; it may also return the snapshot re-measured from the
+    archive, whose coverage is then what the pointer records, and it may raise
+    ``NotYetPublishable``.
     """
     candidate: Candidate | None = None
     for attempt in range(max_attempts):
-        # The guarded read comes first, then everything derived (rule 2).
+        # The guarded read comes first, then everything derived (rule 2). A
+        # publisher that decided from a calendar it read earlier could replace
+        # a pointer built from a later one, and the write would not conflict.
         pointer, etag = read_pointer(store, session_key)
-        # After a lost write nothing this run looked up is taken on trust:
-        # another publisher got in, possibly because the calendar moved.
-        inputs = gather(session_key, pointer=pointer, fresh=attempt > 0)
+        # After a lost write no shortcut is taken either: another publisher
+        # got in, possibly because something outside the archive moved.
+        inputs = gather(session_key, pointer=pointer, retry=attempt > 0)
         if inputs is None:
             return Outcome("no_snapshot", session_key)
         if isinstance(inputs, Hold):
@@ -330,7 +355,15 @@ def publish_session(
         # A candidate built before a lost write is published only if it is
         # what these inputs would build; otherwise it is dropped and rebuilt.
         if candidate is None or candidate.inputs_key != inputs.key:
-            files, measured = build(inputs)
+            try:
+                files, measured = build(inputs)
+            except NotYetPublishable as exc:
+                return Outcome(
+                    "waiting",
+                    session_key,
+                    reason=str(exc),
+                    generation=pointer.generation if pointer is not None else None,
+                )
             generation, manifest_size = upload_generation(store, inputs.snapshot.identity, files)
             judged = measured or inputs.snapshot
             candidate = Candidate(
@@ -355,6 +388,7 @@ def publish_session(
             shortfalls=candidate.shortfalls,
             published_at=format_utc(now()),
             previous_generation=pointer.generation if pointer is not None else None,
+            also=inputs.also,
         )
         try:
             _conditional_put(store, layout.pointer_key(session_key), dump_json(replacement.to_json()), etag)
@@ -450,12 +484,17 @@ def publish_index(
     another publisher's pointer and index land in between; this write would
     then succeed and drop that publisher's session with no conflict raised
     (rule 2). On a conflict the whole sequence starts again from the read.
+
+    The calendar is an input like the pointers, so ``load_schedule(year)`` has
+    to read it as it stands when called, on every call. A copy from earlier in
+    the run would let this write put an older calendar over the newer one
+    another publisher had just derived from, again with no conflict.
     """
-    for attempt in range(max_attempts):
+    for _ in range(max_attempts):
         current = store.get(layout.index_key())
         pointers = read_published(store)
         years = sorted({pointer.identity.year for pointer in pointers} | set(seasons or []))
-        schedules = {year: load_schedule(year, fresh=attempt > 0) for year in years}
+        schedules = {year: load_schedule(year) for year in years}
         payload = dump_json(derive_index(pointers, schedules))
         if current is not None and current.data == payload:
             return "current"

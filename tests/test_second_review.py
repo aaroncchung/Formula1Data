@@ -167,9 +167,9 @@ def test_after_a_lost_write_an_old_session_is_looked_up_afresh(tmp_path, monkeyp
     pointer, _ = read_pointer(store, AUSTRIA)
     world.classification_requests.clear()
 
-    builder.gather(AUSTRIA, pointer=pointer, fresh=False)
+    builder.gather(AUSTRIA, pointer=pointer, retry=False)
     assert world.classification_requests == []
-    builder.gather(AUSTRIA, pointer=pointer, fresh=True)
+    builder.gather(AUSTRIA, pointer=pointer, retry=True)
     assert world.classification_requests == [8]
 
 
@@ -321,9 +321,9 @@ def test_a_feed_refused_by_an_origin_that_was_refusing_everything_is_not_one_f1_
     answering = {"SessionInfo.jsonStream": 200, "PitStopSeries.jsonStream": 403}
     refusing = {"SessionInfo.jsonStream": 403, "PitStopSeries.jsonStream": 403}
 
-    assert f1_does_not_hold(missing, answering)
-    assert not f1_does_not_hold(missing, refusing)
-    assert not f1_does_not_hold(missing, {})
+    assert f1_does_not_hold(missing, answering, {})
+    assert not f1_does_not_hold(missing, refusing, {})
+    assert not f1_does_not_hold(missing, {}, {})
 
 
 def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_hold():
@@ -331,7 +331,7 @@ def test_a_feed_that_arrived_and_is_short_for_a_driver_is_never_one_f1_does_not_
     short_for_a_driver = Shortfall("position", "AAA", "4 of 78 expected laps usable")
     status = {"SessionInfo.jsonStream": 200, "Position.z.jsonStream": 403}
 
-    assert not f1_does_not_hold(short_for_a_driver, status)
+    assert not f1_does_not_hold(short_for_a_driver, status, {"position": True})
 
     damaged = make_session()
     del damaged.pos_data["1"]

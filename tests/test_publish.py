@@ -73,7 +73,7 @@ class Publisher:
         self.files = files or {"summary.json": b'{"meeting":"Austrian Grand Prix"}\n', "laps.json": b"[]\n"}
         self.builds = 0
 
-    def gather(self, session_key, pointer=None, fresh=False):
+    def gather(self, session_key, pointer=None, retry=False):
         return Inputs(self.snapshot, self.fingerprint)
 
     def build(self, inputs):
