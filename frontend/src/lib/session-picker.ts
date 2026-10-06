@@ -10,9 +10,9 @@
 
 import { publishedSessions } from "./calendar.ts";
 import type { PublishedSession } from "./calendar.ts";
-import { findSession, parseSessionRoute } from "./published/lookup.ts";
+import { findSession, parseSessionAddress } from "./published/lookup.ts";
 import type { IndexMeeting, PublishedIndex } from "./published/types.ts";
-import { roundParam, sessionKeyParam, yearParam } from "./routes.ts";
+import { roundParam, yearParam } from "./routes.ts";
 import type { Query } from "./routes.ts";
 
 export type PickerSession = {
@@ -95,15 +95,17 @@ export function pickerSelection(years: ReadonlyArray<PickerYear>, key: number | 
  */
 export function pickerKeyForQuery(index: PublishedIndex, query: Query): number | null {
   const years = pickerYears(index);
-  const key = sessionKeyParam(query);
-  if (key.status === "ok") {
-    return locate(years, key.value) ? key.value : null;
+  // Read as the session page reads its own address, so the picker and the
+  // page under it cannot disagree about which session a URL names: a key
+  // wins over a round given beside it.
+  const address = parseSessionAddress(query);
+  if (address?.kind === "key") {
+    return locate(years, address.sessionKey) ? address.sessionKey : null;
   }
-  // `/session?year=&round=&session=`, which names a session by where the
-  // calendar has it today. When that session is not published the picker
-  // still starts at its meeting, through the year and round below.
-  const route = parseSessionRoute(query);
-  const named = route ? findSession(index, route) : null;
+  // `?year=&round=&session=` names a session by where the calendar has it
+  // today. When that session is not published the picker still starts at its
+  // meeting, through the year and round below.
+  const named = address ? findSession(index, address.route) : null;
   if (named?.found && named.entry.session.session_key !== null) {
     return named.entry.session.session_key;
   }

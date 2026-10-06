@@ -15,10 +15,15 @@
  *                                     session's summary, the most recent
  *                                     published session when no key is given
  *
- * A session is always linked by its key. A meeting has no key in the index,
- * so its link carries the round, which is looked up afresh on every visit and
- * never kept (AR-20).
+ * A session is always linked by its key. The link to its dashboard, and the
+ * reading of an address that names a session, are in lib/published/lookup.ts
+ * (`sessionHref`, `parseSessionAddress`), with the rest of what turns an
+ * address into a session. A meeting has no key in the index, so its link
+ * carries the round, which is looked up afresh on every visit and never kept
+ * (AR-20).
  */
+
+import { sessionQuery } from "./published/lookup.ts";
 
 export const SEASONS_PATH = "/seasons";
 export const STANDINGS_PATH = "/standings";
@@ -29,7 +34,6 @@ export const TEAMS_PATH = "/teams";
 
 const SEASON_PATH = "/season";
 const MEETING_PATH = "/meeting";
-const SESSION_PATH = "/session";
 
 export function seasonHref(year: number): string {
   return `${SEASON_PATH}?year=${year}`;
@@ -39,18 +43,17 @@ export function meetingHref(year: number, round: number): string {
   return `${MEETING_PATH}?year=${year}&round=${round}`;
 }
 
-/** A session's dashboard. The key is the whole of the link: nothing in it can go stale. */
-export function sessionHref(sessionKey: number): string {
-  return `${SESSION_PATH}?key=${sessionKey}`;
-}
-
 export function standingsHref(year: number): string {
   return `${STANDINGS_PATH}?year=${year}`;
 }
 
-/** One of the pages that summarise a session (`/strategy`, `/telemetry`, ...), on a chosen session. */
+/**
+ * One of the pages that summarise a session (`/strategy`, `/telemetry`, ...),
+ * on a chosen session. The session is spelled as it is for its dashboard, so
+ * one reader takes both.
+ */
 export function sessionSummaryHref(path: string, sessionKey: number): string {
-  return `${path}?key=${sessionKey}`;
+  return `${path}?${sessionQuery({ kind: "key", sessionKey })}`;
 }
 
 /** The part of `URLSearchParams` the readers use, so a test can pass a plain object. */

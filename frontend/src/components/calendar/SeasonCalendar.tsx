@@ -10,8 +10,9 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { findSeason, seasonOverviews, sessionAvailability, unscheduledSessions } from "@/lib/calendar";
 import type { PublishedSession } from "@/lib/calendar";
 import { calendarDay, sessionStart } from "@/lib/format";
+import { sessionHref } from "@/lib/published/lookup";
 import type { IndexMeeting, PublishedIndex } from "@/lib/published/types";
-import { meetingHref, seasonHref, sessionHref, standingsHref, SEASONS_PATH } from "@/lib/routes";
+import { meetingHref, seasonHref, standingsHref, SEASONS_PATH } from "@/lib/routes";
 
 export function SeasonCalendar({ year }: { year: number }) {
   return (
@@ -130,7 +131,7 @@ function Unscheduled({ sessions }: { sessions: PublishedSession[] }) {
         {sessions.map((session) => (
           <li key={session.key}>
             <Link
-              href={sessionHref(session.key)}
+              href={sessionHref({ kind: "key", sessionKey: session.key })}
               className="surface block p-4 transition hover:-translate-y-0.5 hover:border-redline/50"
             >
               <div className="font-bold text-white">

@@ -4,8 +4,8 @@ import Link from "next/link";
 
 import type { SessionAvailability } from "@/lib/calendar";
 import { sessionStart } from "@/lib/format";
+import { sessionHref } from "@/lib/published/lookup";
 import type { IndexSession } from "@/lib/published/types";
-import { sessionHref } from "@/lib/routes";
 
 /**
  * How each state of a session is worded and coloured, everywhere the calendar
@@ -80,7 +80,7 @@ export function SessionChip({ session, state }: { session: IndexSession; state: 
   }
   return (
     <Link
-      href={sessionHref(session.session_key)}
+      href={sessionHref({ kind: "key", sessionKey: session.session_key })}
       className={clsx(className, "transition hover:border-white/60 hover:text-white")}
       title={description}
     >

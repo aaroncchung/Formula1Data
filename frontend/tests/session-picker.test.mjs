@@ -107,6 +107,15 @@ test("the picker starts on the session the address names by key", () => {
   assert.equal(pickerKeyForQuery(index, query("key=abc")), null);
 });
 
+test("a key wins over a round given beside it, as it does on the session page", () => {
+  const index = sampleIndex();
+
+  // The round in this address is Barcelona's; the key is the Austrian sprint's.
+  assert.equal(pickerKeyForQuery(index, query("key=11314&year=2026&round=7&session=R")), 11314);
+  // A key that is not one leaves the address to its year, round and type.
+  assert.equal(pickerKeyForQuery(index, query("key=abc&year=2026&round=7&session=R")), 11300);
+});
+
 test("the picker starts on the session an address names by year, round and type", () => {
   const index = sampleIndex();
 

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { calendarDay, sessionStart } from "../src/lib/format.ts";
+import { parseSessionAddress } from "../src/lib/published/lookup.ts";
 import {
   isUnderPath,
   meetingHref,
   roundParam,
   seasonHref,
-  sessionHref,
   sessionKeyParam,
   sessionSummaryHref,
   standingsHref,
@@ -23,11 +23,14 @@ test("every link names what it shows in the query string", () => {
   assert.equal(sessionSummaryHref("/strategy", 11315), "/strategy?key=11315");
 });
 
-test("a session is linked by its key and by nothing that can change", () => {
-  const href = sessionHref(11315);
+test("a summary page names its session by key, as the session page does, and by nothing that can change", () => {
+  const href = sessionSummaryHref("/telemetry", 11315);
 
-  assert.equal(href, "/session?key=11315");
   assert.deepEqual([...new URL(href, "https://site.example").searchParams.keys()], ["key"]);
+  assert.deepEqual(parseSessionAddress(new URL(href, "https://site.example").searchParams), {
+    kind: "key",
+    sessionKey: 11315
+  });
 });
 
 test("a link that was built is read back as the same values", () => {

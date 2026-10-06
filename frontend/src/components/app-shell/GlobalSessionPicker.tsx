@@ -8,7 +8,7 @@ import { usePublishedIndex } from "@/components/calendar/usePublishedIndex";
 import type { IndexState } from "@/components/calendar/usePublishedIndex";
 import { failureDetail, failureTitle } from "@/components/published/failure-copy";
 import { publishedDataBaseUrl } from "@/lib/published/config";
-import { sessionHref } from "@/lib/routes";
+import { sessionHref } from "@/lib/published/lookup";
 import { pickerKeyForQuery, pickerSelection, pickerYears } from "@/lib/session-picker";
 import type { PickerSelection, PickerYear } from "@/lib/session-picker";
 
@@ -48,7 +48,7 @@ export function GlobalSessionPicker() {
         selection={selection}
         placeholder={placeholderFor(state, years)}
         onChoose={(key) => setChoice({ location, key })}
-        onOpen={(key) => router.push(sessionHref(key))}
+        onOpen={(key) => router.push(sessionHref({ kind: "key", sessionKey: key }))}
       />
       <DataSourceStatus state={state} />
     </>

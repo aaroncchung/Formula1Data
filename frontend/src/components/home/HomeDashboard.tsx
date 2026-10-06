@@ -21,10 +21,10 @@ import type { ReadyChosenSession } from "@/lib/chosen-session";
 import { sessionStart } from "@/lib/format";
 import { readResults } from "@/lib/published/artifacts";
 import type { SessionView } from "@/lib/published/client";
+import { sessionHref } from "@/lib/published/lookup";
 import type { PublishedIndex } from "@/lib/published/types";
 import {
   meetingHref,
-  sessionHref,
   STANDINGS_PATH,
   STRATEGY_PATH,
   TELEMETRY_PATH
@@ -53,7 +53,7 @@ export function HomeDashboard() {
         actions={
           <>
             {latest ? (
-              <Link className="rounded bg-redline px-4 py-2 text-sm font-bold text-white" href={sessionHref(latest.key)}>
+              <Link className="rounded bg-redline px-4 py-2 text-sm font-bold text-white" href={sessionHref({ kind: "key", sessionKey: latest.key })}>
                 Open latest session
               </Link>
             ) : null}

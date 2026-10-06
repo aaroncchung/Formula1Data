@@ -14,8 +14,9 @@ import { useChosenSession } from "@/components/summary/useChosenSession";
 import { describeSession } from "@/lib/chosen-session";
 import type { ReadyChosenSession, SessionDescription } from "@/lib/chosen-session";
 import { compactDate } from "@/lib/format";
+import { sessionHref } from "@/lib/published/lookup";
 import type { Coverage, PublishedIndex } from "@/lib/published/types";
-import { sessionHref, sessionKeyParam, sessionSummaryHref } from "@/lib/routes";
+import { sessionKeyParam, sessionSummaryHref } from "@/lib/routes";
 
 type SummaryPageProps = {
   /** The page's own path, such as `/strategy`: choosing a session goes to it with that session's key. */
@@ -209,7 +210,7 @@ function SessionBar({ id, index, selectedKey, about, coverage, dashboardKey, onC
         {dashboardKey === undefined ? null : (
           <Link
             className="rounded border border-line px-3 py-1.5 text-xs font-bold text-slate-200 transition hover:border-redline/60"
-            href={sessionHref(dashboardKey)}
+            href={sessionHref({ kind: "key", sessionKey: dashboardKey })}
           >
             Open session dashboard →
           </Link>

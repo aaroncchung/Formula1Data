@@ -12,8 +12,9 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { findMeeting, sessionAvailability } from "@/lib/calendar";
 import type { SessionAvailability } from "@/lib/calendar";
 import { calendarDay, sessionStart } from "@/lib/format";
+import { sessionHref } from "@/lib/published/lookup";
 import type { IndexMeeting, IndexSession, PublishedIndex } from "@/lib/published/types";
-import { meetingHref, seasonHref, sessionHref } from "@/lib/routes";
+import { meetingHref, seasonHref } from "@/lib/routes";
 
 export function MeetingWeekend({ year, round }: { year: number; round: number }) {
   return (
@@ -118,7 +119,7 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
   }
   return (
     <Link
-      href={sessionHref(session.session_key)}
+      href={sessionHref({ kind: "key", sessionKey: session.session_key })}
       className="surface group block h-full p-5 transition hover:-translate-y-0.5 hover:border-redline/50"
     >
       {body}
