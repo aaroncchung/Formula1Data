@@ -569,6 +569,26 @@ def test_coverage_is_published_as_measured_with_what_the_session_is_short_of():
     assert coverage["drivers"][2]["generated_laps"] == 1
 
 
+def test_a_record_written_before_a_figure_was_counted_is_still_published():
+    """The coverage that is published is the snapshot's record, and a record
+    can be older than a figure, or not this code's. What judges the bars has
+    read it before a build starts; what only this reads must not stop one."""
+    measurement = apply_classification(measure_coverage(make_race(), "R", extras()), classification().laps_by_number)
+    for figure in ("pit_stops_in_timing", "pit_stops_in_series", "max_sample_gap_seconds"):
+        del measurement[figure]
+    older = measurement["drivers"]["AAA"]
+    del older["tyre_age_laps"]
+    older["generated_laps"] = "none"
+
+    coverage = artifact_json(normalize.coverage(measurement))
+
+    assert (coverage["pit_stops_in_timing"], coverage["pit_stops_in_series"]) == (0, 0)
+    assert coverage["max_sample_gap_seconds"] == 0.0
+    first = coverage["drivers"][0]
+    assert (first["driver_code"], first["tyre_age_laps"], first["generated_laps"]) == ("AAA", 0, 0)
+    assert first["timing_laps"] == 12
+
+
 def test_the_summary_is_f1s_own_account_of_the_session_and_carries_no_round():
     session = make_race()
     codes = normalize.driver_codes(session)

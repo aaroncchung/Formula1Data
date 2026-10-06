@@ -29,6 +29,7 @@ archive/sessions/<session_key>/<snapshot_id>/     never served
     snapshot.json              written last; without it the snapshot does not exist
     remeasured.json            only where a build found the snapshot's record wrong
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
+archive/attempts/<year>/<start>-<type>.json       a note that a fetch of that session failed
 
 v2/pointers/<session_key>.json                    one per published session
 v2/generations/<session_key>/<generation>/        immutable; manifest.json written last
@@ -37,9 +38,10 @@ v2/standings/<year>.json
 ```
 
 A snapshot's marker has to describe the snapshot it is filed as: the session
-key and the snapshot id in its key. One that does not, or that cannot be read,
-is passed over with an error in the log, like an upload that never finished,
-and the rest of the archive is read as usual.
+key and the snapshot id in its key, with a measurement that can be read. One
+that does not, or that cannot be read, is passed over with an error in the
+log, like an upload that never finished, and the rest of the archive is read
+as usual.
 
 A session is named by F1's session key, not by its round: rounds move when the
 calendar changes. `v2` is the artifact format; a new format is published under
@@ -122,11 +124,13 @@ work: the one that loses a write reads again and decides again. That holds for
 a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
-One session failing to fetch does not stop the others. After two failures in
-a row `fetch-due` asks F1's archive for this season's index, and last
-season's: if either answers, the fault is with those sessions and the batch
-carries on; if neither does, nothing can be fetched and the batch stops until
-the next run.
+One session failing to fetch does not stop the others. A failed fetch is
+noted, and the next run takes the sessions that have not failed first and the
+ones that have last, the longest ago first: every session has its turn before
+any has a second. After two failures in a row `fetch-due` also asks F1's
+archive, and FastF1's mirror of it, for this season's index and last season's.
+If any answers, the fault is with those sessions and the batch carries on; if
+none does, the batch stops until the next run.
 
 Retries are timed from when a session was last fetched, by the stamp of the
 machine that fetched it. A stamp more than an hour ahead of this machine's

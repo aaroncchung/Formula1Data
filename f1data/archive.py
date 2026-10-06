@@ -273,7 +273,28 @@ def _snapshot_at(key: str, data: bytes) -> Snapshot | None:
     if snapshot is None or (snapshot.session_key, snapshot.snapshot_id) != placed:
         _logger.error("%s does not describe the snapshot it is filed as, and is passed over", key)
         return None
+    if not _is_measurement(snapshot.coverage):
+        _logger.error("%s records a measurement that cannot be read, and is passed over", key)
+        return None
     return snapshot
+
+
+def _is_measurement(coverage: Any) -> bool:
+    """Whether everything that reads a measurement can read this one.
+
+    Found out by reading it. A figure that is text where a count belongs
+    raises wherever it is first used, which is the fetch planner, before it
+    has planned anything, or the choice of snapshot: one unreadable record
+    would stop every session.
+    """
+    try:
+        evaluate_coverage(coverage)
+        weakest_share(coverage)
+        feed_figures(coverage)
+        apply_classification(coverage, {})
+    except Exception:
+        return False
+    return isinstance(coverage.get("feeds", {}), dict)
 
 
 def write_remeasurement(
@@ -338,12 +359,20 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         written_by = int(payload["pipeline_version"])
         coverage = payload["coverage"]
         measured_by = int(coverage["measurement_version"])
-        if not isinstance(coverage["feeds"], dict):
-            raise TypeError("feeds is not a mapping")
-        drivers = {
-            code: {**driver, "classified_laps": recorded.get(str(driver.get("number")))}
-            for code, driver in coverage["drivers"].items()
+        if measured_by != MEASUREMENT_VERSION:
+            # Figures this version does not know how to read, from a version
+            # that does. They are not used, and whoever wrote them is on
+            # record, so that a newer version's are not replaced.
+            return replace(snapshot, corrected_by=written_by)
+        corrected = {
+            **coverage,
+            "drivers": {
+                code: {**driver, "classified_laps": recorded.get(str(driver.get("number")))}
+                for code, driver in coverage["drivers"].items()
+            },
         }
+        if not _is_measurement(corrected):
+            raise ValueError("the figures cannot be read")
     except (ValueError, KeyError, TypeError, AttributeError):
         # Not something a build wrote. The snapshot stands as it was recorded,
         # and the next build of it writes the figures again. Nothing the
@@ -351,12 +380,7 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         # broken correction that passed for a newer version's would never be
         # replaced.
         return snapshot
-    # Whole, so the version that wrote it is on record, whether or not this
-    # version can use its figures.
-    snapshot = replace(snapshot, corrected_by=written_by)
-    if measured_by != MEASUREMENT_VERSION:
-        return snapshot
-    return replace(snapshot, coverage={**coverage, "drivers": drivers})
+    return replace(snapshot, coverage=corrected, corrected_by=written_by)
 
 
 def _with_corner_count(store: ObjectStore, snapshot: Snapshot) -> Snapshot:
@@ -404,6 +428,40 @@ def partial_publication_time(snapshots: list[Snapshot], now: datetime | None = N
         return min(parse_utc(snapshot.fetched_at) for snapshot in counted) + RETRY_WINDOW
     now = now.astimezone(timezone.utc)
     return min(plausible_fetch_time(snapshot, now) or now for snapshot in counted) + RETRY_WINDOW
+
+
+def note_failed_fetch(
+    store: ObjectStore, year: int, session_type: str, start_time_utc: str, error: str, now: datetime
+) -> None:
+    """Note that a fetch of this calendar entry failed just now.
+
+    A failed fetch archives nothing, so without this a run could not tell a
+    session that failed an hour ago from one never tried, and would try the
+    same ones first every time.
+    """
+    store.put(
+        layout.attempt_key(year, session_type, start_time_utc),
+        dump_json({"failed_at": format_utc(now), "error": error[:500]}),
+    )
+
+
+def failed_fetches(store: ObjectStore, now: datetime) -> dict[str, datetime]:
+    """When the last fetch of each calendar entry failed, by ``layout.attempt_key``.
+
+    A note that cannot be read, or that is stamped with a time that has not
+    come, is left out: the entry then counts as never having failed.
+    """
+    now = now.astimezone(timezone.utc)
+    failed: dict[str, datetime] = {}
+    for item in store.list(layout.ATTEMPTS_PREFIX):
+        found = store.get(item.key)
+        try:
+            at = parse_utc(json.loads(found.data)["failed_at"]) if found is not None else None
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue
+        if at is not None and at <= now + CLOCK_TOLERANCE:
+            failed[item.key] = at
+    return failed
 
 
 def plausible_fetch_time(snapshot: Snapshot, now: datetime) -> datetime | None:

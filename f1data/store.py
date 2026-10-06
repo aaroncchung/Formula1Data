@@ -241,11 +241,18 @@ class DirectoryStore:
         return True
 
     def list(self, prefix: str) -> Iterator[ObjectInfo]:
-        if not self.root.is_dir():
+        # Only the directory the prefix names is walked. A prefix ends in a
+        # directory or part-way into a name, so the walk starts at whatever
+        # comes before its last slash. Walking the whole store for every
+        # listing made a run over many sessions visit every published file
+        # once for each of them.
+        directory = prefix.rsplit("/", 1)[0] if "/" in prefix else ""
+        start = self._path(directory) if directory else self.root
+        if not start.is_dir():
             return
         keys = sorted(
             path.relative_to(self.root).as_posix()
-            for path in self.root.rglob("*")
+            for path in start.rglob("*")
             if path.is_file() and not path.name.endswith(".tmp") and path.name != _DIRECTORY_LOCK
         )
         for key in keys:

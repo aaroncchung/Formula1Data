@@ -158,19 +158,24 @@ class Builder:
                 f"({identity.meeting_name} {identity.session_name}, {identity.start_time_utc})"
             )
         # A fetch from before the correction is published, if it is the one
-        # chosen, as the session the calendar now has: under its old start
-        # time the index could not place it.
+        # chosen, with the start the calendar now has: under its old start
+        # time the index could not place it. Nothing else of its identity is
+        # touched. Where its feeds are filed in particular is its own, and F1
+        # may have filed the later fetch's elsewhere.
         snapshots = [
             snapshot
             if find_scheduled_session([scheduled], snapshot.identity) is not None
-            else replace(snapshot, identity=identity)
+            else replace(
+                snapshot,
+                identity=replace(snapshot.identity, year=identity.year, start_time_utc=identity.start_time_utc),
+            )
             for snapshot in snapshots
         ]
         # The calendar entry reaches what is published, so a build made under
         # another entry is not this build. In format 2 no artifact carries the
         # round or the calendar's names, but the manifest and the pointer
-        # carry the session's identity, whose start time and round are the
-        # calendar's, and which the lines above can take from another fetch.
+        # carry the session's identity, whose start time is the calendar's
+        # and can, by the lines above, be another fetch's.
         # A session built again for a change that does not reach its files is
         # the same generation, since a generation is named by its content.
         # The four fields are there to be read; the checksum covers the whole

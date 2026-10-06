@@ -12,11 +12,19 @@ from pathlib import Path
 from typing import Any
 
 from f1data import layout
-from f1data.archive import ArchiveError, Snapshot, archive_directory, list_snapshots, write_snapshot
+from f1data.archive import (
+    ArchiveError,
+    Snapshot,
+    archive_directory,
+    failed_fetches,
+    list_snapshots,
+    note_failed_fetch,
+    write_snapshot,
+)
 from f1data.classification import ClassificationUnavailable, fetch_classified_laps
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
-from f1data.due import plan_fetches
+from f1data.due import least_recently_failed_first, plan_fetches
 from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, f1_is_answering, fastf1_cache, fetch_session
 from f1data.schedule import ScheduledSession, load_schedule
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
@@ -229,6 +237,10 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 classified_laps,
                 published_short=_published_short(store),
             )
+            # A batch can be cut short. So that the same sessions are not the
+            # ones it reaches every time, those that failed last time wait
+            # behind those that have not been tried.
+            plans = least_recently_failed_first(plans, failed_fetches(store, now))
             if args.limit is not None:
                 plans = plans[: args.limit]
             if not plans:
@@ -251,15 +263,21 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                     failed += 1
                     failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
+                    note_failed_fetch(
+                        store,
+                        session.year,
+                        session.session_type,
+                        session.start_time_utc or "",
+                        f"{type(exc).__name__}: {exc}",
+                        datetime.now(timezone.utc),
+                    )
                     if failed_in_a_row >= _ASK_AFTER_FAILURES_IN_A_ROW:
                         # This year's index and last year's: one of the two
                         # exists on any day of any year.
                         if f1_is_answering((now.year, now.year - 1)):
-                            # These sessions failed on their own account.
-                            # Nothing was archived for them, so the next run
-                            # plans them first again: stopping here would
-                            # keep every later session from ever being
-                            # fetched, for as long as these two go on failing.
+                            # These sessions failed on their own account, and
+                            # the rest of the batch need not wait for a later
+                            # run to find that out.
                             print("  F1's archive is answering, so the fault is with these sessions; carrying on.")
                             failed_in_a_row = 0
                         else:
@@ -374,7 +392,13 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     # version's included. The destination's own build measures the snapshot
     # and writes its own.
     corrections = [item for item in items if _is_correction(item.key)]
-    items = [item for item in items if not _is_correction(item.key)]
+    # The same goes for the notes of fetches that failed: they are this
+    # store's memory of its own runs.
+    items = [
+        item
+        for item in items
+        if not _is_correction(item.key) and not item.key.startswith(layout.ATTEMPTS_PREFIX)
+    ]
     # The marker goes last, as it did when the snapshot was first written: a
     # snapshot is only visible once all of it is there.
     ordered = [item for item in items if not _is_marker(item.key)]

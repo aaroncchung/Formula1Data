@@ -626,7 +626,14 @@ def _reference_lap(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> LapSampl
 
 
 def coverage(measurement: dict[str, Any]) -> Coverage:
-    """A measurement from ``f1data/coverage.py`` and what it is short of, as it is published."""
+    """A measurement from ``f1data/coverage.py`` and what it is short of, as it is published.
+
+    The measurement is the snapshot's record, which may have been written
+    before a figure here was counted, or by something else. The bars are
+    judged by ``evaluate_coverage``, which the archive has already had read
+    it (``f1data/archive.py``); a figure only this reads is published as
+    nothing when it is not a number, and never stops a build.
+    """
     shortfalls = evaluate_coverage(measurement)
     feeds = measurement.get("feeds", {})
     return Coverage(
@@ -635,22 +642,22 @@ def coverage(measurement: dict[str, Any]) -> Coverage:
         feeds=CoverageFeeds(**{name: bool(feeds.get(name)) for name in CoverageFeeds.model_fields}),
         session_ended=bool(measurement.get("session_ended")),
         total_laps=_int(measurement.get("total_laps")),
-        pit_stops_in_timing=int(measurement.get("pit_stops_in_timing") or 0),
-        pit_stops_in_series=int(measurement.get("pit_stops_in_series") or 0),
-        circuit_corners=int(measurement.get("circuit_corners") or 0),
-        max_sample_gap_seconds=float(measurement.get("max_sample_gap_seconds") or 0.0),
+        pit_stops_in_timing=_int(measurement.get("pit_stops_in_timing")) or 0,
+        pit_stops_in_series=_int(measurement.get("pit_stops_in_series")) or 0,
+        circuit_corners=_int(measurement.get("circuit_corners")) or 0,
+        max_sample_gap_seconds=_float(measurement.get("max_sample_gap_seconds")) or 0.0,
         drivers=[
             DriverCoverage(
                 driver_code=code,
                 number=str(driver.get("number")),
                 in_driver_list=bool(driver.get("in_driver_list")),
                 classified_laps=_int(driver.get("classified_laps")),
-                timing_laps=int(driver.get("timing_laps") or 0),
-                generated_laps=int(driver.get("generated_laps") or 0),
-                car_laps=int(driver.get("car_laps") or 0),
-                position_laps=int(driver.get("position_laps") or 0),
-                tyre_laps=int(driver.get("tyre_laps") or 0),
-                tyre_age_laps=int(driver.get("tyre_age_laps") or 0),
+                timing_laps=_int(driver.get("timing_laps")) or 0,
+                generated_laps=_int(driver.get("generated_laps")) or 0,
+                car_laps=_int(driver.get("car_laps")) or 0,
+                position_laps=_int(driver.get("position_laps")) or 0,
+                tyre_laps=_int(driver.get("tyre_laps")) or 0,
+                tyre_age_laps=_int(driver.get("tyre_age_laps")) or 0,
             )
             for code, driver in sorted(measurement.get("drivers", {}).items())
         ],
