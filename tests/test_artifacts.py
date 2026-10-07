@@ -231,7 +231,10 @@ def test_a_session_whose_position_feed_stops_is_built_with_what_there_is():
 
     replay = read(files, "position-replay.json")
     assert replay["time_ms"] and replay["time_ms"][-1] < 1000 * stopped
-    assert max(number for number in replay["lap_number"] if number) < 5
+    # Its last frame is the one the leader's fourth lap ends in, and the fifth
+    # had started before that window was out: the timing says so, whatever
+    # the position feed carries.
+    assert replay["lap_number"][-1] == 5 and replay["lap_number"].count(5) == 1
     index = read(files, "telemetry/index.json")
     located = {lap["lap_number"] for entry in index["drivers"] for lap in index_laps(entry) if lap["has_position"]}
     assert located == {1, 2, 3, 4}

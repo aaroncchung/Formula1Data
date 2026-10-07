@@ -35,7 +35,11 @@ Three things differ from FastF1 on purpose, all where a feed is broken:
   telemetry when its car samples pass the test coverage is measured by: they
   reach from its start to its end with no long hole. FastF1 would draw a
   straight line across two minutes with no data; here the lap has none, the
-  coverage says so, and the car's positions still go to the replay.
+  coverage says so, and the car's positions still go to the replay. For the
+  same reason the sample of padding either side of a lap is taken only from
+  within that hole's length of the lap's own samples: FastF1 takes the
+  nearest whatever its distance, and one from a minute before the lap puts
+  a minute's travel into the lap's first metre.
 * F1 sends (0, 0) while it has no position for a car. Those samples are not
   positions (f1data/coverage.py) and are left out before anything is merged.
 * A position is only ever interpolated between two real samples, never
@@ -61,6 +65,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 
 from f1data.coverage import MAX_SAMPLE_GAP_SECONDS, lap_is_usable, sent_by_f1
+from f1data.loaded import driver_codes, text
 
 # The published resolution. Analyses read every sample (AR-11).
 MAX_PUBLISHED_SAMPLES_PER_LAP = 300
@@ -127,6 +132,10 @@ class SessionTelemetry:
     # Laps the car feed cannot carry and the position feed can. They have no
     # telemetry to publish, and the car was still somewhere.
     positions_only: dict[tuple[str, int], LapPositions] = field(default_factory=dict)
+    # When each lap number was first started by any car, in milliseconds on
+    # the session clock. From the timing alone: a lap neither feed carries
+    # was started all the same.
+    lap_started_ms: dict[int, int] = field(default_factory=dict)
 
     def driver_codes(self) -> list[str]:
         return sorted({driver for driver, _ in self.laps})
@@ -162,9 +171,7 @@ class _Feed:
 def extract_telemetry(session: Any) -> SessionTelemetry:
     """Full-resolution telemetry for every lap of a loaded FastF1 session that has any."""
     laps = _frame(session, "laps")
-    if len(laps) == 0 or not {"DriverNumber", "Driver", "LapNumber", "LapStartTime", "Time"} <= set(
-        laps.columns
-    ):
+    if len(laps) == 0 or not {"DriverNumber", "LapNumber", "LapStartTime", "Time"} <= set(laps.columns):
         return SessionTelemetry({})
     car_data = _mapping(session, "car_data")
     position_data = _mapping(session, "pos_data")
@@ -177,15 +184,33 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
     known = ~(np.isnat(starts) | np.isnat(ends))
     start_ns = starts.astype("int64")
     end_ns = ends.astype("int64")
-    numbers = laps["DriverNumber"].astype(str).to_numpy()
-    codes = laps["Driver"].to_numpy()
+    # A lap is its car's by number. The code written on it is empty when
+    # F1's driver list did not arrive, and the word "None" when the list has
+    # the driver without one (f1data/loaded.py).
+    numbers = [text(number) or "" for number in laps["DriverNumber"]]
+    code_of = driver_codes(_frame(session, "results"), laps)
     lap_numbers = pd.to_numeric(laps["LapNumber"], errors="coerce").to_numpy(dtype=float)
+
+    # A lap FastF1 added for a car that stopped on track is not one the
+    # session reached: the weather's lap numbers leave those out as well.
+    generated = (
+        laps["FastF1Generated"].fillna(False).astype(bool).to_numpy()
+        if "FastF1Generated" in laps.columns
+        else np.zeros(len(laps), dtype=bool)
+    )
+    lap_started_ms: dict[int, int] = {}
+    for row in range(len(laps)):
+        if generated[row] or np.isnat(starts[row]) or not np.isfinite(lap_numbers[row]) or lap_numbers[row] <= 0:
+            continue
+        number, moment = int(lap_numbers[row]), _round_ms(int(start_ns[row]))
+        if moment < lap_started_ms.get(number, moment + 1):
+            lap_started_ms[number] = moment
 
     feeds: dict[str, tuple[_Feed | None, np.ndarray | None, _Feed | None, np.ndarray | None]] = {}
     found: dict[tuple[str, int], LapSamples] = {}
     positions_only: dict[tuple[str, int], LapPositions] = {}
     for row in range(len(laps)):
-        code = str(codes[row] or "").strip().upper() if _present(codes[row]) else ""
+        code = code_of.get(numbers[row], "")
         if not code or not known[row] or not np.isfinite(lap_numbers[row]) or lap_numbers[row] <= 0:
             continue
         key = (code, int(lap_numbers[row]))
@@ -238,7 +263,7 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
         )
     # A lap the car feed carries without positions is published as
     # telemetry, and its positions go to the replay from here.
-    return SessionTelemetry(found, positions_only)
+    return SessionTelemetry(found, positions_only, lap_started_ms)
 
 
 def thinned_indexes(count: int, limit: int = MAX_PUBLISHED_SAMPLES_PER_LAP) -> np.ndarray:
@@ -266,7 +291,7 @@ def _lap_samples(
     Times are nanoseconds on the session clock. Returns ``None`` when the car
     data cannot carry a lap, or when ``position`` was given and cannot.
     """
-    cut = _padded_cut(car.session, start, end)
+    cut = _padded_cut(car.session, start, end, within=_MAX_GAP_NS)
     if cut is None or cut[1] - cut[0] < _MIN_SPLINE_POINTS:
         return None
     first, last = cut
@@ -479,15 +504,6 @@ def _mapping(session: Any, attribute: str) -> dict[str, Any]:
     except Exception:
         return {}
     return {str(key): item for key, item in value.items()} if isinstance(value, dict) else {}
-
-
-def _present(value: Any) -> bool:
-    if value is None:
-        return False
-    try:
-        return not bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return True
 
 
 def nan_as_none(values: np.ndarray) -> list[float | None]:

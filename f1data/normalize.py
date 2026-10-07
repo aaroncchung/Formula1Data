@@ -27,8 +27,16 @@ import pandas as pd
 from f1data.analyses import POSITION_UNITS_PER_METRE
 from f1data.classification import Classification
 from f1data.coverage import RACE_LIKE_SESSION_TYPES, evaluate_coverage
-from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
+from f1data.extras import (
+    CIRCUIT_INFO,
+    PIT_STOP_SERIES,
+    WEATHER_SERIES,
+    parse_pit_stop_series,
+    weather_readings_sent,
+)
 from f1data.identity import SessionIdentity
+from f1data.loaded import MISSING_AS_TEXT, present, result_numbers, text
+from f1data.loaded import driver_codes as codes_by_number
 from f1data.models import (
     Corner,
     Corners,
@@ -86,6 +94,9 @@ _RED_FLAG_STATUS = "5"
 # no lap is still taken to be of that stop. F1 reports a stop as the car
 # leaves; the late ones of the 2026 Australian GP came up to 66 seconds after.
 _LATE_REPORT_MS = 120_000
+# How far F1's own pit-lane time may be from the timing's for the two to be
+# of one stop. For the twenty-eight stops of that race they are within 0.4 s.
+_SAME_STOP_MS = 2_000
 
 
 class SessionDataError(RuntimeError):
@@ -121,25 +132,15 @@ def summary(
 def driver_codes(session: Any) -> dict[str, str]:
     """Driver number to the code that names the driver in every artifact.
 
-    The timing's code comes first, since the laps and the telemetry are filed
-    under it. A driver who set no lap has only the code in the result.
+    A driver is found by number everywhere, and named by this: the timing's
+    code, or the result's, or the car number as text for a driver neither
+    names (f1data/loaded.py).
     """
-    codes: dict[str, str] = {}
-    laps = _frame(session, "laps")
-    if len(laps) and {"DriverNumber", "Driver"} <= set(laps.columns):
-        for number, code in zip(laps["DriverNumber"].astype(str), laps["Driver"]):
-            if _present(code):
-                codes.setdefault(number, str(code).strip().upper())
-    results = _frame(session, "results")
-    if len(results) and "Abbreviation" in results.columns:
-        for number, code in zip(_driver_numbers(results), results["Abbreviation"]):
-            if _present(code):
-                codes.setdefault(number, str(code).strip().upper())
-    return codes
+    return codes_by_number(_frame(session, "results"), _frame(session, "laps"))
 
 
 def drivers(session: Any, codes: dict[str, str]) -> list[Driver]:
-    """Everyone in F1's driver list or the result, in the order FastF1 holds them."""
+    """Everyone in F1's driver list, the result or the timing, in the order FastF1 holds them."""
     results = _frame(session, "results")
     rows: list[Driver] = []
     seen: set[str] = set()
@@ -153,7 +154,7 @@ def drivers(session: Any, codes: dict[str, str]) -> list[Driver]:
             Driver(
                 driver_id=code.lower(),
                 code=code,
-                full_name=_text(row.get("FullName")) or code,
+                full_name=_full_name(row) or code,
                 number=_int(number),
                 team=Team(team_id=_slug(team_name), name=team_name, color=_colour(row.get("TeamColor")))
                 if team_name
@@ -161,16 +162,46 @@ def drivers(session: Any, codes: dict[str, str]) -> list[Driver]:
                 country=_text(row.get("CountryCode")),
             )
         )
+    # With no driver list and no classification the timing still says which
+    # cars ran. They are the session's drivers, by number and nothing more.
+    for number, code in codes.items():
+        if code not in seen:
+            seen.add(code)
+            rows.append(
+                Driver(
+                    driver_id=code.lower(), code=code, full_name=code, number=_int(number), team=None, country=None
+                )
+            )
     return rows
 
 
-def laps(session: Any) -> list[Lap]:
+def _full_name(row: Any) -> str | None:
+    """A driver's name from its two parts, since FastF1 joins them whether or not they are there.
+
+    With no first name its ``FullName`` reads ``None Verstappen``.
+    """
+    parts = [part for part in (_text(row.get("FirstName")), _text(row.get("LastName"))) if part]
+    if parts:
+        return " ".join(parts)
+    joined = _text(row.get("FullName"))
+    if joined and not all(word in MISSING_AS_TEXT for word in joined.split()):
+        return joined
+    return None
+
+
+def laps(session: Any, codes: dict[str, str] | None = None) -> list[Lap]:
     frame = _frame(session, "laps")
     if len(frame) == 0:
-        raise SessionDataError("The session has no laps: the timing feed is missing from its snapshot")
+        raise SessionDataError(
+            "The session has no laps. FastF1 makes none when the timing, the tyre data, the track status "
+            "or the session status is missing from the snapshot"
+        )
+    codes = driver_codes(session) if codes is None else codes
     rows: list[Lap] = []
     for _, row in frame.iterrows():
-        code = _text(row.get("Driver"))
+        # By car number: the code written on a lap is empty when F1's driver
+        # list did not arrive, and the lap is still that car's.
+        code = codes.get(_text(row.get("DriverNumber")) or "") or _text(row.get("Driver"))
         number = _int(row.get("LapNumber"))
         if not code or number is None or number <= 0:
             continue
@@ -312,7 +343,7 @@ def results(classification: Classification | None, session: Any, codes: dict[str
     if len({row.driver_code for row in built}) != len(built):
         raise SessionDataError("The classification names a driver twice")
     listed = {row.driver_code for row in built}
-    for code in sorted(_codes_with_laps(session) - listed):
+    for code in sorted(_codes_with_laps(session, codes) - listed):
         built.append(
             Result(
                 position=None,
@@ -342,15 +373,16 @@ def _took_the_flag(status: Any) -> bool:
     return text in {"finished", "lapped"} or (text.startswith("+") and "lap" in text)
 
 
-def _codes_with_laps(session: Any) -> set[str]:
+def _codes_with_laps(session: Any, codes: dict[str, str]) -> set[str]:
     """The drivers F1 timed at least one lap for."""
     frame = _frame(session, "laps")
-    if len(frame) == 0 or "Driver" not in frame.columns:
+    if len(frame) == 0 or "DriverNumber" not in frame.columns:
         return set()
     timed = frame
     if "FastF1Generated" in frame.columns:
         timed = frame[~frame["FastF1Generated"].fillna(False).astype(bool)]
-    return {str(code).strip().upper() for code in timed["Driver"] if _present(code)}
+    numbers = {_text(number) for number in timed["DriverNumber"]}
+    return {codes[number] for number in numbers if number in codes}
 
 
 def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
@@ -427,21 +459,23 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
     gives the time the car stood still and its own pit-lane time, for the
     stops it covers, which is not all of them (AR-16). The two are matched by
     driver and lap. A report with no lap, which F1 sometimes sends late, is
-    matched by when it was made. A stop only the feed reports is kept, after
-    the timing's.
+    matched by when it was made and how long it says the car was in the pit
+    lane, and is left out when that does not single out one stop. A stop only
+    the feed reports is kept, after the timing's.
     """
     # What the timing shows: for each driver, by lap, when the car came in and
     # how long it was before it came out.
     timed: dict[str, dict[int, tuple[int, int | None]]] = {}
     frame = _frame(session, "laps")
-    if len(frame) and {"Driver", "LapNumber", "PitInTime", "PitOutTime"} <= set(frame.columns):
+    if len(frame) and {"DriverNumber", "LapNumber", "PitInTime", "PitOutTime"} <= set(frame.columns):
         by_driver: dict[str, dict[int, tuple[Any, Any]]] = {}
-        for code, lap, came_in, went_out in zip(
-            frame["Driver"], frame["LapNumber"], frame["PitInTime"], frame["PitOutTime"]
+        for car, lap, came_in, went_out in zip(
+            frame["DriverNumber"], frame["LapNumber"], frame["PitInTime"], frame["PitOutTime"]
         ):
+            code = codes.get(_text(car) or "")
             number = _int(lap)
-            if _present(code) and number is not None:
-                by_driver.setdefault(str(code).strip().upper(), {})[number] = (came_in, went_out)
+            if code and number is not None:
+                by_driver.setdefault(code, {})[number] = (came_in, went_out)
         for code, driver_laps in by_driver.items():
             for number in sorted(driver_laps):
                 came_in = _milliseconds(driver_laps[number][0])
@@ -453,26 +487,32 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
 
     clock_zero = _clock_zero(session)
     reported: dict[tuple[str, int], dict[str, Any]] = {}
+    without_a_lap: list[tuple[str, dict[str, Any]]] = []
     for stop in parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b"")):
         code = codes.get(str(stop["driver_number"]))
         if code is None:
             _logger.warning(
                 "The pit-stop feed names driver number %s, who is not in the session", stop["driver_number"]
             )
-            continue
-        lap_number = stop["lap_number"]
+        elif stop["lap_number"] is None:
+            without_a_lap.append((code, stop))
+        else:
+            # Two stops F1 gives one lap: the later is the one that stands.
+            reported[(code, int(stop["lap_number"]))] = stop
+    # After every stop that says its lap, so that none of those is taken for
+    # the stop of a report that does not.
+    for code, stop in without_a_lap:
+        taken = {lap for driver, lap in reported if driver == code}
+        lap_number = _lap_of_a_late_report(stop, timed.get(code, {}), clock_zero, taken)
         if lap_number is None:
-            lap_number = _lap_of_a_late_report(stop, timed.get(code, {}), clock_zero)
-            if lap_number is None:
-                _logger.warning(
-                    "The pit-stop feed reports a stop of %s at %s with no lap, and the timing shows no "
-                    "stop it could be",
-                    code,
-                    stop.get("time_utc"),
-                )
-                continue
-        # A later line for the same stop is F1 correcting the earlier one.
-        reported[(code, int(lap_number))] = stop
+            _logger.warning(
+                "The pit-stop feed reports a stop of %s at %s with no lap, and the timing does not single "
+                "out a stop it is of",
+                code,
+                stop.get("time_utc"),
+            )
+            continue
+        reported[(code, lap_number)] = stop
 
     red_flags = _red_flag_periods(session)
     rows: list[PitStop] = []
@@ -496,16 +536,23 @@ def _left(came_in: int, duration: int | None) -> int:
 
 
 def _lap_of_a_late_report(
-    stop: dict[str, Any], timed: dict[int, tuple[int, int | None]], clock_zero: int | None
+    stop: dict[str, Any],
+    timed: dict[int, tuple[int, int | None]],
+    clock_zero: int | None,
+    taken: frozenset[int] | set[int] = frozenset(),
 ) -> int | None:
-    """The lap of a stop F1 reported with no lap, from when it reported it.
+    """The lap of a stop F1 reported with no lap, or ``None`` when the timing does not single one out.
 
     F1 reports a stop as the car leaves the pit lane, and says which lap. In
     the 2026 Australian GP twenty of the twenty-eight reports came between
-    one second and 66 seconds late and said no lap. Such a report is of the
-    stop the driver had most recently finished when it was made, if that was
-    no more than two minutes before. One that nothing in the timing answers
-    to has no lap to be published under.
+    one second and 66 seconds late and said no lap. Such a report is of a
+    stop the timing shows the car finishing: one it came out of no more than
+    two minutes before the report and not after it, that no other report
+    names (``taken``), and whose time in the pit lane is the report's own
+    where the report gives one. A car the timing does not show leaving was
+    not finishing a stop. When two stops answer to all that, or none does,
+    the report is of neither: a figure left out is better than a figure
+    against the wrong lap.
     """
     if clock_zero is None or not stop.get("time_utc"):
         return None
@@ -516,13 +563,19 @@ def _lap_of_a_late_report(
         reported_at = _round_ms(moment.value - clock_zero)
     except (TypeError, ValueError, OverflowError):
         return None
-    latest: tuple[int, int] | None = None
+    in_the_lane = stop.get("pit_lane_ms")
+    could_be: list[int] = []
     for lap_number, (came_in, duration) in timed.items():
-        left = _left(came_in, duration)
+        if duration is None or lap_number in taken:
+            continue
+        left = came_in + duration
         # A second's grace: the feed's clock and the timing's are rounded apart.
-        if left - 1000 <= reported_at <= left + _LATE_REPORT_MS and (latest is None or left > latest[0]):
-            latest = (left, lap_number)
-    return latest[1] if latest else None
+        if not left - 1000 <= reported_at <= left + _LATE_REPORT_MS:
+            continue
+        if in_the_lane is not None and abs(in_the_lane - duration) > _SAME_STOP_MS:
+            continue
+        could_be.append(lap_number)
+    return could_be[0] if len(could_be) == 1 else None
 
 
 def _red_flag_periods(session: Any) -> list[tuple[int, int | None]]:
@@ -575,25 +628,42 @@ def _pit_stop(
 # --- weather and race control --------------------------------------------------
 
 
-def weather(session: Any, session_type: str) -> list[WeatherSample]:
+def weather(session: Any, session_type: str, extras: dict[str, bytes] | None = None) -> list[WeatherSample]:
+    """Every weather sample, with a reading only where F1 sent one.
+
+    The values are FastF1's. Which of them F1 sent is asked of the feed
+    itself, archived beside the session (f1data/extras.py): FastF1 writes 0
+    and "no rain" for a reading a line leaves out. A snapshot taken before
+    the feed was kept has no bytes to ask, and its samples are published as
+    FastF1 has them; the 51 sessions archived by then were checked, and
+    every line of every one gives every reading.
+    """
     frame = _frame(session, "weather_data")
     if len(frame) == 0 or "Time" not in frame.columns:
         return []
     leader_lap = _leader_lap(session) if session_type.upper() in RACE_LIKE_SESSION_TYPES else None
+    sent = weather_readings_sent(extras[WEATHER_SERIES]) if extras and WEATHER_SERIES in extras else None
     rows: list[WeatherSample] = []
     for _, row in frame.iterrows():
         moment = _milliseconds(row.get("Time"))
         if moment is None:
             continue
-        wind = _float(row.get("WindSpeed"))
+        given = sent.get(moment, frozenset()) if sent is not None else None
+
+        def reading(name: str) -> Any:
+            return row.get(name) if given is None or name in given else None
+
+        wind = _float(reading("WindSpeed"))
+        rain = _bool(reading("Rainfall"))
         rows.append(
             WeatherSample(
                 time_ms=moment,
                 lap_number=leader_lap(moment) if leader_lap is not None else None,
-                air_temp_c=_float(row.get("AirTemp")),
-                track_temp_c=_float(row.get("TrackTemp")),
-                humidity_pct=_float(row.get("Humidity")),
-                rainfall=bool(_bool(row.get("Rainfall"))),
+                air_temp_c=_float(reading("AirTemp")),
+                track_temp_c=_float(reading("TrackTemp")),
+                humidity_pct=_float(reading("Humidity")),
+                # FastF1's table has no missing rain, only "no rain".
+                rainfall=bool(rain) if given is None else rain,
                 wind_speed_kph=wind * _METRES_PER_SECOND_IN_KPH if wind is not None else None,
             )
         )
@@ -762,7 +832,7 @@ def _reference_lap(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> LapSampl
 # --- coverage ------------------------------------------------------------------
 
 
-def coverage(measurement: dict[str, Any]) -> Coverage:
+def coverage(measurement: dict[str, Any], codes: dict[str, str] | None = None) -> Coverage:
     """A measurement from ``f1data/coverage.py`` and what it is short of, as it is published.
 
     The measurement is the snapshot's record, which may have been written
@@ -770,12 +840,24 @@ def coverage(measurement: dict[str, Any]) -> Coverage:
     judged by ``evaluate_coverage``, which the archive has already had read
     it (``f1data/archive.py``); a figure only this reads is published as
     nothing when it is not a number, and never stops a build.
+
+    A record names each driver as the fetch could: by car number when F1's
+    driver list had not arrived. ``codes`` are the build's, by number, and a
+    driver is published under the code the rest of the generation uses.
     """
     shortfalls = evaluate_coverage(measurement)
     feeds = measurement.get("feeds", {})
+    measured = measurement.get("drivers", {})
+    named = {
+        key: (codes or {}).get(str(driver.get("number")), key) if isinstance(driver, dict) else key
+        for key, driver in measured.items()
+    }
     return Coverage(
         complete=not shortfalls,
-        shortfalls=[Shortfall(bar=item.bar, driver=item.driver, detail=item.detail) for item in shortfalls],
+        shortfalls=[
+            Shortfall(bar=item.bar, driver=named.get(item.driver, item.driver), detail=item.detail)
+            for item in shortfalls
+        ],
         feeds=CoverageFeeds(**{name: bool(feeds.get(name)) for name in CoverageFeeds.model_fields}),
         session_ended=bool(measurement.get("session_ended")),
         total_laps=_int(measurement.get("total_laps")),
@@ -785,7 +867,7 @@ def coverage(measurement: dict[str, Any]) -> Coverage:
         max_sample_gap_seconds=_float(measurement.get("max_sample_gap_seconds")) or 0.0,
         drivers=[
             DriverCoverage(
-                driver_code=code,
+                driver_code=named[code],
                 number=str(driver.get("number")),
                 in_driver_list=bool(driver.get("in_driver_list")),
                 classified_laps=_int(driver.get("classified_laps")),
@@ -796,7 +878,7 @@ def coverage(measurement: dict[str, Any]) -> Coverage:
                 tyre_laps=_int(driver.get("tyre_laps")) or 0,
                 tyre_age_laps=_int(driver.get("tyre_age_laps")) or 0,
             )
-            for code, driver in sorted(measurement.get("drivers", {}).items())
+            for code, driver in sorted(measured.items(), key=lambda item: named[item[0]])
         ],
     )
 
@@ -815,8 +897,10 @@ def _weather_summary(samples: Iterable[WeatherSample]) -> str:
     ):
         if values:
             parts.append(f"{label} {min(values):.1f}-{max(values):.1f}C")
-    parts.append("rain" if any(sample.rainfall for sample in samples) else "dry")
-    return ", ".join(parts)
+    rain = [sample.rainfall for sample in samples if sample.rainfall is not None]
+    if rain:
+        parts.append("rain" if any(rain) else "dry")
+    return ", ".join(parts) or "Weather data unavailable"
 
 
 def _clock_zero(session: Any) -> int | None:
@@ -851,23 +935,10 @@ def _milliseconds(value: Any) -> int | None:
         return None
 
 
-def _present(value: Any) -> bool:
-    if value is None:
-        return False
-    try:
-        if pd.isna(value):
-            return False
-    except (TypeError, ValueError):
-        pass
-    return True
-
-
-def _text(value: Any) -> str | None:
-    """A string with something in it, or ``None``. Never ``"nan"`` or ``"None"``."""
-    if not _present(value):
-        return None
-    text = str(value).strip()
-    return text or None
+# Not ``None``, not NaN, and not the word a cast to text made of either;
+# and a string with something in it, or ``None`` (f1data/loaded.py).
+_present = present
+_text = text
 
 
 def _int(value: Any) -> int | None:
@@ -916,11 +987,7 @@ def _slug(value: str) -> str:
 
 
 def _driver_numbers(results: pd.DataFrame) -> list[str]:
-    if len(results) == 0:
-        return []
-    if "DriverNumber" in results.columns:
-        return [str(number) for number in results["DriverNumber"]]
-    return [str(number) for number in results.index]
+    return [number or "" for number in result_numbers(results)]
 
 
 def _frame(session: Any, attribute: str) -> pd.DataFrame:

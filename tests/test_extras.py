@@ -75,7 +75,8 @@ def test_both_are_fetched_by_name():
     extras = fetch_extras(fastf1, session(), ARCHIVE_PATH)
 
     assert fastf1.requested == [
-        f"https://livetiming.formula1.com/static/{ARCHIVE_PATH}PitStopSeries.jsonStream"
+        f"https://livetiming.formula1.com/static/{ARCHIVE_PATH}PitStopSeries.jsonStream",
+        f"https://livetiming.formula1.com/static/{ARCHIVE_PATH}WeatherData.jsonStream",
     ]
     assert fastf1.asked_for == [{"year": 2026, "circuit_key": 22}]
     assert extras[PIT_STOP_SERIES] == b"01:12:03.942{}"

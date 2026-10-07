@@ -299,21 +299,29 @@ def test_a_broken_correction_that_claims_a_newer_pipeline_version_is_replaced(tm
     assert correction(world.store, written)["pipeline_version"] == layout.PIPELINE_VERSION
 
 
-def test_a_whole_correction_by_a_newer_measurement_keeps_its_authority(tmp_path, monkeypatch):
-    """This version cannot use the figures, and still may not replace them."""
+def test_a_correction_by_a_newer_measurement_is_another_object_and_is_left_alone(tmp_path, monkeypatch):
+    """This version cannot use a newer measurement's figures and may not
+    replace them. When this was written it met both by standing aside for
+    any correction that named a newer measurement. The twelfth review showed
+    for the third time that such a claim cannot be checked, so each version
+    of the measurement now keeps its corrections in an object of its own
+    (tests/test_twelfth_review.py), and this one never touches another's."""
     world = Archive(monkeypatch, EVERYONE)
     written = world.snapshot(tmp_path)
+    newer_version = written.coverage["measurement_version"] + 1
     newer = {
         "schema_version": 1,
         "snapshot_id": written.snapshot_id,
         "pipeline_version": layout.PIPELINE_VERSION + 1,
-        "coverage": {**written.coverage, "measurement_version": written.coverage["measurement_version"] + 1},
+        "coverage": {**written.coverage, "measurement_version": newer_version},
     }
-    world.store.put(correction_key(written), dump_json(newer))
+    theirs = f"{layout.snapshot_prefix(AUSTRIA, written.snapshot_id)}{layout.remeasurement_name(newer_version)}"
+    world.store.put(theirs, dump_json(newer))
 
     (listed,) = list_snapshots(world.store)
 
-    assert listed.corrected_by == layout.PIPELINE_VERSION + 1
+    assert theirs != correction_key(written)
+    assert (listed.corrected_by, listed.correction_etag) == (None, None)
     assert listed.coverage == written.coverage
 
 

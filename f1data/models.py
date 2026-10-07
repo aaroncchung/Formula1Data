@@ -242,7 +242,10 @@ class Team(Model):
 
 class Driver(Model):
     driver_id: str = Field(description="The driver's code in lower case.")
-    code: str = Field(description="The three-letter code that names the driver in every other artifact.")
+    code: str = Field(
+        description="The code that names the driver in every other artifact: F1's three letters, or the "
+        "car number as text for a driver neither F1's driver list nor the classification names."
+    )
     full_name: str
     number: int | None = Field(description="The racing number.")
     team: Team | None = Field(description="Null when F1's driver list names no team.")
@@ -384,7 +387,9 @@ class WeatherSample(Model):
     air_temp_c: Decimal1 | None
     track_temp_c: Decimal1 | None
     humidity_pct: Decimal1 | None
-    rainfall: bool
+    rainfall: bool | None = Field(
+        description="Null, like any other reading of a sample, when F1's feed gave no value for it."
+    )
     wind_speed_kph: Decimal1 | None = Field(description="Kilometres an hour. F1 reports metres a second.")
 
 
@@ -523,6 +528,13 @@ class TelemetryDriverEntry(Model):
         description="Each lap's time as in laps.json, so that a lap can be picked from here alone."
     )
     compound: list[CompoundOrNull]
+    is_accurate: list[bool | None] = Field(
+        description="Each lap's four flags as in laps.json, so that a page can offer a clean lap first: "
+        "one that is timed accurately, was not deleted, and neither enters nor leaves the pits."
+    )
+    is_deleted: list[bool | None]
+    is_pit_in_lap: list[bool | None]
+    is_pit_out_lap: list[bool | None]
     sample_count: list[int] = Field(description="Samples published for each lap.")
     raw_sample_count: list[int] = Field(
         description="Samples each lap has at full resolution, which is what the analyses read."

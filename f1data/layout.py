@@ -56,7 +56,14 @@ FORMAT_VERSION = 2
 #      reported; laps down only for a driver who took the flag; a wait in
 #      the pit lane through a red flag is marked and left out of the
 #      pit-lane figures
-PIPELINE_VERSION = 7
+#   8  a driver is found by car number and never named by the word FastF1
+#      writes for a missing code; a lap's car data is cut with padding from
+#      nearby only; the replay's lap count is the timing's; a stop in F1's
+#      pit-stop feed is followed by driver and place, and one with no lap is
+#      placed only where the timing singles a stop out; a weather reading F1
+#      did not send is null where the feed is archived to say so; the
+#      telemetry index carries each lap's flags
+PIPELINE_VERSION = 8
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:
@@ -64,7 +71,12 @@ ARCHIVE_PREFIX = "archive/"
 ATTEMPTS_PREFIX = f"{ARCHIVE_PREFIX}attempts/"
 SNAPSHOT_MARKER = "snapshot.json"
 # Beside a snapshot whose record a build found to disagree with its feeds.
+# There is one such object for each version of the measurement, and code
+# reads and writes only its own version's: figures it cannot read are then
+# never something it has to believe, or to stand aside for. Version 2's has
+# the name that was in use when there was only one.
 REMEASUREMENT_NAME = "remeasured.json"
+_REMEASUREMENT_KEY = re.compile(r"/remeasured(-m[0-9]+)?\.json$")
 MANIFEST_NAME = "manifest.json"
 
 _GENERATION_ID = re.compile(r"^[a-f0-9]{64}$")
@@ -91,6 +103,18 @@ def snapshot_from_marker_key(key: str) -> tuple[int, str] | None:
     if len(parts) != 3 or parts[2] != SNAPSHOT_MARKER or not parts[0].isdigit() or not is_snapshot_id(parts[1]):
         return None
     return int(parts[0]), parts[1]
+
+
+def remeasurement_name(measurement_version: int) -> str:
+    """The name of the correction of a snapshot's record that one version of the measurement keeps."""
+    if isinstance(measurement_version, bool) or not isinstance(measurement_version, int) or measurement_version < 1:
+        raise ValueError(f"Not a measurement version: {measurement_version!r}")
+    return REMEASUREMENT_NAME if measurement_version == 2 else f"remeasured-m{measurement_version}.json"
+
+
+def is_remeasurement_key(key: str) -> bool:
+    """Whether a key is a correction of a snapshot's record, of any version of the measurement."""
+    return _REMEASUREMENT_KEY.search(key) is not None
 
 
 def format_prefix(format_version: int = FORMAT_VERSION) -> str:

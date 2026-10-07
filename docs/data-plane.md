@@ -25,7 +25,7 @@ file, and can run anywhere.
 archive/sessions/<session_key>/<snapshot_id>/     never served
     fastf1-cache.tar.gz        FastF1's parsed feeds
     http-cache.sqlite.gz       the raw HTTP responses
-    extra/PitStopSeries.jsonStream, extra/circuit-info.json
+    extra/PitStopSeries.jsonStream, extra/WeatherData.jsonStream, extra/circuit-info.json
     snapshot.json              written last; without it the snapshot does not exist
     remeasured.json            only where a build found the snapshot's record wrong
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
@@ -95,11 +95,27 @@ What holds for all of them:
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with.
 - A pit stop is the timing's entry to the pit lane with F1's own figures
-  beside it, matched by driver and lap. F1 sometimes reports a stop late and
-  with no lap; such a report goes to the stop the driver had just finished. A
-  car in the pit lane while the session was red-flagged is marked
-  `under_red_flag`, and the strategy analysis leaves its wait out of the
-  pit-lane figures.
+  beside it, matched by driver and lap. F1's feed sends a stop once and then
+  only what changes, so a stop is followed by its driver and its place in
+  that driver's list, and a correction lands on the stop it corrects. F1
+  sometimes reports a stop late and with no lap; such a report goes to the
+  stop the timing shows the car finishing in the two minutes before it, when
+  there is exactly one that no other report names and whose pit-lane time is
+  the report's own, and is left out otherwise. A car in the pit lane while the
+  session was red-flagged is marked `under_red_flag`, and the strategy
+  analysis leaves its wait out of the pit-lane figures.
+- A driver is found by car number in every feed and named by F1's three
+  letters, from the timing, the driver list or the classification. A driver
+  none of them names is published under the car number as text. FastF1
+  writes the word `None` where a code is missing; no reader takes that, or
+  any other text, on trust (`f1data/loaded.py`).
+- A weather reading is null where F1 sent none. FastF1 writes 0 for those, so
+  the feed itself is archived with the session and asked. Snapshots taken
+  before it was kept are published as FastF1 has them; every line of every
+  one of those 51 sessions gives every reading.
+- The lap a replay frame says the session had reached is the timing's: the
+  highest lap any car had started by the end of the frame's window, whether
+  or not either feed has samples for it.
 
 ## Testing against recorded races
 
@@ -109,7 +125,9 @@ Austrian GP file by file, removes each feed in turn to show that a coverage
 bar notices, and checks three things F1's feeds have done that a stand-in
 would not think of (rows FastF1 adds for cars missing from the car feed, pit
 stops reported with no lap, a car whose data stops before its lap does). It
-needs no network, and runs when it is told where the archive is:
+also builds the Austrian race with each of its feeds taken out in turn, since
+a session can measure correctly and still fail to build. It needs no network,
+and runs when it is told where the archive is:
 
 ```text
 F1DATA_TEST_ARCHIVE=<a directory store, or r2> python -m pytest tests/test_recorded_race.py -s
@@ -247,7 +265,12 @@ with it.
 
 A correction is written against the one that was read, so a build never
 replaces one it has not seen, and one written by a newer pipeline version is
-left alone, as a newer version's pointer is. A pointer records which figures
+left alone, as a newer version's pointer is. That is among versions that
+measure alike. A change to what a measurement holds takes a new measurement
+version, and each has an object of its own (`remeasured.json` for version 2,
+`remeasured-m3.json` for the next): code reads and writes its own version's
+and no other, so it never has to believe, or stand aside for, figures it
+cannot read. A pointer records which figures
 its session was judged by; if they are corrected afterwards the session is
 decided again, and the build that follows measures the feeds once more, so a
 wrong correction does not outlive the next run.
