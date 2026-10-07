@@ -385,7 +385,7 @@ class WeatherSample(Model):
         "and in any other session."
     )
     air_temp_c: Decimal1 | None = Field(
-        description="Null, like the track temperature and the humidity, when F1's feed gave no value for "
+        description="Degrees Celsius. Null, like the track temperature and the humidity, when F1's feed gave no value for "
         "it, or gave the zero it sends for a sensor with no reading: exactly 0 between readings twenty or "
         "more from it."
     )
