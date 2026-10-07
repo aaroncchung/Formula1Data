@@ -176,11 +176,21 @@ export function compareLaps(
   const samplesA = samplesOf(a.lap);
   const samplesB = samplesOf(b.lap);
   const readB = readerOf(samplesB);
-  // Each lap's length by its own odometer. A lap has telemetry only when its
-  // car data runs from its start to its end, so the last sample is at the line.
+  // Each lap's length by its own odometer, from what that odometer read at
+  // the line. A lap has telemetry only when its car data runs from its start
+  // to its end, so the last sample is at the line, and the first is too when
+  // it is at time nought. It does not read nought there: a lap's distance is
+  // counted from the sample before the line, and the line comes out a
+  // fraction of a metre either side of it, another fraction on each lap. A
+  // lap whose data begins after the line has no reading at the line, and its
+  // distances are taken as they are.
   const lastSample = samplesA.count - 1;
-  const lengthA = samplesA.distance[lastSample] ?? 0;
-  const lengthB = samplesB.distance[samplesB.count - 1] ?? 0;
+  const atTheLine = (samples: typeof samplesA) => (samples.time[0] === 0 ? (samples.distance[0] ?? 0) : 0);
+  const originA = atTheLine(samplesA);
+  const originB = atTheLine(samplesB);
+  const endB = samplesB.distance[samplesB.count - 1] ?? 0;
+  const lengthA = (samplesA.distance[lastSample] ?? 0) - originA;
+  const lengthB = endB - originB;
   const scale = lengthA > 0 && lengthB > 0 ? lengthB / lengthA : 1;
   const rows: Array<{ distance: number; a: Reading | null; b: Reading | null }> = [];
   samplesA.distance.forEach((distance, index) => {
@@ -192,7 +202,7 @@ export function compareLaps(
     }
     // The line itself is given exactly: scaled, it could land a rounding
     // error past B's last sample and read as nothing.
-    const place = index === lastSample ? lengthB : distance * scale;
+    const place = index === lastSample ? endB : originB + (distance - originA) * scale;
     rows.push({ distance, a: readingAt(a.lap, index), b: readB(place, standingMs(samplesA, index)) });
   });
 

@@ -148,7 +148,13 @@ class Builder:
         # session it is asked for; only a race or a sprint is built.
         kind = snapshots[0].identity
         if kind.session_type not in IN_SCOPE_SESSION_TYPES:
-            return NotPublished(f"a {kind.session_name} session, and only races and sprints are published")
+            left = (
+                ""
+                if pointer is None
+                else ". It has a pointer, written by a version before this one: the site does not open it, "
+                "and nothing counts it"
+            )
+            return NotPublished(f"a {kind.session_name} session, and only races and sprints are published{left}")
         # Each fetch recorded the start time the calendar gave on its day. If
         # the calendar has since been corrected by more than the tolerance,
         # the fetches before the correction no longer match their entry and

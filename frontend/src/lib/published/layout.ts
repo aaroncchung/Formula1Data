@@ -12,6 +12,19 @@ import { FORMAT_VERSION } from "./config.ts";
 
 export const MANIFEST_NAME = "manifest.json";
 
+/**
+ * The kinds of session that are published: a race or a sprint
+ * (`IN_SCOPE_SESSION_TYPES` in f1data/policy.py). Every file of a generation
+ * is written for a session that is raced. A publisher before that rule was
+ * kept could give a pointer to a practice or a qualifying session, whose
+ * "result" is then an order by laps completed with gaps at a flag.
+ */
+const SHOWN_SESSION_TYPES: ReadonlySet<string> = new Set(["R", "S"]);
+
+export function isShownSessionType(sessionType: string): boolean {
+  return SHOWN_SESSION_TYPES.has(sessionType);
+}
+
 const GENERATION_ID = /^[a-f0-9]{64}$/;
 
 /** A generation is named by the SHA-256 of its manifest: 64 lowercase hex characters. */

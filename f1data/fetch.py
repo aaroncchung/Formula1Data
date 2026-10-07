@@ -112,7 +112,10 @@ def fetch_session(
     under, and when the weather loaded and its own lines could not be kept
     beside it (``weather_lines_are_kept`` in f1data/extras.py).
     """
-    code = session_type_code(session_type)
+    # Checked here; FastF1 is asked in the words that were given. It has
+    # names and codes of its own for sessions this code files under one
+    # ("Sprint Shootout", SS), and finds none of them under another's.
+    session_type_code(session_type)
     if cache_dir.exists() and any(cache_dir.iterdir()):
         raise FetchError(f"Fetch needs an empty cache directory, and {cache_dir} is not empty")
 
@@ -124,7 +127,7 @@ def fetch_session(
             seen = len(recorder.records)
             # A new object each time: feeds that arrived are read back from the
             # cache, and only the ones that failed are requested again.
-            session = fastf1.get_session(year, event, code)
+            session = fastf1.get_session(year, event, str(session_type).strip())
             session.load(laps=True, telemetry=True, weather=True, messages=True)
             failed = [
                 record
@@ -144,10 +147,12 @@ def fetch_session(
             identity = identity_from_fastf1(session)
         except Exception as exc:
             raise FetchError(
-                f"F1's session information did not arrive for {year} {event} {code}; "
+                f"F1's session information did not arrive for {year} {event} {session_type}; "
                 f"requests by host and status: {recorder.summary()}",
                 http=recorder,
             ) from exc
+        # What kind of session it is, by F1's name for it in its year.
+        code = identity.session_type
         extras = fetch_extras(fastf1, session, identity.archive_path)
         if not weather_lines_are_kept(session, extras):
             # Nothing is archived, and the session is fetched again on a
@@ -194,25 +199,25 @@ def read_back(year: int, event: int | str, session_type: str, cache_dir: Path) -
     Raises ``FetchError`` when the session cannot be read back as a fetch
     would have returned it.
     """
-    code = session_type_code(session_type)
+    session_type_code(session_type)
     if not cache_dir.is_dir() or not any(cache_dir.rglob("*.ff1pkl")):
         raise FetchError(f"There are no parsed feeds to read back under {cache_dir}")
     try:
         # Each request that is refused and answered from the cache is logged
         # by the cache as a failure, with its traceback. Here it is the plan.
         with _quietly("requests_cache"), fastf1_cache(cache_dir) as fastf1, HttpRecorder(forbid_all=True) as recorder:
-            session = fastf1.get_session(year, event, code)
+            session = fastf1.get_session(year, event, str(session_type).strip())
             session.load(laps=True, telemetry=True, weather=True, messages=True)
             identity = identity_from_fastf1(session)
             extras = fetch_extras(fastf1, session, identity.archive_path)
             if not weather_lines_are_kept(session, extras):
                 raise FetchError(f"The weather was loaded and {WEATHER_SERIES} is not in the cache beside it")
-            coverage = measure_coverage(session, code, extras)
+            coverage = measure_coverage(session, identity.session_type, extras)
             versions = _versions(fastf1)
     except FetchError:
         raise
     except Exception as exc:
-        raise FetchError(f"{year} {event} {code} could not be read back from {cache_dir}: {exc}") from exc
+        raise FetchError(f"{year} {event} {session_type} could not be read back from {cache_dir}: {exc}") from exc
     session_dir = cache_dir / identity.archive_path
     if not session_dir.is_dir() or not any(session_dir.glob("*.ff1pkl")):
         # The calendar in the cache led to a session whose feeds are not the

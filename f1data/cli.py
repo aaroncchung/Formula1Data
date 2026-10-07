@@ -640,7 +640,11 @@ def _seasons_in_scope(now: datetime, snapshots: list[Snapshot], published_short:
     years = {now.year, now.year - 1}
     by_session: dict[int, list[Snapshot]] = {}
     for snapshot in snapshots:
-        by_session.setdefault(snapshot.session_key, []).append(snapshot)
+        # Only the sessions the job fetches. A practice session someone
+        # archived by hand is never fetched again, short or not, and is no
+        # reason to look at its season.
+        if snapshot.identity.session_type in IN_SCOPE_SESSION_TYPES:
+            by_session.setdefault(snapshot.session_key, []).append(snapshot)
     for session_key, group in by_session.items():
         best = select_snapshot(group)
         if best is not None and (not best.complete or session_key in published_short):

@@ -159,7 +159,7 @@ def test_a_fetch_is_made_into_an_empty_cache_and_read_back_from_the_one_it_fille
         yield SimpleNamespace(get_session=lambda year, event, code: loaded)
 
     monkeypatch.setattr(fetch_module, "fastf1_cache", cache)
-    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=ARCHIVE_PATH))
+    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=ARCHIVE_PATH, session_type="R"))
     monkeypatch.setattr(fetch_module, "_versions", lambda module: {})
     monkeypatch.setattr(
         fetch_module, "fetch_extras", lambda module, found, path: {**extras(), WEATHER_SERIES: b"00:00:38.376{}"}

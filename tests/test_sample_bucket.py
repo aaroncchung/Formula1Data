@@ -71,8 +71,18 @@ def test_the_command_writes_a_directory_a_file_server_can_serve_as_the_worker_do
             assert response.status == 200
             assert response.headers["Access-Control-Allow-Origin"] == "*"
             assert json.loads(response.read())["format_version"] == layout.FORMAT_VERSION
-        # Only under /data, and never a listing of what is there.
-        for path in (f"/{layout.index_key()}", SERVED_UNDER, f"{SERVED_UNDER}v2/pointers/"):
+        # Only under /data, never a listing of what is there, and nothing
+        # but what is published: a directory that also holds an archive is
+        # served as the Worker serves a bucket that does.
+        archived = tmp_path / "sample" / "archive" / "sessions" / "9001" / "snapshot.json"
+        archived.parent.mkdir(parents=True)
+        archived.write_text("{}", encoding="utf-8")
+        for path in (
+            f"/{layout.index_key()}",
+            SERVED_UNDER,
+            f"{SERVED_UNDER}v2/pointers/",
+            f"{SERVED_UNDER}archive/sessions/9001/snapshot.json",
+        ):
             with pytest.raises(urllib.error.HTTPError) as refused:
                 urllib.request.urlopen(base + path, timeout=10)
             assert refused.value.code == 404, path

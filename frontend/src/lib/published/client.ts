@@ -18,7 +18,15 @@
 import { shareWhilePending } from "../shared-request.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { PublishedErrorCode } from "./errors.ts";
-import { MANIFEST_NAME, generationPrefix, indexKey, isSessionKey, pointerKey, standingsKey } from "./layout.ts";
+import {
+  MANIFEST_NAME,
+  generationPrefix,
+  indexKey,
+  isSessionKey,
+  isShownSessionType,
+  pointerKey,
+  standingsKey
+} from "./layout.ts";
 import { parseIndex, parseManifest, parsePointer, parseStandings } from "./parse.ts";
 import type { Manifest, Pointer, PublishedIndex, Standings } from "./types.ts";
 
@@ -163,6 +171,16 @@ export function createPublishedClient(options: PublishedClientOptions): Publishe
       decode(pointerAnswer, "invalid_pointer", `The pointer of session ${sessionKey}`),
       sessionKey
     );
+    if (!isShownSessionType(pointer.identity.session_type)) {
+      // Before its generation is asked for. Whatever the index says, and by
+      // whatever address the page was reached: what such a pointer leads to
+      // is a race's figures for a session that was not a race.
+      throw new PublishedDataError(
+        "not_published",
+        `Session ${sessionKey} is a ${pointer.identity.session_name} session, and only races and sprints are published.`,
+        { session_key: sessionKey, url: pointerAnswer.url }
+      );
+    }
 
     // Every later request of this view is this string plus a path from the
     // manifest. The view keeps no way to reach the pointer again, so it cannot

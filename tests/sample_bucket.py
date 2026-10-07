@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 
+from f1data import layout
 from f1data.archive import Snapshot
 from f1data.artifacts import build_artifacts
 from f1data.coverage import apply_classification, measure_coverage
@@ -144,9 +145,12 @@ class _AsTheWorkerServes(http.server.SimpleHTTPRequestHandler):
     """Files of the directory under ``/data/``, readable from a page on any origin."""
 
     def translate_path(self, path: str) -> str:
-        if not path.startswith(SERVED_UNDER):
+        # What is published, and nothing else the directory may hold: the
+        # Worker never serves the archive (worker/src/published-data.mjs).
+        key = path[len(SERVED_UNDER) :] if path.startswith(SERVED_UNDER) else ""
+        if not key.startswith(f"v{layout.FORMAT_VERSION}/"):
             return str(Path(self.directory) / "not-served")
-        return super().translate_path("/" + path[len(SERVED_UNDER) :])
+        return super().translate_path("/" + key)
 
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")

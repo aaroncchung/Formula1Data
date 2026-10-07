@@ -50,6 +50,21 @@ test("lap B is read where lap A's samples are, between its own two samples eithe
   assert.deepEqual(comparison.delta_speed_kph, [100, 60, 20, -50]);
 });
 
+// A lap's distance does not start at nought: it is counted from the sample
+// before the line, and the line falls a fraction of a metre either side.
+test("two laps are laid over each other from where each one's distance starts", () => {
+  const a = lap(3, [[0, 0, 180], [50_000, 2_500, 180], [100_000, 5_000, 180]]);
+  // The same lap, by an odometer that read 0.4 m less at the line.
+  const b = lap(2, [[0, -0.4, 180], [50_000, 2_499.6, 180], [100_000, 4_999.6, 180]]);
+
+  // Laid over from nought, B was 8 ms behind at the line it started on, and 4 half-way round.
+  assert.deepEqual(compare(a, b).delta_time_ms, [0, 0, 0]);
+  assert.deepEqual(compare(b, a).delta_time_ms, [0, 0, 0]);
+  // And a longer odometer is still stretched over the shorter, from its own start.
+  const longer = lap(4, [[0, 0.5, 180], [50_000, 2_525.5, 180], [100_000, 5_050.5, 180]]);
+  assert.deepEqual(compare(a, longer).delta_time_ms, [0, 0, 0]);
+});
+
 // The point of interpolating: with 300 samples a lap, the nearest sample is
 // up to an eighth of a second away, which is more than most gaps being read.
 test("the time delta is how much later B reached each distance, interpolated and not taken from the nearest sample", () => {

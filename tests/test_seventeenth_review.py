@@ -330,7 +330,7 @@ def reading_back(monkeypatch, tmp_path, archive_path: str = ARCHIVE_PATH):
         yield SimpleNamespace(get_session=lambda year, event, code: loaded)
 
     monkeypatch.setattr(fetch_module, "fastf1_cache", cache)
-    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=archive_path))
+    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=archive_path, session_type="R"))
     monkeypatch.setattr(fetch_module, "_versions", lambda module: {})
     monkeypatch.setattr(
         fetch_module, "fetch_extras", lambda module, found, path: {**extras(), WEATHER_SERIES: b"00:00:38.376{}"}

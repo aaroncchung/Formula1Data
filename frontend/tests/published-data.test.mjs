@@ -327,6 +327,38 @@ test("an absent pointer means the session is not published", async () => {
   assert.deepEqual(bucket.keys(), [POINTER_KEY]);
 });
 
+// A publisher before the rule was kept could write one. The index leaves it
+// out, and a page opened by the session's key reads the pointer without the
+// index.
+for (const [type, name] of [["FP2", "Practice 2"], ["Q", "Qualifying"], ["SQ", "Sprint Qualifying"]]) {
+  test(`a pointer to a ${name} session is not a published session, by whatever address it is asked for`, async () => {
+    const bucket = bucketOf();
+    edit(bucket, POINTER_KEY, (pointer) => {
+      pointer.identity.session_type = type;
+      pointer.identity.session_name = name;
+    });
+
+    const failure = await failureOf(clientOf(bucket).openSession(SESSION_KEY));
+
+    assert.equal(failure.code, "not_published");
+    assert.match(failure.message, new RegExp(`is a ${name} session, and only races and sprints are published`));
+    // Nothing of its generation was asked for.
+    assert.deepEqual(bucket.keys(), [POINTER_KEY]);
+  });
+}
+
+test("a sprint is a published session as a race is", async () => {
+  const bucket = bucketOf();
+  edit(bucket, POINTER_KEY, (pointer) => {
+    pointer.identity.session_type = "S";
+    pointer.identity.session_name = "Sprint";
+  });
+
+  const view = await clientOf(bucket).openSession(SESSION_KEY);
+
+  assert.equal(view.pointer.identity.session_type, "S");
+});
+
 const OTHER_GENERATION = "ab".repeat(32);
 const BROKEN_POINTERS = {
   "is not JSON": (bucket) => bucket.stored.set(POINTER_KEY, "<html>Bad gateway</html>"),

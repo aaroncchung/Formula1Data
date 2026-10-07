@@ -100,6 +100,8 @@ LOCK_SUFFIX = ".lock"
 # before the job had run on any schedule.
 _SCHEMA_VERSION = 2
 _LOCK_TRIES = 5
+# Windows refuses to remove a file that any process has open.
+_AN_OPEN_FILE_CANNOT_BE_REMOVED = os.name == "nt"
 # A directory with no record in it is one that something other than a fetch
 # left. So is a lock with no directory, once the run that made it has had
 # time to make the directory.
@@ -220,9 +222,12 @@ def holding(directory: Path) -> Iterator[bool]:
                 leftover = not _unlink(lock)
             _unlock(handle)
             handle.close()
-            if leftover:
+            if leftover and _AN_OPEN_FILE_CANNOT_BE_REMOVED:
                 # Where an open file cannot be removed, it also cannot be
                 # removed from under another run that has it open by now.
+                # Anywhere else a lock that could not be removed while it
+                # was held stays, for a later run to remove while it holds
+                # it: removed now, it could be another run's.
                 _unlink(lock)
 
 

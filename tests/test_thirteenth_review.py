@@ -175,7 +175,7 @@ def test_a_whole_fetch_refuses_to_archive_weather_without_its_lines(monkeypatch,
         yield fastf1
 
     monkeypatch.setattr(fetch_module, "fastf1_cache", cache)
-    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=ARCHIVE_PATH))
+    monkeypatch.setattr(fetch_module, "identity_from_fastf1", lambda found: SimpleNamespace(archive_path=ARCHIVE_PATH, session_type="R"))
     monkeypatch.setattr(fetch_module, "_versions", lambda module: {})
     monkeypatch.setattr(fetch_module, "fetch_extras", lambda module, found, path: extras())
 

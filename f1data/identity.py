@@ -34,12 +34,26 @@ class IdentityError(ValueError):
     """F1's session information is missing a field that identity depends on."""
 
 
-def session_type_code(value: Any) -> str:
-    """Normalise a session name or code (``Race``, ``r``, ``FP1``) to its code."""
+# FastF1's own code for the 2023 sprint shootout, which is this code's SQ.
+_OTHER_CODES = {"SS": "SQ"}
+# The one season in which F1 called the sprint itself "Sprint Qualifying".
+# From 2024 that name is the qualifying session for the sprint.
+_SPRINT_WAS_CALLED_SPRINT_QUALIFYING = 2021
+
+
+def session_type_code(value: Any, year: int | None = None) -> str:
+    """Normalise a session name or code (``Race``, ``r``, ``FP1``) to its code.
+
+    ``year`` is the season the name is F1's own for, when it is: one name
+    has meant two kinds of session.
+    """
     raw = str(value or "").strip()
     code = SESSION_TYPE_BY_NAME.get(raw.lower(), raw.upper())
+    code = _OTHER_CODES.get(code, code)
     if code not in SESSION_TYPES:
         raise ValueError(f"Unknown session type: {value!r}")
+    if code == "SQ" and year == _SPRINT_WAS_CALLED_SPRINT_QUALIFYING and raw.lower() == "sprint qualifying":
+        return "S"
     return code
 
 
@@ -105,7 +119,7 @@ def identity_from_fastf1(session: Any) -> SessionIdentity:
         session_key=int(session_key),
         meeting_key=int(meeting_key),
         year=start.year,
-        session_type=session_type_code(info.get("Name") or session.name),
+        session_type=session_type_code(info.get("Name") or session.name, year=start.year),
         session_name=str(info.get("Name") or session.name),
         start_time_utc=format_utc(start),
         meeting_name=str(meeting.get("Name") or _get(event, "EventName") or ""),

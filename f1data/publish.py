@@ -249,15 +249,31 @@ def read_pointer(store: ObjectStore, session_key: int) -> tuple[Pointer | None, 
 
 
 def read_published(store: ObjectStore) -> list[Pointer]:
-    """Every published session: one list call, then one read each (rule 3)."""
+    """Every published session: one list call, then one read each (rule 3).
+
+    A race or a sprint. A pointer to any other kind of session, which a
+    version before this one could write, is passed over here, and so counts
+    for nothing wherever the published sessions are counted: the index, the
+    seasons whose standings are kept, the sessions looked at again for being
+    short. The site does not open one either.
+    """
     pointers = []
     for item in store.list(layout.pointers_prefix()):
         session_key = layout.session_key_from_pointer_key(item.key)
         if session_key is None:
             continue
         pointer, _ = read_pointer(store, session_key)
-        if pointer is not None:
-            pointers.append(pointer)
+        if pointer is None:
+            continue
+        if pointer.identity.session_type not in IN_SCOPE_SESSION_TYPES:
+            _logger.warning(
+                "Session %s has a pointer and is a %s session; nothing but a race or a sprint is published, "
+                "and it is passed over",
+                session_key,
+                pointer.identity.session_name,
+            )
+            continue
+        pointers.append(pointer)
     return sorted(pointers, key=lambda pointer: pointer.session_key)
 
 

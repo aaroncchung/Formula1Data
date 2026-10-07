@@ -51,6 +51,16 @@ calendar changes. `v2` is the artifact format; a new format is published under
 a new prefix before the site that reads it is deployed. What was published
 under `v1/` stays where it is until nothing reads it.
 
+Only a race or a sprint is published. The archive can hold any session,
+since `fetch` archives what it is asked for, and nothing is built of any
+other: every file of a generation is written for a session that is raced.
+Should a pointer to another kind of session be in the bucket, from a
+publisher before this rule was kept, the build passes it over wherever it
+counts what is published, the index leaves it out, and the site does not
+open it, by its key or any other way. A session's kind is F1's name for it
+in its own year: the sprint of 2021 was called Sprint Qualifying, which
+since 2024 is the session that sets a sprint's grid.
+
 ## The published format
 
 Every object under `v2/` has a model in `f1data/models.py`, and that file is
@@ -69,7 +79,7 @@ A generation of a race is about 45 objects and 20 MB:
 ```text
 summary.json  drivers.json  laps.json  results.json  stints.json  pit-stops.json
 weather.json  race-control.json  corners.json  coverage.json  position-replay.json
-analysis/<name>.json              nine analyses; a tenth for practice sessions
+analysis/<name>.json              nine analyses
 telemetry/index.json              which laps have telemetry, with each lap's time
 telemetry/<driver_code>.json      every lap of one driver, as parallel arrays
 manifest.json                     every file with its size and SHA-256
@@ -172,7 +182,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | `run` | The whole job: `build`, then `fetch-due`, then `build` again if anything was fetched. What a schedule runs |
 | `last-run` | Say when `run` last finished on the machine that fetches. Exits 1 when that is more than 13 hours ago, or was never |
 | `fetch-due` | See through what is in the spool, then fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan, `--limit N` to start at most N new fetches |
-| `fetch --year Y --event E --session S` | Fetch one session as a new snapshot. Any session is archived; only a race or a sprint is ever built |
+| `fetch --year Y --event E --session S` | Fetch one session as a new snapshot. Any session is archived; only a race or a sprint is ever built. `S` is given to FastF1 as it is written: a name such as `Sprint Shootout`, or `R`, `S`, `Q`, `SQ`, `SS`, `FP1` to `FP3` |
 | `build` | Build and publish every archived race and sprint that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
 | `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves |
