@@ -491,7 +491,7 @@ def _is_marker(key: str) -> bool:
 
 
 def _is_correction(key: str) -> bool:
-    return key.endswith(f"/{layout.REMEASUREMENT_NAME}")
+    return layout.is_remeasurement_key(key)
 
 
 def _add_store_argument(parser: argparse.ArgumentParser) -> None:

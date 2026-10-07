@@ -165,13 +165,13 @@
    "size_bytes": 1077056
   },
   "telemetry/index.json": {
-   "sha256": "8c662315df4f3070039b68435da166ff05d6930a05ac1156d89a2f3bfe58b508",
-   "size_bytes": 43217
+   "sha256": "ae2fecc5a900bcfb20306fb257f5926ee839a6df05346964280c5d8f6c5c811c",
+   "size_bytes": 75583
   },
   "weather.json": {
    "sha256": "7dddd350e4640288fb685c10df4f2e0a7e27fb2418de36a9a782fa24929d6142",
    "size_bytes": 19770
   }
  },
- "generation": "29edc96b8a70eb9edaad0679cbf3daa132584f9b4231167e338367bfe18223f6"
+ "generation": "81693c98dd96cc0de5386ac4962af0e0e5b927af3227b3d99ef643482f8629b9"
 }

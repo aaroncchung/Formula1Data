@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pickle
 import time
 from dataclasses import replace
 from types import SimpleNamespace
@@ -269,7 +270,7 @@ def test_the_austrian_races_files(generation):
     )
     assert fastest == (70_374, "ANT", 59, "HARD")
     # 266 kB in the old format, where it listed a file for every lap.
-    assert len(files["telemetry/index.json"]) < 60_000
+    assert len(files["telemetry/index.json"]) < 80_000
     replay = read(files, "position-replay.json")
     assert (len(replay["time_ms"]), len(replay["drivers"]), replay["lap_number"][-1]) == (1054, 22, 71)
     # 108 MB in 1,342 files in the old format.
@@ -408,6 +409,96 @@ def test_a_session_without_one_drivers_share_of_a_feed_is_incomplete_and_names_t
     assert bar in named
     # Nobody else is blamed for it.
     assert {item.driver for item in found} <= who
+
+
+def build_without(austria, tmp_path, bar, driver_number=None, damage=None):
+    """The generation of the recorded race with one feed taken out of its cache, built as a run builds it."""
+    cache = without(austria.base, austria.snapshot, tmp_path / "cache", bar, driver_number)
+    if damage is not None:
+        damage(cache / austria.snapshot.identity.archive_path)
+    session = load_offline(austria.snapshot, cache)
+    official = recorded_classification(AUSTRIA)
+    measurement = apply_classification(measure_coverage(session, "R", austria.extras), official.laps_by_number)
+    merge_into_session(session, official)
+    return build_artifacts(session, austria.snapshot.identity, official, austria.extras, measurement)
+
+
+# FastF1 makes a session's laps from these four together, and none without any one of them.
+NO_LAPS_WITHOUT = {"timing_data", "tyre_data", "track_status", "session_status"}
+
+
+@pytest.mark.parametrize("bar", sorted(set(FEED_FILES) - NO_LAPS_WITHOUT))
+def test_a_session_without_one_of_its_feeds_is_still_built_and_says_what_it_lacks(austria, generation, tmp_path, bar):
+    """After its retry window a session short of a feed is published as it
+    is. Measuring it is not enough to know that it can be: with F1's driver
+    list gone the measurement was right and the build failed, because every
+    lap FastF1 loads then has an empty driver code."""
+    files = build_without(austria, tmp_path, bar)
+
+    for path, data in files.items():
+        model_for_artifact(path).model_validate_json(data)
+    coverage = read(files, "coverage.json")
+    assert coverage["complete"] is False and bar in {item["bar"] for item in coverage["shortfalls"]}
+    # Everyone is there under the code the whole race gives them, with their laps.
+    assert sorted(row["code"] for row in read(files, "drivers.json")) == sorted(
+        row["code"] for row in read(generation.files, "drivers.json")
+    )
+    whole = {(row["driver_code"], row["lap_number"]) for row in read(generation.files, "laps.json")}
+    laps = {(row["driver_code"], row["lap_number"]) for row in read(files, "laps.json")}
+    # Without the lap count FastF1 drops the one lap it added for a retirement.
+    assert laps == whole or (bar == "lap_count" and laps < whole and len(whole - laps) == 1)
+    assert read(files, "results.json") == read(generation.files, "results.json")
+    FEED_TABLE.append((FEED_FILES[bar], "session", f"built: {len(files)} files"))
+
+
+@pytest.mark.parametrize("bar", sorted(NO_LAPS_WITHOUT))
+def test_a_session_fastf1_can_make_no_laps_of_is_not_built_and_says_why(austria, tmp_path, bar):
+    with pytest.raises(normalize.SessionDataError, match="The session has no laps"):
+        build_without(austria, tmp_path, bar)
+
+
+def test_a_driver_f1s_list_leaves_out_is_built_under_the_classifications_code(austria, generation, tmp_path):
+    number, code = ONE_DRIVER
+
+    files = build_without(austria, tmp_path, "driver_list", driver_number=number)
+
+    # FastF1 loads no laps and no telemetry for a car that is not in the list.
+    assert code in {row["code"] for row in read(files, "drivers.json")}
+    assert f"telemetry/{code}.json" not in files
+    assert read(files, "results.json") == read(generation.files, "results.json")
+    assert (code, "driver_list") in {(item["driver"], item["bar"]) for item in read(files, "coverage.json")["shortfalls"]}
+
+
+def test_a_driver_f1s_list_gives_no_code_is_built_under_the_classifications(austria, generation, tmp_path):
+    """The form the twelfth review found: the list has the driver, with a
+    number and names, and no three-letter code or broadcast name. FastF1
+    writes the word ``None`` on every one of their laps."""
+    number, code = ONE_DRIVER
+
+    def no_code(feeds):
+        path = feeds / FEED_FILES["driver_list"]
+        with path.open("rb") as handle:
+            cached = pickle.load(handle)
+        entry = {key: value for key, value in cached["data"][number].items() if key not in ("Tla", "BroadcastName")}
+        cached["data"] = {**cached["data"], number: entry}
+        # A new file: the one there may share its bytes with the fixture's.
+        path.unlink()
+        with path.open("wb") as handle:
+            pickle.dump(cached, handle)
+
+    probe = without(austria.base, austria.snapshot, tmp_path / "probe", "lap_count")
+    no_code(probe / austria.snapshot.identity.archive_path)
+    loaded = load_offline(austria.snapshot, probe)
+    assert set(loaded.laps.loc[loaded.laps["DriverNumber"] == number, "Driver"]) <= {"None", "nan"}
+
+    files = build_without(austria, tmp_path, "lap_count", damage=no_code)
+
+    assert "telemetry/NONE.json" not in files and "telemetry/NAN.json" not in files
+    assert sorted(row["code"] for row in read(files, "drivers.json")) == sorted(
+        row["code"] for row in read(generation.files, "drivers.json")
+    )
+    assert read(files, f"telemetry/{code}.json") == read(generation.files, f"telemetry/{code}.json")
+    assert (code, "driver_list") in {(item["driver"], item["bar"]) for item in read(files, "coverage.json")["shortfalls"]}
 
 
 @pytest.mark.parametrize("extra", [PIT_STOP_SERIES, CIRCUIT_INFO])
@@ -565,9 +656,23 @@ def test_the_monaco_replay_stops_where_the_position_feed_does(monaco):
     replay = read(monaco.files, "position-replay.json")
     laps = read(monaco.files, "laps.json")
 
-    assert replay["time_ms"] and max(number for number in replay["lap_number"] if number) == 5
     # The feed stops at 3,710,541 ms on the session clock. No frame is later.
-    assert replay["time_ms"][-1] <= 3_710_541
+    assert replay["time_ms"] and replay["time_ms"][-1] <= 3_710_541
+    # The lap the race had reached is the timing's to say, not the position
+    # feed's: in every frame it is the highest lap any car had started by the
+    # end of the frame's window. Every lap of this race has car data, so the
+    # telemetry files say when each was started. The feed stops a few
+    # seconds before the leader ends lap 5, and the sixth starts inside the
+    # last frame.
+    started: dict[int, int] = {}
+    for path, data in monaco.files.items():
+        if path.startswith("telemetry/") and path != "telemetry/index.json":
+            for lap in json.loads(data)["laps"]:
+                started[lap["lap_number"]] = min(started.get(lap["lap_number"], lap["start_ms"]), lap["start_ms"])
+    for moment, reached in zip(replay["time_ms"], replay["lap_number"]):
+        begun = [number for number, start in started.items() if start < moment + replay["interval_ms"]]
+        assert reached == (max(begun) if begun else None), moment
+    assert replay["lap_number"][-1] == 6 and replay["lap_number"].count(6) <= 2
     # Nothing is drawn at (0, 0), which F1 sends for a car it has no position for.
     for driver in replay["drivers"]:
         assert all(x != 0 or y != 0 for x, y in zip(driver["x"], driver["y"]) if x is not None)

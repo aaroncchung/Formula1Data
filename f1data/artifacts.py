@@ -85,10 +85,10 @@ def session_artifacts(
     telemetry = extract_telemetry(session)
     codes = normalize.driver_codes(session)
     drivers = normalize.drivers(session, codes)
-    laps = normalize.laps(session)
+    laps = normalize.laps(session, codes)
     stints = normalize.stints(laps)
     pit_stops = normalize.pit_stops(session, extras, codes)
-    weather = normalize.weather(session, identity.session_type)
+    weather = normalize.weather(session, identity.session_type, extras)
     race_control = normalize.race_control(session)
     corners = normalize.circuit_corners(extras, telemetry, laps)
     summary = normalize.summary(identity, session, drivers, laps, weather)
@@ -103,7 +103,7 @@ def session_artifacts(
         "weather.json": weather,
         "race-control.json": race_control,
         "corners.json": corners,
-        "coverage.json": normalize.coverage(measurement),
+        "coverage.json": normalize.coverage(measurement, codes),
         "position-replay.json": position_replay(telemetry),
     }
     analyses = session_analyses(summary, drivers, laps, stints, pit_stops, race_control, corners, telemetry)
@@ -151,6 +151,10 @@ def telemetry_artifacts(telemetry: SessionTelemetry, lap_rows: list[Lap]) -> dic
                 lap_number=[lap.lap_number for lap in laps],
                 lap_time_ms=[row.lap_time_ms if row else None for row in rows],
                 compound=[row.compound if row else None for row in rows],
+                is_accurate=[row.is_accurate if row else None for row in rows],
+                is_deleted=[row.is_deleted if row else None for row in rows],
+                is_pit_in_lap=[row.is_pit_in_lap if row else None for row in rows],
+                is_pit_out_lap=[row.is_pit_out_lap if row else None for row in rows],
                 sample_count=[len(thinned.time_ms) for thinned in published],
                 raw_sample_count=[lap.sample_count for lap in laps],
                 has_position=[lap.has_position for lap in laps],

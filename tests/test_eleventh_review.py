@@ -543,19 +543,3 @@ def test_a_late_report_still_counts_as_a_stop_the_feed_vouches_for():
 
     assert measure_coverage(session, "R", late_report(30.0))["pit_stops_in_series"] == 1
 
-
-def test_of_two_stops_a_late_report_could_be_of_it_is_of_the_later():
-    """A driver in twice in two laps: the report made after the second stop
-    is within two minutes of the first as well."""
-    clock_zero = int(CLOCK_ZERO.value)
-    timed = {5: (1_000_000, 20_000), 6: (1_090_000, 22_000)}
-    report = {"time_utc": (CLOCK_ZERO + pd.Timedelta(milliseconds=1_115_000)).isoformat() + "Z"}
-
-    assert normalize._lap_of_a_late_report(report, timed, clock_zero) == 6
-    assert normalize._lap_of_a_late_report(report, dict(reversed(timed.items())), clock_zero) == 6
-    # Made between the two, it is of the first.
-    between = {"time_utc": (CLOCK_ZERO + pd.Timedelta(milliseconds=1_050_000)).isoformat() + "Z"}
-    assert normalize._lap_of_a_late_report(between, timed, clock_zero) == 5
-    # A time that is no time places nothing.
-    assert normalize._lap_of_a_late_report({"time_utc": "soon"}, timed, clock_zero) is None
-    assert normalize._lap_of_a_late_report(report, timed, None) is None

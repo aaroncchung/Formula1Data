@@ -303,7 +303,12 @@ def merge_into_session(session: Any, classification: Classification) -> None:
         official["FullName"] = official["FirstName"] + " " + official["LastName"]
     official = official.set_index("DriverNumber", drop=False)
 
-    current = session.results.copy()
+    try:
+        current = session.results.copy()
+    except Exception:
+        # FastF1 raises for a table it could not make. The result is then
+        # the classification's alone.
+        current = pd.DataFrame()
     if "DriverNumber" in current:
         current["DriverNumber"] = current["DriverNumber"].astype(str)
         current = current.set_index("DriverNumber", drop=False)
@@ -328,7 +333,13 @@ def merge_into_session(session: Any, classification: Classification) -> None:
 
 def _set_first_lap_times(session: Any, first_lap_ms: dict[str, int]) -> None:
     """What FastF1's ``_add_first_lap_time_from_ergast`` does, from times fetched beforehand."""
-    laps = getattr(session, "laps", None)
+    try:
+        laps = session.laps
+    except Exception:
+        # FastF1 makes no laps when the timing, the tyre data, the track
+        # status or the session status is missing, and raises when asked for
+        # them. Whether such a session can be built is not for this to say.
+        return
     if not first_lap_ms or laps is None or not {"LapNumber", "DriverNumber", "LapTime"} <= set(laps.columns):
         return
     first = laps["LapNumber"] == 1

@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, circuit_corner_count, parse_pit_stop_series
+from f1data.loaded import driver_codes, present
 
 # What a measurement records. A snapshot measured by an older version says
 # nothing about a feed added since, and is fetched again (f1data/due.py).
@@ -132,7 +133,7 @@ def measure_coverage(
     position_data = _mapping(session, "pos_data")
 
     drivers: dict[str, dict[str, Any]] = {}
-    for number, code in _driver_codes(results, laps).items():
+    for number, code in driver_codes(results, laps).items():
         driver_laps = _driver_laps(laps, number)
         timed = driver_laps[~_generated(driver_laps)] if len(driver_laps) else driver_laps
         drivers[code] = {
@@ -506,18 +507,6 @@ def _tyre_laps(laps: pd.DataFrame, with_age: bool = False) -> int:
     return int(known.sum())
 
 
-def _driver_codes(results: pd.DataFrame, laps: pd.DataFrame) -> dict[str, str]:
-    """Driver number to three-letter code, for every driver in the result or the timing."""
-    codes: dict[str, str] = {}
-    if len(results) and "Abbreviation" in results.columns:
-        for number, code in zip(_numbers(results), results["Abbreviation"]):
-            codes[number] = str(code) if _present(code) else number
-    if len(laps) and {"DriverNumber", "Driver"} <= set(laps.columns):
-        for number, code in zip(laps["DriverNumber"].astype(str), laps["Driver"]):
-            codes.setdefault(number, str(code) if _present(code) else number)
-    return codes
-
-
 def _driver_laps(laps: pd.DataFrame, number: str) -> pd.DataFrame:
     if len(laps) == 0 or "DriverNumber" not in laps.columns:
         return laps.iloc[0:0]
@@ -583,14 +572,9 @@ def _safe_attr(session: Any, attribute: str) -> Any:
 
 
 def _present(value: Any) -> bool:
-    if value is None:
-        return False
-    try:
-        if pd.isna(value):
-            return False
-    except (TypeError, ValueError):
-        pass
-    return str(value).strip() != ""
+    # Nothing, or the word FastF1's cast to text makes of nothing, is not a
+    # value: a driver list entry with no name in it is not an entry.
+    return present(value) and str(value).strip() != ""
 
 
 def _int_or_none(value: Any) -> int | None:

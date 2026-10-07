@@ -220,7 +220,6 @@ def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
     without being handed three quarters of a million rows.
     """
     rows: list[dict[str, Any]] = []
-    leader_lap: dict[int, int] = {}
 
     def one_per_window(lap: Any, placed: np.ndarray) -> np.ndarray:
         """Of the samples at ``placed``, the one nearest the middle of each window."""
@@ -230,8 +229,6 @@ def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
         # The first sample of each window that is nearest its middle.
         order = np.lexsort((np.arange(len(window)), from_middle, window))
         first_of_window = np.concatenate(([True], np.diff(window[order]) != 0))
-        for number in np.unique(window).tolist():
-            leader_lap[number] = max(leader_lap.get(number, 0), lap.lap_number)
         return placed[np.sort(order[first_of_window])]
 
     for lap in telemetry.laps.values():
@@ -248,10 +245,6 @@ def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
             (lap.driver_code, lap.lap_number)
         ].has_position:
             continue
-        # The feed's first sample of a lap comes a moment after the lap
-        # starts, and the lap had started all the same.
-        started_in = lap.start_ms // REPLAY_INTERVAL_MS
-        leader_lap[started_in] = max(leader_lap.get(started_in, 0), lap.lap_number)
         for index in one_per_window(lap, np.arange(len(lap.time_ms))).tolist():
             moment = int(lap.time_ms[index])
             rows.append(
@@ -276,13 +269,23 @@ def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
         for position in frame["positions"]:
             for channel in _REPLAY_CHANNELS:
                 tracks[position["driver_code"]][channel][index] = position.get(channel)
-    # The lap the session had reached. It does not fall back when the
-    # leader finishes and only lapped cars are still running.
+    # The lap the session had reached by the end of each frame's window: the
+    # highest any car had started, by the timing. Not by which laps have
+    # samples in the window: the leader's lap may be one neither feed carries.
+    # It does not fall back when the leader finishes and only lapped cars are
+    # still running.
+    started = dict(telemetry.lap_started_ms)
+    if not started:
+        # Telemetry made without a session's timing: its own laps' starts.
+        for lap in [*telemetry.laps.values(), *telemetry.positions_only.values()]:
+            started[lap.lap_number] = min(started.get(lap.lap_number, lap.start_ms), lap.start_ms)
+    in_order = sorted((moment, number) for number, moment in started.items())
+    moments = np.array([moment for moment, _ in in_order], dtype=np.int64)
+    furthest = np.maximum.accumulate(np.array([number for _, number in in_order], dtype=np.int64))
     reached: list[int | None] = []
     for frame in frames:
-        lap_number = leader_lap.get(int(frame["timestamp_ms"]) // REPLAY_INTERVAL_MS)
-        previous = reached[-1] if reached else None
-        reached.append(max(lap_number, previous) if lap_number and previous else lap_number or previous)
+        begun = int(np.searchsorted(moments, int(frame["timestamp_ms"]) + REPLAY_INTERVAL_MS, side="left"))
+        reached.append(int(furthest[begun - 1]) if begun else None)
     return PositionReplay(
         interval_ms=REPLAY_INTERVAL_MS,
         time_ms=[int(frame["timestamp_ms"]) for frame in frames],

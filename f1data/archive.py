@@ -235,10 +235,12 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
     )
     markers: list[str] = []
     remeasured: set[str] = set()
+    # This version's corrections and no other's (f1data/layout.py).
+    correction_name = layout.remeasurement_name(MEASUREMENT_VERSION)
     for item in store.list(prefix):
         if item.key.endswith(f"/{layout.SNAPSHOT_MARKER}"):
             markers.append(item.key)
-        elif item.key.endswith(f"/{layout.REMEASUREMENT_NAME}"):
+        elif item.key.endswith(f"/{correction_name}"):
             remeasured.add(item.key)
     snapshots = []
     for key in markers:
@@ -248,7 +250,7 @@ def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[S
         snapshot = _snapshot_at(key, found.data)
         if snapshot is None:
             continue
-        correction = f"{key[: -len(layout.SNAPSHOT_MARKER)]}{layout.REMEASUREMENT_NAME}"
+        correction = f"{key[: -len(layout.SNAPSHOT_MARKER)]}{correction_name}"
         if correction in remeasured:
             snapshot = _as_remeasured(store, snapshot, correction)
         snapshots.append(_with_corner_count(store, snapshot))
@@ -354,13 +356,20 @@ def write_remeasurement(
     made against the correction this snapshot was listed with, so that one
     another build has written since is not replaced unread
     (``PreconditionFailed``).
+
+    That is among builds that measure alike. The object is this version of
+    the measurement's own; another version's is a different object, which
+    this never reads and never writes.
     """
     if (snapshot.corrected_by or 0) > layout.PIPELINE_VERSION:
         raise ValueError(
             f"Snapshot {snapshot.snapshot_id} was measured by pipeline version {snapshot.corrected_by}"
         )
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    key = f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{layout.REMEASUREMENT_NAME}"
+    key = (
+        f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}"
+        f"{layout.remeasurement_name(MEASUREMENT_VERSION)}"
+    )
     data = dump_json(
         {
             "schema_version": SNAPSHOT_SCHEMA_VERSION,
@@ -399,16 +408,14 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         coverage = payload["coverage"]
         measured_by = _whole_number(coverage["measurement_version"])
         if measured_by != MEASUREMENT_VERSION:
-            # Figures this version does not know how to read, from a version
-            # that does. They are not used, and whoever wrote them is on
-            # record, so that a newer version's are not replaced. That much
-            # is granted only to something with the outline of a measurement:
-            # its feeds and its drivers by name. An object that claims a
-            # newer version and holds nothing would otherwise shut this
-            # version out of the snapshot for good.
-            if not isinstance(coverage.get("feeds"), dict) or not isinstance(coverage.get("drivers"), dict):
-                raise ValueError("not a measurement of any version")
-            return replace(snapshot, corrected_by=written_by)
+            # Under this version's name and not this version's. Another
+            # version of the measurement keeps its corrections in an object
+            # of its own, so nothing that says so here was written by one.
+            # It used to be believed, as far as "a newer version has been
+            # here, stand aside": a claim that cannot be checked, which
+            # however little it was allowed to hold could shut this version
+            # out of the snapshot for good.
+            raise ValueError("not this version's measurement")
         corrected = {
             **coverage,
             "drivers": {
