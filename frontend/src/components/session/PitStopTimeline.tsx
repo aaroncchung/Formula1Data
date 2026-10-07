@@ -22,7 +22,10 @@ export function PitStopTimeline({ stops, lastLap = 0 }: { stops: ReadonlyArray<P
             {driverStops.map((stop, index) => (
               <div
                 key={`${stop.driver_code}-${stop.lap_number}-${index}`}
-                className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-carbon bg-aqua shadow-[0_0_0_3px_rgba(45,224,200,0.15)]"
+                className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-carbon ${
+                  // A car waiting out a red flag in the pit lane is marked apart from a car making a stop.
+                  stop.under_red_flag ? "bg-redline shadow-[0_0_0_3px_rgba(243,61,61,0.15)]" : "bg-aqua shadow-[0_0_0_3px_rgba(45,224,200,0.15)]"
+                }`}
                 style={{ left: `${Math.max(1, (stop.lap_number / maxLap) * 100)}%` }}
                 title={stopTitle(stop)}
               />
@@ -31,7 +34,10 @@ export function PitStopTimeline({ stops, lastLap = 0 }: { stops: ReadonlyArray<P
         </div>
       ))}
       <div className="grid grid-cols-[54px_1fr] gap-3 pt-1 text-[10px] text-slate-600"><span /><div className="flex justify-between"><span>Lap 1</span><span>Lap {maxLap}</span></div></div>
-      <p className="text-xs text-slate-500">A marker is the lap a car came into the pits on. Hover for how long it stood still and how long it was in the pit lane, where those were recorded.</p>
+      <p className="text-xs text-slate-500">
+        A marker is the lap a car came into the pits on. Hover for how long it stood still and how long it was in the pit lane, where those were recorded.
+        {stops.some((stop) => stop.under_red_flag) ? " A red marker is a car that was in the pit lane when the session was red-flagged." : ""}
+      </p>
     </div>
   );
 }
@@ -39,6 +45,15 @@ export function PitStopTimeline({ stops, lastLap = 0 }: { stops: ReadonlyArray<P
 /** What is known of one stop, each figure under its own name. */
 function stopTitle(stop: PitStop): string {
   const parts = [`Lap ${stop.lap_number}`];
+  if (stop.under_red_flag) {
+    // The time in the lane is how long the session was stopped, not how long a stop took.
+    parts.push(
+      stop.duration_ms === null
+        ? "in the pit lane through a red flag"
+        : `waited ${formatElapsed(stop.duration_ms)} in the pit lane through a red flag`
+    );
+    return parts.join(" · ");
+  }
   if (stop.stationary_ms !== null) {
     parts.push(`stationary ${formatElapsed(stop.stationary_ms)}`);
   }

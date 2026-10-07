@@ -95,9 +95,17 @@ function PitLaneMetric({ summary }: { summary: PitLaneSummary }) {
     <StrategyMetric
       label={label}
       value={seconds(summary.median_ms)}
-      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · ${summary.timedStopCount} of ${summary.stopCount} stops timed`}
+      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · ${summary.timedStopCount} of ${summary.stopCount} stops timed${redFlagNote(summary.redFlagCount)}`}
     />
   );
+}
+
+/** Why some entries to the pit lane are in none of the figures. */
+function redFlagNote(count: number): string {
+  if (count === 0) {
+    return "";
+  }
+  return ` · ${count} ${count === 1 ? "was a wait" : "were waits"} through a red flag, left out`;
 }
 
 /** What a stop costs against staying out. A different quantity from pit-lane time, and often absent. */
@@ -135,6 +143,7 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
   const hasFeed = stops.some((stop) => stop.stationary_ms !== null || stop.pit_lane_ms !== null);
   const hasPitLoss = stops.some((stop) => stop.pitLoss !== null);
   const reported = stops.filter((stop) => stop.stationary_ms !== null).length;
+  const redFlagged = stops.filter((stop) => stop.under_red_flag).length;
   return (
     <div>
       <div className="mb-3">
@@ -147,6 +156,9 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
               ? "F1's pit-stop feed reports none of these stops, so there are no stationary times. "
               : ""}
           Entry to exit is the time between the timing&apos;s pit-entry and pit-exit, stationary time included.
+          {redFlagged > 0
+            ? ` ${redFlagged} of these ${redFlagged === 1 ? "was a car" : "were cars"} in the pit lane when the session was red-flagged: what is timed there is the wait for the restart, and it is in none of the figures above.`
+            : ""}
           {hasPitLoss
             ? " Pit loss is what the stop cost against staying out: in-lap plus out-lap, minus two laps at the driver's pace around the stop."
             : ""}
@@ -157,7 +169,17 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
         emptyText="No pit stops detected."
         columns={[
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
-          { key: "lap", header: "Stop lap", align: "right", render: (row) => row.lap_number },
+          {
+            key: "lap",
+            header: "Stop lap",
+            align: "right",
+            render: (row) => (
+              <>
+                {row.under_red_flag ? <RedFlagMark /> : null}
+                {row.lap_number}
+              </>
+            )
+          },
           { key: "entry", header: "Pit entry (session clock)", align: "right", render: (row) => <span className="font-mono">{formatSessionClock(row.entry_time_ms)}</span> },
           ...(hasFeed
             ? [
@@ -172,6 +194,18 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
         ]}
       />
     </div>
+  );
+}
+
+/** Beside the lap of a car that sat out a red flag in the pit lane, so its long times are read as the wait they are. */
+function RedFlagMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-redline/40 bg-redline/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-redline"
+      title="The session was red-flagged while this car was in the pit lane. Its times are a wait for the restart, not a pit stop."
+    >
+      Red flag
+    </span>
   );
 }
 

@@ -125,6 +125,7 @@ const SESSION_FILES = {
       lap_number: 3,
       entry_time_ms: 4_972_191,
       duration_ms: 21552,
+      under_red_flag: false,
       stationary_ms: 2400,
       pit_lane_ms: 21480,
       sources: { duration_ms: "timing", stationary_ms: "pit_stop_series", pit_lane_ms: "pit_stop_series" }

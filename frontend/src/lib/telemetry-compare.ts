@@ -10,8 +10,10 @@
  *
  * Nothing is made up where a lap has no data. A lap can have a hole, a
  * stretch the car's data did not arrive for; nothing is interpolated across
- * one, and the charts break there. B has no value before its first sample or
- * after its last, so the two laps are compared over the distance both cover.
+ * one, and the charts break there. The publisher leaves a lap out altogether
+ * when a hole in it is longer than five seconds, so the ones met here are a
+ * few seconds at most. B has no value before its first sample or after its
+ * last, so the two laps are compared over the distance both cover.
  */
 
 import type { Compound, TelemetryLap } from "./published/types.ts";

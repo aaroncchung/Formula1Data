@@ -562,6 +562,9 @@ export interface PitLaneTime {
    */
   slowest_ms: number | null;
   stop_count: number;
+  /**
+   * The stops the three figures are of: those with a transit time that were not a wait through a red flag.
+   */
   timed_stop_count: number;
 }
 /**
@@ -1108,6 +1111,10 @@ export interface PitStop {
    * Milliseconds the car stood still, from F1's pit-stop feed.
    */
   stationary_ms: number | null;
+  /**
+   * Whether the session was red-flagged while the car was in the pit lane. The duration is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its pit-lane figures.
+   */
+  under_red_flag: boolean;
 }
 /**
  * Where each figure of a pit stop comes from. Null beside a figure that is null.
@@ -1155,12 +1162,12 @@ export interface PositionReplay {
  */
 export interface ReplayDriver {
   /**
-   * Metres into the car's current lap.
+   * Metres into the car's current lap. Null as well in a frame where the car has a position and no car data.
    */
   distance_m: (number | null)[];
   driver_code: string;
   /**
-   * Kilometres an hour.
+   * Null as well in a frame where the car has a position and no car data.
    */
   speed_kph: (number | null)[];
   /**
@@ -1211,7 +1218,7 @@ export interface Result {
    */
   laps: number | null;
   /**
-   * Laps behind the winner, for a classified driver who finished one or more down. Null for everyone else.
+   * Laps behind the winner, for a driver who took the flag one or more down. Null for one who did not finish, classified or not. Null for everyone else.
    */
   laps_down: number | null;
   points: number | null;
@@ -1328,7 +1335,7 @@ export interface TelemetryDriverEntry {
   sample_count: number[];
 }
 /**
- * telemetry/<driver_code>.json: every lap of one driver.
+ * telemetry/<driver_code>.json: every lap of one driver that has car data from end to end.
  */
 export interface DriverTelemetry {
   driver_code: string;
@@ -1648,7 +1655,7 @@ export interface Coverage1 {
   total_laps: number | null;
 }
 /**
- * telemetry/<driver_code>.json: every lap of one driver.
+ * telemetry/<driver_code>.json: every lap of one driver that has car data from end to end. A lap with a hole of more than a few seconds in its car data is not here (max_sample_gap_seconds in coverage.json), and the coverage counts it as missing.
  *
  * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
  * via the `definition` "DriverTelemetry".

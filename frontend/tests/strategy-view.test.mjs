@@ -22,6 +22,7 @@ function stop(driver, lap, duration, feed = null, entry = 4_972_191) {
     lap_number: lap,
     entry_time_ms: entry,
     duration_ms: duration,
+    under_red_flag: false,
     stationary_ms: stationary,
     pit_lane_ms: pitLane,
     sources: {
@@ -31,6 +32,9 @@ function stop(driver, lap, duration, feed = null, entry = 4_972_191) {
     }
   };
 }
+
+/** A car that was in the pit lane when the session was red-flagged, and waited there `wait` ms for the restart. */
+const redFlagWait = (driver, lap, wait, feed = null) => ({ ...stop(driver, lap, wait, feed), under_red_flag: true });
 
 const STOPS = [
   stop("NOR", 21, 21552, [2400, 21480]),
@@ -137,7 +141,8 @@ test("the pit-lane summary is the analysis's own when the session has one", () =
     fastest_ms: 21552,
     slowest_ms: 21905,
     timedStopCount: 3,
-    stopCount: 4
+    stopCount: 4,
+    redFlagCount: 0
   });
 });
 
@@ -147,8 +152,51 @@ test("without the analysis it is worked out from the stops, the same way", () =>
     fastest_ms: 21552,
     slowest_ms: 21905,
     timedStopCount: 3,
+    stopCount: 4,
+    redFlagCount: 0
+  });
+});
+
+// The 2026 Dutch GP: the race was red-flagged on lap 2 with cars in the pit
+// lane, and each of them has an "entry to exit" of 26 minutes. That is how
+// long the race was stopped. As the slowest stop of the race it was nonsense.
+test("a car that sat out a red flag in the pit lane is in the list and in none of the figures", () => {
+  const dutch = [...STOPS, redFlagWait("LEC", 2, 1_571_440, [1_548_000, 1_571_300]), redFlagWait("HAM", 2, 1_569_902)];
+
+  assert.deepEqual(pitLaneSummary(null, dutch), {
+    median_ms: 21603,
+    fastest_ms: 21552,
+    slowest_ms: 21905,
+    timedStopCount: 3,
+    stopCount: 6,
+    redFlagCount: 2
+  });
+  // F1's feed gives the car a "stationary time" for the wait as well.
+  assert.deepEqual(stationarySummary(dutch), {
+    median_ms: 2275,
+    fastest: { driver_code: "GAS", lap_number: 13, stationary_ms: 2150 },
+    timedStopCount: 2,
     stopCount: 4
   });
+  // The analysis leaves the waits out of its own figures; the count of them
+  // is taken from the stop list, which is where they are marked.
+  const published = strategy({
+    pit_lane_time: { median_ms: 21603.0, fastest_ms: 21552.0, slowest_ms: 21905.0, timed_stop_count: 3, stop_count: 6 }
+  });
+  assert.deepEqual(pitLaneSummary(published, dutch), {
+    median_ms: 21603,
+    fastest_ms: 21552,
+    slowest_ms: 21905,
+    timedStopCount: 3,
+    stopCount: 6,
+    redFlagCount: 2
+  });
+
+  const log = pitStopLog(null, dutch);
+  assert.equal(log.length, 6);
+  assert.deepEqual(log.map((row) => row.under_red_flag), [false, false, false, false, true, true]);
+  // The wait is still there to be shown as a wait.
+  assert.equal(log[4].duration_ms, 1_571_440);
 });
 
 // One car held in the lane must not set the figure, which is why it is a median.
@@ -167,7 +215,8 @@ test("stops the car did not come back out of give no pit-lane time", () => {
     fastest_ms: null,
     slowest_ms: null,
     timedStopCount: 0,
-    stopCount: 1
+    stopCount: 1,
+    redFlagCount: 0
   });
 });
 
@@ -208,6 +257,7 @@ test("each stop carries every figure under its own name, and its pit loss", () =
     stationary_ms: 2400,
     pit_lane_ms: 21480,
     duration_ms: 21552,
+    under_red_flag: false,
     pitLoss: { status: "estimated", pit_loss_ms: 21010 }
   });
   // A stop F1's feed does not report, and that the car did not come back from.
@@ -218,6 +268,7 @@ test("each stop carries every figure under its own name, and its pit loss", () =
     stationary_ms: null,
     pit_lane_ms: null,
     duration_ms: null,
+    under_red_flag: false,
     pitLoss: { status: "excluded", reason: "missing_lap_time" }
   });
 });
