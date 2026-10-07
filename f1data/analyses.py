@@ -221,22 +221,51 @@ def position_replay(telemetry: SessionTelemetry) -> PositionReplay:
     """
     rows: list[dict[str, Any]] = []
     leader_lap: dict[int, int] = {}
-    for lap in telemetry.laps.values():
-        if not lap.has_position:
-            continue
-        # Only a sample with a position can stand for the car.
-        placed = np.flatnonzero(~(np.isnan(lap.x) | np.isnan(lap.y)))
-        if len(placed) == 0:
-            continue
+
+    def one_per_window(lap: Any, placed: np.ndarray) -> np.ndarray:
+        """Of the samples at ``placed``, the one nearest the middle of each window."""
         on_clock = lap.start_ms + lap.time_ms[placed]
         window = on_clock // REPLAY_INTERVAL_MS
         from_middle = np.abs(on_clock - (window * REPLAY_INTERVAL_MS + REPLAY_INTERVAL_MS // 2))
         # The first sample of each window that is nearest its middle.
         order = np.lexsort((np.arange(len(window)), from_middle, window))
         first_of_window = np.concatenate(([True], np.diff(window[order]) != 0))
-        rows.extend(sample_rows(lap, placed[np.sort(order[first_of_window])]))
         for number in np.unique(window).tolist():
             leader_lap[number] = max(leader_lap.get(number, 0), lap.lap_number)
+        return placed[np.sort(order[first_of_window])]
+
+    for lap in telemetry.laps.values():
+        if not lap.has_position:
+            continue
+        # Only a sample with a position can stand for the car.
+        placed = np.flatnonzero(~(np.isnan(lap.x) | np.isnan(lap.y)))
+        if len(placed):
+            rows.extend(sample_rows(lap, one_per_window(lap, placed)))
+    # A car with no car data on a lap was still somewhere on it. Its speed
+    # and its distance round the lap are not known, and are not made up.
+    for lap in telemetry.positions_only.values():
+        if (lap.driver_code, lap.lap_number) in telemetry.laps and telemetry.laps[
+            (lap.driver_code, lap.lap_number)
+        ].has_position:
+            continue
+        # The feed's first sample of a lap comes a moment after the lap
+        # starts, and the lap had started all the same.
+        started_in = lap.start_ms // REPLAY_INTERVAL_MS
+        leader_lap[started_in] = max(leader_lap.get(started_in, 0), lap.lap_number)
+        for index in one_per_window(lap, np.arange(len(lap.time_ms))).tolist():
+            moment = int(lap.time_ms[index])
+            rows.append(
+                {
+                    "driver_code": lap.driver_code,
+                    "lap_number": lap.lap_number,
+                    "distance_m": None,
+                    "speed_kph": None,
+                    "relative_time_ms": moment,
+                    "session_time_ms": lap.start_ms + moment,
+                    "x": float(lap.x[index]),
+                    "y": float(lap.y[index]),
+                }
+            )
 
     frames = build_position_replay("", rows)
     codes = sorted({position["driver_code"] for frame in frames for position in frame["positions"]})

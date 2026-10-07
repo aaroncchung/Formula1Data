@@ -158,13 +158,14 @@ def test_a_session_with_no_timing_cannot_be_published():
         normalize.laps(session)
 
 
-def test_stints_follow_the_tyres_and_an_unknown_compound_is_its_own_run():
+def test_stints_follow_the_tyres_and_laps_with_no_compound_stay_with_their_set():
+    """AAA's last three laps have no compound, under the same stint number as
+    the laps before them: the same set of tyres, whose compound F1 did name."""
     stints = rows(normalize.stints(normalize.laps(make_race())))
 
     assert [stint for stint in stints if stint["driver_code"] == "AAA"] == [
         {"driver_code": "AAA", "stint": 1, "compound": "MEDIUM", "start_lap": 1, "end_lap": 5, "lap_count": 5},
-        {"driver_code": "AAA", "stint": 2, "compound": "HARD", "start_lap": 6, "end_lap": 9, "lap_count": 4},
-        {"driver_code": "AAA", "stint": 2, "compound": None, "start_lap": 10, "end_lap": 12, "lap_count": 3},
+        {"driver_code": "AAA", "stint": 2, "compound": "HARD", "start_lap": 6, "end_lap": 12, "lap_count": 7},
     ]
     assert normalize.laps(make_race())[0].compound is Compound.MEDIUM
 
@@ -320,6 +321,7 @@ def test_a_pit_stop_carries_both_of_f1s_figures_beside_the_timings_and_says_whic
             "lap_number": PIT_LAP,
             "entry_time_ms": stops[0]["entry_time_ms"],
             "duration_ms": 20_000,
+            "under_red_flag": False,
             "stationary_ms": 2_400,
             "pit_lane_ms": 19_900,
             "sources": {"duration_ms": "timing", "stationary_ms": "pit_stop_series", "pit_lane_ms": "pit_stop_series"},

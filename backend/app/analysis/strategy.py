@@ -214,10 +214,14 @@ def _pit_lane_time(pit_stops: list[dict[str, Any]]) -> dict[str, Any]:
     """Summarise pit-lane transit times as what they are.
 
     The median is used so a car held in the lane does not define the figure;
-    the slowest time is still reported, labelled as the slowest.
+    the slowest time is still reported, labelled as the slowest. A car that
+    sat in the lane through a red flag was not making a pit stop, and the
+    twenty minutes it waited are left out.
     """
     durations = [
-        float(stop["duration_ms"]) for stop in pit_stops if stop.get("duration_ms") is not None
+        float(stop["duration_ms"])
+        for stop in pit_stops
+        if stop.get("duration_ms") is not None and not stop.get("under_red_flag")
     ]
     return {
         "median_ms": round(median(durations), 1) if durations else None,

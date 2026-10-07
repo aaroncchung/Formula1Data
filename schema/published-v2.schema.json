@@ -1067,7 +1067,7 @@
     },
     "DriverTelemetry": {
       "additionalProperties": false,
-      "description": "telemetry/<driver_code>.json: every lap of one driver.",
+      "description": "telemetry/<driver_code>.json: every lap of one driver that has car data from end to end. A lap with a hole of more than a few seconds in its car data is not here (max_sample_gap_seconds in coverage.json), and the coverage counts it as missing.",
       "properties": {
         "driver_code": {
           "type": "string"
@@ -2138,6 +2138,7 @@
           "type": "integer"
         },
         "timed_stop_count": {
+          "description": "The stops the three figures are of: those with a transit time that were not a wait through a red flag.",
           "type": "integer"
         }
       },
@@ -2288,6 +2289,10 @@
             }
           ],
           "description": "Milliseconds the car stood still, from F1's pit-stop feed."
+        },
+        "under_red_flag": {
+          "description": "Whether the session was red-flagged while the car was in the pit lane. The duration is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its pit-lane figures.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -2295,6 +2300,7 @@
         "lap_number",
         "entry_time_ms",
         "duration_ms",
+        "under_red_flag",
         "stationary_ms",
         "pit_lane_ms",
         "sources"
@@ -2789,7 +2795,7 @@
       "description": "One car's track, one entry per frame. Null in a frame the car has no position for.",
       "properties": {
         "distance_m": {
-          "description": "Metres into the car's current lap.",
+          "description": "Metres into the car's current lap. Null as well in a frame where the car has a position and no car data.",
           "items": {
             "anyOf": [
               {
@@ -2807,7 +2813,7 @@
           "type": "string"
         },
         "speed_kph": {
-          "description": "Kilometres an hour.",
+          "description": "Null as well in a frame where the car has a position and no car data.",
           "items": {
             "anyOf": [
               {
@@ -2960,7 +2966,7 @@
               "type": "null"
             }
           ],
-          "description": "Laps behind the winner, for a classified driver who finished one or more down. Null for everyone else."
+          "description": "Laps behind the winner, for a driver who took the flag one or more down. Null for one who did not finish, classified or not. Null for everyone else."
         },
         "points": {
           "anyOf": [
@@ -4295,7 +4301,7 @@
     },
     "generations/{session_key}/{generation}/telemetry/{driver_code}.json": {
       "$ref": "#/$defs/DriverTelemetry",
-      "description": "telemetry/<driver_code>.json: every lap of one driver."
+      "description": "telemetry/<driver_code>.json: every lap of one driver that has car data from end to end."
     },
     "generations/{session_key}/{generation}/weather.json": {
       "$ref": "#/$defs/Weather",

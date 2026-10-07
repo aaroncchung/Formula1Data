@@ -302,7 +302,8 @@ class Result(Model):
         "everyone else."
     )
     laps_down: int | None = Field(
-        description="Laps behind the winner, for a classified driver who finished one or more down. Null "
+        description="Laps behind the winner, for a driver who took the flag one or more down. Null for "
+        "one who did not finish, classified or not. Null "
         "for everyone else."
     )
     behind_at_flag_ms: int | None = Field(
@@ -357,6 +358,11 @@ class PitStop(Model):
     duration_ms: int | None = Field(
         description="Milliseconds from pit entry to pit exit, from the timing. Null when the car did not "
         "come back out."
+    )
+    under_red_flag: bool = Field(
+        description="Whether the session was red-flagged while the car was in the pit lane. The duration "
+        "is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its "
+        "pit-lane figures."
     )
     stationary_ms: int | None = Field(
         description="Milliseconds the car stood still, from F1's pit-stop feed."
@@ -566,7 +572,12 @@ class TelemetryLap(Model):
 
 
 class DriverTelemetry(Model):
-    """``telemetry/<driver_code>.json``: every lap of one driver."""
+    """``telemetry/<driver_code>.json``: every lap of one driver that has car data from end to end.
+
+    A lap with a hole of more than a few seconds in its car data is not here
+    (``max_sample_gap_seconds`` in ``coverage.json``), and the coverage counts
+    it as missing.
+    """
 
     driver_code: str
     laps: list[TelemetryLap]
@@ -578,8 +589,13 @@ class ReplayDriver(Model):
     driver_code: str
     x: Decimals1OrNull = Field(description="Tenths of a metre.")
     y: Decimals1OrNull
-    speed_kph: Decimals1OrNull
-    distance_m: Decimals1OrNull = Field(description="Metres into the car's current lap.")
+    speed_kph: Decimals1OrNull = Field(
+        description="Null as well in a frame where the car has a position and no car data."
+    )
+    distance_m: Decimals1OrNull = Field(
+        description="Metres into the car's current lap. Null as well in a frame where the car has a "
+        "position and no car data."
+    )
 
 
 class PositionReplay(Model):
@@ -695,7 +711,10 @@ class PitLaneTime(Model):
     median_ms: Decimal1 | None
     fastest_ms: int | None
     slowest_ms: int | None
-    timed_stop_count: int
+    timed_stop_count: int = Field(
+        description="The stops the three figures are of: those with a transit time that were not a wait "
+        "through a red flag."
+    )
     stop_count: int
 
 

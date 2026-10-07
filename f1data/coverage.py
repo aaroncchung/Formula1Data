@@ -42,6 +42,8 @@ MAX_SAMPLE_GAP_SECONDS = 5.0
 
 CAR_CHANNELS = ("Speed", "Throttle", "Brake", "nGear", "RPM")
 POSITION_CHANNELS = ("X", "Y")
+# What FastF1 writes in ``Source`` for a sample that came from F1's car or position feed.
+_FEED_SOURCES = ("car", "pos")
 
 # Share of a driver's expected laps that must be usable, per feed.
 MIN_CAR_LAP_SHARE = 0.95
@@ -386,7 +388,8 @@ def f1_does_not_hold(
     # for "a fetch from a network F1 answers" (criterion 1).
     if feed_status.get(FEED_FILE_BY_BAR["session_info"]) != 200:
         return False
-    return feed_status.get(FEED_FILE_BY_BAR.get(shortfall.bar, "")) in _NOT_HELD_STATUSES
+    answered = feed_status.get(FEED_FILE_BY_BAR.get(shortfall.bar, ""))
+    return isinstance(answered, int) and not isinstance(answered, bool) and answered in _NOT_HELD_STATUSES
 
 
 def refetch_could_help(shortfalls: list[Shortfall]) -> bool:
@@ -445,8 +448,26 @@ def _usable_laps(laps: pd.DataFrame, telemetry: Any, channels: tuple[str, ...], 
     return sum(1 for start, end in zip(starts, ends) if lap_is_usable(times, start, end))
 
 
+def sent_by_f1(telemetry: pd.DataFrame) -> np.ndarray:
+    """Which rows of a FastF1 car or position table are samples F1 sent.
+
+    When a car is missing from part of a feed, FastF1 gives it a row for
+    every timestamp any other car has and fills the channels with zeros. In
+    the 2026 Belgian GP every car has seven such rows; in the Spanish GP some
+    have hundreds. Zero speed and zero RPM in the middle of a lap are not a
+    measurement. FastF1 marks its own rows in one way only: a row from a feed
+    has ``car`` or ``pos`` for its ``Source`` and a row it added has none.
+    Loading a session then turns the column to text, so that on a loaded
+    session the missing one reads ``"nan"``. A row is F1's when it names its
+    feed, whatever else the column may come to hold.
+    """
+    if "Source" not in telemetry.columns:
+        return np.ones(len(telemetry), dtype=bool)
+    return telemetry["Source"].isin(_FEED_SOURCES).to_numpy()
+
+
 def _car_valid(telemetry: pd.DataFrame) -> np.ndarray:
-    return telemetry[list(CAR_CHANNELS)].notna().all(axis=1).to_numpy()
+    return telemetry[list(CAR_CHANNELS)].notna().all(axis=1).to_numpy() & sent_by_f1(telemetry)
 
 
 def _position_valid(telemetry: pd.DataFrame) -> np.ndarray:
@@ -454,7 +475,7 @@ def _position_valid(telemetry: pd.DataFrame) -> np.ndarray:
     # leaves the garage. Those samples are not positions.
     present = telemetry[list(POSITION_CHANNELS)].notna().all(axis=1)
     located = (telemetry["X"] != 0) | (telemetry["Y"] != 0)
-    return (present & located).to_numpy()
+    return (present & located).to_numpy() & sent_by_f1(telemetry)
 
 
 def _pit_stops_in_timing(laps: pd.DataFrame) -> int:

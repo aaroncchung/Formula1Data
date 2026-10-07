@@ -26,9 +26,16 @@ so the result is not an approximation of FastF1's: on the 2026 Austrian GP it
 is the same number for every sample of every lap
 (tests/test_recorded_race.py).
 
-Two things differ from FastF1 on purpose, both where the position feed is
-broken:
+Three things differ from FastF1 on purpose, all where a feed is broken:
 
+* When a car is missing from part of the car feed, FastF1 gives it a row for
+  every moment another car has one and fills the row with zeros. Those rows
+  are not samples (``sent_by_f1`` in f1data/coverage.py) and are left out
+  before anything is cut. What is left has a hole in it, and a lap has
+  telemetry when its car samples pass the test coverage is measured by: they
+  reach from its start to its end with no long hole. FastF1 would draw a
+  straight line across two minutes with no data; here the lap has none, the
+  coverage says so, and the car's positions still go to the replay.
 * F1 sends (0, 0) while it has no position for a car. Those samples are not
   positions (f1data/coverage.py) and are left out before anything is merged.
 * A position is only ever interpolated between two real samples, never
@@ -46,14 +53,14 @@ broken:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
-from f1data.coverage import MAX_SAMPLE_GAP_SECONDS, lap_is_usable
+from f1data.coverage import MAX_SAMPLE_GAP_SECONDS, lap_is_usable, sent_by_f1
 
 # The published resolution. Analyses read every sample (AR-11).
 MAX_PUBLISHED_SAMPLES_PER_LAP = 300
@@ -97,10 +104,29 @@ class LapSamples:
 
 
 @dataclass(frozen=True)
+class LapPositions:
+    """One lap of one driver that has positions and no car data to go with them.
+
+    Its samples are the position feed's own, uninterpolated: with no speed
+    there is no distance to place anything by.
+    """
+
+    driver_code: str
+    lap_number: int
+    start_ms: int
+    time_ms: np.ndarray
+    x: np.ndarray
+    y: np.ndarray
+
+
+@dataclass(frozen=True)
 class SessionTelemetry:
     """Every lap that has telemetry, by driver code and lap number, in timing order."""
 
     laps: dict[tuple[str, int], LapSamples]
+    # Laps the car feed cannot carry and the position feed can. They have no
+    # telemetry to publish, and the car was still somewhere.
+    positions_only: dict[tuple[str, int], LapPositions] = field(default_factory=dict)
 
     def driver_codes(self) -> list[str]:
         return sorted({driver for driver, _ in self.laps})
@@ -155,36 +181,53 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
     codes = laps["Driver"].to_numpy()
     lap_numbers = pd.to_numeric(laps["LapNumber"], errors="coerce").to_numpy(dtype=float)
 
-    feeds: dict[str, tuple[_Feed | None, _Feed | None, np.ndarray | None]] = {}
+    feeds: dict[str, tuple[_Feed | None, np.ndarray | None, _Feed | None, np.ndarray | None]] = {}
     found: dict[tuple[str, int], LapSamples] = {}
+    positions_only: dict[tuple[str, int], LapPositions] = {}
     for row in range(len(laps)):
         code = str(codes[row] or "").strip().upper() if _present(codes[row]) else ""
         if not code or not known[row] or not np.isfinite(lap_numbers[row]) or lap_numbers[row] <= 0:
             continue
         key = (code, int(lap_numbers[row]))
-        if key in found or end_ns[row] <= start_ns[row]:
+        if key in found or key in positions_only or end_ns[row] <= start_ns[row]:
             continue
         number = numbers[row]
         if number not in feeds:
+            car = _car_feed(car_data.get(number), clock_zero)
             position = _position_feed(position_data.get(number), clock_zero)
             feeds[number] = (
-                _car_feed(car_data.get(number), clock_zero),
+                car,
+                car.session / _NS_PER_SECOND if car is not None else None,
                 position,
                 position.session / _NS_PER_SECOND if position is not None else None,
             )
-        car, position, position_seconds = feeds[number]
-        if car is None:
-            continue
-        # The test that decides whether a lap counts as having position data
-        # when coverage is measured.
-        located = position is not None and lap_is_usable(
-            position_seconds, start_ns[row] / _NS_PER_SECOND, end_ns[row] / _NS_PER_SECOND
-        )
-        samples = _lap_samples(
-            car, position if located else None, int(start_ns[row]), int(end_ns[row]), clock_zero
-        )
-        if samples is None and located:
-            samples = _lap_samples(car, None, int(start_ns[row]), int(end_ns[row]), clock_zero)
+        car, car_seconds, position, position_seconds = feeds[number]
+        # The test that decides whether a lap counts as having car data, and
+        # as having position data, when coverage is measured.
+        lap_start, lap_end = start_ns[row] / _NS_PER_SECOND, end_ns[row] / _NS_PER_SECOND
+        carried = car is not None and lap_is_usable(car_seconds, lap_start, lap_end)
+        located = position is not None and lap_is_usable(position_seconds, lap_start, lap_end)
+        samples = None
+        if carried:
+            samples = _lap_samples(
+                car, position if located else None, int(start_ns[row]), int(end_ns[row]), clock_zero
+            )
+            if samples is None and located:
+                samples = _lap_samples(car, None, int(start_ns[row]), int(end_ns[row]), clock_zero)
+        if samples is None or (located and samples["x"] is None):
+            # The car feed cannot carry the lap, or cannot carry it together
+            # with the positions. The positions are there all the same.
+            if located:
+                first = int(np.searchsorted(position.session, start_ns[row], side="left"))
+                last = int(np.searchsorted(position.session, end_ns[row], side="right"))
+                positions_only[key] = LapPositions(
+                    driver_code=code,
+                    lap_number=key[1],
+                    start_ms=_round_ms(int(start_ns[row])),
+                    time_ms=_round_ms(position.session[first:last] - start_ns[row]),
+                    x=position.channels["X"][first:last],
+                    y=position.channels["Y"][first:last],
+                )
         if samples is None:
             continue
         found[key] = LapSamples(
@@ -193,7 +236,9 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
             start_ms=_round_ms(int(start_ns[row])),
             **samples,
         )
-    return SessionTelemetry(found)
+    # A lap the car feed carries without positions is published as
+    # telemetry, and its positions go to the replay from here.
+    return SessionTelemetry(found, positions_only)
 
 
 def thinned_indexes(count: int, limit: int = MAX_PUBLISHED_SAMPLES_PER_LAP) -> np.ndarray:
@@ -370,8 +415,10 @@ def _car_feed(frame: Any, clock_zero: int) -> _Feed | None:
         "Brake": frame["Brake"].fillna(False).to_numpy(dtype=bool),
         "DRS": pd.to_numeric(frame["DRS"], errors="coerce").fillna(0).to_numpy(dtype=np.int64),
     }
-    # A sample with no speed cannot be integrated into distance.
-    usable = ~np.isnan(channels["Speed"])
+    # A sample with no speed cannot be integrated into distance, and a row
+    # FastF1 padded in for a car missing from the feed is no sample at all:
+    # its zeros would be published as a car standing still in mid-lap.
+    usable = ~np.isnan(channels["Speed"]) & sent_by_f1(frame)
     return _feed(frame["Date"], channels, usable, clock_zero)
 
 
@@ -381,7 +428,7 @@ def _position_feed(frame: Any, clock_zero: int) -> _Feed | None:
     channels = {"X": frame["X"].to_numpy(dtype=float), "Y": frame["Y"].to_numpy(dtype=float)}
     present = ~(np.isnan(channels["X"]) | np.isnan(channels["Y"]))
     located = (channels["X"] != 0) | (channels["Y"] != 0)
-    return _feed(frame["Date"], channels, present & located, clock_zero)
+    return _feed(frame["Date"], channels, present & located & sent_by_f1(frame), clock_zero)
 
 
 def _feed(

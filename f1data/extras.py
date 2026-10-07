@@ -90,8 +90,11 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
     Never raises, whatever the bytes are: this runs while a fetch is being
     measured, before it is archived, and a broken optional feed must not cost
     the feeds that arrived whole. A line or an entry that cannot be read is
-    left out, and so is a stop with no lap or with neither duration, since
-    there is nothing in it to publish.
+    left out, and so is a stop with neither duration, since there is nothing
+    in it to publish. A stop with no lap is kept when it says when it was
+    reported: in the 2026 Australian GP F1 sent twenty of its twenty-eight
+    stops late and without a lap, and each can still be told by its time
+    (``pit_stops`` in f1data/normalize.py). Its ``lap_number`` is ``None``.
     """
     stops: list[dict[str, Any]] = []
     for line in data.decode("utf-8-sig", errors="replace").splitlines():
@@ -128,7 +131,9 @@ def _stop(number: Any, entry: Any) -> dict[str, Any] | None:
         "pit_lane_ms": _seconds_to_ms(reported.get("PitLaneTime")),
         "time_utc": entry.get("Timestamp") if isinstance(entry.get("Timestamp"), str) else None,
     }
-    if stop["lap_number"] is None or (stop["stationary_ms"] is None and stop["pit_lane_ms"] is None):
+    if stop["stationary_ms"] is None and stop["pit_lane_ms"] is None:
+        return None
+    if stop["lap_number"] is None and stop["time_utc"] is None:
         return None
     return stop
 

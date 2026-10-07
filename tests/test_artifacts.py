@@ -337,7 +337,7 @@ def test_an_analysis_does_not_repeat_other_artifacts():
     assert sorted(strategy) == [
         "caveats", "compound_usage", "pit_lane_time", "pit_loss", "pit_loss_estimate_ms", "undercut_overcut",
     ]
-    assert strategy["compound_usage"] == {"MEDIUM": 3, "HARD": 1, "UNKNOWN": 1}
+    assert strategy["compound_usage"] == {"MEDIUM": 3, "HARD": 1}
 
 
 def test_the_practice_only_analysis_is_published_for_practice_only():

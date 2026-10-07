@@ -7,7 +7,7 @@ builds are ``Builder.build`` itself, run on the archive with every host
 refused, and what a run gathers first (the calendar row, and the Austrian
 race's result with its first-lap times) is stood in for (tests/recorded.py).
 
-Three things are checked that only real data can check:
+Four things are checked that only real data can check:
 
 * The telemetry this build makes is FastF1's own, sample for sample.
 * A golden build of the 2026 Austrian GP (session 11315): the figures a
@@ -17,6 +17,11 @@ Three things are checked that only real data can check:
   FastF1 requests and both extras is removed in turn, for the session and
   where it applies for a single driver, and the session has to come out
   incomplete (section 6, rule 6). ``-s`` prints the table.
+
+* What F1's feeds have been seen to do that a stand-in would not think of:
+  rows FastF1 adds for cars missing from the car feed (the 2026 Belgian GP),
+  pit stops reported late and with no lap (the 2026 Australian GP), a car
+  whose data stops before its lap does (the 2025 São Paulo sprint).
 
 To record the golden file again after an intended change:
 
@@ -41,8 +46,8 @@ from f1data import layout, normalize
 from f1data.analyses import LapRows, position_replay, sample_rows
 from f1data.artifacts import build_artifacts
 from f1data.classification import merge_into_session
-from f1data.coverage import apply_classification, evaluate_coverage, measure_coverage
-from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES
+from f1data.coverage import apply_classification, evaluate_coverage, measure_coverage, sent_by_f1
+from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
 from f1data.models import artifact_json, model_for_artifact
 from f1data.publish import upload_generation
 from f1data.store import MemoryStore
@@ -71,6 +76,9 @@ pytestmark = pytest.mark.skipif(
 AUSTRIA = 11315
 MONACO = 11299
 HUNGARY = 11342
+BELGIUM = 11334
+AUSTRALIA = 11234
+SAO_PAULO_SPRINT_2025 = 9864
 GOLDEN = FIXTURES / f"golden-{AUSTRIA}.json"
 # The driver each single-driver removal is made for: Hamilton, who finished
 # and stopped three times.
@@ -436,6 +444,68 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     stops = [stop for stop in read(files, "pit-stops.json") if stop["driver_code"] == code]
     assert len(stops) == 3 and all(stop["stationary_ms"] is None and stop["duration_ms"] for stop in stops)
     assert read(files, "coverage.json")["pit_stops_in_series"] == 33
+
+
+# --- what F1's feeds have been seen to do --------------------------------------------
+
+
+def recorded(tmp_path, session_key):
+    """A session of the archive as a build loads it, with the feeds archived beside it."""
+    snapshot, extras = restore(archive_store(), session_key, tmp_path / "cache")
+    return load_offline(snapshot, tmp_path / "cache"), extras, snapshot
+
+
+def test_the_rows_fastf1_adds_to_a_real_session_are_told_from_the_ones_f1_sent(tmp_path):
+    """The 2026 Belgian GP: the car feed's first seven messages leave out
+    most of the field, and FastF1 gives each car left out seven rows of
+    zeros. A loaded session marks them with the text ``nan``, not with
+    nothing, which is what the first fix looked for."""
+    session, _, _ = recorded(tmp_path, BELGIUM)
+
+    added = {number: ~sent_by_f1(frame) for number, frame in session.car_data.items()}
+
+    assert {int(rows.sum()) for rows in added.values()} <= {0, 7} and sum(rows.any() for rows in added.values()) == 20
+    for number, rows in added.items():
+        frame = session.car_data[number]
+        assert not frame.loc[rows, ["Speed", "RPM", "Throttle", "nGear"]].to_numpy().any()
+        assert (frame.loc[~rows, "Source"] == "car").all()
+    assert all(sent_by_f1(frame).all() for frame in session.pos_data.values())
+
+
+def test_stops_f1_reported_late_and_with_no_lap_are_each_beside_the_stop_they_were_of(tmp_path):
+    """The 2026 Australian GP: twenty of the pit-stop feed's twenty-eight
+    reports name no lap. They were dropped, and the race was published with a
+    stationary time for eight of its stops."""
+    session, extras, _ = recorded(tmp_path, AUSTRALIA)
+
+    reports = parse_pit_stop_series(extras[PIT_STOP_SERIES])
+    stops = normalize.pit_stops(session, extras, normalize.driver_codes(session))
+
+    vouched = [stop for stop in stops if stop.stationary_ms is not None]
+    assert (len(reports), sum(1 for report in reports if report["lap_number"] is None)) == (28, 20)
+    assert len(vouched) == 28
+    # F1's own pit-lane time is the timing's to within a second for every
+    # one of them: no report has been put beside another car's stop.
+    assert all(
+        stop.duration_ms is not None and abs(stop.pit_lane_ms - stop.duration_ms) < 1000 for stop in vouched
+    )
+
+
+def test_a_lap_whose_car_data_stops_short_is_not_published_and_was_never_counted(tmp_path):
+    """The 2025 São Paulo sprint: Bortoleto crashed on the last lap, and his
+    car's data stops 6.7 seconds before the lap is timed as ending."""
+    session, extras, snapshot = recorded(tmp_path, SAO_PAULO_SPRINT_2025)
+
+    telemetry = extract_telemetry(session)
+    measured = measure_coverage(session, "S", extras)
+
+    assert ("BOR", 24) not in telemetry.laps and ("BOR", 23) in telemetry.laps
+    assert measured["drivers"]["BOR"]["car_laps"] == snapshot.coverage["drivers"]["BOR"]["car_laps"] == 23
+    # Every lap the coverage counts is published. A lap FastF1 added for a car
+    # that stopped on track is published too, and is not one the bar counts.
+    for code, driver in measured["drivers"].items():
+        published = len(telemetry.of_driver(code))
+        assert driver["car_laps"] <= published <= driver["car_laps"] + driver["generated_laps"], code
 
 
 # --- a race whose feeds repeat themselves --------------------------------------------
