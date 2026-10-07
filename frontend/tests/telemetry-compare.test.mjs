@@ -35,30 +35,57 @@ const compare = (a, b) => compareLaps({ meta: meta("RUS", a.lap_number), lap: a 
 // Laying one lap over the other
 // ---------------------------------------------------------------------------
 
-test("lap B is read at lap A's distances, between its own two samples either side", () => {
-  const a = lap(3, [[0, 0, 200], [1_000, 50, 210], [2_000, 110, 230], [3_000, 180, 250]]);
+test("lap B is read where lap A's samples are, between its own two samples either side", () => {
+  const a = lap(3, [[0, 0, 200], [1_000, 50, 210], [2_000, 110, 230], [3_000, 200, 250]]);
   // B's samples fall at other places: 0, 100 and 200 m.
   const b = lap(2, [[0, 0, 100], [2_000, 100, 200], [4_000, 200, 300]]);
 
   const comparison = compare(a, b);
 
-  assert.deepEqual(comparison.distance_m, [0, 50, 110, 180]);
+  assert.deepEqual(comparison.distance_m, [0, 50, 110, 200]);
   assert.deepEqual(comparison.speed_a, [200, 210, 230, 250]);
   // Half-way between 100 and 200 km/h at 50 m; a tenth of the way to 300 at 110 m.
-  assert.deepEqual(comparison.speed_b, [100, 150, 210, 280]);
-  assert.deepEqual(comparison.delta_speed_kph, [100, 60, 20, -30]);
+  assert.deepEqual(comparison.speed_b, [100, 150, 210, 300]);
+  assert.deepEqual(comparison.delta_speed_kph, [100, 60, 20, -50]);
 });
 
 // The point of interpolating: with 300 samples a lap, the nearest sample is
 // up to an eighth of a second away, which is more than most gaps being read.
 test("the time delta is how much later B reached each distance, interpolated and not taken from the nearest sample", () => {
-  const a = lap(3, [[0, 0, 200], [1_000, 50, 200], [2_000, 110, 200], [3_000, 180, 200]]);
+  const a = lap(3, [[0, 0, 200], [1_000, 50, 200], [2_000, 110, 200], [3_000, 200, 200]]);
   const b = lap(2, [[0, 0, 100], [2_000, 100, 100], [4_000, 200, 100]]);
 
   const comparison = compare(a, b);
 
-  // B is at 50 m after 1,000 ms, at 110 m after 2,200 ms and at 180 m after 3,600 ms.
-  assert.deepEqual(comparison.delta_time_ms, [0, 0, 200, 600]);
+  // B is at 50 m after 1,000 ms, at 110 m after 2,200 ms and at the line after 4,000 ms.
+  assert.deepEqual(comparison.delta_time_ms, [0, 0, 200, 1000]);
+});
+
+// The 2026 Austrian GP, as published: Antonelli's lap 59 took 70.374 s and its
+// samples add up to 4,290.6 m; Verstappen's lap 57 took 70.483 s and adds up
+// to 4,309.8 m. It is one circuit, and the odometers disagree by 19 m. Read
+// metre for metre, Verstappen is 19 m short of the line when Antonelli
+// crosses it, and the slower lap is drawn as finishing a tenth ahead.
+test("two laps end together, and the delta at the line is the difference between the lap times", () => {
+  const antonelli = lap(59, [[0, 0, 280], [35_000, 2_145.3, 250], [70_374, 4_290.6, 290]]);
+  const verstappen = lap(57, [[0, 0, 280], [35_300, 2_154.9, 250], [70_483, 4_309.8, 290]]);
+
+  const comparison = compare(antonelli, verstappen);
+
+  // Half-way round is half-way round for both, whatever each odometer says.
+  assert.deepEqual(comparison.delta_time_ms, [0, 300, 109]);
+  assert.deepEqual(comparison.speed_b, [280, 250, 290]);
+  // The axis is lap A's own distance.
+  assert.deepEqual(comparison.distance_m, [0, 2_145.3, 4_290.6]);
+  // And the other way about, the same gap with the other sign.
+  assert.deepEqual(compare(verstappen, antonelli).delta_time_ms, [0, -300, -109]);
+});
+
+test("the comparison says how long each lap's odometer made it", () => {
+  const antonelli = lap(59, [[0, 0, 280], [70_374, 4_290.6, 290]]);
+  const verstappen = lap(57, [[0, 0, 280], [70_483, 4_309.8, 290]]);
+
+  assert.match(compare(antonelli, verstappen).caveats[0], /4,291 m for RUS and 4,310 m for VER here, so VER's is scaled to RUS's/);
 });
 
 test("a positive time delta is B behind A, a negative one B ahead", () => {
@@ -80,18 +107,17 @@ test("gear, brake and DRS are taken from the nearer of B's two samples, never fr
   assert.deepEqual(comparison.drs_b, [0, 0, 1, 1]);
 });
 
-test("B has no value before its first sample or after its last, and is not stretched to fit", () => {
-  const a = lap(3, [[0, 0, 200], [1_000, 100, 200], [2_000, 200, 200], [3_000, 310, 200]]);
-  // B's lap is measured from 20 m, and comes out 10 m shorter than A's.
-  const b = lap(2, [[0, 20, 180], [1_000, 150, 190], [2_000, 300, 200]]);
+test("B has no value before its first sample", () => {
+  const a = lap(3, [[0, 0, 200], [1_000, 100, 200], [2_000, 200, 200], [3_000, 300, 200]]);
+  // B's first sample is 20 m into its lap.
+  const b = lap(2, [[300, 20, 180], [1_500, 150, 190], [3_100, 300, 200]]);
 
   const comparison = compare(a, b);
 
   assert.equal(comparison.speed_b[0], null);
-  assert.equal(comparison.speed_b[3], null);
   assert.equal(comparison.delta_time_ms[0], null);
-  assert.equal(comparison.delta_time_ms[3], null);
   assert.notEqual(comparison.speed_b[1], null);
+  assert.equal(comparison.delta_time_ms[3], 100);
   // A's own values are all there.
   assert.deepEqual(comparison.speed_a, [200, 200, 200, 200]);
 });
@@ -207,8 +233,9 @@ test("a comparison says how it was made, and what it can miss", () => {
   const { caveats, driver_a: driverA, driver_b: driverB } = compare(lap(3, samples), lap(2, samples));
 
   assert.deepEqual([driverA.driver_code, driverA.lap_number, driverB.driver_code, driverB.lap_number], ["RUS", 3, "VER", 2]);
-  assert.match(caveats[0], /VER's lap is read at the distances of RUS's samples/);
-  assert.match(caveats[1], /at most 300 samples/);
+  assert.match(caveats[0], /laid over each other by the share of the lap covered/);
+  assert.match(caveats[1], /VER's lap is read where RUS's samples are/);
+  assert.match(caveats[2], /at most 300 samples/);
 });
 
 test("an empty lap compares to nothing, without failing", () => {

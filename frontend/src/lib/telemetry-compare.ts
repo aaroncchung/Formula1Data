@@ -3,17 +3,26 @@
  *
  * A lap is published as parallel arrays, one entry for each sample, thinned
  * to a few hundred samples. Two laps never have their samples at the same
- * places, so lap B is read at the distances of lap A's samples: what varies
+ * places, so lap B is read at the places of lap A's samples: what varies
  * smoothly (speed, throttle, engine speed, and the time the car got there)
  * is interpolated between B's two samples either side, and what is one value
  * or another (gear, brake, DRS) is taken from the nearer of the two.
+ *
+ * "The same place" is the same share of the lap, not the same number of
+ * metres. A lap's distance is its own car's speed added up, and two laps of
+ * one circuit come out at different lengths: in the 2026 Austrian GP
+ * Antonelli's fastest lap measures 4,290.6 m and Verstappen's 4,309.8 m. Read
+ * metre for metre, Verstappen would be 19 m short of the line where
+ * Antonelli crosses it, and a lap that was 0.109 s slower would be drawn as
+ * finishing 0.12 s ahead. So B's distances are scaled to A's lap length, the
+ * two laps start and end together, and the time delta at the line is the
+ * difference between the two lap times.
  *
  * Nothing is made up where a lap has no data. A lap can have a hole, a
  * stretch the car's data did not arrive for; nothing is interpolated across
  * one, and the charts break there. The publisher leaves a lap out altogether
  * when a hole in it is longer than five seconds, so the ones met here are a
- * few seconds at most. B has no value before its first sample or after its
- * last, so the two laps are compared over the distance both cover.
+ * few seconds at most. B has no value before its first sample.
  */
 
 import type { Compound, TelemetryLap } from "./published/types.ts";
@@ -55,7 +64,7 @@ export type TelemetryComparison = {
   readonly drs_b: Array<number | null> | null;
   /** A minus B. */
   readonly delta_speed_kph: Array<number | null>;
-  /** How much later B reached this distance than A did, so positive is B behind. */
+  /** How much later B reached this point of the lap than A did, so positive is B behind. */
   readonly delta_time_ms: Array<number | null>;
   /** The line lap A drove, in the position data's units, where it has positions. */
   readonly track: TrackPoint[];
@@ -101,6 +110,12 @@ export function compareLaps(
 ): TelemetryComparison {
   const readB = readerOf(b.lap);
   const hole = holeThresholdMs(a.lap.time_ms);
+  // Each lap's length by its own odometer. A lap has telemetry only when its
+  // car data runs from its start to its end, so the last sample is at the line.
+  const lengthA = a.lap.distance_m.at(-1) ?? 0;
+  const lengthB = b.lap.distance_m.at(-1) ?? 0;
+  const scale = lengthA > 0 && lengthB > 0 ? lengthB / lengthA : 1;
+  const lastSample = a.lap.distance_m.length - 1;
   const rows: Array<{ distance: number; a: Reading | null; b: Reading | null }> = [];
   a.lap.distance_m.forEach((distance, index) => {
     const previous = index - 1;
@@ -109,7 +124,9 @@ export function compareLaps(
       // stops lap A's line at one side and starts it again at the other.
       rows.push({ distance: (a.lap.distance_m[previous] + distance) / 2, a: null, b: null });
     }
-    rows.push({ distance, a: readingAt(a.lap, index), b: readB(distance) });
+    // The line itself is given exactly: scaled, it could land a rounding
+    // error past B's last sample and read as nothing.
+    rows.push({ distance, a: readingAt(a.lap, index), b: readB(index === lastSample ? lengthB : distance * scale) });
   });
 
   const of = (side: "a" | "b", field: Exclude<keyof Reading, "drs">) => rows.map((row) => row[side]?.[field] ?? null);
@@ -134,7 +151,8 @@ export function compareLaps(
     delta_time_ms: rows.map((row) => (row.a && row.b ? round(row.b.time_ms - row.a.time_ms, 1) : null)),
     track: trackOf(a.lap),
     caveats: [
-      `${b.meta.driver_code}'s lap is read at the distances of ${a.meta.driver_code}'s samples: speed, throttle, engine speed and time are interpolated between its two nearest samples, and gear, brake and DRS are taken from the nearer one.`,
+      `The laps are laid over each other by the share of the lap covered. A lap's distance is its own car's speed added up, ${lengthLabel(lengthA)} for ${a.meta.driver_code} and ${lengthLabel(lengthB)} for ${b.meta.driver_code} here, so ${b.meta.driver_code}'s is scaled to ${a.meta.driver_code}'s.`,
+      `${b.meta.driver_code}'s lap is read where ${a.meta.driver_code}'s samples are: speed, throttle, engine speed and time are interpolated between its two nearest samples, and gear, brake and DRS are taken from the nearer one.`,
       `A lap is published with at most ${maxSamples} samples, so a change that lasts less than the step between two of them can be missed.`
     ]
   };
@@ -217,6 +235,10 @@ function readerOf(lap: TelemetryLap): (distance: number) => Reading | null {
 // it and has not, and 0 to 3 are off.
 function drsOpen(code: number): number {
   return code >= 10 ? 1 : 0;
+}
+
+function lengthLabel(metres: number): string {
+  return `${Math.round(metres).toLocaleString("en-US")} m`;
 }
 
 function round(value: number, digits: number): number {
