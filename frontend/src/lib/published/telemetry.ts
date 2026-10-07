@@ -15,10 +15,10 @@
 
 import { compareLaps } from "../telemetry-compare.ts";
 import type { ComparedLap, TelemetryComparison } from "../telemetry-compare.ts";
-import { ARTIFACTS, readRecord, requireListed } from "./artifacts.ts";
+import { ARTIFACTS, readIfListed, readRecord, requireListed } from "./artifacts.ts";
 import type { SessionView } from "./client.ts";
 import { isPublishedError } from "./errors.ts";
-import type { Compound, Driver, DriverTelemetry, TelemetryDriverEntry, TelemetryIndex } from "./types.ts";
+import type { Compound, Corners, Driver, DriverTelemetry, TelemetryDriverEntry, TelemetryIndex } from "./types.ts";
 
 /** One lap of one driver. */
 export type LapRef = { readonly driver: string; readonly lap: number };
@@ -45,6 +45,8 @@ export type SessionTelemetry = {
   /** The comparison of `pair`, or null with `notice` saying why there is none. */
   readonly comparison: TelemetryComparison | null;
   readonly notice: TelemetryNotice | null;
+  /** The circuit's corner map, for the trace and the distance axis; null when the generation has none. */
+  readonly corners: Corners | null;
 };
 
 /**
@@ -57,7 +59,11 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
   requireListed(view, "telemetry");
   // The drivers are read here although only the comparison uses them: without
   // them a comparison fails, and the tab should say so before offering one.
-  const [index] = await Promise.all([ARTIFACTS.telemetryIndex.read(view), ARTIFACTS.drivers.read(view)]);
+  const [index, , corners] = await Promise.all([
+    ARTIFACTS.telemetryIndex.read(view),
+    ARTIFACTS.drivers.read(view),
+    readIfListed(view, ARTIFACTS.corners)
+  ]);
   const laps = telemetryLaps(index);
   const pair = defaultComparison(laps);
   if (!pair) {
@@ -65,14 +71,15 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
       laps,
       pair: null,
       comparison: null,
-      notice: { reason: "A comparison needs two laps with telemetry, and this session has fewer." }
+      notice: { reason: "A comparison needs two laps with telemetry, and this session has fewer." },
+      corners
     };
   }
   try {
     const result = await compareTelemetry(view, pair[0], pair[1]);
     return isTelemetryNotice(result)
-      ? { laps, pair, comparison: null, notice: result }
-      : { laps, pair, comparison: result, notice: null };
+      ? { laps, pair, comparison: null, notice: result, corners }
+      : { laps, pair, comparison: result, notice: null, corners };
   } catch (error) {
     // The session is being opened again on another generation, and this tab
     // with it; that is not something to report inside the tab.
@@ -86,7 +93,8 @@ export async function readTelemetry(view: SessionView): Promise<SessionTelemetry
       notice: {
         reason: `The telemetry of ${describe(pair[0])} and ${describe(pair[1])} could not be loaded.`,
         action: error instanceof Error ? error.message : null
-      }
+      },
+      corners
     };
   }
 }

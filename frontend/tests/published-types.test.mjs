@@ -78,8 +78,6 @@ test("every file a page reads is one the schema publishes, and the unread ones a
   }
 
   assert.deepEqual(published.filter((path) => !read.has(path)).sort(), [
-    // The circuit's corners: not drawn yet.
-    "corners.json",
     // The figures behind a session's coverage verdict; the pointer carries the verdict and its shortfalls.
     "coverage.json",
     // Read by the client, to pin the generation, and not as a page's file.

@@ -17,6 +17,7 @@ import type { SessionTabId } from "./tabs.ts";
 import type {
   CarPerformance,
   CornerAnalysis,
+  Corners,
   Driver,
   GenerationFiles,
   IdealLaps,
@@ -72,7 +73,9 @@ export const ARTIFACTS = {
   carPerformance: recordOf("analysis/car-performance.json", ["drivers", "caveats"]),
   pacePrediction: recordOf("analysis/pace-prediction.json", ["drivers", "caveats"]),
   telemetryIndex: recordOf("telemetry/index.json", ["channels", "drivers"]),
-  positionReplay: recordOf("position-replay.json", ["drivers", "time_ms", "lap_number"])
+  positionReplay: recordOf("position-replay.json", ["drivers", "time_ms", "lap_number"]),
+  // The circuit's own corner map, for the tabs that draw the track.
+  corners: recordOf("corners.json", ["corners"])
 } as const;
 
 type TabFiles = {
@@ -99,11 +102,19 @@ const TAB_FILES: Readonly<Record<SessionTabId, TabFiles>> = {
   "race-pace": { required: [A.racePace, A.tyreDegradation, A.laps, A.drivers], optional: [] },
   performance: {
     required: [A.drivers],
-    optional: [A.idealLaps, A.teammateComparison, A.trackDominance, A.cornerAnalysis, A.carPerformance, A.pacePrediction]
+    optional: [
+      A.idealLaps,
+      A.teammateComparison,
+      A.trackDominance,
+      A.cornerAnalysis,
+      A.carPerformance,
+      A.pacePrediction,
+      A.corners
+    ]
   },
   strategy: { required: [A.stints, A.pitStops], optional: [A.strategy] },
-  telemetry: { required: [A.telemetryIndex, A.drivers], optional: [] },
-  "position-replay": { required: [A.positionReplay, A.drivers], optional: [] },
+  telemetry: { required: [A.telemetryIndex, A.drivers], optional: [A.corners] },
+  "position-replay": { required: [A.positionReplay, A.drivers], optional: [A.corners] },
   weather: { required: [A.weather], optional: [] },
   "race-control": { required: [A.raceControl], optional: [] },
   results: { required: [A.results, A.drivers], optional: [] }
@@ -201,11 +212,13 @@ export type SessionPerformance = {
   readonly carPerformance: CarPerformance | null;
   /** Published for a practice session only. */
   readonly pacePrediction: PacePrediction | null;
+  /** The circuit's corner map, for the track the dominance is drawn on. */
+  readonly corners: Corners | null;
 };
 
 export async function readPerformance(view: SessionView): Promise<SessionPerformance> {
   requireListed(view, "performance");
-  const [drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction] =
+  const [drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction, corners] =
     await Promise.all([
       A.drivers.read(view),
       readIfListed(view, A.idealLaps),
@@ -213,7 +226,8 @@ export async function readPerformance(view: SessionView): Promise<SessionPerform
       readIfListed(view, A.trackDominance),
       readIfListed(view, A.cornerAnalysis),
       readIfListed(view, A.carPerformance),
-      readIfListed(view, A.pacePrediction)
+      readIfListed(view, A.pacePrediction),
+      readIfListed(view, A.corners)
     ]);
   return {
     sessionType: view.pointer.identity.session_type,
@@ -223,7 +237,8 @@ export async function readPerformance(view: SessionView): Promise<SessionPerform
     trackDominance,
     cornerAnalysis,
     carPerformance,
-    pacePrediction
+    pacePrediction,
+    corners
   };
 }
 
@@ -247,13 +262,19 @@ export async function readStrategy(view: SessionView): Promise<SessionStrategy> 
 export type SessionReplay = {
   readonly replay: PositionReplay;
   readonly drivers: ReadonlyArray<Driver>;
+  /** The circuit's corner map; null when the generation has none. */
+  readonly corners: Corners | null;
 };
 
 /** The largest artifact of a session after the telemetry, at over half a megabyte. Read by its own tab only. */
 export async function readPositionReplay(view: SessionView): Promise<SessionReplay> {
   requireListed(view, "position-replay");
-  const [replay, drivers] = await Promise.all([A.positionReplay.read(view), A.drivers.read(view)]);
-  return { replay, drivers };
+  const [replay, drivers, corners] = await Promise.all([
+    A.positionReplay.read(view),
+    A.drivers.read(view),
+    readIfListed(view, A.corners)
+  ]);
+  return { replay, drivers, corners };
 }
 
 export function readWeather(view: SessionView): Promise<ReadonlyArray<WeatherSample>> {

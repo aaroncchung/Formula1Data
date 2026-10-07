@@ -12,14 +12,21 @@ import {
   YAxis
 } from "recharts";
 
+import { CornerMarks } from "@/components/session/CornerMarks";
 import { telemetryRows } from "@/lib/chart-utils";
+import { circuitLayout, cornersAlongLap, layoutNote, trackMap } from "@/lib/circuit-layout";
+import type { CircuitLayout } from "@/lib/circuit-layout";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
+import type { Corners } from "@/lib/published/types";
 import type { TelemetryComparison } from "@/lib/telemetry-compare";
-import { boundsOf, fitBounds, project, type Viewport } from "@/lib/track-map";
+import type { Viewport } from "@/lib/track-map";
 
 const DRIVER_A = "#f33d3d";
 const DRIVER_B = "#2de0c8";
-const TRACE_VIEWPORT: Viewport = { width: 300, height: 300, padding: 24 };
+// The padding leaves room for a corner's label off the outside of the track.
+const TRACE_VIEWPORT: Viewport = { width: 300, height: 300, padding: 30 };
+const CORNER_RADIUS = 6.5;
+const CORNER_LABEL_DISTANCE = 15;
 
 type TelemetryChartDef = {
   keyA: string;
@@ -29,11 +36,13 @@ type TelemetryChartDef = {
   domain?: [number, number];
   /** Drawn as steps: the value is one thing or another, never part-way between. */
   stepped?: boolean;
+  /** Marked with the circuit's corners along its distance axis. */
+  corners?: boolean;
 };
 
 const CHARTS: TelemetryChartDef[] = [
   { keyA: "deltaTime", title: "Cumulative lap delta", unit: "ms" },
-  { keyA: "speedA", keyB: "speedB", title: "Speed", unit: "km/h" },
+  { keyA: "speedA", keyB: "speedB", title: "Speed", unit: "km/h", corners: true },
   { keyA: "throttleA", keyB: "throttleB", title: "Throttle", unit: "%", domain: [0, 100] },
   { keyA: "brakeA", keyB: "brakeB", title: "Brake application", unit: "", domain: [0, 1], stepped: true },
   { keyA: "gearA", keyB: "gearB", title: "Gear", unit: "", domain: [0, 8], stepped: true },
@@ -44,8 +53,16 @@ const CHARTS: TelemetryChartDef[] = [
 // laps carry none.
 const DRS_CHART: TelemetryChartDef = { keyA: "drsA", keyB: "drsB", title: "DRS open", unit: "", domain: [0, 1], stepped: true };
 
-export function TelemetryCharts({ comparison }: { comparison: TelemetryComparison }) {
+/**
+ * `corners` is the circuit's own corner map, or null when the session has
+ * none. Where it fits the track, the trace is turned the way F1 draws the
+ * circuit with its corners numbered, and the speed chart marks where along
+ * the lap each corner is.
+ */
+export function TelemetryCharts({ comparison, corners }: { comparison: TelemetryComparison; corners: Corners | null }) {
   const rows = telemetryRows(comparison);
+  const layout = circuitLayout(corners);
+  const alongLap = cornersAlongLap(layout);
   const charts = comparison.drs_a || comparison.drs_b ? [...CHARTS, DRS_CHART] : CHARTS;
   const lapDelta = lapTimeDelta(comparison);
   const maxSpeedA = max(comparison.speed_a);
@@ -92,7 +109,9 @@ export function TelemetryCharts({ comparison }: { comparison: TelemetryCompariso
             <div key={chart.title} className="rounded-md border border-line/70 bg-carbon/45 p-3">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="text-sm font-bold text-white">{chart.title}</div>
-                <div className="text-[11px] uppercase tracking-wider text-slate-600">Distance</div>
+                <div className="text-[11px] uppercase tracking-wider text-slate-600">
+                  {chart.corners && alongLap.length ? "Distance · numbered lines are the circuit's corners" : "Distance"}
+                </div>
               </div>
               <div className="h-[190px]">
                 <ResponsiveContainer width="100%" height="100%">
@@ -121,6 +140,17 @@ export function TelemetryCharts({ comparison }: { comparison: TelemetryCompariso
                       formatter={(value) => `${formatNumber(Number(value), chart.unit === "ms" ? 0 : 1)}${chart.unit ? ` ${chart.unit}` : ""}`}
                     />
                     {chart.keyB ? <Legend /> : <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />}
+                    {/* A corner's distance is along the lap the publisher placed it on, a few metres off any other lap's own. */}
+                    {chart.corners
+                      ? alongLap.map((corner) => (
+                          <ReferenceLine
+                            key={corner.label}
+                            x={corner.distance_m}
+                            stroke="#334155"
+                            label={{ value: corner.label, position: "insideTop", fill: "#64748b", fontSize: 10 }}
+                          />
+                        ))
+                      : null}
                     {/* Nulls are not joined: a lap has no value where its data has a hole, and a line across one would be invented. */}
                     <Line
                       type={chart.stepped ? "stepAfter" : "monotone"}
@@ -149,7 +179,7 @@ export function TelemetryCharts({ comparison }: { comparison: TelemetryCompariso
           ))}
         </div>
         <div className="xl:sticky xl:top-24 xl:self-start">
-          <TrackMap comparison={comparison} />
+          <TrackMap comparison={comparison} layout={layout} />
           {comparison.caveats.length ? (
             <div className="mt-3 rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400">
               {comparison.caveats.join(" ")}
@@ -175,9 +205,9 @@ function ComparisonMetric({ label, a, b, footer }: { label: string; a: string; b
   );
 }
 
-function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
-  const bounds = comparison.track.length < 2 ? null : boundsOf(comparison.track);
-  if (!bounds) {
+function TrackMap({ comparison, layout }: { comparison: TelemetryComparison; layout: CircuitLayout }) {
+  const map = comparison.track.length < 2 ? null : trackMap(comparison.track, layout, TRACE_VIEWPORT, CORNER_LABEL_DISTANCE);
+  if (!map) {
     return (
       <div className="rounded-md border border-dashed border-line bg-carbon/30 p-8 text-center">
         <div className="text-sm font-bold text-white">Track trace unavailable</div>
@@ -188,9 +218,9 @@ function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
       </div>
     );
   }
-  const projection = fitBounds(bounds, TRACE_VIEWPORT);
-  const placed = comparison.track.map((point) => project(projection, point));
+  const placed = comparison.track.map((point) => map.place(point));
   const normalized = placed.map((point) => `${point.x},${point.y}`).join(" ");
+  const note = layoutNote(layout);
   return (
     <div className="rounded-md border border-line/70 bg-carbon/45 p-4">
       <div className="mb-3">
@@ -202,11 +232,16 @@ function TrackMap({ comparison }: { comparison: TelemetryComparison }) {
       <svg className="mx-auto aspect-square w-full max-w-[360px]" viewBox="0 0 300 300" role="img" aria-label="Circuit outline from the selected telemetry lap">
         <polyline points={normalized} fill="none" stroke="#111827" strokeWidth="11" strokeLinejoin="round" strokeLinecap="round" />
         <polyline points={normalized} fill="none" stroke="#e5edf8" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+        <CornerMarks corners={map.corners} radius={CORNER_RADIUS} />
         <circle cx={placed[0].x} cy={placed[0].y} r="5" fill={DRIVER_A} stroke="#fff" strokeWidth="2" />
       </svg>
-      <div className="mt-2 flex items-center justify-center gap-2 text-xs text-slate-500">
-        <span className="h-2 w-2 rounded-full bg-redline" /> Start of the lap
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-redline" /> Start of the lap
+        </span>
+        {map.corners.length ? <span>Numbered discs are the circuit&apos;s official corners</span> : null}
       </div>
+      {note ? <p className="mt-2 text-center text-xs text-slate-500">{note}</p> : null}
     </div>
   );
 }

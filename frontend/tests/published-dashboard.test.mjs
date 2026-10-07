@@ -193,6 +193,17 @@ const SESSION_FILES = {
   // A race is published without this file; it is here so that the tab's
   // reader has all six of its analyses to read.
   "analysis/pace-prediction.json": { available: false, session_type: "Race", drivers: [], teams: [], caveats: [] },
+  "corners.json": {
+    corners: [
+      { number: 1, letter: null, x: 1000, y: 1, angle: 90, distance_m: 1000 },
+      { number: 2, letter: "A", x: 3000, y: 3, angle: -90, distance_m: 3000 }
+    ],
+    distance_source: "archive",
+    fits_track: true,
+    off_track_m: 0.4,
+    reference_lap: { driver_code: "RUS", lap_number: 3, length_m: 4000 },
+    rotation: 0
+  },
   "telemetry/index.json": TELEMETRY_INDEX,
   ...Object.fromEntries(TELEMETRY_DRIVERS.map((code) => [`telemetry/${code}.json`, driverTelemetry(code)]))
 };
@@ -260,12 +271,14 @@ const TAB_READS = {
       "analysis/track-dominance.json",
       "analysis/corner-analysis.json",
       "analysis/car-performance.json",
-      "analysis/pace-prediction.json"
+      "analysis/pace-prediction.json",
+      "corners.json"
     ]
   },
   strategy: { required: ["stints.json", "pit-stops.json"], optional: ["analysis/strategy.json"] },
-  telemetry: { required: ["telemetry/index.json", "drivers.json"], optional: [] },
-  "position-replay": { required: ["position-replay.json", "drivers.json"], optional: [] },
+  // The three tabs that draw the track read the circuit's corner map.
+  telemetry: { required: ["telemetry/index.json", "drivers.json"], optional: ["corners.json"] },
+  "position-replay": { required: ["position-replay.json", "drivers.json"], optional: ["corners.json"] },
   weather: { required: ["weather.json"], optional: [] },
   "race-control": { required: ["race-control.json"], optional: [] },
   results: { required: ["results.json", "drivers.json"], optional: [] }
@@ -368,8 +381,16 @@ test("an analysis the generation leaves out is absent without a request, and its
   assert.equal(performance.drivers.length, 2);
   assert.equal(performance.sessionType, "R");
   assert.deepEqual(
-    [performance.idealLaps, performance.teammateComparison, performance.trackDominance, performance.cornerAnalysis, performance.carPerformance, performance.pacePrediction],
-    [null, null, null, null, null, null]
+    [
+      performance.idealLaps,
+      performance.teammateComparison,
+      performance.trackDominance,
+      performance.cornerAnalysis,
+      performance.carPerformance,
+      performance.pacePrediction,
+      performance.corners
+    ],
+    [null, null, null, null, null, null, null]
   );
   assert.deepEqual(requested(), ["drivers.json"]);
 
@@ -389,7 +410,9 @@ test("one optional analysis can be absent while the others are read", async () =
   assert.notEqual(performance.trackDominance, null);
   assert.notEqual(performance.pacePrediction, null);
   assert.ok(!requested().includes("analysis/corner-analysis.json"));
-  assert.equal(requested().length, 6);
+  // The drivers, the five other analyses and the corner map.
+  assert.equal(requested().length, 7);
+  assert.equal(performance.corners.corners.length, 2);
 });
 
 // AR-07: one artifact that failed to load used to replace the whole page.
@@ -579,8 +602,9 @@ test("the telemetry tab opens on the index and the files of the two drivers it c
   assert.deepEqual(telemetry.comparison.delta_time_ms, [0, -100, -200, -300, -400]);
   // The session has no DRS channel, and the comparison has none to chart.
   assert.equal(telemetry.comparison.drs_a, null);
+  assert.equal(telemetry.corners.fits_track, true);
   // Neither the laps of the session nor any other driver's telemetry.
-  assert.deepEqual(requested().sort(), ["drivers.json", "telemetry/index.json", ...FIRST_COMPARISON].sort());
+  assert.deepEqual(requested().sort(), ["corners.json", "drivers.json", "telemetry/index.json", ...FIRST_COMPARISON].sort());
 });
 
 test("a driver's file is requested the first time one of their laps is compared, and never again", async () => {
@@ -696,7 +720,7 @@ test("a session with no telemetry laps opens to a notice and requests no driver'
   assert.match(telemetry.notice.reason, /needs two laps with telemetry/);
   assert.deepEqual(
     bucket.keys().map((key) => key.slice(generationPrefix(generation).length)).sort(),
-    ["drivers.json", "telemetry/index.json"]
+    ["corners.json", "drivers.json", "telemetry/index.json"]
   );
 });
 
@@ -709,6 +733,8 @@ test("the telemetry the publisher writes is read, and one lap is not a compariso
   assert.deepEqual(telemetry.laps, [{ driver_code: "RUS", lap_number: 2, lap_time_ms: 72_037, compound: "MEDIUM" }]);
   assert.equal(telemetry.pair, null);
   assert.match(telemetry.notice.reason, /needs two laps with telemetry/);
+  // The fixture's generation has no corner map, which is not an error.
+  assert.equal(telemetry.corners, null);
   // The one lap compared with itself: the file reads as the schema types it.
   // Its four samples are three at the start of the lap and one at the end,
   // 71 seconds later, which is a hole: nothing is drawn across it.

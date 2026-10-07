@@ -31,7 +31,7 @@ export function TelemetryLaps({ view, telemetry }: { view: SessionView; telemetr
   // Bound to the view, so a comparison asked for later comes from the same
   // generation as the index the laps were chosen from.
   const compare = useCallback<CompareLaps>((first, second) => compareTelemetry(view, first, second), [view]);
-  const { laps, pair, comparison, notice } = telemetry;
+  const { laps, pair, comparison, notice, corners } = telemetry;
   if (laps.length === 0) {
     return <EmptyState title="No telemetry laps" detail="This session was published without telemetry for any lap." />;
   }
@@ -48,6 +48,7 @@ export function TelemetryLaps({ view, telemetry }: { view: SessionView; telemetr
         initialPair={pair}
         initialComparison={comparison}
         initialNotice={notice}
+        corners={corners}
         compare={compare}
       />
     </div>

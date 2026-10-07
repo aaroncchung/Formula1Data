@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { formatMs } from "@/lib/format";
 import { isTelemetryNotice } from "@/lib/published/telemetry";
 import type { LapRef, TelemetryLapChoice, TelemetryNotice } from "@/lib/published/telemetry";
+import type { Corners } from "@/lib/published/types";
 import type { TelemetryComparison } from "@/lib/telemetry-compare";
 
 /** Loads the comparison of two laps. */
@@ -18,12 +19,15 @@ export function TelemetryComparePanel({
   initialComparison,
   initialNotice,
   availableLaps,
+  corners,
   compare
 }: {
   initialPair: readonly [LapRef, LapRef] | null;
   initialComparison: TelemetryComparison | null;
   initialNotice: TelemetryNotice | null;
   availableLaps: ReadonlyArray<TelemetryLapChoice>;
+  /** The circuit's corner map, or null when the session has none. */
+  corners: Corners | null;
   /**
    * Loads a comparison. The page passes one bound to the generation it has
    * pinned, so the laps compared come from the publication the rest of the
@@ -144,7 +148,7 @@ export function TelemetryComparePanel({
           title={`${comparison.driver_a.driver_code} · Lap ${comparison.driver_a.lap_number}  vs  ${comparison.driver_b.driver_code} · Lap ${comparison.driver_b.lap_number}`}
           description={`Traces share one distance cursor. A positive time delta means ${comparison.driver_b.driver_code} is behind ${comparison.driver_a.driver_code}.`}
         >
-          <TelemetryCharts comparison={comparison} />
+          <TelemetryCharts comparison={comparison} corners={corners} />
         </ChartPanel>
       ) : null}
     </div>

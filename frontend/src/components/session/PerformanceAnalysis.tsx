@@ -29,7 +29,7 @@ export function PerformanceAnalysis(props: SessionPerformance) {
       </div>
       {props.trackDominance?.minisectors.length ? (
         <ChartPanel title="Track dominance" description={`${props.trackDominance.minisector_count} minisectors coloured by the quickest representative lap.`}>
-          <TrackDominance result={props.trackDominance} drivers={props.drivers} />
+          <TrackDominance result={props.trackDominance} drivers={props.drivers} corners={props.corners} />
           <AnalysisCaveats caveats={props.trackDominance.caveats} />
         </ChartPanel>
       ) : null}
@@ -105,10 +105,16 @@ function CarPerformanceView({ result, drivers }: { result: CarPerformance; drive
 function CornerAnalysisView({ result, drivers }: { result: CornerAnalysis; drivers: Drivers }) {
   const colors = teamColorByDriver(drivers);
   const rows = result.corners.flatMap((corner) =>
-    corner.drivers.map((driver) => ({ ...driver, corner: cornerName(corner, result.corner_source) }))
+    corner.drivers.map((driver) => ({
+      ...driver,
+      corner: cornerName(corner, result.corner_source),
+      cornerDistance: corner.distance_m
+    }))
   );
   return <DataTable rows={rows} columns={[
     { key: "corner", header: "Corner", render: (row) => row.corner },
+    // Where along the lap the corner is, so a row can be found on the telemetry's distance axis.
+    { key: "at", header: "At", align: "right", render: (row) => metres(row.cornerDistance) },
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     {
       key: "brake",
