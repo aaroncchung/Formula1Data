@@ -39,7 +39,7 @@ jobs:
       EVENT: ${{ inputs.event || '8' }}
       SESSION: ${{ inputs.session || 'R' }}
     steps:
-      # frontend/public/data is 1.2 GB; the probe needs none of it.
+      # The probe needs nothing but the package.
       - name: Checkout
         uses: actions/checkout@v4
         with:

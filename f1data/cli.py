@@ -10,6 +10,8 @@ import shutil
 import sys
 import tempfile
 import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -33,14 +35,22 @@ from f1data.archive import (
     select_snapshot,
     write_snapshot,
 )
-from f1data.classification import ClassificationUnavailable, fetch_classified_laps
+from f1data.classification import ClassificationMissing, ClassificationUnavailable, fetch_classified_laps
 from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
 from f1data.due import least_recently_failed_first, plan_fetches
-from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, f1_is_answering, fastf1_cache, fetch_session
+from f1data.fetch import (
+    F1_ARCHIVE_HOSTS,
+    FetchError,
+    f1_is_answering,
+    fastf1_cache,
+    fetch_session,
+    read_back,
+)
 from f1data.httplog import request_timeouts
 from f1data.policy import (
     FETCH_STAGE_BUDGET,
+    NOT_ANSWERING_AFTER,
     REQUEST_TIMEOUT_SECONDS,
     RUN_IS_OVERDUE_AFTER,
     SPOOL_NEEDS_FREE_BYTES,
@@ -48,23 +58,24 @@ from f1data.policy import (
 from f1data.schedule import ScheduledSession, load_schedule
 from f1data.spool import (
     CACHE_DIRECTORY,
+    Discarded,
     Spooled,
     Unfinished,
+    UnreadableError,
+    begin,
     describe,
+    directories,
     discard,
-    fetching,
     free_bytes,
+    holding,
+    is_stale,
     keep,
-    new_fetch_directory,
-    note_resumed,
-    note_served,
+    mark_served,
+    new_fetch_path,
     spool_root,
-    sweep,
-    unfinished,
-    unreadable,
-    uploading,
-    waiting,
+    sweep_locks,
 )
+from f1data.spool import read as read_spool
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
 
 # After this many fetches of one session have failed one after the other, a
@@ -135,8 +146,8 @@ def main(argv: list[str] | None = None) -> None:
     due.add_argument(
         "--budget-minutes",
         type=float,
-        help="Start no new fetch after this long, and leave the rest for the next run. `run` allows "
-        f"{FETCH_STAGE_BUDGET.total_seconds() / 60:g} minutes, so that its build always has its turn.",
+        help="Start nothing new after this long: no upload, no question to Jolpica and no fetch. The rest "
+        f"is left for the next run. `run` allows {FETCH_STAGE_BUDGET.total_seconds() / 60:g} minutes.",
     )
     due.add_argument("--dry-run", action="store_true", help="Say what would be fetched and stop.")
     due.set_defaults(func=run_fetch_due)
@@ -171,7 +182,8 @@ def main(argv: list[str] | None = None) -> None:
 
     both = subparsers.add_parser(
         "run",
-        help="The whole job: fetch what is due, then build and publish. For a schedule on a machine F1 answers.",
+        help="The whole job: build and publish what the archive holds, fetch what is due, and build that. "
+        "For a schedule on a machine F1 answers.",
     )
     _add_store_argument(both)
     both.add_argument(
@@ -308,141 +320,81 @@ class _NotArchived(RuntimeError):
 
 
 class _NotKept(RuntimeError):
-    """A session was fetched and could not be written down as whole. What F1 sent is in the spool."""
+    """F1 served a session and it could not be written down as whole. What F1 sent is in the spool."""
 
 
-class _Busy(RuntimeError):
-    """Another run is at this fetch."""
+class _NoRoom(RuntimeError):
+    """A fetch was not started: there is too little room where the spool is."""
 
 
 def _store_name(spec: str | None) -> str:
-    """A name for the store a fetch is made for, the same on every run that uses it."""
+    """A name for the store a fetch is made for: the same on every run that uses it, and no other store's.
+
+    A bucket is one account's. Two accounts can each have a bucket of the
+    same name, and a fetch made for the one is not the other's to take.
+    """
     if (spec or "").strip().lower() == "r2":
-        return f"r2:{os.environ.get('R2_BUCKET', '')}"
+        account = os.environ.get("R2_ACCOUNT_ID") or os.environ.get("CLOUDFLARE_ACCOUNT_ID") or ""
+        return f"r2:{account}/{os.environ.get('R2_BUCKET', '')}"
     return str(Path(spec or "").resolve())
 
 
-def _archive(store: ObjectStore, spooled: Spooled) -> Snapshot | None:
-    """Archive a fetch from the spool and remove it from there. ``None`` when another run is at it."""
-    with uploading(spooled.directory) as held:
-        if not held:
-            return None
-        snapshot = write_snapshot(
-            store, spooled.fetched, now=spooled.fetched_at, snapshot_id=spooled.snapshot_id
-        )
-    discard(spooled.directory)
+def _no_room(spool: Path) -> str:
+    """Why a fetch is not started for want of room, or nothing when there is room."""
+    free = free_bytes(spool)
+    if free >= SPOOL_NEEDS_FREE_BYTES:
+        return ""
+    return (
+        f"{free // 1024**2} MB free where the spool is ({spool}), and a fetch is not started with "
+        f"less than {SPOOL_NEEDS_FREE_BYTES // 1024**2}"
+    )
+
+
+def _remove(directory: Path) -> bool:
+    """Remove from the spool what is not a session F1 served. The caller holds it. False if it could not be."""
+    try:
+        discard(directory)
+    except OSError as exc:
+        print(f"{directory} could not be removed from the spool: {exc}. A later run tries again.")
+        return False
+    return True
+
+
+def _archive(store: ObjectStore, spooled: Spooled) -> Snapshot:
+    """Archive a whole fetch from the spool and remove it from there. The caller holds its directory."""
+    snapshot = write_snapshot(store, spooled.fetched, now=spooled.fetched_at, snapshot_id=spooled.snapshot_id)
+    try:
+        discard(spooled.directory)
+    except OSError as exc:
+        # It is in the archive. The next run finds its marker there, and
+        # removes this then.
+        print(f"  Archived, and {spooled.directory} could not be removed from the spool yet: {exc}")
     return snapshot
 
 
-def _archive_what_is_waiting(store: ObjectStore, name: str, spool: Path) -> list[Spooled]:
-    """Upload the whole fetches an earlier run could not. Returns the ones still waiting.
+def _write_down_and_archive(
+    store: ObjectStore, directory: Path, fetched: Any, fetched_at: datetime, marked: bool = True
+) -> Snapshot:
+    """See a session F1 served through to the archive. The caller holds its directory.
 
-    Before anything is asked of F1: these have been fetched once already.
+    ``_NotKept`` when it could not be written down as whole: a later run
+    reads it back from its cache. ``_NotArchived`` when the archive would
+    not take it: a later run uploads it. Either way it stays in the spool.
     """
-    still_waiting = []
-    for removed in sweep(spool):
-        print(f"Removed {removed.name} from the spool: it was not a fetch.")
-    for directory in unreadable(spool):
-        print(
-            f"ATTENTION: {directory} is a fetch whose record cannot be read. "
-            "It is left as it is, for someone to look at."
+    try:
+        spooled = keep(directory, fetched, fetched_at, new_snapshot_id(fetched_at))
+    except Exception as exc:
+        unmarked = (
+            ""
+            if marked
+            else " It could not be marked as served either: a later run will take it for a fetch that was "
+            "stopped part of the way, and remove it."
         )
-    elsewhere = [spooled for spooled in waiting(spool) if spooled.store != name]
-    if elsewhere:
-        print(f"{len(elsewhere)} fetch(es) in the spool are waiting for another store, and are left for it.")
-    for spooled in waiting(spool, name):
-        try:
-            snapshot = _archive(store, spooled)
-        except Exception as exc:
-            print(f"{describe(spooled)}: fetched earlier, and still NOT ARCHIVED: {type(exc).__name__}: {exc}")
-            still_waiting.append(spooled)
-            continue
-        if snapshot is None:
-            print(f"{describe(spooled)}: fetched earlier, being archived by another run.")
-            still_waiting.append(spooled)
-            continue
-        print(f"{describe(spooled)}: fetched earlier, archived now.")
-        _print_snapshot(snapshot)
-    return still_waiting
-
-
-def _finish_what_was_cut_short(store: ObjectStore, name: str, spool: Path) -> tuple[int, list[Unfinished]]:
-    """Finish the fetches an earlier run started and did not write down as whole.
-
-    Each is fetched again into its own directory, where FastF1 finds what
-    had arrived. Returns how many could not be seen through, and the ones
-    still in the spool afterwards: being fetched by another run, or fetched
-    and still not written down.
-    """
-    failed, left = 0, []
-    to_finish: list[Unfinished] = []
-    for cut_short in unfinished(spool, name):
-        if not cut_short.resumes or cut_short.served:
-            to_finish.append(cut_short)
-            continue
-        # Cut short once, and again while it was being finished, and F1 is
-        # not known to have served all of it. A third try at the head of the
-        # run could end the run the same way; the session is fetched afresh
-        # in its turn.
-        with fetching(cut_short.directory) as free:
-            if not free:
-                left.append(cut_short)
-                continue
-        discard(cut_short.directory)
-        print(
-            f"{cut_short.year} round {cut_short.event} {cut_short.session_type}: "
-            "a fetch that was cut short twice is let go; the session waits its turn."
-        )
-    if to_finish and free_bytes(spool) < SPOOL_NEEDS_FREE_BYTES:
-        # Finishing a fetch writes to the disk that stopped it. On one that
-        # is still full it would fail the same way, or part of the way in.
-        print(
-            f"{len(to_finish)} fetch(es) that were cut short are left as they are: "
-            f"{free_bytes(spool) // 1024**2} MB free where the spool is ({spool}), and none is finished "
-            f"with less than {SPOOL_NEEDS_FREE_BYTES // 1024**2}."
-        )
-        return failed + 1, left + to_finish
-    for cut_short in to_finish:
-        label = f"{cut_short.year} round {cut_short.event} {cut_short.session_type}"
-
-        def note(outcome: Any, *more: Any) -> None:
-            # Under the calendar entry the fetch was planned from, if it was.
-            if cut_short.start_time_utc is not None:
-                outcome(
-                    store,
-                    cut_short.year,
-                    cut_short.session_type,
-                    cut_short.start_time_utc,
-                    *more,
-                    datetime.now(timezone.utc),
-                )
-
-        try:
-            snapshot = _fetch_and_archive(
-                store, name, spool, cut_short.year, cut_short.event, cut_short.session_type, resume=cut_short
-            )
-        except _Busy:
-            left.append(cut_short)
-            continue
-        except _NotArchived as exc:
-            failed += 1
-            note(note_fetch_succeeded)
-            print(f"{label}: a fetch that was cut short is whole now, and NOT ARCHIVED: {exc}")
-            continue
-        except _NotKept as exc:
-            failed += 1
-            left.append(cut_short)
-            print(f"{label}: a fetch that F1 served could still not be written down: {exc}")
-            continue
-        except Exception as exc:
-            # It is gone from the spool, and the session is planned like any other.
-            note(note_failed_fetch, f"{type(exc).__name__}: {exc}")
-            print(f"{label}: a fetch that was cut short could not be finished ({type(exc).__name__}: {exc}).")
-            continue
-        note(note_fetch_succeeded)
-        print(f"{label}: a fetch that was cut short, finished from what it left.")
-        _print_snapshot(snapshot)
-    return failed, left
+        raise _NotKept(f"{type(exc).__name__}: {exc}. What F1 sent is in {directory}.{unmarked}") from exc
+    try:
+        return _archive(store, spooled)
+    except Exception as exc:
+        raise _NotArchived(f"{type(exc).__name__}: {exc}. Kept in {directory}") from exc
 
 
 def _fetch_and_archive(
@@ -452,68 +404,45 @@ def _fetch_and_archive(
     year: int,
     event: int | str,
     session_type: str,
-    resume: Unfinished | None = None,
     start_time_utc: str | None = None,
+    attempt: str | None = None,
 ) -> Snapshot:
     """Fetch one session into the spool and archive it from there.
 
     Raises whatever the fetch raises, when F1 did not serve the session:
     nothing is then left in the spool. Once F1 has served it, it stays in
-    the spool until it is archived, whatever happens: ``_NotKept`` when it
-    could not be written down as whole (the next run finishes the fetch from
-    FastF1's cache), ``_NotArchived`` when the archive would not take it (the
-    next run uploads it). An interrupt leaves whatever had arrived.
+    the spool until it is archived, whatever happens: ``_NotKept`` or
+    ``_NotArchived`` say how far it got. A run that is stopped in the middle
+    of the fetch leaves part of a session, which the next run removes.
+
+    ``_NoRoom`` when the fetch was not started, for want of room.
     """
-    directory = (
-        resume.directory
-        if resume
-        else new_fetch_directory(spool, year, event, session_type, name, start_time_utc=start_time_utc)
-    )
-    # F1 served this session to an earlier fetch into this directory.
-    served = resume is not None and resume.served
-    refused: Exception | None = None
-    with fetching(directory) as mine:
+    no_room = _no_room(spool)
+    if no_room:
+        raise _NoRoom(no_room)
+    directory = new_fetch_path(spool)
+    # Taken before the directory exists and kept until it is gone or the run
+    # is done with it: no other run ever finds it and finds it free, unless
+    # this one has ended.
+    with holding(directory) as mine:
         if not mine:
-            raise _Busy(str(directory))
+            raise RuntimeError(f"{directory} is new and is already held")
+        cache = begin(directory, year, event, session_type, name, start_time_utc=start_time_utc, attempt=attempt)
         try:
-            if resume is not None and not served:
-                # Finishing it is done once. What F1 has served is finished
-                # for as long as it takes, so nothing is counted for it.
-                note_resumed(directory)
-            fetched = fetch_session(
-                year, event, session_type, directory / CACHE_DIRECTORY, resume=resume is not None
-            )
-        except Exception as exc:
-            if served:
-                # It is in the cache, and this time could not be read back
-                # from it. That is no more a reason to remove it than a
-                # failed upload is.
-                raise _NotKept(
-                    f"reading it back failed ({type(exc).__name__}: {exc}). What F1 sent is in {directory}"
-                ) from exc
-            refused = exc
-        else:
-            # A fetch that was cut short was made when it was started.
-            fetched_at = resume.started_at if resume else datetime.now(timezone.utc)
-            try:
-                # First of all, and needing no room on the disk: from here on
-                # the directory is a session F1 served.
-                note_served(directory)
-                spooled = keep(directory, fetched, fetched_at, new_snapshot_id(fetched_at))
-            except Exception as exc:
-                raise _NotKept(f"{type(exc).__name__}: {exc}. What F1 sent is in {directory}") from exc
-    if refused is not None:
-        # Not a fetch, so nothing a snapshot could be made of. Removed once
-        # the directory is no longer held.
-        discard(directory)
-        raise refused
-    try:
-        snapshot = _archive(store, spooled)
-    except Exception as exc:
-        raise _NotArchived(f"{type(exc).__name__}: {exc}. Kept in {directory}") from exc
-    if snapshot is None:
-        raise _NotArchived(f"another run holds {directory}")
-    return snapshot
+            fetched = fetch_session(year, event, session_type, cache)
+        except Exception:
+            # Not a session F1 served, so nothing a snapshot could be made of.
+            _remove(directory)
+            raise
+        fetched_at = datetime.now(timezone.utc).replace(microsecond=0)
+        # First of all, and needing no room on the disk: from here on the
+        # directory is a session F1 served.
+        try:
+            mark_served(directory, fetched_at)
+            marked = True
+        except OSError:
+            marked = False
+        return _write_down_and_archive(store, directory, fetched, fetched_at, marked)
 
 
 def run_fetch(args: argparse.Namespace) -> int:
@@ -521,11 +450,157 @@ def run_fetch(args: argparse.Namespace) -> int:
     event = int(args.event) if str(args.event).isdigit() else args.event
     try:
         snapshot = _fetch_and_archive(store, _store_name(args.store), spool_root(), args.year, event, args.session)
+    except _NoRoom as exc:
+        print(f"NOT FETCHED: {exc}.")
+        return 1
     except (_NotArchived, _NotKept) as exc:
         print(f"FETCHED, NOT ARCHIVED: {exc}. `fetch-due` or `run` sees it through before it fetches anything.")
         return 1
     _print_snapshot(snapshot)
     return 0
+
+
+@dataclass
+class _Seen:
+    """What a run found in the spool, and what it could not see through."""
+
+    failed: int = 0
+    archived: int = 0
+    # The sessions with a fetch still in the spool, which are not to be
+    # asked of F1 again: by the key of the calendar entry, and by what the
+    # fetch asked for.
+    entries: set[str] = field(default_factory=set)
+    asked: set[tuple[int, int | str, str]] = field(default_factory=set)
+
+    def keeps(self, found: Spooled | Unfinished) -> None:
+        if isinstance(found, Spooled):
+            identity = found.fetched.identity
+            self.entries.add(layout.attempt_key(identity.year, identity.session_type, identity.start_time_utc))
+            return
+        self.asked.add((found.year, found.event, found.session_type.upper()))
+        if found.start_time_utc is not None:
+            self.entries.add(layout.attempt_key(found.year, found.session_type, found.start_time_utc))
+
+    def has(self, plan: Any) -> bool:
+        session = plan.session
+        return (
+            plan.attempt_key in self.entries
+            or (session.year, session.round, session.session_type.upper()) in self.asked
+        )
+
+
+def _see_the_spool_through(
+    store: ObjectStore, name: str, spool: Path, time_is_up: Callable[[], bool] = lambda: False
+) -> _Seen:
+    """Deal with whatever earlier runs left in the spool, before anything is asked of F1.
+
+    Each directory is taken under its lock, and what is done with it is
+    decided by what it is found to be then (f1data/spool.py). A session F1
+    served is archived, or stays: uploaded if it is whole, read back from
+    its cache and written down first if it is not. What is part of a
+    session, and what is not a fetch, is removed.
+    """
+    seen = _Seen()
+    elsewhere = 0
+    sweep_locks(spool)
+    for directory in directories(spool):
+        with holding(directory) as mine:
+            if not mine:
+                # Another run is at it, and sees to it. Whatever it is a
+                # fetch of is not fetched again meanwhile.
+                try:
+                    theirs = read_spool(directory)
+                except UnreadableError:
+                    continue
+                if isinstance(theirs, (Spooled, Unfinished)) and theirs.store == name:
+                    seen.keeps(theirs)
+                continue
+            try:
+                found = read_spool(directory)
+            except UnreadableError as exc:
+                print(
+                    f"ATTENTION: {directory} is a fetch whose record cannot be read ({exc.__cause__}). "
+                    "It is left as it is, for someone to look at."
+                )
+                continue
+            if found is None:
+                if is_stale(directory) and _remove(directory):
+                    print(f"Removed {directory.name} from the spool: it was not a fetch.")
+                continue
+            if isinstance(found, Discarded):
+                _remove(directory)
+                continue
+            if found.store != name:
+                elsewhere += 1
+                continue
+            if isinstance(found, Unfinished):
+                label = f"{found.year} round {found.event} {found.session_type}"
+                if not found.served:
+                    if _remove(directory):
+                        print(
+                            f"{label}: a fetch that was stopped before F1 had served the session is removed. "
+                            "The session is fetched again in its turn."
+                        )
+                    continue
+            else:
+                label = describe(found)
+            # A session F1 served. It is archived now, or it stays.
+            seen.keeps(found)
+            if time_is_up():
+                seen.failed += 1
+                print(f"{label}: fetched earlier, and left in the spool: the fetch stage's time is up.")
+                continue
+            if isinstance(found, Spooled):
+                try:
+                    snapshot = _archive(store, found)
+                except Exception as exc:
+                    seen.failed += 1
+                    print(f"{label}: fetched earlier, and still NOT ARCHIVED: {type(exc).__name__}: {exc}")
+                    continue
+                seen.archived += 1
+                print(f"{label}: fetched earlier, archived now.")
+                _print_snapshot(snapshot)
+                continue
+
+            def note_served() -> None:
+                # Under the calendar entry the fetch was planned from, if it
+                # was, and as the outcome of the fetch that was begun then.
+                if found.start_time_utc is not None:
+                    note_fetch_succeeded(
+                        store,
+                        found.year,
+                        found.session_type,
+                        found.start_time_utc,
+                        datetime.now(timezone.utc),
+                        found.attempt,
+                    )
+
+            try:
+                fetched = read_back(found.year, found.event, found.session_type, directory / CACHE_DIRECTORY)
+                snapshot = _write_down_and_archive(store, directory, fetched, found.served_at)
+            except _NotArchived as exc:
+                seen.failed += 1
+                note_served()
+                print(f"{label}: a fetch that F1 served is written down now, and NOT ARCHIVED: {exc}")
+            except _NotKept as exc:
+                seen.failed += 1
+                print(f"{label}: a fetch that F1 served could still not be written down: {exc}")
+            except Exception as exc:
+                # It stays as it is, whatever went wrong: it is the only
+                # copy of what F1 served.
+                seen.failed += 1
+                print(
+                    f"{label}: a fetch that F1 served could still not be written down: "
+                    f"reading it back failed ({type(exc).__name__}: {exc}). What F1 sent is in {directory}."
+                )
+            else:
+                seen.archived += 1
+                note_served()
+                print(f"{label}: a fetch that F1 served, written down from its cache and archived.")
+                _print_snapshot(snapshot)
+    if elsewhere:
+        print(f"{elsewhere} fetch(es) in the spool are for another store, and are left for it.")
+    return seen
 
 
 def _last_fetched(snapshots: list[Snapshot], now: datetime) -> dict[str, datetime]:
@@ -562,25 +637,28 @@ def _seasons_in_scope(now: datetime, snapshots: list[Snapshot], published_short:
 
 
 def run_fetch_due(args: argparse.Namespace) -> int:
+    return _fetch_due(args)[0]
+
+
+def _fetch_due(args: argparse.Namespace) -> tuple[int, int]:
+    """The fetch stage. Returns its exit status, and how many sessions it put in the archive."""
     store = _store(args.store)
     now = datetime.now(timezone.utc)
     spool, name = spool_root(), _store_name(args.store)
-    failed = failed_in_a_row = not_archived = 0
-    still_waiting: list[Spooled] = []
-    cut_short: list[Unfinished] = []
+    failed = failed_in_a_row = not_archived = archived = 0
     budget = getattr(args, "budget_minutes", None)
     out_of_time = time.monotonic() + budget * 60 if budget is not None else None
+
+    def time_is_up() -> bool:
+        # Asked before each thing the stage starts: an upload, a reading
+        # back, a question to Jolpica, a fetch.
+        return out_of_time is not None and time.monotonic() >= out_of_time
+
+    seen = _Seen()
     if not args.dry_run:
-        # What has been fetched comes before what has not. First the whole
-        # fetches that are waiting for the archive, which is also what makes
-        # room in the spool; then the ones that were cut short, which are
-        # finished from what they left.
-        _archive_what_is_waiting(store, name, spool)
-        failed, cut_short = _finish_what_was_cut_short(store, name, spool)
-        # Whatever is whole and still here, from either: it has only to be
-        # archived.
-        still_waiting = waiting(spool, name)
-        not_archived = len(still_waiting)
+        # What has been fetched comes before what has not.
+        seen = _see_the_spool_through(store, name, spool, time_is_up)
+        failed, archived = seen.failed, seen.archived
     snapshots = list_snapshots(store)
     published_short = _published_short(store)
     seasons = args.season or _seasons_in_scope(now, snapshots, published_short)
@@ -600,13 +678,34 @@ def run_fetch_due(args: argparse.Namespace) -> int:
             if not loaded:
                 raise SystemExit("Could not load any calendar, so nothing was fetched.")
 
+            unanswered = 0
+
             def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
+                # Without an answer a session is judged by what its
+                # snapshots recorded, as it is when Jolpica has no result.
+                # Jolpica not answering is not asked about every session in
+                # turn, each to its last retry: that alone could outlast a
+                # run.
+                nonlocal unanswered
+                if unanswered >= NOT_ANSWERING_AFTER or time_is_up():
+                    return None
                 try:
-                    return fetch_classified_laps(
+                    laps = fetch_classified_laps(
                         fastf1, session.year, session.round, session.session_type, session.start_time.date()
                     )
-                except ClassificationUnavailable:
+                except ClassificationMissing:
+                    unanswered = 0
                     return None
+                except ClassificationUnavailable:
+                    unanswered += 1
+                    if unanswered >= NOT_ANSWERING_AFTER:
+                        print(
+                            f"Jolpica did not answer {unanswered} times running. The sessions still to be "
+                            "looked at are judged by what their snapshots recorded, until the next run."
+                        )
+                    return None
+                unanswered = 0
+                return laps
 
             plans = plan_fetches(
                 schedule,
@@ -615,25 +714,10 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 classified_laps,
                 published_short=published_short,
             )
-            # A session that is in the spool has been fetched. It has only to
-            # be archived, and asking F1 for it again would not help that.
-            in_the_spool = {
-                layout.attempt_key(
-                    spooled.fetched.identity.year,
-                    spooled.fetched.identity.session_type,
-                    spooled.fetched.identity.start_time_utc,
-                )
-                for spooled in still_waiting
-            }
-            # The same for a fetch that is still being made, or was made and
-            # could not be written down. Those are known by what was asked for.
-            being_fetched = {(item.year, item.event, item.session_type.upper()) for item in cut_short}
-            plans = [
-                plan
-                for plan in plans
-                if plan.attempt_key not in in_the_spool
-                and (plan.session.year, plan.session.round, plan.session.session_type.upper()) not in being_fetched
-            ]
+            # A session that is in the spool has been fetched, or is being.
+            # It has only to be archived, and asking F1 for it again would
+            # not help that.
+            plans = [plan for plan in plans if not seen.has(plan)]
             # A batch can be cut short. So that the same sessions are not the
             # ones it reaches every time, the ones tried longest ago go first,
             # and before them the ones never tried.
@@ -649,19 +733,16 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 if args.dry_run:
                     continue
                 left = len(plans) - number
-                if out_of_time is not None and time.monotonic() >= out_of_time:
+                if time_is_up():
                     print(
                         f"  Stopping: the fetch stage has had its {budget:g} minutes. "
                         f"{left} session(s) left for the next run."
                     )
                     break
-                if free_bytes(spool) < SPOOL_NEEDS_FREE_BYTES:
+                no_room = _no_room(spool)
+                if no_room:
                     failed += 1
-                    print(
-                        f"  Stopping: {free_bytes(spool) // 1024**2} MB free where the spool is ({spool}), and a "
-                        f"fetch is not started with less than {SPOOL_NEEDS_FREE_BYTES // 1024**2}. "
-                        f"{left} session(s) left."
-                    )
+                    print(f"  Stopping: {no_room}. {left} session(s) left.")
                     break
                 entry = (session.year, session.session_type, session.start_time_utc or "")
                 # Before the fetch, so that a run that ends in the middle of
@@ -676,7 +757,14 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                         session.round,
                         session.session_type,
                         start_time_utc=session.start_time_utc,
+                        attempt=attempt,
                     )
+                except _NoRoom as exc:
+                    # The room went between the look and the fetch.
+                    failed += 1
+                    note_failed_fetch(store, *entry, f"no room: {exc}", datetime.now(timezone.utc), attempt)
+                    print(f"  Stopping: {exc}. {left} session(s) left.")
+                    break
                 except (_NotArchived, _NotKept) as exc:
                     # F1 answered. The fault is this side of it, and the
                     # session is not asked for again: the next run sees
@@ -713,11 +801,12 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                             break
                 else:
                     failed_in_a_row = 0
+                    archived += 1
                     note_fetch_succeeded(store, *entry, datetime.now(timezone.utc), attempt)
                     _print_snapshot(snapshot)
     if not args.dry_run:
         _say_what_keeps_failing(store, schedule, now)
-    return 1 if failed or not_archived else 0
+    return (1 if failed or not_archived else 0), archived
 
 
 def _say_what_keeps_failing(store: ObjectStore, schedule: list[ScheduledSession], now: datetime) -> None:
@@ -812,23 +901,52 @@ def run_build(args: argparse.Namespace) -> int:
 
 
 def run_job(args: argparse.Namespace) -> int:
-    """Fetch, then build. Each stage is idempotent, so a run that is cut short,
-    or a machine that was off for a weekend, is made good by the next run."""
+    """Build, fetch, and build again what the fetch brought.
+
+    Each stage is idempotent, so a run that is cut short, or a machine that
+    was off for a weekend, is made good by the next run.
+
+    The build comes first, so that it has its turn in every run whatever the
+    fetch stage meets. Fetching waits on F1, on Jolpica and on uploads; each
+    wait has its limit and the stage has its own, but a run is stopped from
+    outside after two hours, and a stage that came second could be the one
+    it never reaches, run after run. What the archive held when a run began
+    is published by that run before it asks anything of F1.
+    """
     started = datetime.now(timezone.utc)
     clock = time.monotonic()
     print(f"[{format_utc(started)}] run started")
     status = 1
     try:
+        building = argparse.Namespace(**{**vars(args), "season": args.season or [started.year]})
+
+        def build() -> int:
+            try:
+                return run_build(building)
+            except Exception as exc:
+                # Whatever stopped it is no reason not to fetch: what F1 has
+                # today it may not have tomorrow.
+                logging.getLogger(__name__).exception("The build stopped")
+                print(f"The build stopped: {type(exc).__name__}: {exc}")
+                return 1
+
+        print("Building what the archive holds.")
+        built = build()
+        print("Fetching what is due.")
         try:
-            fetched = run_fetch_due(args)
+            fetched, archived = _fetch_due(args)
         except SystemExit as stopped:
-            # The fetch stage could not start. That is no reason to hold back
-            # what the archive already has, any more than one failed fetch is.
+            # The fetch stage could not start.
             print(stopped)
-            fetched = 1
-        if args.season is None:
-            args.season = [started.year]
-        built = run_build(args)
+            fetched, archived = 1, 0
+        except Exception as exc:
+            logging.getLogger(__name__).exception("The fetch stage stopped")
+            print(f"The fetch stage stopped: {type(exc).__name__}: {exc}")
+            # It may have archived something before it did.
+            fetched, archived = 1, 1
+        if archived:
+            print("Building what was fetched.")
+            built = build()
         status = 1 if fetched or built else 0
     finally:
         finished = datetime.now(timezone.utc)

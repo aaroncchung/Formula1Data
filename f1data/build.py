@@ -54,6 +54,7 @@ from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, archived_start_time, format_utc, identity_from_fastf1
 from f1data.policy import (
     CLASSIFICATION_RECHECK_WINDOW,
+    NOT_ANSWERING_AFTER,
     SAME_MEETING_TOLERANCE,
     SETTLED_RECHECK_EVERY_DAYS,
     SETTLED_RECHECK_FOR_DAYS,
@@ -111,6 +112,8 @@ class Builder:
         self._now = now
         # Ask Jolpica about every session, however old.
         self._recheck = recheck
+        # How many times running Jolpica has not answered in this run.
+        self._unanswered = 0
 
     def schedule(self, year: int) -> list[ScheduledSession]:
         """The calendar as it stands now, read from its source on every call.
@@ -215,12 +218,19 @@ class Builder:
         publishable_from = partial_publication_time(snapshots, now=self._now())
         classification = None
         if is_classified_session(identity.session_type):
+            if self._unanswered >= NOT_ANSWERING_AFTER:
+                # Each question that gets no answer waits out its retries,
+                # which for a host that has gone quiet is minutes. Asked of
+                # every session in turn, that is longer than a run has.
+                return Hold("Jolpica is not answering, and is not asked again until the next run")
             try:
                 with no_requests_to_f1():
                     classification = fetch_classification(
                         self._fastf1, scheduled.year, scheduled.round, identity.session_type
                     )
+                self._unanswered = 0
             except ClassificationMissing as exc:
+                self._unanswered = 0
                 # Usual in the hours after a race: the next run asks again.
                 # But not for ever. Once the retry window has closed the
                 # session is published as partial like any other that is
@@ -230,6 +240,7 @@ class Builder:
             except ClassificationUnavailable as exc:
                 # Jolpica did not answer, so nothing is known. Never a reason
                 # to publish without a result that may well exist.
+                self._unanswered += 1
                 return Hold(str(exc))
             if classification is not None:
                 _check_same_event(classification, identity, scheduled)

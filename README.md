@@ -100,7 +100,7 @@ C:\venvs\f1data\Scripts\python.exe -m pip install -r requirements-dev.txt
 
 ```powershell
 python -m f1data fetch-due --dry-run     # what would be fetched; touches nothing
-python -m f1data run                     # the whole job: fetch what is due, build what changed
+python -m f1data run                     # the whole job: build, fetch what is due, build what was fetched
 python -m f1data build                   # build and publish what the archive holds
 ```
 

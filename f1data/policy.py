@@ -66,6 +66,15 @@ REQUEST_TIMEOUT_SECONDS = (30.0, 120.0)
 # published. What is left over is fetched by the next run.
 FETCH_STAGE_BUDGET = timedelta(minutes=60)
 
+# After Jolpica has not answered this many times running, a stage stops
+# asking it for the rest of the run.
+NOT_ANSWERING_AFTER = 2
+
+# A fetch that started this long ago and of which nothing more was noted is
+# not still going: the run it was in has ended. Three times what the
+# scheduler allows a run.
+A_FETCH_IS_OVER_AFTER = timedelta(hours=6)
+
 # What the spool's disk has to have free before a fetch is started. A race is
 # about 200 MB in FastF1's cache, and as much again while it is packed.
 SPOOL_NEEDS_FREE_BYTES = 2 * 1024**3

@@ -46,7 +46,7 @@ from f1data.coverage import (
 from f1data.extras import CIRCUIT_INFO, circuit_corner_count
 from f1data.fetch import HTTP_CACHE_FILE, FetchedSession
 from f1data.identity import SESSION_TYPES, SessionIdentity, format_utc, parse_utc
-from f1data.policy import CLOCK_TOLERANCE, RETRY_WINDOW
+from f1data.policy import A_FETCH_IS_OVER_AFTER, CLOCK_TOLERANCE, RETRY_WINDOW
 from f1data.store import ObjectStore, PreconditionFailed
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -206,6 +206,15 @@ def write_snapshot(
                 f"{prefix}{layout.SNAPSHOT_MARKER} is there and is not the marker of this snapshot. "
                 "Nothing was written."
             )
+        # And a marker that reads as one is this upload's only if it is of
+        # this fetch and every part it names is in the archive. The caller
+        # removes its copy on the strength of this.
+        wrong = _not_this_upload(store, prefix, archived, fetched, now)
+        if wrong:
+            raise ArchiveError(
+                f"{prefix}{layout.SNAPSHOT_MARKER} is there and is not of this upload: {wrong}. "
+                "Nothing was written."
+            )
         return archived
     session_dir = fetched.cache_dir / fetched.identity.archive_path
     if not session_dir.is_dir() or not any(session_dir.glob("*.ff1pkl")):
@@ -248,6 +257,30 @@ def write_snapshot(
     )
     store.put(f"{prefix}{layout.SNAPSHOT_MARKER}", dump_json(snapshot.to_json()), if_absent=True)
     return snapshot
+
+
+def _not_this_upload(
+    store: ObjectStore, prefix: str, archived: Snapshot, fetched: FetchedSession, now: datetime
+) -> str:
+    """Why a marker found where a snapshot is about to be written is not that upload having finished. Empty if it is."""
+    if archived.identity != fetched.identity or archived.fetched_at != format_utc(now):
+        return "it describes another fetch"
+    extras = {
+        f"{EXTRA_PREFIX}{name}": {"size_bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        for name, data in fetched.extras.items()
+    }
+    named = archived.objects
+    if PARSED_ARCHIVE not in named or {name: part for name, part in named.items() if name in extras} != extras:
+        return "its parts are not this fetch's"
+    if {name for name in named if name.startswith(EXTRA_PREFIX)} != set(extras):
+        return "its parts are not this fetch's"
+    for name, part in sorted(named.items()):
+        there = store.head(f"{prefix}{name}")
+        if there is None:
+            return f"{name} is not in the archive"
+        if there.size != part.get("size_bytes"):
+            return f"{name} is {there.size} bytes in the archive, and the marker says {part.get('size_bytes')}"
+    return ""
 
 
 def list_snapshots(store: ObjectStore, session_key: int | None = None) -> list[Snapshot]:
@@ -509,6 +542,11 @@ def partial_publication_time(snapshots: list[Snapshot], now: datetime | None = N
 # What a note says of a fetch that was started and not seen to end.
 INTERRUPTED = "interrupted: the run ended before this fetch did"
 
+# How many fetches of one calendar entry a note keeps: the latest.
+_ATTEMPTS_KEPT = 12
+_NOTE_TRIES = 6
+_OUTCOMES = ("failed", "succeeded")
+
 
 def note_fetch_started(store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime) -> str:
     """Note that a fetch of this calendar entry is being made, before it is.
@@ -516,19 +554,20 @@ def note_fetch_started(store: ObjectStore, year: int, session_type: str, start_t
     A run can end without a word: the scheduler stops it at its time limit,
     the machine goes to sleep, a request never returns. Nothing was then
     noted of the fetch it was in, so the next run took the same session
-    first and could end the same way, and no later session had its turn. The
-    note is written as a failure before the fetch starts, and is replaced by
-    what happened when the fetch ends: its error, or that it succeeded.
+    first and could end the same way, and no later session had its turn. A
+    fetch that has started and of which nothing more is noted is one that
+    did not succeed.
 
-    Each one counts: ``failures`` is how many fetches of the entry in a row
-    have not succeeded, this one included until it does.
+    Returns a name for this fetch, to be given back with its outcome.
 
-    Returns a name for this attempt, to be given back with its outcome. Two
-    runs can be fetching one session at once, and each one's outcome is the
-    outcome of its own start and of no other's.
+    The note of an entry is a list of its fetches, each with its start and,
+    once it has ended, how. Two runs can be fetching one session at once,
+    and a fetch can be seen through by a later run than the one that began
+    it; each outcome is written to its own fetch, so what the note says does
+    not depend on which of them wrote first.
     """
     attempt = secrets.token_hex(4)
-    _note(store, year, session_type, start_time_utc, now, INTERRUPTED, attempt, "started")
+    _note(store, year, session_type, start_time_utc, attempt, now, None, "")
     return attempt
 
 
@@ -546,16 +585,16 @@ def note_failed_fetch(
     A failed fetch archives nothing, so without this a run could not tell a
     session that failed an hour ago from one never tried, and would try the
     same ones first every time. ``attempt`` is what ``note_fetch_started``
-    returned for it.
+    returned for it; without one the failure is noted as a fetch of its own.
     """
-    _note(store, year, session_type, start_time_utc, now, error, attempt, "failed")
+    _note(store, year, session_type, start_time_utc, attempt, now, "failed", error)
 
 
 def note_fetch_succeeded(
     store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime, attempt: str | None = None
 ) -> None:
-    """Note that the entry was fetched: it has no failure to its name, and its count starts again."""
-    _note(store, year, session_type, start_time_utc, now, "", attempt, "succeeded")
+    """Note that F1 served the entry to this fetch."""
+    _note(store, year, session_type, start_time_utc, attempt, now, "succeeded", "")
 
 
 def _note(
@@ -563,70 +602,40 @@ def _note(
     year: int,
     session_type: str,
     start_time_utc: str,
-    now: datetime,
-    error: str,
     attempt: str | None,
-    what: str,
+    now: datetime,
+    outcome: str | None,
+    error: str,
 ) -> None:
     key = layout.attempt_key(year, session_type, start_time_utc)
-    now = now.astimezone(timezone.utc)
+    at = format_utc(now.astimezone(timezone.utc))
+    name = attempt or secrets.token_hex(4)
     # Written against what is there, like everything else that changes in
-    # place (rule 2): two runs can note the same session a moment apart and
-    # finish their writes in either order.
-    for _ in range(3):
+    # place (rule 2): two runs can note the same session a moment apart, and
+    # the one that loses the write reads again and adds its word to the
+    # other's.
+    for _ in range(_NOTE_TRIES):
         current = store.get(key)
-        noted, failures, theirs = None, 0, None
-        try:
-            if current is not None:
-                payload = json.loads(current.data)
-                noted = parse_utc(payload["failed_at"])
-                failures = _whole_number(payload.get("failures", 1))
-                theirs = payload.get("attempt") if isinstance(payload.get("attempt"), str) else None
-        except Exception:
-            noted, failures, theirs = None, 0, None
-        # The note of a fetch that has started and not ended, when that fetch
-        # is not the one being noted now.
-        another_is_going = noted is not None and theirs is not None and theirs != attempt
-        if what == "started":
-            # Counted from the start, and until it succeeds.
-            written: dict[str, Any] | None = {
-                "failed_at": format_utc(now), "error": error, "failures": failures + 1, "attempt": attempt,
-            }
-            # Only over an older note: a clock that is behind does not undo
-            # what a clock that is right has written.
-            if noted is not None and now <= noted <= now + CLOCK_TOLERANCE:
-                return
-        elif what == "failed":
-            if another_is_going:
-                # This fetch was counted when it started, and the note is now
-                # of a later one. Its failure changes nothing in it.
-                return
-            if noted is None and attempt is not None:
-                # Its start is no longer noted: the session has been fetched
-                # since, by another run. That is the last word.
-                if current is not None:
-                    return
-            mine = noted is not None and theirs is not None and theirs == attempt
-            if not mine and noted is not None and now <= noted <= now + CLOCK_TOLERANCE:
-                return
-            written = {
-                "failed_at": format_utc(now),
-                "error": error[:500],
-                # Its own start counted it already.
-                "failures": failures if mine else failures + 1,
-                # It has ended: the note is of no fetch that is still going.
-                "attempt": None,
-            }
-        else:
-            if another_is_going:
-                # Fetched, and another fetch of it is still going. That one
-                # is all there is left to count.
-                written = {**json.loads(current.data), "failures": 1}  # type: ignore[union-attr]
-            elif current is None:
-                return
-            else:
-                written = {"succeeded_at": format_utc(now)}
-        data = dump_json(written)
+        attempts, last = _attempts(current.data) if current is not None else ({}, 0)
+        entry = dict(attempts.get(name) or {})
+        if entry.get("outcome"):
+            # It has ended, and that was noted. The first word on it stands.
+            return
+        # The place of this word among all those written to the note, in the
+        # order the store took them. Clocks differ between machines and are
+        # read to the second; this does not, and is not.
+        last += 1
+        if "started_at" not in entry:
+            # A fetch whose start was not noted began, as far as the note
+            # can say, when it ended.
+            entry.update(started_at=at, started=last)
+        if outcome is not None:
+            entry.update(ended_at=at, ended=last, outcome=outcome)
+            if outcome == "failed":
+                entry["error"] = error[:500]
+        attempts[name] = entry
+        kept = sorted(attempts.items(), key=lambda item: _place(item[1]))[-_ATTEMPTS_KEPT:]
+        data = dump_json({"attempts": dict(kept), "last": last})
         try:
             if current is None:
                 store.put(key, data, if_absent=True)
@@ -637,35 +646,131 @@ def _note(
             continue
 
 
-def failing_fetches(store: ObjectStore, now: datetime) -> dict[str, tuple[int, str]]:
-    """How many fetches in a row have failed for each calendar entry that is failing, and the last error."""
-    failing: dict[str, tuple[int, str]] = {}
-    for key in failed_fetches(store, now):
-        found = store.get(key)
+def _place(entry: dict[str, Any]) -> int:
+    """Where a fetch stands in the order of what was noted: at its outcome, or at its start while it has none."""
+    return int(entry["ended"] if entry.get("outcome") else entry["started"])
+
+
+def _attempts(data: bytes) -> tuple[dict[str, dict[str, Any]], int]:
+    """The fetches a note lists, by name, and the place of the last word written to it.
+
+    A note that cannot be read lists none. An entry that cannot be read is
+    left out, and the rest stand.
+    """
+    try:
+        payload = json.loads(data)
+    except Exception:
+        return {}, 0
+    if not isinstance(payload, dict):
+        return {}, 0
+    if not isinstance(payload.get("attempts"), dict):
+        return _as_noted_before(payload)
+    attempts: dict[str, dict[str, Any]] = {}
+    for name, entry in payload["attempts"].items():
         try:
-            payload = json.loads(found.data) if found is not None else {}
-            failing[key] = (_whole_number(payload.get("failures", 1)), str(payload.get("error") or ""))
+            parse_utc(entry["started_at"])
+            started = _whole_number(entry["started"])
+            read: dict[str, Any] = {"started_at": entry["started_at"], "started": started}
+            if entry.get("outcome") is not None:
+                if entry["outcome"] not in _OUTCOMES:
+                    continue
+                parse_utc(entry["ended_at"])
+                read.update(
+                    ended_at=entry["ended_at"], ended=_whole_number(entry["ended"]), outcome=entry["outcome"]
+                )
+                if entry["outcome"] == "failed":
+                    read["error"] = str(entry.get("error") or "")
+            attempts[str(name)] = read
         except Exception:
             continue
+    last = max([_place(entry) for entry in attempts.values()], default=0)
+    try:
+        last = max(last, _whole_number(payload.get("last", 0)))
+    except Exception:
+        pass
+    return attempts, last
+
+
+def _as_noted_before(payload: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], int]:
+    """A note as it was written before a note listed its fetches: one record of the last of them."""
+    try:
+        if "failed_at" in payload:
+            parse_utc(payload["failed_at"])
+            at = payload["failed_at"]
+            going = payload.get("attempt")
+            if isinstance(going, str) and going:
+                # A fetch that had started and not ended when this was written.
+                return {going: {"started_at": at, "started": 1}}, 1
+            failed = {
+                "started_at": at, "started": 1, "ended_at": at, "ended": 1, "outcome": "failed",
+                "error": str(payload.get("error") or ""),
+            }
+            return {"before": failed}, 1
+        if "succeeded_at" in payload:
+            parse_utc(payload["succeeded_at"])
+            at = payload["succeeded_at"]
+            return {
+                "before": {"started_at": at, "started": 1, "ended_at": at, "ended": 1, "outcome": "succeeded"}
+            }, 1
+    except Exception:
+        pass
+    return {}, 0
+
+
+def _not_succeeded(data: bytes, now: datetime) -> list[tuple[datetime, str]]:
+    """The fetches of a note that did not succeed, since the last that did: when, and why, oldest first.
+
+    In the order their words were written to the note. A fetch that started
+    and has no outcome did not succeed, as of its start: it is still going,
+    or its run ended under it. Which of the two cannot be known, so for as
+    long as it could still be going it counts whatever else has been noted
+    since; after that it is a fetch that was cut short when it started, and
+    is behind a success noted later like any failure before one. A word
+    stamped with a time that has not come is not counted.
+    """
+    attempts, _ = _attempts(data)
+    succeeded = max([entry["ended"] for entry in attempts.values() if entry.get("outcome") == "succeeded"], default=0)
+    since: list[tuple[int, datetime, str]] = []
+    for entry in attempts.values():
+        if entry.get("outcome") == "succeeded":
+            continue
+        ended = bool(entry.get("outcome"))
+        at = parse_utc(entry["ended_at"] if ended else entry["started_at"])
+        if at > now + CLOCK_TOLERANCE:
+            continue
+        may_be_going = not ended and now - at <= A_FETCH_IS_OVER_AFTER
+        if _place(entry) < succeeded and not may_be_going:
+            continue
+        since.append((_place(entry), at, str(entry.get("error") or "") if ended else INTERRUPTED))
+    return [(at, error) for _, at, error in sorted(since)]
+
+
+def failing_fetches(store: ObjectStore, now: datetime) -> dict[str, tuple[int, str]]:
+    """How many fetches in a row have not succeeded for each calendar entry that is failing, and the last error."""
+    now = now.astimezone(timezone.utc)
+    failing: dict[str, tuple[int, str]] = {}
+    for item in store.list(layout.ATTEMPTS_PREFIX):
+        found = store.get(item.key)
+        failures = _not_succeeded(found.data, now) if found is not None else []
+        if failures:
+            failing[item.key] = (len(failures), failures[-1][1])
     return failing
 
 
 def failed_fetches(store: ObjectStore, now: datetime) -> dict[str, datetime]:
     """When the last fetch of each calendar entry failed, by ``layout.attempt_key``.
 
-    A note that cannot be read, or that is stamped with a time that has not
-    come, is left out: the entry then counts as never having failed.
+    Only entries whose last fetch did not succeed. A note that cannot be
+    read, or whose words are stamped with a time that has not come, is left
+    out: the entry then counts as never having failed.
     """
     now = now.astimezone(timezone.utc)
     failed: dict[str, datetime] = {}
     for item in store.list(layout.ATTEMPTS_PREFIX):
         found = store.get(item.key)
-        try:
-            at = parse_utc(json.loads(found.data)["failed_at"]) if found is not None else None
-        except Exception:
-            continue
-        if at is not None and at <= now + CLOCK_TOLERANCE:
-            failed[item.key] = at
+        failures = _not_succeeded(found.data, now) if found is not None else []
+        if failures:
+            failed[item.key] = max(at for at, _ in failures)
     return failed
 
 

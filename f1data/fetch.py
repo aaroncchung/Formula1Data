@@ -7,7 +7,13 @@ left in ``cache_dir`` in the two forms FastF1 keeps: the parsed feeds
 Every fetch starts from an empty directory. FastF1 reuses a cached feed for as
 long as its cache version matches, so a second fetch over the same directory
 returns the first one's data without asking F1, incomplete or not
-(docs/architecture-review-findings.md, section 6, rule 6).
+(docs/architecture-review-findings.md, section 6, rule 6). A fetch that was
+stopped part of the way is therefore not carried on: it is made again.
+
+``read_back`` is the other way into a cache: it loads again a session that a
+fetch was served, from that fetch's cache and with every request refused. It
+asks F1 for nothing and so adds nothing; it is for a fetch that ran to its
+end and was not written down (f1data/spool.py).
 """
 
 from __future__ import annotations
@@ -96,16 +102,8 @@ def fetch_session(
     cache_dir: Path,
     attempts: int = DEFAULT_ATTEMPTS,
     sleep: Any = time.sleep,
-    resume: bool = False,
 ) -> FetchedSession:
     """Load a session from F1 into ``cache_dir``, which must be empty.
-
-    Unless ``resume`` says that the directory holds a fetch of this session
-    that was cut short (f1data/spool.py). FastF1 then reads back whatever had
-    arrived and asks F1 for the rest, as it does between its own attempts.
-    Only the requests made this time are in the record of them, so a feed
-    read back has no status of F1's beside it: one that is absent is then
-    taken as one F1 may yet supply, which is the cautious reading.
 
     Returns whatever arrived, with its coverage measured. Judging whether that
     is complete is the caller's job; a partial session is still worth keeping
@@ -115,7 +113,7 @@ def fetch_session(
     beside it (``weather_lines_are_kept`` in f1data/extras.py).
     """
     code = session_type_code(session_type)
-    if not resume and cache_dir.exists() and any(cache_dir.iterdir()):
+    if cache_dir.exists() and any(cache_dir.iterdir()):
         raise FetchError(f"Fetch needs an empty cache directory, and {cache_dir} is not empty")
 
     recorder = HttpRecorder()
@@ -174,6 +172,73 @@ def fetch_session(
         extras=extras,
         feed_status=_feed_status(recorder),
     )
+
+
+def read_back(year: int, event: int | str, session_type: str, cache_dir: Path) -> FetchedSession:
+    """Load again a session that a fetch into ``cache_dir`` was served, from that cache alone.
+
+    Every request is refused. FastF1 reads its parsed feeds back as they
+    are, and answers out of its cache of responses what it would otherwise
+    ask again: the calendar the fetch found the session in, the weather
+    lines, the pit stops, the circuit. A response it holds is used however
+    old it is, because the request that would replace it fails. So what
+    comes back is what that fetch was served, whatever F1, the calendar or
+    anything else has changed to since, and the cache is left as it was.
+
+    What only the fetch itself knew is not there to read: what F1 answered
+    for each feed, and how many tries it took. A feed that is absent is
+    then taken as one F1 may yet supply, which is the cautious reading.
+
+    Raises ``FetchError`` when the session cannot be read back as a fetch
+    would have returned it.
+    """
+    code = session_type_code(session_type)
+    if not cache_dir.is_dir() or not any(cache_dir.rglob("*.ff1pkl")):
+        raise FetchError(f"There are no parsed feeds to read back under {cache_dir}")
+    try:
+        # Each request that is refused and answered from the cache is logged
+        # by the cache as a failure, with its traceback. Here it is the plan.
+        with _quietly("requests_cache"), fastf1_cache(cache_dir) as fastf1, HttpRecorder(forbid_all=True) as recorder:
+            session = fastf1.get_session(year, event, code)
+            session.load(laps=True, telemetry=True, weather=True, messages=True)
+            identity = identity_from_fastf1(session)
+            extras = fetch_extras(fastf1, session, identity.archive_path)
+            if not weather_lines_are_kept(session, extras):
+                raise FetchError(f"The weather was loaded and {WEATHER_SERIES} is not in the cache beside it")
+            coverage = measure_coverage(session, code, extras)
+            versions = _versions(fastf1)
+    except FetchError:
+        raise
+    except Exception as exc:
+        raise FetchError(f"{year} {event} {code} could not be read back from {cache_dir}: {exc}") from exc
+    session_dir = cache_dir / identity.archive_path
+    if not session_dir.is_dir() or not any(session_dir.glob("*.ff1pkl")):
+        # The calendar in the cache led to a session whose feeds are not the
+        # ones in the cache.
+        raise FetchError(f"What was read back is {identity.archive_path}, and {cache_dir} holds no feeds of it")
+    return FetchedSession(
+        session=session,
+        identity=identity,
+        coverage=coverage,
+        cache_dir=cache_dir,
+        http=recorder,
+        attempts=1,
+        versions=versions,
+        extras=extras,
+        feed_status={},
+    )
+
+
+@contextmanager
+def _quietly(name: str) -> Iterator[None]:
+    """Only errors from a logger and those under it, for as long as the block runs."""
+    logger = logging.getLogger(name)
+    level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(level)
 
 
 def f1_is_answering(years: Iterable[int], timeout: float = 30.0) -> bool:

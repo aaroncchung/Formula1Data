@@ -29,7 +29,7 @@ archive/sessions/<session_key>/<snapshot_id>/     never served
     snapshot.json              written last; without it the snapshot does not exist
     remeasured.json            only where a build found the snapshot's record wrong
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
-archive/attempts/<year>/<start>-<type>.json       a note that a fetch of that session failed
+archive/attempts/<year>/<start>-<type>.json       the fetches made of that session, and how each ended
 archive/runs/last.json                            when the whole job last finished, and on which machine
 
 v2/pointers/<session_key>.json                    one per published session
@@ -169,9 +169,9 @@ defaults to the `F1DATA_STORE` environment variable.
 
 | Command | What it does |
 | --- | --- |
-| `run` | The whole job: `fetch-due`, then `build`. What a schedule runs |
+| `run` | The whole job: `build`, then `fetch-due`, then `build` again if anything was fetched. What a schedule runs |
 | `last-run` | Say when `run` last finished on the machine that fetches. Exits 1 when that is more than 13 hours ago, or was never |
-| `fetch-due` | Fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan |
+| `fetch-due` | See through what is in the spool, then fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan, `--limit N` to start at most N new fetches |
 | `fetch --year Y --event E --session S` | Fetch one session as a new snapshot |
 | `build` | Build and publish every archived session that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
@@ -187,68 +187,93 @@ a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
 A session is fetched into a spool on the machine (`%LOCALAPPDATA%\f1data\spool`,
-or `~/.cache/f1data/spool`, or wherever `F1DATA_SPOOL` says), in a directory
-that says which session it is of and which store it is for before the fetch
-starts, and it stays there until its snapshot's marker is in the archive
-(`f1data/spool.py`). What a run leaves there, the next run sees through
-before it asks F1 for anything:
+or `~/.cache/f1data/spool`, or wherever `F1DATA_SPOOL` says), and stays there
+until its snapshot's marker is in the archive (`f1data/spool.py`). Each fetch
+has a directory there and a lock beside it. The run that makes the fetch
+takes the lock before the directory exists and holds it until it is done with
+it. Any other run takes the lock before it does anything to the directory,
+and decides what to do by what the directory is then. The lock is the
+operating system's and goes with the process: nothing is taken for abandoned
+by its age, and two runs cannot both be at one fetch.
+
+What an earlier run left there, a run deals with before it asks F1 for
+anything:
 
 - a fetch that is whole and was not archived, because the upload failed, is
-  uploaded, first of all: that is also what makes room in the spool. The run
-  that fetched it says `FETCHED, NOT ARCHIVED` and exits 1;
-- a fetch that was cut short, by a kill, a full disk or a crash, is fetched
-  again into the same directory, where FastF1 reads back from its cache what
-  had arrived and asks F1 only for the rest. How often depends on whether F1
-  had served the whole session, which the fetch marks with an empty file,
-  `served`, before it writes anything else:
-  - if it had, and it was the writing down that failed, finishing it costs
-    F1 nothing and takes seconds. It is done on every run until it succeeds,
-    the fetch is never removed, and its session is not asked of F1 again
-    meanwhile. Each run that cannot finish it says `a fetch that F1 served
-    could still not be written down`, with the reason, and exits 1;
-  - if the fetch was stopped before that, it is finished once. One that is
-    cut short a second time is let go and its session waits its turn, so
-    that finishing a fetch cannot be what every run starts with and dies in;
-- a fetch another run is making is left alone. A run holds a lock on the
-  directory while it fetches, and the lock goes with the process, so nothing
-  is taken for abandoned by its age.
+  uploaded. The run that fetched it said `FETCHED, NOT ARCHIVED` and exited 1;
+- a session F1 served that could not be written down as whole, because the
+  disk was full or the run was stopped at that moment, is read back from the
+  fetch's own cache with every request refused, written down, and uploaded.
+  Reading back asks nothing of F1 or of anyone else: FastF1 answers from its
+  cache what it would otherwise ask again, however old that is. So what is
+  archived is what that fetch was served, and it is stamped with the time the
+  fetch ended. This is tried on every run until it works. Nothing the program
+  does removes such a fetch, and its session is not asked of F1 again
+  meanwhile; each run that cannot see it through says `a fetch that F1 served
+  could still not be written down`, with the reason, and exits 1;
+- a fetch that was stopped before F1 had served the session holds part of a
+  session, as a failed fetch does. It is removed, and the session is fetched
+  again from the start in its turn. A fetch is never carried on from where it
+  stopped: a snapshot is of one fetch, made into an empty cache;
+- a fetch another run holds is left to that run, and its session is not
+  fetched meanwhile.
 
-A fetch is for the store it was started for: a run against another store
-neither uploads nor finishes it, and says how many it left. The only fetches
-removed before they are archived are ones that did not run to their end: a
-fetch that failed, and one cut short twice.
+A fetch is for the store it was started for, which for `r2` is one account's
+bucket: a run against another store leaves it as it is, and says how many it
+left. The only fetches removed before they are archived are ones that did not
+run to their end. A fetch that has is marked as served by renaming a file
+that was made with its directory, which needs no room on the disk; should
+that fail and writing it down fail too, the run says that a later run will
+take it for part of a session.
 
-With less than 2 GB free where the spool is, no fetch is started and none is
-finished. A run uploads what is whole, says what it left and why, and exits 1;
-nothing in the spool is changed, so making room is all there is to do.
+A fetch is not started with less than 2 GB free where the spool is, by any
+command: a run says so, stops fetching, and exits 1. What is already in the
+spool is still seen through, since uploading it is what makes room. Packing a
+snapshot for upload, restoring one and building use the system's temporary
+directory (`%TEMP%`, or wherever `TMP` says), which is not looked at and
+wants as much room again as a session takes; if it is on another disk than
+the spool, that disk has to have it.
 
 The spool wants looking at by hand in two cases, and a run says so each time.
 A directory whose record cannot be read is named in a line that begins
 `ATTENTION` and is left as it is; nothing is known of it, so its session is
-fetched again in its turn. And a fetch F1 served that still cannot be written
-down with room on the disk stays, and holds its session back, until whatever
-the run reports is put right or the directory is removed.
+fetched again in its turn. And a session F1 served that can still not be read
+back or written down stays, and holds its session back, until whatever the
+run reports is put right or the directory is removed.
 
-One session failing to fetch does not stop the others. A fetch is noted when
-it starts, as one that has not succeeded, and the note is replaced by how it
-ended; so a run that is killed in the middle of a fetch has still said that it
-tried. Sessions are taken in the order of when each was last tried, whether
-that fetch failed or arrived: the ones never tried first, then the one tried
-longest ago. A batch that is cut short, by `--limit`, by its time or because
-nothing answers, therefore reaches every session before it reaches any a
-second time. A session whose fetch has failed three times running is named in
-a line that begins `ATTENTION`.
+One session failing to fetch does not stop the others. Each calendar entry
+has a note of the fetches made of it (`archive/attempts/`). A fetch is noted
+when it starts and again, under its own name, when it ends, so two runs
+noting one session say the same in whichever order they write, and a fetch
+seen through by a later run is the fetch that was begun. A fetch that started
+and of which nothing more is noted did not succeed: its run ended under it.
+For each entry a run counts the fetches that have not succeeded since the
+last that did, and names the entry at three in a line that begins
+`ATTENTION`. New fetches are taken in the order of when each session was last
+tried, whether that fetch failed or arrived: the ones never tried first, then
+the one tried longest ago. So the fetches a run starts reach every session
+that is due before they reach any a second time, however the run is cut
+short: by `--limit`, by its time, or because nothing answers.
 
 Every request FastF1 makes has a time limit: 30 seconds to connect, and two
-minutes without a byte arriving. That stops a connection that goes quiet; it
-does not bound an answer that keeps arriving slowly. `run` therefore starts no
-new fetch once its fetch stage has gone on for an hour (`fetch-due
---budget-minutes` sets the same for a fetch stage run by hand), and builds
-what the archive has; the rest is fetched by the next run. After
-two failures in a row `fetch-due` also asks F1's
-archive, and FastF1's mirror of it, for this season's index and last season's.
-If any answers, the fault is with those sessions and the batch carries on; if
-none does, the batch stops until the next run.
+minutes without a byte arriving. That stops a connection that goes quiet. It
+does not bound an answer that keeps arriving slowly, and one fetch has no
+limit of its own. So the fetch stage is given a time, an hour in `run` and
+whatever `fetch-due --budget-minutes` says for a stage run by hand, and the
+time is asked before everything the stage starts: an upload from the spool, a
+reading back, a question to Jolpica, a fetch. What is left is for the next
+run. After Jolpica has not answered twice running, a stage stops asking it
+for the rest of the run: the fetch stage judges the sessions it has left by
+what their snapshots recorded, and the build holds them. An answer that
+there is no result yet is an answer. After two fetches in a row have failed,
+`fetch-due` asks F1's archive, and FastF1's mirror of it, for this season's
+index and last season's. If any answers, the fault is with those sessions
+and the batch carries on; if none does, the batch stops until the next run.
+
+`run` builds first. What the archive held when a run began is published
+before the run asks anything of F1, so that nothing the fetch stage meets can
+keep the build from its turn, run after run. If the fetch stage then put
+anything in the archive, the run builds again.
 
 Retries are timed from when a session was last fetched, by the stamp of the
 machine that fetched it. A stamp more than an hour ahead of this machine's
@@ -290,10 +315,16 @@ is, and archives nothing):
    `C:\venvs\f1data\Scripts\python.exe -m pip install -r requirements.txt`
    from the checkout (`requirements-dev.txt` as well, to run the tests). The
    versions are pinned because a snapshot is FastF1's cache as that FastF1
-   wrote it.
+   wrote it. Wherever this guide says `python`, it means that one: either
+   `C:\venvs\f1data\Scripts\Activate.ps1` first, or the full path in place
+   of the word. A bare `python` on a new Windows machine is another Python,
+   or the Store's.
 3. `.env` in the checkout, as above.
-4. `python -m f1data fetch-due --dry-run` lists what would be fetched and
-   touches nothing but a listing of the bucket.
+4. `python -m f1data fetch-due --dry-run` lists what would be fetched. It
+   changes nothing in the bucket or the spool. It does read: the archive's
+   markers and the published pointers, the calendars, and Jolpica for the
+   sessions it has to judge; and it makes a scratch directory under the
+   system's temporary one, which it removes.
 
 The first run against an empty bucket has two seasons to fetch: every finished
 race and sprint of this year and last, about fifty sessions, each some 200 MB
@@ -357,9 +388,10 @@ the task yet, and it has not run on a schedule.
   a time, so a run that is killed has still written what it printed. Each
   run starts with `[<time>] run started` and, unless it was killed, ends with
   `[<time>] run finished, exit <code>, <seconds> s`. Exit 1 means something
-  failed: a fetch, an upload, a build. A line beginning `ATTENTION` names a
-  session whose fetch keeps failing, and `FETCHED, NOT ARCHIVED` one that is
-  waiting in the spool.
+  failed: a fetch, an upload, a build. A line beginning `ATTENTION` names
+  something that wants looking at: a session whose fetch keeps failing, or a
+  directory of the spool that cannot be read. `FETCHED, NOT ARCHIVED` names a
+  session that is waiting in the spool.
 - **A run that did not happen** writes nothing, so it is looked for from
   outside: `python -m f1data last-run` reads `archive/runs/last.json` from the
   bucket and exits 1 when the last run finished more than 13 hours ago. Run it
@@ -471,8 +503,10 @@ lost write, and whenever `build --recheck` is given.
 | `probe-f1-access.yml` | Manually, and on a push to the rewrite branch that touches it | Whether F1 answers a hosted runner yet |
 | `upload-archive-spool.yml` | Manually, and on a push to the rewrite branch that touches it | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
 
-A workflow can be started by hand, or by a schedule, only from the default
-branch. That is why each has a push trigger while this work is on a branch.
+A schedule runs a workflow as it is on the default branch, and a workflow can
+be started by hand only once it is on the default branch (it can then be run
+against another). That is why each has a push trigger while this work is on a
+branch.
 
 ## Checking a publication
 

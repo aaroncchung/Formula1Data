@@ -5,21 +5,25 @@ not take was not thrown away. This round was of the spool itself, and of the
 instructions for setting the job up. A fetch that was whole and could not be
 written down as whole was still thrown away; a fetch that took longer than a
 day could be swept away by another run; and the record of the store in
-``.env`` was read too late to be found. The spool now says what a fetch is
-of before the fetch starts, is held by a lock for as long as a run is at
-it, and what a run leaves in it, at any point, is finished by the next.
+``.env`` was read too late to be found.
 
-A session F1 has served is finished on every run until it is written down,
-and is never removed: the first fix finished a fetch once whatever had
-stopped it, which lost the same session one run later on a disk that stayed
-full.
+What stands of the answer is this. The spool says what a fetch is of before
+the fetch starts, and a run holds a lock on it for as long as it is at it. A
+session F1 has served is marked as that at once, and from then on is never
+removed before it is archived: a later run reads it back from its cache and
+writes it down. The first answer went further and carried on, over the
+network, a fetch that had been stopped part of the way; the review after
+this one showed what that cost (tests/test_seventeenth_review.py), and such
+a fetch is now made again from the start.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import os
 import sys
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -48,7 +52,7 @@ from f1data.policy import FETCH_STAGE_BUDGET
 from f1data.store import MemoryStore
 from tests.building import FIRST_FETCH
 from tests.race import extras, make_race
-from tests.test_archive import fetched_session
+from tests.spooling import a_fetch_in_hand, left_served, left_started, left_whole
 from tests.test_extras import ARCHIVE_PATH
 from tests.test_fifteenth_review import EIGHTH, SEVENTH, SIXTH, Job, job, three_races  # noqa: F401
 from tests.test_publish import AUSTRIA, snapshot
@@ -56,6 +60,7 @@ from tests.test_seventh_review import AUSTRIA_ENTRY, CALENDAR
 
 NOW = lambda: datetime.now(timezone.utc)  # noqa: E731
 STORE = cli_module._store_name("x")
+STAMP = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def failing_once(function, error):
@@ -71,10 +76,26 @@ def failing_once(function, error):
     return wrapped
 
 
+def always(error):
+    def failing(*arguments, **keywords):
+        raise error
+
+    return failing
+
+
 # --- R16-1: once F1 has served a session, nothing that goes wrong removes it -------
 
 
-def test_a_fetch_that_could_not_be_written_down_is_finished_from_what_it_left(job, monkeypatch):
+def served_and_not_written_down(job, monkeypatch) -> spool.Unfinished:
+    """A run in which F1 serves the session and the record of it cannot be written."""
+    monkeypatch.setattr(cli_module, "keep", always(OSError(28, "No space left on device")))
+    output, code = job.run()
+    (left,) = spool.unfinished(job.spool)
+    assert code == 1 and left.served and "FETCHED, NOT ARCHIVED: OSError" in output
+    return left
+
+
+def test_a_fetch_that_could_not_be_written_down_is_read_back_from_what_it_left(job, monkeypatch):
     """F1 serves the session, and the disk is full when the record that makes
     the fetch whole is written. One handler caught that with every failure of
     the fetch itself and removed the directory: the session F1 had just
@@ -85,19 +106,20 @@ def test_a_fetch_that_could_not_be_written_down_is_finished_from_what_it_left(jo
 
     assert code == 1 and "FETCHED, NOT ARCHIVED: OSError" in output and "What F1 sent is in" in output
     assert list_snapshots(job.store) == [] and spool.waiting(job.spool) == []
-    (cut_short,) = spool.unfinished(job.spool)
-    assert (cut_short.event, cut_short.store, cut_short.start_time_utc) == (EIGHTH, STORE, AUSTRIA_ENTRY.start_time_utc)
-    assert any((cut_short.directory / "cache").rglob("*.ff1pkl"))
+    (left,) = spool.unfinished(job.spool)
+    assert (left.event, left.store, left.start_time_utc) == (EIGHTH, STORE, AUSTRIA_ENTRY.start_time_utc)
+    assert left.served and any((left.directory / "cache").rglob("*.ff1pkl"))
     # F1 answered: nothing says the fetch of it failed.
     assert failed_fetches(job.store, NOW()) == {}
 
     output, code = job.run()
 
-    assert (job.fetched, job.resumed, code) == ([EIGHTH], [EIGHTH], 0)
-    assert "a fetch that was cut short, finished from what it left." in output
+    # Read back, and not asked of F1 again.
+    assert (job.fetched, job.read_back, code) == ([], [EIGHTH], 0)
+    assert "a fetch that F1 served, written down from its cache and archived." in output
     (archived,) = list_snapshots(job.store)
-    # Fetched when it was first fetched, whenever it was written down.
-    assert archived.fetched_at == cut_short.started_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Fetched when the fetch ended, whenever it was written down.
+    assert archived.fetched_at == left.served_at.strftime(STAMP)
     assert list(job.spool.iterdir()) == []
 
 
@@ -126,9 +148,9 @@ def test_a_fetch_f1_would_not_serve_leaves_nothing_in_the_spool(job):
     assert code == 1 and "FAILED: FetchError" in output and list(job.spool.iterdir()) == []
 
 
-def test_a_fetch_is_finished_in_the_directory_it_was_started_in(monkeypatch, tmp_path):
-    """``fetch_session`` asks for an empty directory, so that a snapshot is of
-    one fetch. Finishing a fetch that was cut short is that same fetch."""
+def test_a_fetch_is_made_into_an_empty_cache_and_read_back_from_the_one_it_filled(monkeypatch, tmp_path):
+    """A snapshot is of one fetch. A cache that holds anything is not
+    fetched into; it can be read back, which asks F1 for nothing."""
     loaded = make_race()
     loaded.load = lambda **kwargs: None
 
@@ -143,14 +165,17 @@ def test_a_fetch_is_finished_in_the_directory_it_was_started_in(monkeypatch, tmp
         fetch_module, "fetch_extras", lambda module, found, path: {**extras(), WEATHER_SERIES: b"00:00:38.376{}"}
     )
     left = tmp_path / "cache"
-    (left / "2026").mkdir(parents=True)
-    (left / "2026" / "session_info.ff1pkl").write_bytes(b"what had arrived")
+    with pytest.raises(fetch_module.FetchError, match="no parsed feeds to read back"):
+        fetch_module.read_back(2026, 8, "R", left)
+    (left / ARCHIVE_PATH).mkdir(parents=True)
+    (left / ARCHIVE_PATH / "session_info.ff1pkl").write_bytes(b"what F1 served")
 
     with pytest.raises(fetch_module.FetchError, match="needs an empty cache directory"):
         fetch_module.fetch_session(2026, 8, "R", left)
-    fetched = fetch_module.fetch_session(2026, 8, "R", left, resume=True)
+    fetched = fetch_module.read_back(2026, 8, "R", left)
 
-    assert fetched.cache_dir == left and (left / "2026" / "session_info.ff1pkl").is_file()
+    assert fetched.cache_dir == left and (fetched.attempts, fetched.feed_status, fetched.http.summary()) == (1, {}, {})
+    assert (left / ARCHIVE_PATH / "session_info.ff1pkl").read_bytes() == b"what F1 served"
 
 
 # The first fix of that kept the fetch for one more run and no longer. Read
@@ -158,240 +183,213 @@ def test_a_fetch_is_finished_in_the_directory_it_was_started_in(monkeypatch, tmp
 # a disk that is full when a fetch ends is usually still full six hours on.
 
 
-def always(error):
-    def failing(*arguments, **keywords):
-        raise error
-
-    return failing
-
-
-def served_and_not_written_down(job, monkeypatch) -> spool.Unfinished:
-    """A run in which F1 serves the session and the record of it cannot be written."""
-    monkeypatch.setattr(cli_module, "keep", always(OSError(28, "No space left on device")))
-    _, code = job.run()
-    (cut_short,) = spool.unfinished(job.spool)
-    assert code == 1 and cut_short.served and not cut_short.resumes
-    return cut_short
-
-
 def test_a_fetch_f1_served_outlasts_a_disk_that_stays_full(job, monkeypatch):
-    """Finishing a fetch was done once, whatever stopped it. With the disk
-    still full on the next run and the one after, the session F1 had served
-    was written down neither time and then let go as a fetch cut short twice."""
-    cut_short = served_and_not_written_down(job, monkeypatch)
+    left = served_and_not_written_down(job, monkeypatch)
 
     for _ in range(3):
         output, code = job.run()
 
         assert code == 1 and "a fetch that F1 served could still not be written down: OSError" in output
-        assert "let go" not in output
         # Read back from what it left, and not asked of F1 as a new fetch.
-        assert (job.fetched, job.resumed) == ([EIGHTH], [EIGHTH])
+        assert (job.fetched, job.read_back) == ([], [EIGHTH])
         (still,) = spool.unfinished(job.spool)
-        # Nothing is counted against it: there is no number of times after which it goes.
-        assert (still.directory, still.served, still.resumes) == (cut_short.directory, True, 0)
-        assert any((cut_short.directory / "cache").rglob("*.ff1pkl"))
+        # As it was: there is no number of times after which it goes, and
+        # when it was fetched does not move.
+        assert (still.directory, still.served_at) == (left.directory, left.served_at)
+        assert any((left.directory / "cache").rglob("*.ff1pkl"))
 
     monkeypatch.setattr(cli_module, "keep", spool.keep)
     output, code = job.run()
 
-    assert code == 0 and "a fetch that was cut short, finished from what it left." in output
+    assert code == 0 and "a fetch that F1 served, written down from its cache and archived." in output
     (archived,) = list_snapshots(job.store)
-    assert archived.fetched_at == cut_short.started_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert archived.fetched_at == left.served_at.strftime(STAMP)
     assert list(job.spool.iterdir()) == []
 
 
 def test_a_fetch_f1_served_is_not_removed_because_reading_it_back_failed(job, monkeypatch):
-    """Whatever the second fetch into a directory raised was taken for F1
-    refusing the session, and the directory removed: also when F1 had served
-    the session to the first, and it was the reading back that failed."""
-    cut_short = served_and_not_written_down(job, monkeypatch)
+    left = served_and_not_written_down(job, monkeypatch)
     monkeypatch.setattr(cli_module, "keep", spool.keep)
-    job.fails = {EIGHTH}
+    job.cannot_be_read_back = {EIGHTH}
 
     output, code = job.run()
 
     assert code == 1 and "could still not be written down: reading it back failed (FetchError" in output
-    assert (job.fetched, job.resumed) == ([EIGHTH], [EIGHTH])
-    assert any((cut_short.directory / "cache").rglob("*.ff1pkl"))
+    assert (job.fetched, job.read_back) == ([], [EIGHTH])
+    assert any((left.directory / "cache").rglob("*.ff1pkl"))
     # F1 served it: its fetch has not failed.
     assert failed_fetches(job.store, NOW()) == {}
 
-    job.fails = set()
+    job.cannot_be_read_back = set()
     _, code = job.run()
 
     assert code == 0 and len(list_snapshots(job.store)) == 1 and list(job.spool.iterdir()) == []
 
 
-def test_a_run_killed_while_finishing_a_fetch_f1_served_leaves_it_to_be_finished(job, monkeypatch):
-    cut_short = served_and_not_written_down(job, monkeypatch)
+def test_a_run_killed_while_reading_a_fetch_back_leaves_it_to_be_read_back(job, monkeypatch):
+    left = served_and_not_written_down(job, monkeypatch)
     monkeypatch.setattr(cli_module, "keep", spool.keep)
-    job.dies_in = EIGHTH
+    job.dies_reading_back = EIGHTH
 
     assert job.run()[1] == "killed"
     assert job.run()[1] == "killed"
-    job.dies_in = None
+    job.dies_reading_back = None
     output, code = job.run()
 
-    # Finished, and not let go and fetched afresh.
-    assert (job.resumed, code) == ([EIGHTH], 0) and "let go" not in output
+    assert (job.fetched, job.read_back, code) == ([], [EIGHTH], 0)
     (archived,) = list_snapshots(job.store)
-    assert archived.fetched_at == cut_short.started_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert archived.fetched_at == left.served_at.strftime(STAMP)
 
 
-def test_a_fetch_f1_served_on_the_second_go_is_kept_like_one_served_on_the_first(job, monkeypatch):
-    """Killed in the middle, then finished on the next run, where F1 serves
-    the rest and the disk is full: one time finishing it has been used, and
-    it is a session F1 served all the same."""
+def test_a_fetch_stopped_before_f1_had_served_the_session_is_made_again_from_the_start(job):
     job.dies_in = EIGHTH
     assert job.run()[1] == "killed"
-    job.dies_in = None
-    monkeypatch.setattr(cli_module, "keep", always(OSError(28, "No space left on device")))
-    assert job.run()[1] == 1
-    (cut_short,) = spool.unfinished(job.spool)
-    assert (cut_short.served, cut_short.resumes) == (True, 1)
-
-    output, code = job.run()
-
-    assert code == 1 and "let go" not in output and job.resumed == [EIGHTH]
-    assert [item.directory for item in spool.unfinished(job.spool)] == [cut_short.directory]
-
-    monkeypatch.setattr(cli_module, "keep", spool.keep)
-    assert job.run()[1] == 0 and len(list_snapshots(job.store)) == 1
-
-
-def test_a_fetch_that_is_not_known_to_have_been_served_is_still_finished_only_once(job):
-    job.dies_in = EIGHTH
-    assert job.run()[1] == "killed"
-    (cut_short,) = spool.unfinished(job.spool)
-    assert not cut_short.served
-    assert job.run()[1] == "killed"
+    (left,) = spool.unfinished(job.spool)
+    assert not left.served
     job.dies_in = None
 
     output, code = job.run()
 
-    assert "a fetch that was cut short twice is let go; the session waits its turn." in output
-    assert (job.fetched, job.resumed, code) == ([EIGHTH], [], 0)
+    assert "a fetch that was stopped before F1 had served the session is removed." in output
+    assert (job.fetched, job.read_back, code) == ([EIGHTH], [], 0)
+    assert not left.directory.exists() and len(list_snapshots(job.store)) == 1
 
 
-def test_no_fetch_is_finished_on_a_disk_with_no_room_for_it(job, monkeypatch):
-    """Finishing writes to the disk that stopped the fetch. Tried on one that
-    was still full, it used up the one time a fetch is finished."""
-    job.dies_in = EIGHTH
-    assert job.run()[1] == "killed"
-    job.dies_in = None
-    whole = spool.new_fetch_directory(job.spool, 2026, SEVENTH, "R", STORE, FIRST_FETCH)
-    spool.keep(whole, fetched_session(whole), FIRST_FETCH, "20260628T180000Z-0badcafe")
+def test_what_is_in_the_spool_is_seen_through_on_a_disk_with_no_room_for_a_fetch(three_races, monkeypatch):
+    """Uploading what is whole is what makes room. Reading a served fetch
+    back writes a few kilobytes, and if even that fails it stays as it was."""
+    left_whole(three_races.spool, 2026, EIGHTH, "R", STORE)
+    left_served(three_races.spool, 2026, EIGHTH, "R", STORE, now=FIRST_FETCH + timedelta(hours=6))
     monkeypatch.setattr(cli_module, "free_bytes", lambda root: 10 * 1024**2)
 
-    output, code = job.run()
+    output, code = three_races.run()
 
-    assert code == 1 and job.fetched == []
-    assert "1 fetch(es) that were cut short are left as they are: 10 MB free where the spool is" in output
-    (cut_short,) = spool.unfinished(job.spool)
-    assert not cut_short.resumes
-    # What is whole is uploaded all the same, and first: that is what makes room.
-    assert output.index("fetched earlier, archived now.") < output.index("are left as they are")
-    assert len(list_snapshots(job.store)) == 1 and not whole.exists()
-
-    monkeypatch.setattr(cli_module, "free_bytes", spool.free_bytes)
-    _, code = job.run()
-
-    assert (job.resumed, code) == ([EIGHTH], 0) and len(list_snapshots(job.store)) == 2
+    assert "fetched earlier, archived now." in output
+    assert "a fetch that F1 served, written down from its cache and archived." in output
+    assert len(list_snapshots(three_races.store)) == 2 and spool.directories(three_races.spool) == []
+    assert three_races.fetched == [] and code == 1
+    assert "Stopping: 10 MB free where the spool is" in output and "2 session(s) left." in output
 
 
-def test_a_fetch_finished_and_not_archived_is_not_asked_of_f1_again_in_that_run(job, monkeypatch):
+def test_a_fetch_written_down_and_not_archived_is_not_asked_of_f1_again_in_that_run(job, monkeypatch):
     served_and_not_written_down(job, monkeypatch)
     monkeypatch.setattr(cli_module, "keep", spool.keep)
     job.store.refusing = "fastf1-cache.tar.gz"
 
     output, code = job.run()
 
-    assert code == 1 and "a fetch that was cut short is whole now, and NOT ARCHIVED" in output
-    assert (job.fetched, job.resumed) == ([EIGHTH], [EIGHTH])
+    assert code == 1 and "a fetch that F1 served is written down now, and NOT ARCHIVED" in output
+    assert (job.fetched, job.read_back) == ([], [EIGHTH])
     assert len(spool.waiting(job.spool)) == 1 and list_snapshots(job.store) == []
 
     job.store.refusing = None
     output, code = job.run()
 
-    assert (job.fetched, code) == ([], 0) and "fetched earlier, archived now." in output
+    assert (job.fetched, job.read_back, code) == ([], [], 0) and "fetched earlier, archived now." in output
 
 
 def test_a_run_names_what_it_cannot_read_in_the_spool_and_leaves_it(job):
     """The guide said that a run says when a fetch's record cannot be read.
     Nothing did: the directory was passed over in silence, for ever."""
-    whole = spool.new_fetch_directory(job.spool, 2026, EIGHTH, "R", STORE, FIRST_FETCH)
-    spool.keep(whole, fetched_session(whole), FIRST_FETCH, "20260628T180000Z-0badcafe")
+    whole = left_whole(job.spool, 2026, EIGHTH, "R", STORE)
     (whole / spool.PENDING_NAME).write_text("{ cut off in the mid", encoding="utf-8")
-    started = spool.new_fetch_directory(job.spool, 2026, EIGHTH, "R", STORE, FIRST_FETCH)
-    # Written by a later version of this program, which may mean something else by it.
+    started = left_started(job.spool, 2026, EIGHTH, "R", STORE)
+    # Written by another version of this program, which may mean something else by it.
     intent = json.loads((started / spool.INTENT_NAME).read_text(encoding="utf-8"))
     (started / spool.INTENT_NAME).write_text(json.dumps({**intent, "schema_version": 99}), encoding="utf-8")
-    readable = spool.new_fetch_directory(job.spool, 2026, SEVENTH, "R", "r2:another-bucket", FIRST_FETCH)
 
     output, code = job.run()
 
     assert sorted(spool.unreadable(job.spool)) == sorted([whole, started])
     for directory in (whole, started):
-        assert f"ATTENTION: {directory} is a fetch whose record cannot be read." in output
-    assert str(readable) not in output
+        assert f"ATTENTION: {directory} is a fetch whose record cannot be read" in output
     assert (whole / "cache").is_dir() and started.is_dir()
     # Nothing is known of them, so the session is fetched like any the spool does not hold.
-    assert (job.fetched, job.resumed, code) == ([EIGHTH], [], 0)
+    assert (job.fetched, job.read_back, code) == ([EIGHTH], [], 0)
 
 
 # --- R16-5: a fetch is alive while something holds it, however long it takes --------
 
 
-def test_a_fetch_another_run_is_making_is_neither_finished_nor_planned_nor_swept(job):
+def test_a_fetch_another_run_is_making_is_neither_touched_nor_planned(job):
     """A fetch with no record of being whole was swept away once it was a day
     old, by its directory's date: a fetch that took longer, or a clock that
     jumped, and another run removed the feeds from under it."""
-    theirs = spool.new_fetch_directory(
-        job.spool, 2026, EIGHTH, "R", STORE, FIRST_FETCH, start_time_utc=AUSTRIA_ENTRY.start_time_utc
-    )
-    (theirs / "cache").mkdir()
+    with a_fetch_in_hand(
+        job.spool, 2026, EIGHTH, "R", STORE, start_time_utc=AUSTRIA_ENTRY.start_time_utc
+    ) as theirs:
+        (theirs / "cache").mkdir()
+        long_ago = time.time() - 30 * 86400
+        os.utime(theirs, (long_ago, long_ago))
 
-    with spool.fetching(theirs) as held:
-        assert held
         output, code = job.run()
-        assert spool.sweep(job.spool, now=theirs.stat().st_mtime + 30 * 86400) == []
 
-    assert job.fetched == [] and "Nothing to fetch" in output
-    assert [cut.directory for cut in spool.unfinished(job.spool)] == [theirs]
+        assert (job.fetched, job.read_back) == ([], []) and "Nothing to fetch" in output
+        assert (theirs / spool.INTENT_NAME).is_file() and (theirs / "cache").is_dir()
 
 
-def test_only_what_is_not_a_fetch_is_swept_and_not_while_anything_holds_it(tmp_path):
-    root = tmp_path / "spool"
-    started = spool.new_fetch_directory(root, 2026, 6, "R", "a store", FIRST_FETCH)
-    stray = root / "left-by-something-else"
-    stray.mkdir()
-    old = stray.stat().st_mtime + 2 * 3600
+def test_only_what_is_not_a_fetch_is_swept_and_not_while_anything_holds_it(job):
+    stray = job.spool / "left-by-something-else"
+    stray.mkdir(parents=True)
+    (stray / "a file").write_text("of something else", encoding="utf-8")
+    orphan = job.spool / "20260101T000000Z-00000000.lock"
+    orphan.write_bytes(b"")
 
-    # A directory a run made a moment ago has not yet said what it is.
-    assert spool.sweep(root) == []
-    with spool.fetching(stray):
-        assert spool.sweep(root, now=old) == []
-    assert spool.sweep(root, now=old + 365 * 86400) == [stray]
-    # A fetch that was started is never swept, however old: it is finished.
-    assert [path.name for path in root.iterdir()] == [started.name]
+    # A directory made a moment ago may be one a run has yet to write into,
+    # and so may a lock.
+    job.run()
+    assert stray.is_dir() and orphan.is_file()
+
+    long_ago = time.time() - 2 * 3600
+    os.utime(stray, (long_ago, long_ago))
+    os.utime(orphan, (long_ago, long_ago))
+    with spool.holding(stray):
+        output, _ = job.run()
+        assert stray.is_dir() and "it was not a fetch" not in output
+
+    output, _ = job.run()
+
+    assert "Removed left-by-something-else from the spool: it was not a fetch." in output
+    assert not stray.exists() and not orphan.exists()
+    # The fetch the run made is gone with its lock: nothing is left behind.
+    assert list(job.spool.iterdir()) == []
+
+
+def test_a_removal_that_was_stopped_is_finished_and_not_taken_for_a_fetch(job):
+    """Removing a directory takes many steps. Stopped after the record that
+    said the fetch was whole had gone, what was left looked like a fetch
+    that had been served and not written down, with half its feeds."""
+    directory = left_served(job.spool, 2026, EIGHTH, "R", STORE)
+    (directory / spool.DISCARDED_NAME).touch()
+
+    output, code = job.run()
+
+    # Not read back: it was being removed, so its session is in the archive
+    # or was never served. It is fetched as any session the spool does not hold.
+    assert (job.fetched, job.read_back, code) == ([EIGHTH], [], 0) and not directory.exists()
+    with spool.holding(job.spool / "never-there") as mine:
+        assert mine
+        spool.discard(job.spool / "never-there")
+    with pytest.raises(RuntimeError, match="without its lock being held"):
+        spool.discard(job.spool)
 
 
 def test_a_fetch_made_for_one_store_is_not_seen_through_by_a_run_against_another(job):
     """The spool is one directory on the machine. A run started by hand
     against a directory would have uploaded there what the scheduled run had
     fetched for the bucket, and removed it."""
-    whole = spool.new_fetch_directory(job.spool, 2026, 7, "R", "r2:another-bucket", FIRST_FETCH)
-    spool.keep(whole, fetched_session(whole), FIRST_FETCH, "20260628T180000Z-0badcafe")
-    cut_short = spool.new_fetch_directory(job.spool, 2026, 6, "R", "r2:another-bucket", FIRST_FETCH)
+    theirs = "r2:an-account/another-bucket"
+    whole = left_whole(job.spool, 2026, SEVENTH, "R", theirs)
+    served = left_served(job.spool, 2026, SIXTH, "R", theirs)
+    started = left_started(job.spool, 2026, SIXTH, "R", theirs)
 
     output, _ = job.run()
 
-    assert "1 fetch(es) in the spool are waiting for another store, and are left for it." in output
-    assert job.resumed == [] and (whole / spool.PENDING_NAME).is_file() and cut_short.is_dir()
-    assert [item.store for item in spool.waiting(job.spool)] == ["r2:another-bucket"]
+    assert "3 fetch(es) in the spool are for another store, and are left for it." in output
+    assert job.read_back == [] and (whole / spool.PENDING_NAME).is_file()
+    assert (served / spool.SERVED_NAME).is_file() and (started / spool.INTENT_NAME).is_file()
+    assert [item.store for item in spool.waiting(job.spool)] == [theirs]
     assert spool.waiting(job.spool, STORE) == [] and spool.unfinished(job.spool, STORE) == []
-    assert cli_module._store_name("r2").startswith("r2:") and cli_module._store_name("R2 ") == cli_module._store_name("r2")
 
 
 # --- R16-2: the store named in .env is the store ------------------------------------
@@ -427,7 +425,7 @@ def test_the_fetch_stage_starts_no_new_fetch_once_its_time_is_up(three_races, mo
     assert "Stopping: the fetch stage has had its 0 minutes. 3 session(s) left for the next run." in output
 
     seen = []
-    monkeypatch.setattr(cli_module, "run_fetch_due", lambda args: seen.append(args.budget_minutes) or 0)
+    monkeypatch.setattr(cli_module, "_fetch_due", lambda args: (seen.append(args.budget_minutes) or 0, 0))
     monkeypatch.setattr(cli_module, "run_build", lambda args: 0)
     three_races.run("run", "--store", "x")
     assert seen == [FETCH_STAGE_BUDGET.total_seconds() / 60] and 0 < seen[0] <= 90
@@ -482,8 +480,8 @@ def test_when_a_session_was_last_fetched_is_what_its_snapshots_say_as_far_as_the
 ENTRY = (2026, "R", "2026-05-03T13:00:00Z")
 
 
-def noted(store) -> tuple[int, str]:
-    return failing_fetches(store, FIRST_FETCH + timedelta(days=1)).get(layout.attempt_key(*ENTRY), (0, ""))
+def noted(store, after: timedelta = timedelta(days=1)) -> tuple[int, str]:
+    return failing_fetches(store, FIRST_FETCH + after).get(layout.attempt_key(*ENTRY), (0, ""))
 
 
 def test_two_runs_failing_one_session_at_once_are_two_failures():
@@ -494,7 +492,8 @@ def test_two_runs_failing_one_session_at_once_are_two_failures():
     b = note_fetch_started(store, *ENTRY, at + timedelta(seconds=1))
 
     note_failed_fetch(store, *ENTRY, "FetchError: A", at + timedelta(seconds=2), a)
-    assert noted(store) == (2, INTERRUPTED)
+    # Two that have not succeeded: A, which failed, and B, of which nothing more is known.
+    assert noted(store) == (2, "FetchError: A")
     note_failed_fetch(store, *ENTRY, "FetchError: B", at + timedelta(seconds=3), b)
 
     assert noted(store) == (2, "FetchError: B")
@@ -513,9 +512,9 @@ def test_one_runs_success_does_not_erase_the_start_of_anothers_fetch():
     note_fetch_succeeded(store, *ENTRY, at + timedelta(seconds=2), a)
 
     # The session has been fetched; B's is the one fetch still unaccounted for.
-    assert noted(store) == (1, INTERRUPTED)
+    assert noted(store, after=timedelta(minutes=5)) == (1, INTERRUPTED)
     note_fetch_succeeded(store, *ENTRY, at + timedelta(seconds=3), b)
-    assert noted(store) == (0, "")
+    assert noted(store, after=timedelta(minutes=5)) == (0, "")
     # And a failure that comes after the session was fetched by another run says nothing.
     note_failed_fetch(store, *ENTRY, "FetchError: late", at + timedelta(seconds=4), a)
     assert noted(store) == (0, "")
@@ -529,13 +528,13 @@ def test_a_marker_that_is_not_the_snapshots_is_not_taken_for_its_upload_having_f
     marker at that key was believed, and the fetch in the spool, the only
     whole copy, removed on the strength of it."""
     store = MemoryStore()
-    directory = spool.new_fetch_directory(tmp_path / "spool", 2026, 8, "R", "a store", FIRST_FETCH)
-    spooled = spool.keep(directory, fetched_session(directory), FIRST_FETCH, "20260628T180000Z-0badcafe")
+    directory = left_whole(tmp_path / "spool")
+    (spooled,) = spool.waiting(tmp_path / "spool")
     key = f"{layout.snapshot_prefix(AUSTRIA, spooled.snapshot_id)}{layout.SNAPSHOT_MARKER}"
     foreign = {**snapshot(snapshot_id=spooled.snapshot_id).to_json(), "coverage": {}, "objects": {}}
     store.put(key, dump_json(foreign))
 
-    with pytest.raises(ArchiveError, match="is not the marker of this snapshot"):
+    with spool.holding(directory), pytest.raises(ArchiveError, match="is not the marker of this snapshot"):
         cli_module._archive(store, spooled)
 
     assert (directory / spool.PENDING_NAME).is_file() and list_snapshots(store) == []
