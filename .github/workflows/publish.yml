@@ -19,12 +19,15 @@ on:
         description: Limit to one F1 session key (empty for every archived session)
         default: ""
   # workflow_dispatch only works once this file is on the default branch. Until
-  # then a push that touches this file runs it from the rewrite branch.
+  # then a push that touches this file runs it from the rewrite branch. So does
+  # one that touches the file the pipeline version is in: a new version is what
+  # makes every published session due to be built again.
   push:
     branches:
       - rewrite/data-plane
     paths:
       - .github/workflows/publish.yml
+      - f1data/layout.py
 
 permissions:
   contents: read

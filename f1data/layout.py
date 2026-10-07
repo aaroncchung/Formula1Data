@@ -48,7 +48,15 @@ FORMAT_VERSION = 2
 #   6  format 2: analyses read full-resolution telemetry, lap times are
 #      rounded and not cut off, corners are the circuit's own where archived,
 #      and nothing in a build comes from the calendar
-PIPELINE_VERSION = 6
+#   7  rows FastF1 adds for a car missing from a feed are not samples, in
+#      coverage or in telemetry, and a lap has telemetry only when its car
+#      data carries it from end to end; stints are consecutive runs that
+#      never overlap; the replay carries a car's positions without its car
+#      data; a pit stop F1 reports with no lap is placed by when it was
+#      reported; laps down only for a driver who took the flag; a wait in
+#      the pit lane through a red flag is marked and left out of the
+#      pit-lane figures
+PIPELINE_VERSION = 7
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

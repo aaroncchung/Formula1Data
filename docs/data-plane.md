@@ -86,14 +86,30 @@ What holds for all of them:
   fetched.
 - Telemetry is published at up to 300 samples a lap. The analyses read every
   sample.
+- A lap has telemetry when its car data runs from its start to its end with no
+  hole longer than 5 seconds, which is the test the coverage counts laps by:
+  what is published is what is counted. FastF1 gives a car that is missing
+  from part of the car feed rows of zeros for the moments it missed; those are
+  not samples and are left out (`sent_by_f1` in `f1data/coverage.py`). A lap
+  that has positions and no telemetry is still in the replay, with no speed.
+- A driver's stints are consecutive runs of laps that never overlap. A lap
+  with no compound stays with the set it is numbered with.
+- A pit stop is the timing's entry to the pit lane with F1's own figures
+  beside it, matched by driver and lap. F1 sometimes reports a stop late and
+  with no lap; such a report goes to the stop the driver had just finished. A
+  car in the pit lane while the session was red-flagged is marked
+  `under_red_flag`, and the strategy analysis leaves its wait out of the
+  pit-lane figures.
 
 ## Testing against recorded races
 
 `tests/test_recorded_race.py` builds real sessions from the source archive: it
 compares the telemetry with FastF1's own, checks a golden build of the 2026
-Austrian GP file by file, and removes each feed in turn to show that a
-coverage bar notices. It needs no network, and runs when it is told where the
-archive is:
+Austrian GP file by file, removes each feed in turn to show that a coverage
+bar notices, and checks three things F1's feeds have done that a stand-in
+would not think of (rows FastF1 adds for cars missing from the car feed, pit
+stops reported with no lap, a car whose data stops before its lap does). It
+needs no network, and runs when it is told where the archive is:
 
 ```text
 F1DATA_TEST_ARCHIVE=<a directory store, or r2> python -m pytest tests/test_recorded_race.py -s

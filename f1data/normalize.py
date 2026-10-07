@@ -79,6 +79,15 @@ _REQUIRED_OF_A_RESULT = ("positionText", "status", "points", "grid", "laps")
 _logger = logging.getLogger(__name__)
 
 
+# F1's track status while a session is stopped.
+_RED_FLAG_STATUS = "5"
+
+# How long after a car has left the pit lane a report of its stop that names
+# no lap is still taken to be of that stop. F1 reports a stop as the car
+# leaves; the late ones of the 2026 Australian GP came up to 66 seconds after.
+_LATE_REPORT_MS = 120_000
+
+
 class SessionDataError(RuntimeError):
     """The session cannot be published as it stands: its laps or its result are unusable."""
 
@@ -191,21 +200,46 @@ def laps(session: Any) -> list[Lap]:
 
 
 def stints(lap_rows: list[Lap]) -> list[Stint]:
-    """Each run of laps on one set of tyres, in the order the timing first shows it."""
-    groups: dict[tuple[str, int | None, str | None], list[int]] = {}
+    """Each run of laps on one set of tyres, driver by driver in the order the timing shows them.
+
+    A run is consecutive laps: no two runs of a driver share a lap. F1 numbers
+    the sets a driver uses, and a new number starts a new run. So does a
+    compound that changes to another under one number, which is F1 correcting
+    itself. A lap with no compound does not: under the same number it is the
+    same set of tyres, and F1 often names a set's compound only some laps
+    after it went on. The run then has the compound F1 did name. A run none of
+    whose laps has one has none.
+    """
+    by_driver: dict[str, list[Lap]] = {}
     for lap in lap_rows:
-        compound = lap.compound.value if lap.compound is not None else None
-        groups.setdefault((lap.driver_code, lap.stint, compound), []).append(lap.lap_number)
+        by_driver.setdefault(lap.driver_code, []).append(lap)
+    runs: list[Stint] = []
+    for driver, driver_laps in by_driver.items():
+        current: dict[str, Any] | None = None
+        for lap in sorted(driver_laps, key=lambda row: row.lap_number):
+            compound = lap.compound.value if lap.compound is not None else None
+            same_set = (
+                current is not None
+                and current["stint"] == lap.stint
+                and (compound is None or current["compound"] is None or current["compound"] == compound)
+            )
+            if not same_set:
+                current = {"stint": lap.stint, "compound": compound, "laps": []}
+                runs.append(current)  # type: ignore[arg-type]
+            assert current is not None
+            current["compound"] = current["compound"] or compound
+            current["laps"].append(lap.lap_number)
+            current["driver"] = driver
     return [
         Stint(
-            driver_code=driver,
-            stint=stint,
-            compound=compound,
-            start_lap=min(numbers),
-            end_lap=max(numbers),
-            lap_count=len(numbers),
+            driver_code=run["driver"],  # type: ignore[index]
+            stint=run["stint"],  # type: ignore[index]
+            compound=run["compound"],  # type: ignore[index]
+            start_lap=run["laps"][0],  # type: ignore[index]
+            end_lap=run["laps"][-1],  # type: ignore[index]
+            lap_count=len(run["laps"]),  # type: ignore[index]
         )
-        for (driver, stint, compound), numbers in groups.items()
+        for run in runs
     ]
 
 
@@ -247,7 +281,10 @@ def results(classification: Classification | None, session: Any, codes: dict[str
         # they took the flag behind, whichever lap they were on.
         race_time = _int(row.get("totalRaceTime"))
         winner_laps = _int(rows[0].get("laps"))
-        classified = (_text(row.get("positionText")) or "").isdigit()
+        # Classified is not the same as finished: a driver who retires
+        # having covered nine tenths of the distance has a place, and did not
+        # take the flag a number of laps down.
+        classified = (_text(row.get("positionText")) or "").isdigit() and _took_the_flag(row.get("status"))
         down = (
             winner_laps - laps_completed
             if classified
@@ -293,6 +330,16 @@ def results(classification: Classification | None, session: Any, codes: dict[str
             )
         )
     return built
+
+
+def _took_the_flag(status: Any) -> bool:
+    """Whether a result's status is that of a driver who was running at the end.
+
+    Jolpica says "Finished" or "Lapped"; the service it replaced said
+    "+1 Lap", "+2 Laps". Anything else is a reason the driver stopped.
+    """
+    text = (_text(status) or "").strip().lower()
+    return text in {"finished", "lapped"} or (text.startswith("+") and "lap" in text)
 
 
 def _codes_with_laps(session: Any) -> set[str]:
@@ -379,21 +426,14 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
     time on one lap and the pit-exit time on the next. F1's pit-stop feed
     gives the time the car stood still and its own pit-lane time, for the
     stops it covers, which is not all of them (AR-16). The two are matched by
-    driver and lap. A stop only the feed reports is kept, after the timing's.
+    driver and lap. A report with no lap, which F1 sometimes sends late, is
+    matched by when it was made. A stop only the feed reports is kept, after
+    the timing's.
     """
-    reported: dict[tuple[str, int], dict[str, Any]] = {}
-    for stop in parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b"")):
-        code = codes.get(str(stop["driver_number"]))
-        if code is None:
-            _logger.warning(
-                "The pit-stop feed names driver number %s, who is not in the session", stop["driver_number"]
-            )
-            continue
-        # A later line for the same stop is F1 correcting the earlier one.
-        reported[(code, int(stop["lap_number"]))] = stop
-
+    # What the timing shows: for each driver, by lap, when the car came in and
+    # how long it was before it came out.
+    timed: dict[str, dict[int, tuple[int, int | None]]] = {}
     frame = _frame(session, "laps")
-    rows: list[PitStop] = []
     if len(frame) and {"Driver", "LapNumber", "PitInTime", "PitOutTime"} <= set(frame.columns):
         by_driver: dict[str, dict[int, tuple[Any, Any]]] = {}
         for code, lap, came_in, went_out in zip(
@@ -409,14 +449,110 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
                     continue
                 went_out = _milliseconds(driver_laps.get(number + 1, (None, None))[1])
                 duration = went_out - came_in if went_out is not None and went_out >= came_in else None
-                rows.append(_pit_stop(code, number, came_in, duration, reported.pop((code, number), None)))
+                timed.setdefault(code, {})[number] = (came_in, duration)
+
+    clock_zero = _clock_zero(session)
+    reported: dict[tuple[str, int], dict[str, Any]] = {}
+    for stop in parse_pit_stop_series(extras.get(PIT_STOP_SERIES, b"")):
+        code = codes.get(str(stop["driver_number"]))
+        if code is None:
+            _logger.warning(
+                "The pit-stop feed names driver number %s, who is not in the session", stop["driver_number"]
+            )
+            continue
+        lap_number = stop["lap_number"]
+        if lap_number is None:
+            lap_number = _lap_of_a_late_report(stop, timed.get(code, {}), clock_zero)
+            if lap_number is None:
+                _logger.warning(
+                    "The pit-stop feed reports a stop of %s at %s with no lap, and the timing shows no "
+                    "stop it could be",
+                    code,
+                    stop.get("time_utc"),
+                )
+                continue
+        # A later line for the same stop is F1 correcting the earlier one.
+        reported[(code, int(lap_number))] = stop
+
+    red_flags = _red_flag_periods(session)
+    rows: list[PitStop] = []
+    for code, stops in timed.items():
+        for number, (came_in, duration) in stops.items():
+            waited = any(
+                start <= _left(came_in, duration) and (end is None or end >= came_in)
+                for start, end in red_flags
+            )
+            rows.append(
+                _pit_stop(code, number, came_in, duration, reported.pop((code, number), None), waited)
+            )
     for (code, number), stop in sorted(reported.items()):
-        rows.append(_pit_stop(code, number, None, None, stop))
+        rows.append(_pit_stop(code, number, None, None, stop, False))
     return rows
 
 
+def _left(came_in: int, duration: int | None) -> int:
+    """When a car left the pit lane, or when it came in if it never came out."""
+    return came_in + duration if duration is not None else came_in
+
+
+def _lap_of_a_late_report(
+    stop: dict[str, Any], timed: dict[int, tuple[int, int | None]], clock_zero: int | None
+) -> int | None:
+    """The lap of a stop F1 reported with no lap, from when it reported it.
+
+    F1 reports a stop as the car leaves the pit lane, and says which lap. In
+    the 2026 Australian GP twenty of the twenty-eight reports came between
+    one second and 66 seconds late and said no lap. Such a report is of the
+    stop the driver had most recently finished when it was made, if that was
+    no more than two minutes before. One that nothing in the timing answers
+    to has no lap to be published under.
+    """
+    if clock_zero is None or not stop.get("time_utc"):
+        return None
+    try:
+        moment = pd.Timestamp(stop["time_utc"])
+        if moment.tzinfo is not None:
+            moment = moment.tz_convert("UTC").tz_localize(None)
+        reported_at = _round_ms(moment.value - clock_zero)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    latest: tuple[int, int] | None = None
+    for lap_number, (came_in, duration) in timed.items():
+        left = _left(came_in, duration)
+        # A second's grace: the feed's clock and the timing's are rounded apart.
+        if left - 1000 <= reported_at <= left + _LATE_REPORT_MS and (latest is None or left > latest[0]):
+            latest = (left, lap_number)
+    return latest[1] if latest else None
+
+
+def _red_flag_periods(session: Any) -> list[tuple[int, int | None]]:
+    """When the session was red-flagged: start and end in milliseconds on the session clock.
+
+    From the track status, where a red flag is status 5 until the next status.
+    The end is ``None`` for one still out when the feed stops.
+    """
+    frame = _frame(session, "track_status")
+    if len(frame) == 0 or not {"Time", "Status"} <= set(frame.columns):
+        return []
+    changes = sorted(
+        (moment, _text(status) or "")
+        for moment, status in ((_milliseconds(time), status) for time, status in zip(frame["Time"], frame["Status"]))
+        if moment is not None
+    )
+    return [
+        (moment, changes[index + 1][0] if index + 1 < len(changes) else None)
+        for index, (moment, status) in enumerate(changes)
+        if status == _RED_FLAG_STATUS
+    ]
+
+
 def _pit_stop(
-    code: str, lap_number: int, came_in: int | None, duration: int | None, reported: dict[str, Any] | None
+    code: str,
+    lap_number: int,
+    came_in: int | None,
+    duration: int | None,
+    reported: dict[str, Any] | None,
+    under_red_flag: bool,
 ) -> PitStop:
     stationary = reported.get("stationary_ms") if reported else None
     pit_lane = reported.get("pit_lane_ms") if reported else None
@@ -425,6 +561,7 @@ def _pit_stop(
         lap_number=lap_number,
         entry_time_ms=came_in,
         duration_ms=duration,
+        under_red_flag=under_red_flag,
         stationary_ms=stationary,
         pit_lane_ms=pit_lane,
         sources=PitStopSources(

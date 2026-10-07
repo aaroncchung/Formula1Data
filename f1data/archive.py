@@ -300,6 +300,12 @@ def _is_described(snapshot: Snapshot) -> bool:
         and isinstance(identity.archive_path, str)
         and bool(identity.archive_path)
         and all(isinstance(name, str) and isinstance(part, dict) for name, part in snapshot.objects.items())
+        # What F1 answered for a feed is a status or nothing. It is looked up
+        # in a set of statuses once a session's retry window has closed.
+        and all(
+            isinstance(name, str) and (status is None or (isinstance(status, int) and not isinstance(status, bool)))
+            for name, status in snapshot.feed_status.items()
+        )
     )
 
 
@@ -395,7 +401,13 @@ def _as_remeasured(store: ObjectStore, snapshot: Snapshot, key: str) -> Snapshot
         if measured_by != MEASUREMENT_VERSION:
             # Figures this version does not know how to read, from a version
             # that does. They are not used, and whoever wrote them is on
-            # record, so that a newer version's are not replaced.
+            # record, so that a newer version's are not replaced. That much
+            # is granted only to something with the outline of a measurement:
+            # its feeds and its drivers by name. An object that claims a
+            # newer version and holds nothing would otherwise shut this
+            # version out of the snapshot for good.
+            if not isinstance(coverage.get("feeds"), dict) or not isinstance(coverage.get("drivers"), dict):
+                raise ValueError("not a measurement of any version")
             return replace(snapshot, corrected_by=written_by)
         corrected = {
             **coverage,
