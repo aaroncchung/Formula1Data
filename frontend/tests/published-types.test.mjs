@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { ARTIFACTS, tabArtifacts } from "../src/lib/published/artifacts.ts";
+import { FORMAT_VERSION } from "../src/lib/published/config.ts";
+import { indexKey } from "../src/lib/published/layout.ts";
 import { SESSION_TABS } from "../src/lib/published/tabs.ts";
 
 import { generatePublishedTypes, readSchema, TYPES_URL } from "../scripts/published-types.mjs";
@@ -85,4 +87,13 @@ test("every file a page reads is one the schema publishes, and the unread ones a
     // One path for every driver's file; the telemetry index names the files (telemetry.ts).
     "telemetry/{driver_code}.json"
   ]);
+});
+
+// The types are of one format, and the reader asks for one format's paths.
+// They are the same one only as long as somebody keeps them so.
+test("the format the reader asks for is the format the types are generated from", async () => {
+  const schema = await readSchema();
+
+  assert.equal(schema["x-format-version"], FORMAT_VERSION);
+  assert.ok(indexKey().startsWith(`v${schema["x-format-version"]}/`), indexKey());
 });
