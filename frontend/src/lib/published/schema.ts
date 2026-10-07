@@ -1395,7 +1395,7 @@ export interface TelemetryLap {
  */
 export interface WeatherSample {
   /**
-   * Null, like the track temperature and the humidity, when F1's feed gave no value for it, or gave the zero it sends for a sensor with no reading: exactly 0 between readings twenty or more from it.
+   * Degrees Celsius. Null, like the track temperature and the humidity, when F1's feed gave no value for it, or gave the zero it sends for a sensor with no reading: exactly 0 between readings twenty or more from it.
    */
   air_temp_c: number | null;
   /**
