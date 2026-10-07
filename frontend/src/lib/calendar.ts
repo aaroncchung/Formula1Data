@@ -298,46 +298,77 @@ export function nextSession(index: PublishedIndex, now: number): SessionEntry | 
   return next?.entry ?? null;
 }
 
-/** One place the calendar visits, with every meeting held there. */
-export type Venue = {
-  /** Unique within one index. A key for a list, not an identity to keep. */
-  readonly id: string;
-  /** The town or circuit area the calendar names, or the meeting's name when it names none. */
-  readonly place: string;
+/** A meeting with the season it is in. */
+export type SeasonMeeting = { readonly year: number; readonly meeting: IndexMeeting };
+
+/** One circuit of the calendar, with every meeting held at it. */
+export type Circuit = {
+  /** F1's key for the circuit, which is what makes two meetings the same circuit. */
+  readonly key: number;
+  /** F1's short name for the circuit, such as Spielberg; the place, when the calendar gives the circuit no name. */
+  readonly name: string;
+  readonly location: string | null;
   readonly country: string | null;
   /** The meetings held here, the most recent first. */
-  readonly meetings: ReadonlyArray<{ readonly year: number; readonly meeting: IndexMeeting }>;
+  readonly meetings: ReadonlyArray<SeasonMeeting>;
   readonly publishedCount: number;
 };
 
+export type CircuitGuide = {
+  /** By name. */
+  readonly circuits: Circuit[];
+  /**
+   * Meetings the calendar names no circuit for, the newest season first and
+   * in the order of its rounds. The calendar learns a meeting's circuit from
+   * F1's own session information, so it has none for a meeting until one of
+   * its sessions is published.
+   */
+  readonly unidentified: ReadonlyArray<SeasonMeeting>;
+};
+
 /**
- * The calendar grouped by place. The index names a meeting's location and
- * country and no circuit, so two circuits in one town would be one venue.
+ * The calendar grouped by circuit, by F1's key for each.
+ *
+ * A meeting with no circuit key is not put with a circuit by the name of its
+ * town or its country. That would be a guess, and wrong where a town has had
+ * two circuits or a race has moved within a country. It is listed apart, as
+ * a meeting whose circuit is not known yet.
  */
-export function venues(index: PublishedIndex): Venue[] {
-  const grouped = new Map<string, { place: string; country: string | null; meetings: Venue["meetings"][number][] }>();
+export function circuits(index: PublishedIndex): CircuitGuide {
+  const grouped = new Map<number, SeasonMeeting[]>();
+  const unidentified: SeasonMeeting[] = [];
   for (const season of index.seasons) {
     for (const meeting of season.meetings) {
-      const place = meeting.location ?? meeting.name;
-      const id = `${meeting.country ?? ""}/${place}`;
-      const venue = grouped.get(id) ?? { place, country: meeting.country, meetings: [] };
-      venue.meetings.push({ year: season.year, meeting });
-      grouped.set(id, venue);
+      const entry = { year: season.year, meeting };
+      if (meeting.circuit_key === null) {
+        unidentified.push(entry);
+      } else {
+        grouped.set(meeting.circuit_key, [...(grouped.get(meeting.circuit_key) ?? []), entry]);
+      }
     }
   }
-  return [...grouped.entries()]
-    .map(([id, venue]) => ({
-      id,
-      place: venue.place,
-      country: venue.country,
-      meetings: [...venue.meetings].sort(
-        (left, right) => right.year - left.year || right.meeting.round - left.meeting.round
-      ),
-      publishedCount: venue.meetings
-        .flatMap((item) => item.meeting.sessions)
-        .filter(isPublished).length
-    }))
-    .sort((left, right) => left.place.localeCompare(right.place, "en"));
+  return {
+    circuits: [...grouped.entries()]
+      .map(([key, held]) => {
+        const meetings = [...held].sort(
+          (left, right) => right.year - left.year || right.meeting.round - left.meeting.round
+        );
+        // What the circuit is called is taken from the most recent meeting that says.
+        const named = meetings.find((item) => item.meeting.circuit_name !== null)?.meeting ?? meetings[0].meeting;
+        return {
+          key,
+          name: named.circuit_name ?? named.location ?? named.name,
+          location: named.location,
+          country: named.country,
+          meetings,
+          publishedCount: meetings.flatMap((item) => item.meeting.sessions).filter(isPublished).length
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name, "en") || left.key - right.key),
+    unidentified: unidentified.sort(
+      (left, right) => right.year - left.year || left.meeting.round - right.meeting.round
+    )
+  };
 }
 
 /** Whether the publisher takes a session: it is in scope, or it is published all the same. */

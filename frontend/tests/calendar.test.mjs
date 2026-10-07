@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  circuits,
   describeMeetingCoverage,
   findMeeting,
   findMeetingByKey,
@@ -14,8 +15,7 @@ import {
   seasonOverviews,
   sessionAvailability,
   sessionLabel,
-  unscheduledSessions,
-  venues
+  unscheduledSessions
 } from "../src/lib/calendar.ts";
 import { fixtureIndex, indexOf, meeting, NOW, sampleIndex, session } from "./support/sample-index.mjs";
 
@@ -355,64 +355,121 @@ test("the next session is the first one that has not started", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Venues
+// Circuits
 // ---------------------------------------------------------------------------
 
-test("meetings are grouped by place across seasons, the most recent first", () => {
-  const index = indexOf([
+const race = (start, published = {}) => [session("R", "Race", start, published)];
+
+function twoSeasons() {
+  return indexOf([
     {
       year: 2025,
       meetings: [
-        meeting(11, "Austrian Grand Prix", "2025-06-29", [session("R", "Race", "2025-06-29T13:00:00Z")], {
+        meeting(11, "Austrian Grand Prix", "2025-06-29", race("2025-06-29T13:00:00Z", { session_key: 9955, complete: true }), {
           country: "Austria",
-          location: "Spielberg"
+          location: "Spielberg",
+          meeting_key: 1264,
+          circuit_key: 19,
+          circuit_name: "Spielberg"
+        }),
+        meeting(9, "Spanish Grand Prix", "2025-06-01", race("2025-06-01T13:00:00Z", { session_key: 9971, complete: true }), {
+          country: "Spain",
+          location: "Barcelona",
+          meeting_key: 1262,
+          circuit_key: 15,
+          circuit_name: "Catalunya"
         })
       ]
     },
     {
       year: 2026,
       meetings: [
-        meeting(7, "Barcelona Grand Prix", "2026-06-14", [session("R", "Race", "2026-06-14T13:00:00Z")], {
+        meeting(7, "Barcelona Grand Prix", "2026-06-14", race("2026-06-14T13:00:00Z", { session_key: 11307, complete: false }), {
           country: "Spain",
-          location: "Barcelona"
+          location: "Barcelona",
+          meeting_key: 1287,
+          circuit_key: 15,
+          circuit_name: "Catalunya"
         }),
-        meeting(
-          8,
-          "Austrian Grand Prix",
-          "2026-06-28",
-          [session("R", "Race", "2026-06-28T13:00:00Z", { session_key: 11315, complete: true })],
-          { country: "Austria", location: "Spielberg" }
-        ),
-        meeting(14, "Spanish Grand Prix", "2026-09-13", [session("R", "Race", "2026-09-13T13:00:00Z")], {
-          country: "Spain",
-          location: "Madrid"
+        meeting(8, "Austrian Grand Prix", "2026-06-28", race("2026-06-28T13:00:00Z", { session_key: 11315, complete: true }), {
+          country: "Austria",
+          location: "Spielberg",
+          meeting_key: 1288,
+          circuit_key: 19,
+          circuit_name: "Spielberg"
+        }),
+        // Not run yet: the calendar has no circuit for either.
+        meeting(14, "Spanish Grand Prix", "2026-09-13", race("2026-09-13T13:00:00Z"), { country: "Spain", location: "Madrid" }),
+        meeting(11, "Hungarian Grand Prix", "2026-07-26", race("2026-07-26T13:00:00Z"), { country: "Hungary", location: "Budapest" })
+      ]
+    }
+  ]);
+}
+
+test("meetings are grouped by F1's key for their circuit, under the circuit's name, the most recent first", () => {
+  assert.deepEqual(
+    circuits(twoSeasons()).circuits.map((circuit) => [
+      circuit.key,
+      circuit.name,
+      circuit.location,
+      circuit.country,
+      circuit.meetings.map((item) => `${item.year}/${item.meeting.round}`),
+      circuit.publishedCount
+    ]),
+    [
+      // The circuit is Catalunya whichever Grand Prix is held there: the
+      // Spanish one in 2025 and the Barcelona one in 2026.
+      [15, "Catalunya", "Barcelona", "Spain", ["2026/7", "2025/9"], 2],
+      [19, "Spielberg", "Spielberg", "Austria", ["2026/8", "2025/11"], 2]
+    ]
+  );
+});
+
+// The 2026 Spanish Grand Prix is in Madrid. Grouped by the name of the race,
+// or by its country, it would be put with Barcelona's circuit.
+test("a meeting the calendar names no circuit for is listed apart, and is not guessed onto one", () => {
+  const guide = circuits(twoSeasons());
+
+  assert.deepEqual(
+    guide.unidentified.map((item) => `${item.year}/${item.meeting.round} ${item.meeting.name}`),
+    ["2026/11 Hungarian Grand Prix", "2026/14 Spanish Grand Prix"]
+  );
+  assert.ok(guide.circuits.every((circuit) => circuit.meetings.every((item) => item.meeting.circuit_key === circuit.key)));
+});
+
+test("a circuit the calendar has a key for and no name is called by its place", () => {
+  const index = indexOf([
+    {
+      year: 2026,
+      meetings: [
+        meeting(8, "Austrian Grand Prix", "2026-06-28", race("2026-06-28T13:00:00Z", { session_key: 11315, complete: true }), {
+          location: "Spielberg",
+          meeting_key: 1288,
+          circuit_key: 19
+        }),
+        meeting(9, "Somewhere Grand Prix", "2026-07-05", race("2026-07-05T13:00:00Z", { session_key: 11320, complete: true }), {
+          meeting_key: 1289,
+          circuit_key: 77
         })
       ]
     }
   ]);
 
-  assert.deepEqual(
-    venues(index).map((venue) => [
-      venue.place,
-      venue.country,
-      venue.meetings.map((item) => `${item.year}/${item.meeting.round}`),
-      venue.publishedCount
-    ]),
-    [
-      ["Barcelona", "Spain", ["2026/7"], 0],
-      ["Madrid", "Spain", ["2026/14"], 0],
-      ["Spielberg", "Austria", ["2026/8", "2025/11"], 1]
-    ]
-  );
+  assert.deepEqual(circuits(index).circuits.map((circuit) => [circuit.key, circuit.name]), [
+    [77, "Somewhere Grand Prix"],
+    [19, "Spielberg"]
+  ]);
 });
 
-test("a meeting with no location is a venue under its own name", () => {
-  // The published fixture has neither location nor country.
-  assert.deepEqual(
-    venues(fixtureIndex()).map((venue) => [venue.place, venue.country, venue.publishedCount]),
-    [
-      ["Austrian Grand Prix", null, 1],
-      ["Italian Grand Prix", null, 0]
-    ]
-  );
+test("the published fixture's meetings have no circuit yet, and are listed as that", () => {
+  // The fixture's Austrian Grand Prix has a session published and still no
+  // circuit: F1's session information can lack one.
+  const guide = circuits(fixtureIndex());
+
+  assert.deepEqual(guide.circuits, []);
+  assert.deepEqual(guide.unidentified.map((item) => item.meeting.name), ["Austrian Grand Prix", "Italian Grand Prix"]);
+});
+
+test("an empty calendar has no circuits and nothing unidentified", () => {
+  assert.deepEqual(circuits(indexOf([])), { circuits: [], unidentified: [] });
 });
