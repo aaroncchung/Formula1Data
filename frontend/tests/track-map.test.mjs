@@ -6,13 +6,15 @@ import {
   fitBounds,
   outlinePath,
   project,
-  replayBounds,
   replayCars,
   replayFrameCount,
   replayPositions
 } from "../src/lib/track-map.ts";
 
 const VIEWPORT = { width: 1000, height: 600, padding: 40 };
+
+/** The extent a replay is fitted to: that of every position in every frame. */
+const replayBounds = (replay) => boundsOf(replayPositions(replay));
 
 /**
  * A replay in the published shape, from one list for each car of where it

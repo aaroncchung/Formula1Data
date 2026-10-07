@@ -329,7 +329,7 @@ type RecordPath = Exclude<keyof GenerationFiles, ListPath>;
 type ListField<T> = { [Field in keyof T]: T[Field] extends ReadonlyArray<unknown> ? Field : never }[keyof T] & string;
 
 /** A file that is a list, read as the list the schema says it is. */
-export function listOf<Path extends ListPath>(path: Path): ArtifactFile<GenerationFiles[Path]> {
+function listOf<Path extends ListPath>(path: Path): ArtifactFile<GenerationFiles[Path]> {
   return { path, read: (view) => readList(view, path) };
 }
 
@@ -337,7 +337,7 @@ export function listOf<Path extends ListPath>(path: Path): ArtifactFile<Generati
  * A file that is an object. `lists` names the fields a page maps over, which
  * are checked to be lists; they can only be fields the schema types as one.
  */
-export function recordOf<Path extends RecordPath>(
+function recordOf<Path extends RecordPath>(
   path: Path,
   lists: ReadonlyArray<ListField<GenerationFiles[Path]>> = []
 ): ArtifactFile<GenerationFiles[Path]> {

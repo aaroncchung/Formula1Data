@@ -97,7 +97,11 @@ export function replayCars(replay: PositionReplay, frame: number): ReplayCar[] {
   return cars;
 }
 
-/** Every position of every car in every frame, which between them trace the circuit. */
+/**
+ * Every position of every car in every frame, which between them trace the
+ * circuit. Their extent is the replay's domain: it does not depend on which
+ * frame is on screen.
+ */
 export function replayPositions(replay: PositionReplay): Point[] {
   const points: Point[] = [];
   for (const car of replay.drivers) {
@@ -109,14 +113,6 @@ export function replayPositions(replay: PositionReplay): Point[] {
     });
   }
   return points;
-}
-
-/**
- * The extent of every car position in every frame. This is the replay's
- * domain: it does not depend on which frame is on screen.
- */
-export function replayBounds(replay: PositionReplay): Bounds | null {
-  return boundsOf(replayPositions(replay));
 }
 
 /** The size of the cell within which outline dots are merged, in viewport units. */

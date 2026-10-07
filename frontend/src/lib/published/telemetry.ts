@@ -131,7 +131,7 @@ export async function compareTelemetry(
 }
 
 /** One driver's telemetry, from the path the index gives for it. */
-export function readDriverTelemetry(view: SessionView, entry: Pick<TelemetryDriverEntry, "path">): Promise<DriverTelemetry> {
+function readDriverTelemetry(view: SessionView, entry: Pick<TelemetryDriverEntry, "path">): Promise<DriverTelemetry> {
   return readRecord<"telemetry/{driver_code}.json">(view, entry.path, ["laps"]);
 }
 

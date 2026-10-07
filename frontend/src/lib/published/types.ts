@@ -136,11 +136,7 @@ export type GenerationFiles = {
     : never]: DeepReadonly<Schema.Formula1DataPublishedFormat2[Path]>;
 };
 
-/** A path inside a generation that the schema names. */
-export type GenerationPath = keyof GenerationFiles;
-
 export type SessionSummary = GenerationFiles["summary.json"];
-export type Team = DeepReadonly<Schema.Team>;
 export type Driver = DeepReadonly<Schema.Driver>;
 export type Lap = DeepReadonly<Schema.Lap>;
 export type Result = DeepReadonly<Schema.Result>;
@@ -151,17 +147,11 @@ export type RaceControlMessage = DeepReadonly<Schema.RaceControlMessage>;
 export type Compound = Schema.Compound;
 
 export type Corners = GenerationFiles["corners.json"];
-export type Corner = DeepReadonly<Schema.Corner>;
-/** `coverage.json`: the figures behind the verdict a pointer carries. */
-export type Coverage = GenerationFiles["coverage.json"];
-
 export type PositionReplay = GenerationFiles["position-replay.json"];
-export type ReplayDriver = DeepReadonly<Schema.ReplayDriver>;
 export type TelemetryIndex = GenerationFiles["telemetry/index.json"];
 export type TelemetryDriverEntry = DeepReadonly<Schema.TelemetryDriverEntry>;
 export type DriverTelemetry = GenerationFiles["telemetry/{driver_code}.json"];
 export type TelemetryLap = DeepReadonly<Schema.TelemetryLap>;
-export type TelemetryChannel = Schema.TelemetryChannel;
 
 export type LapTimeSeries = DeepReadonly<Schema.LapTimeSeries>;
 export type RacePace = GenerationFiles["analysis/race-pace.json"];
