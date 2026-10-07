@@ -65,6 +65,60 @@ test("two laps are laid over each other from where each one's distance starts", 
   assert.deepEqual(compare(a, longer).delta_time_ms, [0, 0, 0]);
 });
 
+// The first answer to that shifted each place as it was looked up: B's
+// origin, plus A's distance less A's origin. For a lap laid over itself that
+// is -1 + (4095.1 - -1), which is 4095.1000000000004 and not 4095.1: a hair
+// past the place the car stood at, so it was read as having left.
+function lapStandingStill(origin, standsAt = 4_095.1) {
+  const samples = [];
+  let distance = origin;
+  for (let index = 0; index <= 240; index += 1) {
+    const time = index * 500;
+    const standing = time >= 100_000 && time <= 104_000;
+    if (index > 0 && !standing) {
+      // Up to thirty metres short of its box, then into it; and away again after.
+      distance = time < 100_000 ? origin + ((standsAt - 30 - origin) * time) / 99_500 : distance + 25.3;
+    }
+    if (time === 100_000) {
+      distance = standsAt;
+    }
+    samples.push([time, distance, standing ? 0 : 180]);
+  }
+  return lap(30, samples);
+}
+
+for (const origin of [0, -1, -0.7, -0.4, 0.3, 0.4, 0.1 + 0.2]) {
+  test(`a lap that starts at ${origin} m and stands still is nowhere apart from itself`, () => {
+    const standing = lapStandingStill(origin);
+    // Four seconds in its box: the sample it arrives at, and every one until it leaves.
+    assert.equal(standing.distance_m.filter((distance) => distance === 4_095.1).length, 9);
+
+    const comparison = compare(standing, standing);
+
+    assert.deepEqual(comparison.delta_time_ms, standing.time_ms.map(() => 0));
+    assert.deepEqual(comparison.speed_b, comparison.speed_a);
+    // The chart's distances are the lap's own, as published.
+    assert.deepEqual(comparison.distance_m, standing.distance_m);
+  });
+}
+
+test("a lap with a hole in it is nowhere apart from itself either, whatever its distance reads at the line", () => {
+  for (const origin of [0, -1, 0.4]) {
+    const samples = [];
+    for (let index = 0; index <= 60; index += 1) {
+      const time = index < 30 ? index * 250 : 6_500 + index * 250;
+      samples.push([time, origin + time * 0.0531, 190]);
+    }
+    const holed = lap(12, samples);
+
+    const comparison = compare(holed, holed);
+
+    // One row with nothing in it, where the hole is, and nothing else amiss.
+    assert.equal(comparison.delta_time_ms.filter((delta) => delta === null).length, 1, String(origin));
+    assert.equal(comparison.delta_time_ms.every((delta) => delta === null || delta === 0), true, String(origin));
+  }
+});
+
 // The point of interpolating: with 300 samples a lap, the nearest sample is
 // up to an eighth of a second away, which is more than most gaps being read.
 test("the time delta is how much later B reached each distance, interpolated and not taken from the nearest sample", () => {

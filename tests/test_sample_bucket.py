@@ -82,6 +82,9 @@ def test_the_command_writes_a_directory_a_file_server_can_serve_as_the_worker_do
             SERVED_UNDER,
             f"{SERVED_UNDER}v2/pointers/",
             f"{SERVED_UNDER}archive/sessions/9001/snapshot.json",
+            # An address that starts as a published one and leads out of it.
+            f"{SERVED_UNDER}v2/%2e%2e/archive/sessions/9001/snapshot.json",
+            f"{SERVED_UNDER}v2/../archive/sessions/9001/snapshot.json",
         ):
             with pytest.raises(urllib.error.HTTPError) as refused:
                 urllib.request.urlopen(base + path, timeout=10)

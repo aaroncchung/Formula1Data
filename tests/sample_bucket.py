@@ -147,10 +147,15 @@ class _AsTheWorkerServes(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path: str) -> str:
         # What is published, and nothing else the directory may hold: the
         # Worker never serves the archive (worker/src/published-data.mjs).
+        nothing = str(Path(self.directory) / "not-served")
         key = path[len(SERVED_UNDER) :] if path.startswith(SERVED_UNDER) else ""
         if not key.startswith(f"v{layout.FORMAT_VERSION}/"):
-            return str(Path(self.directory) / "not-served")
-        return super().translate_path("/" + key)
+            return nothing
+        # And where the address leads once it is decoded, not what it starts
+        # with: `v2/%2e%2e/archive/...` starts with `v2/`.
+        published = (Path(self.directory) / f"v{layout.FORMAT_VERSION}").resolve()
+        found = Path(super().translate_path("/" + key)).resolve()
+        return str(found) if published in found.parents else nothing
 
     def end_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")

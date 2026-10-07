@@ -125,6 +125,19 @@ type Samples = {
   readonly count: number;
   readonly time: ReadonlyArray<number>;
   /** How far the car had got by each sample: the published distance, kept from going down. */
+  readonly published: ReadonlyArray<number>;
+  /**
+   * The same, counted from the line: less what the lap's distance reads at
+   * its first sample, when that sample is at time nought. It does not read
+   * nought there. A lap's distance is counted from the sample before the
+   * line, and the line comes out a fraction of a metre either side of it,
+   * another fraction on each lap. A lap whose data begins after the line has
+   * no reading at the line, and its distances are taken as they are.
+   *
+   * Everything that places one lap on another reads this, and nothing else
+   * shifts a distance: the same lap twice gives the same numbers twice, so a
+   * place that is exactly a sample's place stays exactly that.
+   */
   readonly distance: ReadonlyArray<number>;
   /**
    * For each sample, the first and the last sample at the same distance.
@@ -138,12 +151,15 @@ type Samples = {
 function samplesOf(lap: TelemetryLap): Samples {
   const count = Math.min(lap.time_ms.length, lap.distance_m.length);
   const time = lap.time_ms.slice(0, count);
-  const distance: number[] = [];
+  const published: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    published.push(index === 0 ? lap.distance_m[0] : Math.max(published[index - 1], lap.distance_m[index]));
+  }
+  const atTheLine = count > 0 && time[0] === 0 ? published[0] : 0;
+  const distance = published.map((furthest) => furthest - atTheLine);
   const firstAt: number[] = [];
   for (let index = 0; index < count; index += 1) {
-    const furthest = index === 0 ? lap.distance_m[0] : Math.max(distance[index - 1], lap.distance_m[index]);
-    distance.push(furthest);
-    firstAt.push(index > 0 && distance[index - 1] === furthest ? firstAt[index - 1] : index);
+    firstAt.push(index > 0 && distance[index - 1] === distance[index] ? firstAt[index - 1] : index);
   }
   const lastAt: number[] = distance.map((_, index) => index);
   for (let index = count - 2; index >= 0; index -= 1) {
@@ -151,7 +167,7 @@ function samplesOf(lap: TelemetryLap): Samples {
       lastAt[index] = lastAt[index + 1];
     }
   }
-  return { lap, count, time, distance, firstAt, lastAt, holeMs: holeThresholdMs(time) };
+  return { lap, count, time, published, distance, firstAt, lastAt, holeMs: holeThresholdMs(time) };
 }
 
 /**
@@ -176,21 +192,12 @@ export function compareLaps(
   const samplesA = samplesOf(a.lap);
   const samplesB = samplesOf(b.lap);
   const readB = readerOf(samplesB);
-  // Each lap's length by its own odometer, from what that odometer read at
-  // the line. A lap has telemetry only when its car data runs from its start
-  // to its end, so the last sample is at the line, and the first is too when
-  // it is at time nought. It does not read nought there: a lap's distance is
-  // counted from the sample before the line, and the line comes out a
-  // fraction of a metre either side of it, another fraction on each lap. A
-  // lap whose data begins after the line has no reading at the line, and its
-  // distances are taken as they are.
+  // Each lap's length by its own odometer, from the line (`Samples.distance`).
+  // A lap has telemetry only when its car data runs from its start to its
+  // end, so the last sample is at the line.
   const lastSample = samplesA.count - 1;
-  const atTheLine = (samples: typeof samplesA) => (samples.time[0] === 0 ? (samples.distance[0] ?? 0) : 0);
-  const originA = atTheLine(samplesA);
-  const originB = atTheLine(samplesB);
-  const endB = samplesB.distance[samplesB.count - 1] ?? 0;
-  const lengthA = (samplesA.distance[lastSample] ?? 0) - originA;
-  const lengthB = endB - originB;
+  const lengthA = samplesA.distance[lastSample] ?? 0;
+  const lengthB = samplesB.distance[samplesB.count - 1] ?? 0;
   const scale = lengthA > 0 && lengthB > 0 ? lengthB / lengthA : 1;
   const rows: Array<{ distance: number; a: Reading | null; b: Reading | null }> = [];
   samplesA.distance.forEach((distance, index) => {
@@ -198,12 +205,17 @@ export function compareLaps(
     if (index > 0 && samplesA.time[index] - samplesA.time[previous] > samplesA.holeMs) {
       // A row with nothing in it, part-way across the hole, so that a chart
       // stops lap A's line at one side and starts it again at the other.
-      rows.push({ distance: (samplesA.distance[previous] + distance) / 2, a: null, b: null });
+      rows.push({ distance: (samplesA.published[previous] + samplesA.published[index]) / 2, a: null, b: null });
     }
     // The line itself is given exactly: scaled, it could land a rounding
     // error past B's last sample and read as nothing.
-    const place = index === lastSample ? endB : originB + (distance - originA) * scale;
-    rows.push({ distance, a: readingAt(a.lap, index), b: readB(place, standingMs(samplesA, index)) });
+    const place = index === lastSample ? lengthB : distance * scale;
+    // The chart's axis is lap A's distance as it is published.
+    rows.push({
+      distance: samplesA.published[index],
+      a: readingAt(a.lap, index),
+      b: readB(place, standingMs(samplesA, index))
+    });
   });
 
   const of = (side: "a" | "b", field: Exclude<keyof Reading, "drs">) => rows.map((row) => row[side]?.[field] ?? null);
