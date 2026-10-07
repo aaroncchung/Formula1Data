@@ -183,7 +183,9 @@ def read_back(year: int, event: int | str, session_type: str, cache_dir: Path) -
     lines, the pit stops, the circuit. A response it holds is used however
     old it is, because the request that would replace it fails. So what
     comes back is what that fetch was served, whatever F1, the calendar or
-    anything else has changed to since, and the cache is left as it was.
+    anything else has changed to since. Nothing is fetched into the cache;
+    what FastF1 may write there, a parsed feed that could not be read made
+    again from the response it was parsed from, comes out of the cache.
 
     What only the fetch itself knew is not there to read: what F1 answered
     for each feed, and how many tries it took. A feed that is absent is

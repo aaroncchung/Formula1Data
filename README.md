@@ -20,8 +20,9 @@ browser <--- static site, pages load at runtime <--- read-only Worker ------+
 ```
 
 - **Fetch** copies a session from F1's timing archive into an archive in
-  Cloudflare R2, as FastF1's cache of it. It runs as a scheduled task on a
-  machine at home, because F1 refuses GitHub's hosted runners.
+  Cloudflare R2, as FastF1's cache of it. It is made to run as a scheduled
+  task on a machine at home, because F1 refuses GitHub's hosted runners. The
+  task is not registered yet: until it is, sessions are fetched by hand.
 - **Build** turns an archived session into typed JSON files and publishes them
   to R2 as a generation that is never changed afterwards, with a pointer to it
   written last. It asks nothing of F1 and runs on hosted runners.
@@ -71,7 +72,8 @@ npm run dev
 Open `http://localhost:3000`. The site reads the deployed Worker, which is
 public and read-only, so nothing else needs to be running. To work without the
 network, or against data that does not change, serve the sample dataset and
-point the site at it:
+point the site at it. In a second terminal, at the root of the repository and
+with the Python environment described below:
 
 ```powershell
 python -m tests.sample_bucket .sample --serve
@@ -96,10 +98,14 @@ Python 3.12, with the pinned packages:
 ```powershell
 py -3.12 -m venv C:\venvs\f1data
 C:\venvs\f1data\Scripts\python.exe -m pip install -r requirements-dev.txt
+C:\venvs\f1data\Scripts\Activate.ps1
 ```
 
+With the environment activated, `python` below is that one; without, write
+its full path in place of the word. From the root of the repository:
+
 ```powershell
-python -m f1data fetch-due --dry-run     # what would be fetched; touches nothing
+python -m f1data fetch-due --dry-run     # what would be fetched; changes nothing in the store or the spool
 python -m f1data run                     # the whole job: build, fetch what is due, build what was fetched
 python -m f1data build                   # build and publish what the archive holds
 ```
@@ -126,15 +132,16 @@ guide says how to point them at an archive ("Testing against recorded races").
 | What | Where | How |
 | --- | --- | --- |
 | The site | Cloudflare Pages, from `frontend/` (`npm ci && npm run build`, output `out`) | Pages builds each branch; `cloudflare-pages.yml` deploys by hand |
-| The read-only Worker | `formula-1-data-read` | `deploy-data-worker.yml`, on a push that touches the Worker |
-| Published data | The R2 bucket `formula-1-data-artifacts`, under `v2/` | `publish.yml` builds from the archive; the scheduled task at home fetches into it |
+| The read-only Worker | `formula-1-data-read` | `deploy-data-worker.yml`, by hand, and while this is a branch on a push to it that touches the Worker |
+| Published data | The R2 bucket `formula-1-data-artifacts`, under `v2/` | `publish.yml` builds from the archive; whatever fetches, by hand now and the scheduled task once it is registered, fetches into it |
 
 Nothing in the site's build needs a secret. The address of the Worker is in
 the committed `frontend/.env.production`.
 
 ## Limits worth knowing
 
-- Races and sprints only. Practice and qualifying are not fetched.
+- Races and sprints only. The job fetches no practice or qualifying, and the
+  site shows none; `fetch` by hand takes any session.
 - The fetch needs a network that F1's archive answers. Without the scheduled
   task running on such a machine, nothing new arrives.
 - A pit stop is an entry to the pit lane in the timing, with F1's own figures

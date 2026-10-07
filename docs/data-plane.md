@@ -194,7 +194,9 @@ takes the lock before the directory exists and holds it until it is done with
 it. Any other run takes the lock before it does anything to the directory,
 and decides what to do by what the directory is then. The lock is the
 operating system's and goes with the process: nothing is taken for abandoned
-by its age, and two runs cannot both be at one fetch.
+by its age, and two runs cannot both be at one fetch. The spool is the
+program's own: a directory put there by anything else is removed once it is
+an hour old.
 
 What an earlier run left there, a run deals with before it asks F1 for
 anything:
@@ -226,37 +228,57 @@ that was made with its directory, which needs no room on the disk; should
 that fail and writing it down fail too, the run says that a later run will
 take it for part of a session.
 
-A fetch is not started with less than 2 GB free where the spool is, by any
-command: a run says so, stops fetching, and exits 1. What is already in the
+A fetch is not started with less than 2 GB free where the spool is, by
+`fetch`, `fetch-due` or `run`: a run says so, stops fetching, and exits 1.
+(`probe` archives nothing and fetches into the temporary directory, which is
+not looked at.) What is already in the
 spool is still seen through, since uploading it is what makes room. Packing a
 snapshot for upload, restoring one and building use the system's temporary
 directory (`%TEMP%`, or wherever `TMP` says), which is not looked at and
 wants as much room again as a session takes; if it is on another disk than
 the spool, that disk has to have it.
 
-The spool wants looking at by hand in two cases, and a run says so each time.
-A directory whose record cannot be read is named in a line that begins
-`ATTENTION` and is left as it is; nothing is known of it, so its session is
-fetched again in its turn. And a session F1 served that can still not be read
-back or written down stays, and holds its session back, until whatever the
-run reports is put right or the directory is removed.
+The spool wants looking at by hand in two cases. A run says so each time,
+and exits 1 for as long as either is there.
+
+- A directory whose record cannot be read is named in a line that begins
+  `ATTENTION`, with what is wrong with the record, and is left as it is.
+  Nothing is known of it, so its session is fetched again in its turn. The
+  records of the version before this one are read; one that is not is cut
+  off, or was written by a later version than the one running. What to do
+  with it: if its session has since been archived (`fetch-due --dry-run`
+  does not list it), remove the directory. If not, and it holds feeds worth
+  keeping (`cache/` with `.ff1pkl` files under it), `python -m f1data
+  archive-directory --path <the directory> --name spool-<its name>` keeps it
+  whole in the archive, where nothing reads it and nothing loses it, and
+  then it can be removed.
+- A session F1 served that can still not be read back or written down stays,
+  and holds its session back, until whatever the run reports is put right or
+  the directory is removed. Removing it has the session fetched again.
 
 One session failing to fetch does not stop the others. Each calendar entry
 has a note of the fetches made of it (`archive/attempts/`). A fetch is noted
 when it starts and again, under its own name, when it ends, so two runs
 noting one session say the same in whichever order they write, and a fetch
-seen through by a later run is the fetch that was begun. A fetch that started
-and of which nothing more is noted did not succeed: its run ended under it.
-For each entry a run counts the fetches that have not succeeded since the
-last that did, and names the entry at three in a line that begins
-`ATTENTION`. New fetches are taken in the order of when each session was last
+seen through by a later run is the fetch that was begun. A fetch F1 served
+is noted as having succeeded whether or not it has reached the archive yet.
+A fetch that started and of which nothing more is noted has not succeeded:
+it is still going, or its run ended under it, and the note cannot tell
+which. For each entry a run counts the fetches that have not succeeded since
+the last that did, in the order their words reached the note, and names the
+entry at three in a line that begins `ATTENTION`. One that started before
+that success and never ended is counted for six hours from its start, while
+it may still be going, and not after. A note keeps the twelve latest fetches
+of its entry. New fetches are taken in the order of when each session was last
 tried, whether that fetch failed or arrived: the ones never tried first, then
 the one tried longest ago. So the fetches a run starts reach every session
 that is due before they reach any a second time, however the run is cut
 short: by `--limit`, by its time, or because nothing answers.
 
-Every request FastF1 makes has a time limit: 30 seconds to connect, and two
-minutes without a byte arriving. That stops a connection that goes quiet. It
+Every request has a time limit. One that is made without a limit of its own,
+as FastF1's to F1 are, is given 30 seconds to connect and two minutes without
+a byte arriving; FastF1 gives its requests to Jolpica five seconds itself.
+That stops a connection that goes quiet. It
 does not bound an answer that keeps arriving slowly, and one fetch has no
 limit of its own. So the fetch stage is given a time, an hour in `run` and
 whatever `fetch-due --budget-minutes` says for a stage run by hand, and the
@@ -498,8 +520,8 @@ lost write, and whenever `build --recheck` is given.
 | Workflow | Runs | Purpose |
 | --- | --- | --- |
 | `publish.yml` | Every six hours and manually, once it is on the default branch; until then on a push to `rewrite/data-plane` that touches it or `f1data/layout.py`, where the pipeline version is | `build` against R2, in four parallel parts. On a schedule it also runs `last-run` |
-| `deploy-data-worker.yml` | On a push that touches the Worker | Tests and deploys `formula-1-data-read` |
-| `r2-contract.yml` | On a push that touches the store | The store's tests against the real bucket |
+| `deploy-data-worker.yml` | Manually, and on a push to the rewrite branch that touches the Worker | Tests and deploys `formula-1-data-read` |
+| `r2-contract.yml` | Manually, and on a push to the rewrite branch that touches the store | The store's tests against the real bucket |
 | `probe-f1-access.yml` | Manually, and on a push to the rewrite branch that touches it | Whether F1 answers a hosted runner yet |
 | `upload-archive-spool.yml` | Manually, and on a push to the rewrite branch that touches it | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
 

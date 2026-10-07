@@ -305,7 +305,8 @@ def test_a_run_names_what_it_cannot_read_in_the_spool_and_leaves_it(job):
         assert f"ATTENTION: {directory} is a fetch whose record cannot be read" in output
     assert (whole / "cache").is_dir() and started.is_dir()
     # Nothing is known of them, so the session is fetched like any the spool does not hold.
-    assert (job.fetched, job.read_back, code) == ([EIGHTH], [], 0)
+    # The run has left something behind that it could not deal with, and says so by failing.
+    assert (job.fetched, job.read_back, code) == ([EIGHTH], [], 1)
 
 
 # --- R16-5: a fetch is alive while something holds it, however long it takes --------

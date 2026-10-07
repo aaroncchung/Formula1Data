@@ -280,6 +280,15 @@ def _not_this_upload(
             return f"{name} is not in the archive"
         if there.size != part.get("size_bytes"):
             return f"{name} is {there.size} bytes in the archive, and the marker says {part.get('size_bytes')}"
+    # And by its bytes. This is what a restore checks, and after it there is
+    # no other copy to restore from.
+    with tempfile.TemporaryDirectory(prefix="f1data-uploaded-") as scratch:
+        for name, part in sorted(named.items()):
+            copy = Path(scratch) / "part"
+            if not store.download_file(f"{prefix}{name}", copy):
+                return f"{name} is not in the archive"
+            if _describe(copy)["sha256"] != part.get("sha256"):
+                return f"{name} in the archive is not the bytes the marker describes"
     return ""
 
 

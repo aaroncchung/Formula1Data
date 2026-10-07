@@ -68,6 +68,7 @@ from f1data.spool import (
     discard,
     free_bytes,
     holding,
+    is_for,
     is_stale,
     keep,
     mark_served,
@@ -476,6 +477,8 @@ class _Seen:
         if isinstance(found, Spooled):
             identity = found.fetched.identity
             self.entries.add(layout.attempt_key(identity.year, identity.session_type, identity.start_time_utc))
+            if found.started is not None:
+                self.keeps(found.started)
             return
         self.asked.add((found.year, found.event, found.session_type.upper()))
         if found.start_time_utc is not None:
@@ -512,12 +515,19 @@ def _see_the_spool_through(
                     theirs = read_spool(directory)
                 except UnreadableError:
                     continue
-                if isinstance(theirs, (Spooled, Unfinished)) and theirs.store == name:
-                    seen.keeps(theirs)
+                if isinstance(theirs, (Spooled, Unfinished)):
+                    if is_for(theirs.store, name):
+                        seen.keeps(theirs)
+                    else:
+                        elsewhere += 1
                 continue
             try:
                 found = read_spool(directory)
             except UnreadableError as exc:
+                # Nothing is known of it, so nothing is done with it, and its
+                # session is fetched like any other. But a run that leaves
+                # one behind has not done all it was for.
+                seen.failed += 1
                 print(
                     f"ATTENTION: {directory} is a fetch whose record cannot be read ({exc.__cause__}). "
                     "It is left as it is, for someone to look at."
@@ -530,7 +540,7 @@ def _see_the_spool_through(
             if isinstance(found, Discarded):
                 _remove(directory)
                 continue
-            if found.store != name:
+            if not is_for(found.store, name):
                 elsewhere += 1
                 continue
             if isinstance(found, Unfinished):
@@ -546,6 +556,19 @@ def _see_the_spool_through(
                 label = describe(found)
             # A session F1 served. It is archived now, or it stays.
             seen.keeps(found)
+            # And the fetch of it succeeded. The run that made it may have
+            # been stopped before it could say so, at any point after the
+            # mark; said twice, it is said once.
+            begun = found.started if isinstance(found, Spooled) else found
+            if begun is not None and begun.start_time_utc is not None:
+                note_fetch_succeeded(
+                    store,
+                    begun.year,
+                    begun.session_type,
+                    begun.start_time_utc,
+                    datetime.now(timezone.utc),
+                    begun.attempt,
+                )
             if time_is_up():
                 seen.failed += 1
                 print(f"{label}: fetched earlier, and left in the spool: the fetch stage's time is up.")
@@ -561,26 +584,11 @@ def _see_the_spool_through(
                 print(f"{label}: fetched earlier, archived now.")
                 _print_snapshot(snapshot)
                 continue
-
-            def note_served() -> None:
-                # Under the calendar entry the fetch was planned from, if it
-                # was, and as the outcome of the fetch that was begun then.
-                if found.start_time_utc is not None:
-                    note_fetch_succeeded(
-                        store,
-                        found.year,
-                        found.session_type,
-                        found.start_time_utc,
-                        datetime.now(timezone.utc),
-                        found.attempt,
-                    )
-
             try:
                 fetched = read_back(found.year, found.event, found.session_type, directory / CACHE_DIRECTORY)
                 snapshot = _write_down_and_archive(store, directory, fetched, found.served_at)
             except _NotArchived as exc:
                 seen.failed += 1
-                note_served()
                 print(f"{label}: a fetch that F1 served is written down now, and NOT ARCHIVED: {exc}")
             except _NotKept as exc:
                 seen.failed += 1
@@ -595,7 +603,6 @@ def _see_the_spool_through(
                 )
             else:
                 seen.archived += 1
-                note_served()
                 print(f"{label}: a fetch that F1 served, written down from its cache and archived.")
                 _print_snapshot(snapshot)
     if elsewhere:
