@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeWeatherPlot, lapAt, sessionClockTicks, weatherPlot } from "../src/lib/weather-chart.ts";
+import {
+  describeWeatherPlot,
+  hasTemperatures,
+  sampleNote,
+  sessionClockTicks,
+  weatherPlot
+} from "../src/lib/weather-chart.ts";
 
 /** A weather sample as weather.json has one, taken at `time` on the session clock. */
 function sample(time, overrides = {}) {
@@ -50,24 +56,65 @@ test("samples are plotted in time order whatever order they arrive in", () => {
   );
 });
 
+// F1's feed can leave a sensor out of a sample. FastF1 hands that on as a
+// zero, and the publisher used to publish the zero: a track at 0 degrees, and
+// a sample that "was dry" because nothing said it was raining.
 test("a missing reading stays missing and is not drawn as zero", () => {
-  const plot = weatherPlot([sample(30_000, { air_temp_c: null, track_temp_c: null, humidity_pct: null })]);
+  const plot = weatherPlot([sample(30_000, { air_temp_c: null, track_temp_c: null, humidity_pct: null, wind_speed_kph: null, rainfall: null })]);
 
-  assert.equal(plot.points[0].air_temp_c, null);
-  assert.equal(plot.points[0].track_temp_c, null);
-  assert.equal(plot.points[0].humidity_pct, null);
+  assert.deepEqual(plot.points[0], {
+    time_ms: 30_000,
+    lap_number: null,
+    air_temp_c: null,
+    track_temp_c: null,
+    humidity_pct: null,
+    wind_speed_kph: null,
+    rainfall: null
+  });
+  assert.equal(hasTemperatures(plot), false);
+});
+
+test("a sample with one temperature and not the other is still drawn, and the gap is said", () => {
+  const plot = weatherPlot([
+    sample(30_000),
+    sample(90_000, { track_temp_c: null }),
+    sample(150_000, { air_temp_c: null, track_temp_c: null }),
+    sample(210_000)
+  ]);
+
+  assert.equal(hasTemperatures(plot), true);
+  assert.deepEqual([plot.airCount, plot.trackCount], [3, 2]);
+  assert.equal(
+    describeWeatherPlot(plot),
+    "4 samples. 1 without an air temperature and 2 without a track temperature: the line breaks there. No rain was recorded."
+  );
+});
+
+test("samples with no temperature at all are described, and there is nothing to draw", () => {
+  const plot = weatherPlot([sample(30_000, { air_temp_c: null, track_temp_c: null }), sample(90_000, { air_temp_c: null, track_temp_c: null })]);
+
+  assert.equal(hasTemperatures(plot), false);
+  assert.equal(describeWeatherPlot(plot), "2 samples. None has an air or a track temperature. No rain was recorded.");
+  assert.equal(hasTemperatures(weatherPlot([])), false);
 });
 
 // In a race a sample says which lap the leader was on; before the start,
 // after the flag and in any other session it has none.
-test("a sample's lap is kept beside its time, and is absent where the race was not running", () => {
-  const plot = weatherPlot([sample(3_300_000), sample(3_480_000, { lap_number: 1 }), sample(5_400_000, { lap_number: 34 })]);
+test("under the pointer a sample says its lap and whether it was raining, each only if it knows", () => {
+  const plot = weatherPlot([
+    sample(3_300_000),
+    sample(3_480_000, { lap_number: 1, rainfall: true }),
+    sample(5_400_000, { lap_number: 34, rainfall: null }),
+    sample(9_000_000, { rainfall: null })
+  ]);
 
-  assert.equal(lapAt(plot, 3_300_000), null);
-  assert.equal(lapAt(plot, 3_480_000), 1);
-  assert.equal(lapAt(plot, 5_400_000), 34);
+  assert.equal(sampleNote(plot, 3_300_000), " · dry");
+  assert.equal(sampleNote(plot, 3_480_000), " · lap 1 · raining");
+  // It does not say whether it was raining, and so neither does the page.
+  assert.equal(sampleNote(plot, 5_400_000), " · lap 34");
+  assert.equal(sampleNote(plot, 9_000_000), "");
   // A time no sample was taken at, as a chart reports while the pointer moves.
-  assert.equal(lapAt(plot, 4_000_000), null);
+  assert.equal(sampleNote(plot, 4_000_000), "");
 });
 
 test("the description says how many samples there are and whether it rained", () => {
@@ -78,6 +125,20 @@ test("the description says how many samples there are and whether it rained", ()
   assert.equal(describeWeatherPlot(wet), "2 samples. Rain was recorded in 1 of 2 samples.");
   assert.equal(describeWeatherPlot(weatherPlot([sample(30_000)])), "1 sample. No rain was recorded.");
   assert.equal(describeWeatherPlot(weatherPlot([])), "No weather samples in this session.");
+});
+
+// "No rain was recorded" over samples that do not say would be a claim
+// nobody measured.
+test("a sample that does not say whether it rained is not counted as dry", () => {
+  const some = weatherPlot([sample(30_000), sample(90_000, { rainfall: null }), sample(150_000, { rainfall: null })]);
+  const wet = weatherPlot([sample(30_000, { rainfall: true }), sample(90_000), sample(150_000, { rainfall: null })]);
+  const none = weatherPlot([sample(30_000, { rainfall: null }), sample(90_000, { rainfall: null })]);
+
+  assert.deepEqual([some.rainCount, some.rainKnownCount], [0, 1]);
+  assert.equal(describeWeatherPlot(some), "3 samples. No rain was recorded in the 1 that say. 2 do not say whether it was raining.");
+  assert.equal(describeWeatherPlot(wet), "3 samples. Rain was recorded in 1 of the 2 that say. 1 does not say whether it was raining.");
+  assert.equal(describeWeatherPlot(none), "2 samples. None says whether it was raining.");
+  assert.equal(describeWeatherPlot(weatherPlot([sample(30_000, { rainfall: null })])), "1 sample. It does not say whether it was raining.");
 });
 
 test("the samples a page was given are not put in another order", () => {

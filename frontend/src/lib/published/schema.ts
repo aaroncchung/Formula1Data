@@ -950,7 +950,7 @@ export interface Shortfall {
  */
 export interface Driver {
   /**
-   * The three-letter code that names the driver in every other artifact.
+   * The code that names the driver in every other artifact: F1's three letters, or the car number as text for a driver neither F1's driver list nor the classification names.
    */
   code: string;
   /**
@@ -1316,6 +1316,13 @@ export interface TelemetryDriverEntry {
    * False for a lap with no usable position data, and so no x and y.
    */
   has_position: boolean[];
+  /**
+   * Each lap's four flags as in laps.json, so that a page can offer a clean lap first: one that is timed accurately, was not deleted, and neither enters nor leaves the pits.
+   */
+  is_accurate: (boolean | null)[];
+  is_deleted: (boolean | null)[];
+  is_pit_in_lap: (boolean | null)[];
+  is_pit_out_lap: (boolean | null)[];
   lap_number: number[];
   /**
    * Each lap's time as in laps.json, so that a lap can be picked from here alone.
@@ -1399,7 +1406,10 @@ export interface WeatherSample {
    * In a race or sprint, the lap the leader was on. Null before the start, after the flag, and in any other session.
    */
   lap_number: number | null;
-  rainfall: boolean;
+  /**
+   * Null, like any other reading of a sample, when F1's feed gave no value for it.
+   */
+  rainfall: boolean | null;
   /**
    * Milliseconds on the session clock.
    */
