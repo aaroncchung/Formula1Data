@@ -612,13 +612,42 @@ test("a driver with no clean lap is offered their fastest of any kind, after eve
   assert.match(openingNote(two, defaultComparison(two)), /RUS has no lap known to be clean/);
 });
 
-test("a lap whose kind is not known is not taken for a clean one", () => {
-  const laps = withLaps({ "RUS/3": { is_accurate: null }, "VER/2": { is_deleted: null, is_pit_in_lap: null } });
+// A lap is clean when all four flags are known and say so. One that is
+// accurate with nothing known of its deletion may be a deleted lap.
+test("a lap is clean only when every flag is known, and none of the unknown is taken for clean", () => {
+  const [, , lap3] = INDEXED;
+  assert.equal(isCleanLap(lap3), true);
+  for (const flag of ["is_accurate", "is_deleted", "is_pit_in_lap", "is_pit_out_lap"]) {
+    assert.equal(isCleanLap({ ...lap3, [flag]: null }), false, flag);
+  }
+  assert.equal(isCleanLap({ ...lap3, ...UNKNOWN }), false);
 
-  // Not known to be accurate: not clean. Known to be accurate, with nothing said against it: clean.
-  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "RUS" && entry.lap_number === 3)), false);
-  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "VER" && entry.lap_number === 2)), true);
+  // Russell's quickest lap is accurate, and nothing says whether it was deleted.
+  const laps = withLaps({ "RUS/3": { is_deleted: null }, "VER/2": { is_pit_in_lap: null }, "VER/3": { is_pit_out_lap: null } });
   assert.equal(preferredLap(laps, "RUS").lap_number, 2);
+  // Verstappen has no lap all four flags vouch for, so he is offered his fastest of any kind,
+  // after the two drivers who have a clean one.
+  assert.equal(preferredLap(laps, "VER").lap_number, 2);
+  const pair = defaultComparison(laps);
+  assert.deepEqual(pair, [
+    { driver: "RUS", lap: 2 },
+    { driver: "ANT", lap: 2 }
+  ]);
+  assert.match(openingNote(laps, pair), /^It opens on the fastest clean lap/);
+});
+
+test("the tab does not call a lap clean when a flag of it is unknown", () => {
+  // Only two drivers, and one of the laps opened on has an unknown pit flag.
+  const laps = withLaps({ "VER/2": { is_pit_in_lap: null }, "VER/3": { is_pit_out_lap: null } }).filter((entry) => entry.driver_code !== "ANT");
+  const pair = defaultComparison(laps);
+
+  assert.deepEqual(pair, [
+    { driver: "RUS", lap: 3 },
+    { driver: "VER", lap: 2 }
+  ]);
+  const note = openingNote(laps, pair);
+  assert.match(note, /VER has no lap known to be clean/);
+  assert.doesNotMatch(note, /fastest clean lap/);
 });
 
 // An index published before the four flags has none of the arrays. Its laps
