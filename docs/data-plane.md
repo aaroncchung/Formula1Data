@@ -343,13 +343,12 @@ After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/da
 
 ## What is not here yet
 
-The site still reads format 1. The build now publishes format 2 only, so the
-frontend's reader has to move to `v2/` and to the types generated from the
-schema before a newly built session appears on a page. Every page now loads
-its data in the browser and the site builds without `frontend/public/data`,
-but that directory is still in git, and the old build-time dashboard code it
-fed is still in the tree, unreachable. Nothing runs `run` on a schedule yet.
-See section 10 of the findings document for the state of each step.
+Nothing runs `run` on a schedule yet: fetching is done by hand until the
+scheduled task above is registered on a machine that has R2 credentials. The
+old path (the old Worker, `pipeline/`, the ingestion workflows) is still in
+the tree and still what `main` deploys; the plan removes it only after the
+new one has carried three race weekends unattended. See section 10 of the
+findings document for the state of each step.
 
 ## The pages
 
@@ -362,8 +361,35 @@ Every page reads the published data at runtime, from the base URL in
 | Seasons, season, meeting, circuits | `/seasons`, `/season?year=`, `/meeting?year=&round=`, `/circuits` | The index only |
 | Session | `/session?key=<session key>` | The index and the pointer, then each tab's files when the tab is opened |
 | Strategy, telemetry, drivers, teams | `/strategy?key=`, and so on | One session's files; the latest published session when no key is given |
-| Standings | `/standings?year=` | The index and `v1/standings/<year>.json` |
+| Standings | `/standings?year=` | The index and `v2/standings/<year>.json` |
 
 A session is linked by its key. `/session?year=&round=&session=` still opens
 one, and the page then offers the link by key, since a round moves when the
-calendar changes.
+calendar changes. A meeting is linked by F1's meeting key where the index
+has one (`/meeting?key=`), and by year and round until one of its sessions is
+published.
+
+The site's types are generated from `schema/published-v2.schema.json`
+(`npm run types` in `frontend/`, which writes
+`frontend/src/lib/published/schema.ts`). A test fails when the committed file
+is not what the generator makes of the schema, so a change to a published
+shape has to be made on both sides in one commit.
+
+### Working on the site without the network
+
+No data is committed with the site. By default it reads the deployed Worker,
+which is public and read-only. For work offline, or against data that does
+not change:
+
+```text
+python -m tests.sample_bucket .sample --serve
+```
+
+writes a small made-up race in the published layout (three drivers, twelve
+laps, every file a real race has, about 600 kB) and serves it as the Worker
+does at `http://localhost:8788/data`. Put
+`NEXT_PUBLIC_PUBLISHED_DATA_BASE_URL=http://localhost:8788/data` in
+`frontend/.env.local`; the sample race is at `/session?key=9001`. It is made
+by the publisher's own code from the session the tests are built on
+(`tests/race.py`), and it is a partial session on purpose: one driver's tyre
+data is short, so the page shows what a partial publication looks like.

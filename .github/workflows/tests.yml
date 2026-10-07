@@ -44,9 +44,9 @@ jobs:
     name: Python (f1data)
     runs-on: ubuntu-latest
     steps:
-      # frontend/public/data is 1.2 GB and these tests read none of it. The
-      # build takes its analyses from backend/app/analysis, and the schema of
-      # the published layout is checked against the models.
+      # Only what these tests read. The build takes its analyses from
+      # backend/app/analysis, and the schema of the published layout is
+      # checked against the models.
       - name: Checkout
         uses: actions/checkout@v4
         with:

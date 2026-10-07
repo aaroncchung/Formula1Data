@@ -23,3 +23,9 @@ backend/data/**/*.parquet
 !backend/data/processed/sample/
 !backend/data/sample/
 
+
+# What the old pipeline writes for the old site, and a sample of the published
+# layout made for work on the new one offline (docs/data-plane.md). Neither is
+# committed: the site reads published data from the Worker.
+frontend/public/data/
+.sample/
