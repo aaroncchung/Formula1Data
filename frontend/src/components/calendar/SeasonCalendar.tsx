@@ -45,7 +45,7 @@ function Season({ index, year }: { index: PublishedIndex; year: number }) {
       <PageHeader
         eyebrow="Season"
         title={`${year} Season`}
-        description={`${overview.meetingCount} ${overview.meetingCount === 1 ? "meeting" : "meetings"} in the calendar · ${overview.publishedCount} of ${overview.sessionCount + overview.unscheduledCount} sessions published${overview.partialCount > 0 ? `, ${overview.partialCount} with partial data` : ""}.`}
+        description={`${overview.meetingCount} ${overview.meetingCount === 1 ? "meeting" : "meetings"} in the calendar · ${overview.publishedCount} of the ${overview.coveredCount} sessions this site covers published${overview.partialCount > 0 ? `, ${overview.partialCount} with partial data` : ""}.`}
         actions={
           <>
             <Link className="rounded border border-line px-4 py-2 text-sm font-bold text-slate-200" href={standingsHref(year)}>

@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AlertTriangle, CalendarClock, CheckCircle2, CircleDashed } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, CircleDashed, Minus } from "lucide-react";
 import Link from "next/link";
 
 import type { SessionAvailability } from "@/lib/calendar";
@@ -39,6 +39,13 @@ const STATES: Record<
     meaning: "This session has not been run yet",
     tone: "border-line border-dashed bg-transparent text-slate-400",
     icon: CalendarClock
+  },
+  // The faintest of the five: nothing is expected here, and nothing is late.
+  not_covered: {
+    label: "Not covered",
+    meaning: "This site does not publish this kind of session",
+    tone: "border-line/50 bg-transparent text-slate-600",
+    icon: Minus
   }
 };
 
@@ -91,7 +98,7 @@ export function SessionChip({ session, state }: { session: IndexSession; state: 
 
 /** What the colours of the chips mean, for a page that shows many of them. */
 export function SessionStateLegend() {
-  const order: SessionAvailability[] = ["complete", "partial", "not_published", "scheduled"];
+  const order: SessionAvailability[] = ["complete", "partial", "not_published", "scheduled", "not_covered"];
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500" aria-label="Session states">
       {order.map((state) => (

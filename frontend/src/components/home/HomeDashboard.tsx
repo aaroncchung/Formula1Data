@@ -186,7 +186,7 @@ function SessionFigureCards({ view }: { view: SessionView }) {
   );
 }
 
-/** The next session of the calendar, which is the next thing that can be published. */
+/** The next session of the calendar, and whether it is one this site will publish. */
 function NextUp({ index }: { index: PublishedIndex }) {
   const now = useNow();
   const next = nextSession(index, now);
@@ -200,6 +200,7 @@ function NextUp({ index }: { index: PublishedIndex }) {
         {next.meeting.name}
       </Link>{" "}
       · {next.session.name} · {sessionStart(next.session.start_time_utc)}
+      {next.session.in_scope ? null : <span className="text-slate-500"> · not a kind of session this site publishes</span>}
     </p>
   );
 }

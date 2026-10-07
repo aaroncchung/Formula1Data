@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  describeMeetingCoverage,
   findMeeting,
   findSeason,
   latestPublishedSession,
+  meetingCoverage,
   nextSession,
   publishedSessions,
   seasonOverviews,
@@ -31,15 +33,46 @@ test("a published session is complete or partial, and never anything else", () =
   assert.equal(sessionAvailability(barcelona.sessions[1], 0), "partial");
 });
 
-test("an unpublished session is scheduled until it starts and not published afterwards", () => {
-  const [barcelona, , britain] = findSeason(sampleIndex(), 2026).meetings;
+test("a session the publisher covers is scheduled until it starts and not published afterwards", () => {
+  const [, , britain] = findSeason(sampleIndex(), 2026).meetings;
+  const race = britain.sessions[1];
+  assert.equal(race.in_scope, true);
 
-  assert.equal(sessionAvailability(barcelona.sessions[0], NOW), "not_published");
-  assert.equal(sessionAvailability(britain.sessions[1], NOW), "scheduled");
+  assert.equal(sessionAvailability(race, NOW), "scheduled");
   // The moment it starts it has been run, as far as the calendar can tell.
-  const start = Date.parse(britain.sessions[1].start_time_utc);
-  assert.equal(sessionAvailability(britain.sessions[1], start - 1), "scheduled");
-  assert.equal(sessionAvailability(britain.sessions[1], start), "not_published");
+  const start = Date.parse(race.start_time_utc);
+  assert.equal(sessionAvailability(race, start - 1), "scheduled");
+  assert.equal(sessionAvailability(race, start), "not_published");
+});
+
+// The index says of each session whether the publisher takes that kind at
+// all. One it does not take is not awaited, however long ago it was run, and
+// it is not something still to come either.
+test("a session the publisher does not cover is that, before it is run and after", () => {
+  const [barcelona, , britain] = findSeason(sampleIndex(), 2026).meetings;
+  const run = barcelona.sessions[0];
+  const toCome = britain.sessions[0];
+  assert.equal(run.in_scope, false);
+  assert.equal(toCome.in_scope, false);
+
+  assert.equal(sessionAvailability(run, NOW), "not_covered");
+  assert.equal(sessionAvailability(toCome, NOW), "not_covered");
+  assert.equal(sessionAvailability(toCome, 0), "not_covered");
+});
+
+test("a published session is shown as published even where its kind is marked out of scope", () => {
+  const index = indexOf([
+    {
+      year: 2026,
+      meetings: [
+        meeting(1, "First", "2026-03-08", [
+          session("Q", "Qualifying", "2026-03-07T05:00:00Z", { session_key: 5, complete: true }, false)
+        ])
+      ]
+    }
+  ]);
+
+  assert.equal(sessionAvailability(index.seasons[0].meetings[0].sessions[0], NOW), "complete");
 });
 
 test("a session the calendar has not timed is scheduled, not missing", () => {
@@ -164,10 +197,51 @@ test("the published fixture's one session is its most recent", () => {
 // ---------------------------------------------------------------------------
 
 test("each season is summed up once, the newest first", () => {
+  // 2026: seven sessions in the calendar, of which three are qualifying,
+  // which is not covered. The four it covers and the one it cannot place
+  // make five, and four of those are published.
   assert.deepEqual(seasonOverviews(sampleIndex()), [
-    { year: 2026, meetingCount: 3, sessionCount: 7, publishedCount: 4, partialCount: 1, unscheduledCount: 1 },
-    { year: 2025, meetingCount: 1, sessionCount: 1, publishedCount: 1, partialCount: 0, unscheduledCount: 0 }
+    { year: 2026, meetingCount: 3, sessionCount: 7, coveredCount: 5, publishedCount: 4, partialCount: 1, unscheduledCount: 1 },
+    { year: 2025, meetingCount: 1, sessionCount: 1, coveredCount: 1, publishedCount: 1, partialCount: 0, unscheduledCount: 0 }
   ]);
+});
+
+test("a weekend's coverage counts what the site covers, and names what it does not", () => {
+  const [barcelona, austria, britain] = findSeason(sampleIndex(), 2026).meetings;
+
+  assert.deepEqual(meetingCoverage(austria), { published: 2, covered: 2, notCovered: ["Qualifying"] });
+  assert.equal(
+    describeMeetingCoverage(meetingCoverage(austria)),
+    "2 of the 2 sessions this site covers are published. Not covered: Qualifying."
+  );
+  assert.equal(
+    describeMeetingCoverage(meetingCoverage(barcelona)),
+    "1 of the 1 session this site covers is published. Not covered: Qualifying."
+  );
+  // Nothing published is "not yet", and only for what is covered.
+  assert.equal(
+    describeMeetingCoverage(meetingCoverage(britain)),
+    "The one session of this weekend that this site covers is not published yet. Not covered: Qualifying."
+  );
+});
+
+test("a weekend with nothing the site covers says so, and a fully covered one names nothing", () => {
+  const practice = meeting(1, "Test", "2026-02-20", [
+    session("FP1", "Practice 1", "2026-02-20T10:00:00Z"),
+    session("FP2", "Practice 2", "2026-02-20T14:00:00Z")
+  ]);
+  const sprint = meeting(2, "Sprint", "2026-03-14", [
+    session("S", "Sprint", "2026-03-14T03:00:00Z"),
+    session("R", "Race", "2026-03-15T07:00:00Z")
+  ]);
+  const index = indexOf([{ year: 2026, meetings: [practice, sprint] }]);
+  const [first, second] = index.seasons[0].meetings;
+
+  assert.equal(describeMeetingCoverage(meetingCoverage(first)), "None of this weekend's sessions is of a kind this site publishes.");
+  assert.equal(
+    describeMeetingCoverage(meetingCoverage(second)),
+    "None of the 2 sessions of this weekend that this site covers is published yet."
+  );
 });
 
 test("a year that only has sessions the calendar cannot place is still a season", () => {
@@ -187,7 +261,7 @@ test("a year that only has sessions the calendar cannot place is still a season"
   );
 
   assert.deepEqual(seasonOverviews(index), [
-    { year: 2024, meetingCount: 0, sessionCount: 0, publishedCount: 1, partialCount: 1, unscheduledCount: 1 }
+    { year: 2024, meetingCount: 0, sessionCount: 0, coveredCount: 1, publishedCount: 1, partialCount: 1, unscheduledCount: 1 }
   ]);
   assert.equal(findSeason(index, 2024), null);
   assert.deepEqual(unscheduledSessions(index, 2024).map((item) => item.key), [7]);
@@ -196,7 +270,7 @@ test("a year that only has sessions the calendar cannot place is still a season"
 test("an empty calendar has no seasons, which is not the same as a season with no races", () => {
   assert.deepEqual(seasonOverviews(indexOf([])), []);
   assert.deepEqual(seasonOverviews(indexOf([{ year: 2027, meetings: [] }])), [
-    { year: 2027, meetingCount: 0, sessionCount: 0, publishedCount: 0, partialCount: 0, unscheduledCount: 0 }
+    { year: 2027, meetingCount: 0, sessionCount: 0, coveredCount: 0, publishedCount: 0, partialCount: 0, unscheduledCount: 0 }
   ]);
 });
 

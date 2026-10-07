@@ -9,7 +9,7 @@ import { SessionStateBadge } from "@/components/calendar/SessionState";
 import { useNow } from "@/components/calendar/useNow";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { findMeeting, sessionAvailability } from "@/lib/calendar";
+import { describeMeetingCoverage, findMeeting, meetingCoverage, sessionAvailability } from "@/lib/calendar";
 import type { SessionAvailability } from "@/lib/calendar";
 import { calendarDay, sessionStart } from "@/lib/format";
 import { isPublished, sessionHref } from "@/lib/published/lookup";
@@ -57,7 +57,6 @@ function Meeting({ index, year, round }: { index: PublishedIndex; year: number; 
   const place = [meeting.location, meeting.country].filter(Boolean).join(", ");
   const sprint = meeting.format?.startsWith("sprint") ?? false;
   const facts = [calendarDay(meeting.date), place, sprint ? "Sprint weekend" : null].filter(Boolean).join(" · ");
-  const published = meeting.sessions.filter(isPublished).length;
   return (
     <div>
       <PageHeader
@@ -74,11 +73,9 @@ function Meeting({ index, year, round }: { index: PublishedIndex; year: number; 
           </>
         }
       />
-      <p className="mb-4 text-sm text-slate-400">
-        {published === 0
-          ? "None of this weekend's sessions is published yet."
-          : `${published} of ${meeting.sessions.length} sessions published.`}
-      </p>
+      {meeting.sessions.length > 0 ? (
+        <p className="mb-4 text-sm text-slate-400">{describeMeetingCoverage(meetingCoverage(meeting))}</p>
+      ) : null}
       {meeting.sessions.length === 0 ? (
         <EmptyState title="No sessions listed" detail="The calendar has this meeting, and no sessions for it yet." />
       ) : (
@@ -111,9 +108,7 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
     return (
       <div className={clsx("h-full rounded-lg border border-line/60 bg-panel/50 p-5", state === "scheduled" && "border-dashed")}>
         {body}
-        <div className="mt-3 text-xs text-slate-500">
-          {state === "scheduled" ? "Not run yet." : "No data is published for this session."}
-        </div>
+        <div className="mt-3 text-xs text-slate-500">{UNPUBLISHED_NOTE[state] ?? ""}</div>
       </div>
     );
   }
@@ -127,6 +122,13 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
     </Link>
   );
 }
+
+/** What a card says under a session that has no dashboard to open. */
+const UNPUBLISHED_NOTE: Partial<Record<SessionAvailability, string>> = {
+  scheduled: "Not run yet.",
+  not_published: "Run, and not published yet.",
+  not_covered: "This site does not publish this kind of session."
+};
 
 function NeighbourLink({
   year,

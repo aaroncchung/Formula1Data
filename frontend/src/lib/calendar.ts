@@ -23,14 +23,23 @@ import type {
 /**
  * What a page can say about one session of the calendar. Published and
  * complete are separate states (rule 3): `partial` is published, with data
- * that fell short of a coverage bar. The two unpublished states differ only in
- * time, and neither is a fault.
+ * that fell short of a coverage bar.
+ *
+ * There are three ways not to be published, and none is a fault.
+ * `not_covered` is a kind of session the publisher does not take, which the
+ * index says of each session (`in_scope`): it will not be published however
+ * long ago it was run, so it is neither awaited nor still to come. The other
+ * two are sessions the publisher does take, and differ only in time.
  */
-export type SessionAvailability = "complete" | "partial" | "not_published" | "scheduled";
+export type SessionAvailability = "complete" | "partial" | "not_published" | "scheduled" | "not_covered";
 
 export function sessionAvailability(session: IndexSession, now: number): SessionAvailability {
+  // Published is published, whatever the index says of the session's kind.
   if (isPublished(session)) {
     return session.complete ? "complete" : "partial";
+  }
+  if (!session.in_scope) {
+    return "not_covered";
   }
   const start = timeOf(session.start_time_utc);
   // A session with no start time is one the calendar has not timed yet, so it
@@ -129,8 +138,14 @@ export function unscheduledSessions(index: PublishedIndex, year: number): Publis
 export type SeasonOverview = {
   readonly year: number;
   readonly meetingCount: number;
-  /** Sessions the calendar lists, published or not. */
+  /** Sessions the calendar lists, published or not, covered or not. */
   readonly sessionCount: number;
+  /**
+   * Sessions the publisher takes: the ones the calendar marks as in scope,
+   * and any that are published all the same, in the calendar or out of it.
+   * This is what the published count is out of.
+   */
+  readonly coveredCount: number;
   /** Published sessions, including those the calendar has no entry for. */
   readonly publishedCount: number;
   /** How many of the published sessions fell short of a coverage bar. */
@@ -158,6 +173,7 @@ export function seasonOverviews(index: PublishedIndex): SeasonOverview[] {
         year,
         meetingCount: findSeason(index, year)?.meetings.length ?? 0,
         sessionCount: sessions.length,
+        coveredCount: sessions.filter(isCovered).length + unscheduled.length,
         publishedCount: published.length + unscheduled.length,
         partialCount:
           published.filter((session) => !session.complete).length +
@@ -165,6 +181,44 @@ export function seasonOverviews(index: PublishedIndex): SeasonOverview[] {
         unscheduledCount: unscheduled.length
       };
     });
+}
+
+/** What of a race weekend the publisher takes, and how much of that is published. */
+export type MeetingCoverage = {
+  readonly published: number;
+  /** Sessions in scope, and any that are published all the same. */
+  readonly covered: number;
+  /** The names of the sessions the publisher does not take, in the order of the weekend. */
+  readonly notCovered: ReadonlyArray<string>;
+};
+
+export function meetingCoverage(meeting: IndexMeeting): MeetingCoverage {
+  return {
+    published: meeting.sessions.filter(isPublished).length,
+    covered: meeting.sessions.filter(isCovered).length,
+    notCovered: meeting.sessions.filter((session) => !isCovered(session)).map((session) => session.name)
+  };
+}
+
+/** A weekend's coverage in a sentence or two, so that an unpublished practice is not read as a missing one. */
+export function describeMeetingCoverage(coverage: MeetingCoverage): string {
+  const { published, covered, notCovered } = coverage;
+  const sentences: string[] = [];
+  if (covered === 0) {
+    sentences.push("None of this weekend's sessions is of a kind this site publishes.");
+  } else if (published === 0) {
+    sentences.push(
+      covered === 1
+        ? "The one session of this weekend that this site covers is not published yet."
+        : `None of the ${covered} sessions of this weekend that this site covers is published yet.`
+    );
+  } else {
+    sentences.push(`${published} of the ${covered} ${covered === 1 ? "session" : "sessions"} this site covers ${published === 1 ? "is" : "are"} published.`);
+  }
+  if (covered > 0 && notCovered.length > 0) {
+    sentences.push(`Not covered: ${notCovered.join(", ")}.`);
+  }
+  return sentences.join(" ");
 }
 
 export type MeetingLookup =
@@ -256,6 +310,11 @@ export function venues(index: PublishedIndex): Venue[] {
         .filter(isPublished).length
     }))
     .sort((left, right) => left.place.localeCompare(right.place, "en"));
+}
+
+/** Whether the publisher takes a session: it is in scope, or it is published all the same. */
+function isCovered(session: IndexSession): boolean {
+  return session.in_scope || isPublished(session);
 }
 
 function fromUnscheduled(session: UnscheduledSession): PublishedSession {
