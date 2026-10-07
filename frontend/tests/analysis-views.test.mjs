@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { minisectorTally, unavailableAnalyses } from "../src/lib/performance-view.ts";
+import { cornerName, cornerSourceNote, minisectorTally, unavailableAnalyses } from "../src/lib/performance-view.ts";
 import { teammateBasis, teammateGap, teammateGapText } from "../src/lib/teammate-view.ts";
 import { formatRate, reportedFitCount, tyreFit, tyreFitLabel } from "../src/lib/tyre-chart.ts";
 
@@ -9,7 +9,7 @@ import { formatRate, reportedFitCount, tyreFit, tyreFitLabel } from "../src/lib/
 // Tyre degradation fits
 // ---------------------------------------------------------------------------
 
-/** A degradation row as pipeline version 2 writes it: every field, whatever the status. */
+/** A degradation row as the analysis writes it: every field, whatever the status. */
 function fit(status, overrides = {}) {
   const reported = status === "ok";
   return {
@@ -72,22 +72,21 @@ test("an unreported fit without a caveat still says why", () => {
   assert.match(tyreFit(fit("too_few_laps")).reason, /too few clean laps/);
 });
 
-// A generation built before pipeline version 2 has no `fit_status`.
-test("a row from before fit statuses is a rate when it has one, and nothing when it has not", () => {
-  const old = { driver_code: "NOR", compound: "MEDIUM", stint: 1, sample_count: 18, stint_length: 18, degradation_ms_per_lap: 108.6, raw_slope_ms_per_lap: 53.6, r_squared: 0.476, caveats: [] };
+// The format gives a rate with every good fit. A row that breaks that is
+// shown as having no rate, never as a rate of nothing.
+test("a fit marked good that holds no rate is shown as having none", () => {
+  const row = fit("ok", { degradation_ms_per_lap: null });
 
-  assert.deepEqual(tyreFit(old), { status: "reported", rate_ms_per_lap: 108.6, standard_error_ms_per_lap: null });
-  assert.deepEqual(tyreFit({ ...old, degradation_ms_per_lap: null }), {
-    status: "not_reported",
-    reason: "No rate was published for this stint."
-  });
-  assert.equal(tyreFit({ ...old, degradation_ms_per_lap: undefined }).status, "not_reported");
-  assert.equal(tyreFitLabel(tyreFit({ ...old, degradation_ms_per_lap: null })), "No rate");
+  assert.deepEqual(tyreFit(row), { status: "not_reported", reason: "No rate was published for this stint." });
+  assert.equal(tyreFitLabel(tyreFit(row)), "No rate");
 });
 
-test("a status this build does not know is judged by whether the row holds a rate", () => {
-  assert.equal(tyreFit(fit("ok", { fit_status: "reported" })).status, "reported");
-  assert.equal(tyreFit(fit("ok", { fit_status: "something_new", degradation_ms_per_lap: null })).status, "not_reported");
+test("a good fit without a standard error still has its rate", () => {
+  assert.deepEqual(tyreFit(fit("ok", { slope_standard_error_ms_per_lap: null })), {
+    status: "reported",
+    rate_ms_per_lap: 98.42,
+    standard_error_ms_per_lap: null
+  });
 });
 
 test("a rate is written with its sign, and a negative one keeps it", () => {
@@ -117,10 +116,11 @@ test("the count of reported fits follows the drivers on screen", () => {
 // Team-mates
 // ---------------------------------------------------------------------------
 
-/** A team row as pipeline version 2 writes it. */
+/** A team row as the analysis writes it. */
 function team(overrides = {}) {
   return {
     team: "Williams",
+    caveat: null,
     drivers: [
       { driver_code: "SAI", average_lap_ms: 72410.5, lap_count: 16, clean_lap_count: 20 },
       { driver_code: "ALB", average_lap_ms: 72565.5, lap_count: 16, clean_lap_count: 58 }
@@ -170,24 +170,14 @@ test("a gap that arrives negative names the second driver as the quicker", () =>
 });
 
 test("a team without two drivers has no gap", () => {
-  assert.equal(teammateGap(team({ drivers: [{ driver_code: "SAI", lap_count: 16 }] })).status, "none");
+  const alone = [{ driver_code: "SAI", average_lap_ms: 72410.5, lap_count: 16, clean_lap_count: 20 }];
+
+  assert.equal(teammateGap(team({ drivers: alone })).status, "none");
   assert.equal(teammateGap(team({ drivers: [] })).status, "none");
 });
 
-// A generation built before pipeline version 2: three fields per row.
-test("a row from before matched laps still gives its gap, and says nothing about laps", () => {
-  const old = {
-    team: "McLaren",
-    drivers: [
-      { driver_code: "PIA", average_lap_ms: 71900.1, lap_count: 61 },
-      { driver_code: "NOR", average_lap_ms: 72012.3, lap_count: 58 }
-    ],
-    gap_ms: 112.2
-  };
-
-  assert.equal(teammateGapText(teammateGap(old)), "PIA quicker by 0.112s");
-  assert.equal(teammateBasis(old), null);
-  assert.deepEqual(teammateGap({ ...old, gap_ms: undefined }), { status: "none", reason: "No gap was published for this team." });
+test("no gap and no caveat still reads as no gap, in words", () => {
+  assert.deepEqual(teammateGap(team({ gap_ms: null })), { status: "none", reason: "No gap was published for this team." });
 });
 
 test("one matched lap is counted in the singular and nothing trimmed is not mentioned", () => {
@@ -213,8 +203,8 @@ function sector(index, winner, times) {
 
 function dominance(minisectors, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     representative_laps: [],
+    excluded_drivers: [],
     minisector_count: minisectors.length,
     minisectors,
     caveats: ["Each driver's fastest clean lap with complete telemetry is compared."],
@@ -237,13 +227,13 @@ test("minisectors are counted for each winner, most wins first", () => {
   ]);
 });
 
-// From pipeline version 2 a driver has no time in a minisector where their
-// telemetry has a hole at a boundary, so the times object simply lacks them.
+// A driver has no time in a minisector where their telemetry has a hole at
+// a boundary, so the times object simply lacks them.
 test("a driver missing from a minisector's times was not timed there", () => {
   const result = dominance([
     sector(1, "HAM", { HAM: 2023.5, VER: 2035.5 }),
     sector(2, "VER", { VER: 3090.1 }),
-    sector(3, "VER", { VER: 1811.0, HAM: null }),
+    sector(3, "VER", { VER: 1811.0 }),
     sector(4, null, {})
   ]);
 
@@ -257,11 +247,20 @@ test("an empty result has no tally", () => {
   assert.deepEqual(minisectorTally(dominance([])), []);
 });
 
+const corner = (number, letter = null) => ({ corner_number: number, letter, distance_m: 282.5, x: 0, y: 0, drivers: [] });
+const corners = (list, source = "official", caveats = []) => ({
+  corner_source: source,
+  representative_laps: [],
+  corners: list,
+  caveats
+});
+
 const SHOWN = {
+  sessionType: "FP2",
   trackDominance: dominance([sector(1, "HAM", { HAM: 2023.5 })]),
-  carPerformance: { session_id: "s", drivers: [{ driver_code: "HAM", team: "Ferrari" }], teams: [], caveats: [] },
-  cornerAnalysis: { session_id: "s", representative_laps: [], corners: [{ corner_number: 1, distance_m: 282.5, x: 0, y: 0, drivers: [] }], caveats: [] },
-  pacePrediction: { session_id: "s", available: true, session_type: "Practice 2", drivers: [{ driver_code: "HAM", team: "Ferrari" }], teams: [], caveats: [] }
+  carPerformance: { drivers: [{ driver_code: "HAM", team: "Ferrari" }], teams: [], caveats: [] },
+  cornerAnalysis: corners([corner(1)]),
+  pacePrediction: { available: true, session_type: "Practice 2", drivers: [{ driver_code: "HAM", team: "Ferrari" }], teams: [], caveats: [] }
 };
 
 test("an analysis with something to show is not listed as missing", () => {
@@ -269,7 +268,13 @@ test("an analysis with something to show is not listed as missing", () => {
 });
 
 test("an analysis the generation does not hold is said to be absent from the published data", () => {
-  const notices = unavailableAnalyses({ trackDominance: null, carPerformance: null, cornerAnalysis: null, pacePrediction: null });
+  const notices = unavailableAnalyses({
+    sessionType: "FP2",
+    trackDominance: null,
+    carPerformance: null,
+    cornerAnalysis: null,
+    pacePrediction: null
+  });
 
   assert.deepEqual(
     notices.map((notice) => notice.title),
@@ -278,19 +283,55 @@ test("an analysis the generation does not hold is said to be absent from the pub
   assert.ok(notices.every((notice) => notice.reason === "Not part of this session's published data."));
 });
 
+// The prediction is published for practice sessions only. In a race its
+// absence is how the format works, and is not reported as something missing.
+test("a race without a pace prediction says the prediction is for practice, not that it is missing", () => {
+  for (const sessionType of ["R", "S", "Q", "SQ"]) {
+    const notices = unavailableAnalyses({ ...SHOWN, sessionType, pacePrediction: null });
+
+    assert.deepEqual(notices, [
+      { title: "Race-pace prediction", reason: "Made from practice long runs, so only a practice session has one." }
+    ]);
+  }
+  for (const sessionType of ["FP1", "FP3", "fp2"]) {
+    assert.equal(
+      unavailableAnalyses({ ...SHOWN, sessionType, pacePrediction: null })[0].reason,
+      "Not part of this session's published data."
+    );
+  }
+});
+
 test("an analysis that is published and empty gives the reason the analysis gave", () => {
   const notices = unavailableAnalyses({
+    sessionType: "FP2",
     trackDominance: dominance([], { caveats: ["Method.", "No usable telemetry laps were available."] }),
-    carPerformance: { session_id: "s", drivers: [], teams: [], caveats: ["Method."] },
-    cornerAnalysis: { session_id: "s", representative_laps: [], corners: [], caveats: ["Method.", "No braking events with a meaningful speed reduction were detected."] },
-    // What a race's artifact holds: the analysis is for practice sessions only.
-    pacePrediction: { session_id: "s", available: false, session_type: "Race", drivers: [], teams: [], caveats: ["Method.", "Pace prediction is only produced for practice sessions."] }
+    carPerformance: { drivers: [], teams: [], caveats: ["Method."] },
+    cornerAnalysis: corners([], "inferred", ["Method.", "No braking events with a meaningful speed reduction were detected."]),
+    pacePrediction: { available: false, session_type: "Practice 2", drivers: [], teams: [], caveats: ["Method.", "No long runs were found."] }
   });
 
   assert.deepEqual(notices, [
     { title: "Track dominance", reason: "No usable telemetry laps were available." },
     { title: "Car performance profile", reason: "No lap with usable telemetry." },
     { title: "Corner analysis", reason: "No braking events with a meaningful speed reduction were detected." },
-    { title: "Race-pace prediction", reason: "Pace prediction is only produced for practice sessions." }
+    { title: "Race-pace prediction", reason: "No long runs were found." }
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// Corners
+// ---------------------------------------------------------------------------
+
+test("an official corner is a turn by the circuit's own number, with its letter", () => {
+  assert.equal(cornerName(corner(1), "official"), "Turn 1");
+  assert.equal(cornerName(corner(14, "A"), "official"), "Turn 14A");
+  assert.match(cornerSourceNote("official"), /circuit's own corners/);
+});
+
+// Numbered in the order found, which is not the circuit's numbering: called a
+// turn, the third braking zone of a lap would read as Turn 3.
+test("an inferred corner is a braking zone, and is not given a turn number", () => {
+  assert.equal(cornerName(corner(3), "inferred"), "Braking zone 3");
+  assert.match(cornerSourceNote("inferred"), /could not be used/);
+  assert.match(cornerSourceNote("inferred"), /not as the circuit numbers its turns/);
 });

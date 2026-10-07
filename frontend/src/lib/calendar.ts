@@ -10,6 +10,7 @@
  * each time, for display and to follow a link that names one.
  */
 
+import { isPublished } from "./published/lookup.ts";
 import type { SessionEntry } from "./published/lookup.ts";
 import type {
   IndexMeeting,
@@ -18,18 +19,28 @@ import type {
   PublishedIndex,
   UnscheduledSession
 } from "./published/types.ts";
+import type { MeetingAddress } from "./routes.ts";
 
 /**
  * What a page can say about one session of the calendar. Published and
  * complete are separate states (rule 3): `partial` is published, with data
- * that fell short of a coverage bar. The two unpublished states differ only in
- * time, and neither is a fault.
+ * that fell short of a coverage bar.
+ *
+ * There are three ways not to be published, and none is a fault.
+ * `not_covered` is a kind of session the publisher does not take, which the
+ * index says of each session (`in_scope`): it will not be published however
+ * long ago it was run, so it is neither awaited nor still to come. The other
+ * two are sessions the publisher does take, and differ only in time.
  */
-export type SessionAvailability = "complete" | "partial" | "not_published" | "scheduled";
+export type SessionAvailability = "complete" | "partial" | "not_published" | "scheduled" | "not_covered";
 
 export function sessionAvailability(session: IndexSession, now: number): SessionAvailability {
-  if (session.session_key !== null) {
+  // Published is published, whatever the index says of the session's kind.
+  if (isPublished(session)) {
     return session.complete ? "complete" : "partial";
+  }
+  if (!session.in_scope) {
+    return "not_covered";
   }
   const start = timeOf(session.start_time_utc);
   // A session with no start time is one the calendar has not timed yet, so it
@@ -67,7 +78,7 @@ export function publishedSessions(index: PublishedIndex): PublishedSession[] {
   for (const season of index.seasons) {
     for (const meeting of season.meetings) {
       for (const session of meeting.sessions) {
-        if (session.session_key !== null) {
+        if (isPublished(session)) {
           add(
             {
               key: session.session_key,
@@ -75,7 +86,7 @@ export function publishedSessions(index: PublishedIndex): PublishedSession[] {
               type: session.type,
               name: session.name,
               startTimeUtc: session.start_time_utc,
-              complete: session.complete === true,
+              complete: session.complete,
               meetingName: meeting.name,
               meeting
             },
@@ -128,8 +139,14 @@ export function unscheduledSessions(index: PublishedIndex, year: number): Publis
 export type SeasonOverview = {
   readonly year: number;
   readonly meetingCount: number;
-  /** Sessions the calendar lists, published or not. */
+  /** Sessions the calendar lists, published or not, covered or not. */
   readonly sessionCount: number;
+  /**
+   * Sessions the publisher takes: the ones the calendar marks as in scope,
+   * and any that are published all the same, in the calendar or out of it.
+   * This is what the published count is out of.
+   */
+  readonly coveredCount: number;
   /** Published sessions, including those the calendar has no entry for. */
   readonly publishedCount: number;
   /** How many of the published sessions fell short of a coverage bar. */
@@ -151,19 +168,58 @@ export function seasonOverviews(index: PublishedIndex): SeasonOverview[] {
     .sort((left, right) => right - left)
     .map((year) => {
       const sessions = (findSeason(index, year)?.meetings ?? []).flatMap((meeting) => meeting.sessions);
-      const published = sessions.filter((session) => session.session_key !== null);
+      const published = sessions.filter(isPublished);
       const unscheduled = index.unscheduled.filter((session) => session.year === year);
       return {
         year,
         meetingCount: findSeason(index, year)?.meetings.length ?? 0,
         sessionCount: sessions.length,
+        coveredCount: sessions.filter(isCovered).length + unscheduled.length,
         publishedCount: published.length + unscheduled.length,
         partialCount:
-          published.filter((session) => session.complete !== true).length +
+          published.filter((session) => !session.complete).length +
           unscheduled.filter((session) => !session.complete).length,
         unscheduledCount: unscheduled.length
       };
     });
+}
+
+/** What of a race weekend the publisher takes, and how much of that is published. */
+export type MeetingCoverage = {
+  readonly published: number;
+  /** Sessions in scope, and any that are published all the same. */
+  readonly covered: number;
+  /** The names of the sessions the publisher does not take, in the order of the weekend. */
+  readonly notCovered: ReadonlyArray<string>;
+};
+
+export function meetingCoverage(meeting: IndexMeeting): MeetingCoverage {
+  return {
+    published: meeting.sessions.filter(isPublished).length,
+    covered: meeting.sessions.filter(isCovered).length,
+    notCovered: meeting.sessions.filter((session) => !isCovered(session)).map((session) => session.name)
+  };
+}
+
+/** A weekend's coverage in a sentence or two, so that an unpublished practice is not read as a missing one. */
+export function describeMeetingCoverage(coverage: MeetingCoverage): string {
+  const { published, covered, notCovered } = coverage;
+  const sentences: string[] = [];
+  if (covered === 0) {
+    sentences.push("None of this weekend's sessions is of a kind this site publishes.");
+  } else if (published === 0) {
+    sentences.push(
+      covered === 1
+        ? "The one session of this weekend that this site covers is not published yet."
+        : `None of the ${covered} sessions of this weekend that this site covers is published yet.`
+    );
+  } else {
+    sentences.push(`${published} of the ${covered} ${covered === 1 ? "session" : "sessions"} this site covers ${published === 1 ? "is" : "are"} published.`);
+  }
+  if (covered > 0 && notCovered.length > 0) {
+    sentences.push(`Not covered: ${notCovered.join(", ")}.`);
+  }
+  return sentences.join(" ");
 }
 
 export type MeetingLookup =
@@ -176,7 +232,14 @@ export type MeetingLookup =
       readonly next: IndexMeeting | null;
     }
   /** `missing` is the first part of the link the calendar does not have. */
-  | { readonly found: false; readonly missing: "year" | "round" };
+  | { readonly found: false; readonly missing: "year" | "round" | "key" };
+
+/** The meeting an address names, as this index has it. */
+export function lookUpMeeting(index: PublishedIndex, address: MeetingAddress): MeetingLookup {
+  return address.kind === "key"
+    ? findMeetingByKey(index, address.meetingKey)
+    : findMeeting(index, address.year, address.round);
+}
 
 /** The meeting a link names by year and round, as this index has it. */
 export function findMeeting(index: PublishedIndex, year: number, round: number): MeetingLookup {
@@ -184,11 +247,31 @@ export function findMeeting(index: PublishedIndex, year: number, round: number):
   if (!season) {
     return { found: false, missing: "year" };
   }
+  return placedIn(season, (meeting) => meeting.round === round) ?? { found: false, missing: "round" };
+}
+
+/**
+ * The meeting that has F1's key for it, in whichever season and at whichever
+ * round the calendar has it now. A meeting has a key once one of its sessions
+ * is published, so a key the calendar does not have names nothing here.
+ */
+export function findMeetingByKey(index: PublishedIndex, meetingKey: number): MeetingLookup {
+  for (const season of index.seasons) {
+    const placed = placedIn(season, (meeting) => meeting.meeting_key === meetingKey);
+    if (placed) {
+      return placed;
+    }
+  }
+  return { found: false, missing: "key" };
+}
+
+/** A meeting of a season with the meetings either side of it, in the order of the rounds. */
+function placedIn(season: IndexSeason, wanted: (meeting: IndexMeeting) => boolean): MeetingLookup | null {
   const meetings = [...season.meetings].sort((left, right) => left.round - right.round);
-  const position = meetings.findIndex((meeting) => meeting.round === round);
+  const position = meetings.findIndex(wanted);
   const meeting = meetings[position];
   if (!meeting) {
-    return { found: false, missing: "round" };
+    return null;
   }
   return {
     found: true,
@@ -215,46 +298,82 @@ export function nextSession(index: PublishedIndex, now: number): SessionEntry | 
   return next?.entry ?? null;
 }
 
-/** One place the calendar visits, with every meeting held there. */
-export type Venue = {
-  /** Unique within one index. A key for a list, not an identity to keep. */
-  readonly id: string;
-  /** The town or circuit area the calendar names, or the meeting's name when it names none. */
-  readonly place: string;
+/** A meeting with the season it is in. */
+export type SeasonMeeting = { readonly year: number; readonly meeting: IndexMeeting };
+
+/** One circuit of the calendar, with every meeting held at it. */
+export type Circuit = {
+  /** F1's key for the circuit, which is what makes two meetings the same circuit. */
+  readonly key: number;
+  /** F1's short name for the circuit, such as Spielberg; the place, when the calendar gives the circuit no name. */
+  readonly name: string;
+  readonly location: string | null;
   readonly country: string | null;
   /** The meetings held here, the most recent first. */
-  readonly meetings: ReadonlyArray<{ readonly year: number; readonly meeting: IndexMeeting }>;
+  readonly meetings: ReadonlyArray<SeasonMeeting>;
   readonly publishedCount: number;
 };
 
+export type CircuitGuide = {
+  /** By name. */
+  readonly circuits: Circuit[];
+  /**
+   * Meetings the calendar names no circuit for, the newest season first and
+   * in the order of its rounds. The calendar learns a meeting's circuit from
+   * F1's own session information, so it has none for a meeting until one of
+   * its sessions is published.
+   */
+  readonly unidentified: ReadonlyArray<SeasonMeeting>;
+};
+
 /**
- * The calendar grouped by place. The index names a meeting's location and
- * country and no circuit, so two circuits in one town would be one venue.
+ * The calendar grouped by circuit, by F1's key for each.
+ *
+ * A meeting with no circuit key is not put with a circuit by the name of its
+ * town or its country. That would be a guess, and wrong where a town has had
+ * two circuits or a race has moved within a country. It is listed apart, as
+ * a meeting whose circuit is not known yet.
  */
-export function venues(index: PublishedIndex): Venue[] {
-  const grouped = new Map<string, { place: string; country: string | null; meetings: Venue["meetings"][number][] }>();
+export function circuits(index: PublishedIndex): CircuitGuide {
+  const grouped = new Map<number, SeasonMeeting[]>();
+  const unidentified: SeasonMeeting[] = [];
   for (const season of index.seasons) {
     for (const meeting of season.meetings) {
-      const place = meeting.location ?? meeting.name;
-      const id = `${meeting.country ?? ""}/${place}`;
-      const venue = grouped.get(id) ?? { place, country: meeting.country, meetings: [] };
-      venue.meetings.push({ year: season.year, meeting });
-      grouped.set(id, venue);
+      const entry = { year: season.year, meeting };
+      if (meeting.circuit_key === null) {
+        unidentified.push(entry);
+      } else {
+        grouped.set(meeting.circuit_key, [...(grouped.get(meeting.circuit_key) ?? []), entry]);
+      }
     }
   }
-  return [...grouped.entries()]
-    .map(([id, venue]) => ({
-      id,
-      place: venue.place,
-      country: venue.country,
-      meetings: [...venue.meetings].sort(
-        (left, right) => right.year - left.year || right.meeting.round - left.meeting.round
-      ),
-      publishedCount: venue.meetings
-        .flatMap((item) => item.meeting.sessions)
-        .filter((session) => session.session_key !== null).length
-    }))
-    .sort((left, right) => left.place.localeCompare(right.place, "en"));
+  return {
+    circuits: [...grouped.entries()]
+      .map(([key, held]) => {
+        const meetings = [...held].sort(
+          (left, right) => right.year - left.year || right.meeting.round - left.meeting.round
+        );
+        // What the circuit is called is taken from the most recent meeting that says.
+        const named = meetings.find((item) => item.meeting.circuit_name !== null)?.meeting ?? meetings[0].meeting;
+        return {
+          key,
+          name: named.circuit_name ?? named.location ?? named.name,
+          location: named.location,
+          country: named.country,
+          meetings,
+          publishedCount: meetings.flatMap((item) => item.meeting.sessions).filter(isPublished).length
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name, "en") || left.key - right.key),
+    unidentified: unidentified.sort(
+      (left, right) => right.year - left.year || left.meeting.round - right.meeting.round
+    )
+  };
+}
+
+/** Whether the publisher takes a session: it is in scope, or it is published all the same. */
+function isCovered(session: IndexSession): boolean {
+  return session.in_scope || isPublished(session);
 }
 
 function fromUnscheduled(session: UnscheduledSession): PublishedSession {

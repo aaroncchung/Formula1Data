@@ -1,4 +1,7 @@
-import type { Lap } from "@/types/domain";
+import type { Lap } from "./published/types.ts";
+
+/** A lap that was timed. */
+export type TimedLap = Lap & { readonly lap_time_ms: number };
 
 /**
  * Each driver's fastest lap, quickest driver first.
@@ -6,11 +9,11 @@ import type { Lap } from "@/types/domain";
  * A deleted lap does not count: it was set outside track limits and is not
  * the driver's time. A driver with no timed lap left is not listed.
  */
-export function fastestLapByDriver(laps: ReadonlyArray<Lap>): Lap[] {
-  const fastest = new Map<string, Lap & { lap_time_ms: number }>();
+export function fastestLapByDriver(laps: ReadonlyArray<Lap>): TimedLap[] {
+  const fastest = new Map<string, TimedLap>();
   for (const lap of laps) {
     const time = lap.lap_time_ms;
-    if (typeof time !== "number" || !Number.isFinite(time) || time <= 0 || lap.is_deleted) {
+    if (time === null || time <= 0 || lap.is_deleted) {
       continue;
     }
     const best = fastest.get(lap.driver_code);

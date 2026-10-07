@@ -13,13 +13,25 @@ export function fixtureIndex() {
   return parseIndex(JSON.parse(PUBLISHED[INDEX_KEY]));
 }
 
-export function session(type, name, start, published = {}) {
-  return { type, name, start_time_utc: start, ...published };
+/**
+ * A session of the calendar. `published` is its key and verdict once it is
+ * published. Races and sprints are in scope, as they are for the publisher,
+ * unless `inScope` says otherwise.
+ */
+export function session(type, name, start, published = {}, inScope = type === "R" || type === "S") {
+  return { type, name, start_time_utc: start, in_scope: inScope, ...published };
 }
 
+/**
+ * A meeting. Its keys and its circuit's name are null, as the index has them
+ * until one of its sessions is published, unless `extra` gives them.
+ */
 export function meeting(round, name, date, sessions, extra = {}) {
   return {
     round,
+    meeting_key: null,
+    circuit_key: null,
+    circuit_name: null,
     name,
     official_name: null,
     country: null,
@@ -33,7 +45,7 @@ export function meeting(round, name, date, sessions, extra = {}) {
 
 /** An index in the published shape. */
 export function indexOf(seasons, unscheduled = []) {
-  return parseIndex({ schema_version: 1, format_version: 1, seasons, unscheduled });
+  return parseIndex({ schema_version: 1, format_version: 2, seasons, unscheduled });
 }
 
 /** "Now" for `sampleIndex`: after the Austrian race and before the British qualifying. */
@@ -67,7 +79,7 @@ export function sampleIndex() {
               session("Q", "Qualifying", "2026-06-13T14:00:00Z"),
               session("R", "Race", "2026-06-14T13:00:00Z", { session_key: 11300, complete: false })
             ],
-            { country: "Spain", location: "Barcelona" }
+            { country: "Spain", location: "Barcelona", meeting_key: 1287, circuit_key: 15, circuit_name: "Catalunya" }
           ),
           meeting(
             8,
@@ -78,7 +90,14 @@ export function sampleIndex() {
               session("Q", "Qualifying", "2026-06-27T14:00:00Z"),
               session("R", "Race", "2026-06-28T13:00:00Z", { session_key: 11315, complete: true })
             ],
-            { country: "Austria", location: "Spielberg", format: "sprint_qualifying" }
+            {
+              country: "Austria",
+              location: "Spielberg",
+              format: "sprint_qualifying",
+              meeting_key: 1288,
+              circuit_key: 19,
+              circuit_name: "Spielberg"
+            }
           ),
           meeting(
             9,

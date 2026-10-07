@@ -6,6 +6,11 @@
  * frozen value, or throws a PublishedDataError. Nothing is read from a
  * payload that has not been checked first, because a page that renders a
  * half-understood pointer shows wrong data with no sign that it is wrong.
+ *
+ * What a parser returns is typed in types.ts, from the types generated from
+ * the published schema. Each value is built here field by field, so a field
+ * the schema gains, loses or changes the type of stops this file compiling
+ * until the check for it is written.
  */
 
 import {
@@ -19,13 +24,13 @@ import type { PublishedErrorCode } from "./errors.ts";
 import { isArtifactPath, isGenerationId, isSessionKey } from "./layout.ts";
 import type {
   ConstructorStanding,
-  Coverage,
   DriverStanding,
   IndexMeeting,
   IndexSeason,
   IndexSession,
   Manifest,
   Pointer,
+  PointerCoverage,
   PublishedIndex,
   SessionIdentity,
   Standings,
@@ -87,7 +92,7 @@ export function parsePointer(payload: unknown, sessionKey: number): Pointer {
       manifest: { sha256: manifestSha256, size_bytes: integer(manifest, "size_bytes", "manifest") },
       snapshot_id: text(source, "snapshot_id"),
       classification_fingerprint: optionalText(source, "classification_fingerprint"),
-      coverage: parseCoverage(source.coverage),
+      coverage: parsePointerCoverage(source.coverage),
       published_at: text(source, "published_at"),
       previous_generation: optionalText(source, "previous_generation")
     };
@@ -95,15 +100,14 @@ export function parsePointer(payload: unknown, sessionKey: number): Pointer {
 }
 
 /**
- * The manifest of the generation a view pinned. Its `schema_version` is the
- * artifact format version: most artifacts carry no version of their own, so
- * this is the one place the format of everything in the generation is checked
- * (rule 7).
+ * The manifest of the generation a view pinned. Most artifacts carry no
+ * version of their own, so its `format_version` is the one place the format
+ * of everything in the generation is checked (rule 7).
  */
 export function parseManifest(payload: unknown, sessionKey: number): Manifest {
   return parsed("invalid_manifest", `The manifest of session ${sessionKey}`, { session_key: sessionKey }, () => {
     const source = record(payload, "the manifest");
-    const formatVersion = integer(source, "schema_version");
+    const formatVersion = integer(source, "format_version");
     requireFormat("manifest", formatVersion);
 
     const key = integer(source, "session_key");
@@ -111,7 +115,7 @@ export function parseManifest(payload: unknown, sessionKey: number): Manifest {
       throw new Malformed(`it is the manifest of session ${key}`);
     }
     return {
-      schema_version: formatVersion,
+      format_version: formatVersion,
       pipeline_version: integer(source, "pipeline_version"),
       session_key: key,
       files: list(source, "files").map((item, index) => {
@@ -162,6 +166,11 @@ function parseMeeting(value: unknown, where: string): IndexMeeting {
   const source = record(value, where);
   return {
     round: integer(source, "round", where),
+    // F1's own keys, which do not move with the calendar. Null until one of
+    // the meeting's sessions is published and says what they are.
+    meeting_key: optionalInteger(source, "meeting_key", where),
+    circuit_key: optionalInteger(source, "circuit_key", where),
+    circuit_name: optionalText(source, "circuit_name", where),
     name: text(source, "name", where),
     official_name: optionalText(source, "official_name", where),
     country: optionalText(source, "country", where),
@@ -176,19 +185,22 @@ function parseMeeting(value: unknown, where: string): IndexMeeting {
 
 function parseIndexSession(value: unknown, where: string): IndexSession {
   const source = record(value, where);
-  // The publisher adds `session_key` and `complete` only to a published
-  // session (`derive_index`), so their absence is the "not published" state.
-  const key = source.session_key ?? null;
-  if (key !== null && !isSessionKey(key)) {
-    throw new Malformed(`${where}.session_key is not a session key`);
-  }
-  return {
+  const scheduled = {
     type: text(source, "type", where),
     name: text(source, "name", where),
     start_time_utc: optionalText(source, "start_time_utc", where),
-    session_key: key,
-    complete: key === null ? null : flag(source, "complete", where)
+    in_scope: flag(source, "in_scope", where)
   };
+  // The publisher adds `session_key` and `complete` only to a published
+  // session (`derive_index`), so their absence is the "not published" state.
+  const key = source.session_key;
+  if (key === undefined) {
+    return scheduled;
+  }
+  if (!isSessionKey(key)) {
+    throw new Malformed(`${where}.session_key is not a session key`);
+  }
+  return { ...scheduled, session_key: key, complete: flag(source, "complete", where) };
 }
 
 function parseUnscheduled(value: unknown, index: number): UnscheduledSession {
@@ -245,17 +257,18 @@ export function parseStandings(payload: unknown, year: number): Standings {
 }
 
 /**
- * What Jolpica can leave out for a driver is null and the row is still read:
- * a driver it has not classified has no position, and an older season has
- * neither codes nor permanent numbers.
+ * What Jolpica can leave out of a row is null and the row is still read: a
+ * driver it has not classified has no position, and an older season has
+ * neither codes nor permanent numbers. The schema allows every figure of a
+ * row to be absent, so a page prints a dash for one and never a zero.
  */
 function parseDriverStanding(value: unknown, index: number): DriverStanding {
   const where = `drivers[${index}]`;
   const source = record(value, where);
   return {
     position: optionalInteger(source, "position", where),
-    points: number(source, "points", where),
-    wins: integer(source, "wins", where),
+    points: optionalNumber(source, "points", where),
+    wins: optionalInteger(source, "wins", where),
     driver_code: optionalText(source, "driver_code", where),
     driver_number: optionalInteger(source, "driver_number", where),
     given_name: optionalText(source, "given_name", where),
@@ -274,10 +287,10 @@ function parseConstructorStanding(value: unknown, index: number): ConstructorSta
   const source = record(value, where);
   return {
     position: optionalInteger(source, "position", where),
-    points: number(source, "points", where),
-    wins: integer(source, "wins", where),
+    points: optionalNumber(source, "points", where),
+    wins: optionalInteger(source, "wins", where),
     constructor_id: optionalText(source, "constructor_id", where),
-    name: text(source, "name", where)
+    name: optionalText(source, "name", where)
   };
 }
 
@@ -290,23 +303,22 @@ function parseIdentity(value: unknown): SessionIdentity {
     session_type: text(source, "session_type", where),
     session_name: text(source, "session_name", where),
     start_time_utc: text(source, "start_time_utc", where),
+    meeting_key: integer(source, "meeting_key", where),
     meeting_name: text(source, "meeting_name", where),
     meeting_official_name: optionalText(source, "meeting_official_name", where),
     location: optionalText(source, "location", where),
     country: optionalText(source, "country", where),
+    circuit_key: optionalInteger(source, "circuit_key", where),
     circuit_name: optionalText(source, "circuit_name", where)
   };
 }
 
-function parseCoverage(value: unknown): Coverage {
+function parsePointerCoverage(value: unknown): PointerCoverage {
   const where = "coverage";
   const source = record(value, where);
-  // The publisher's own reader accepts a pointer without the list
-  // (`coverage.get("shortfalls") or []`), so this one does too.
-  const shortfalls: unknown[] = source.shortfalls == null ? [] : list(source, "shortfalls", where);
   return {
     complete: flag(source, "complete", where),
-    shortfalls: shortfalls.map((item, index) => {
+    shortfalls: list(source, "shortfalls", where).map((item, index) => {
       const at = `${where}.shortfalls[${index}]`;
       const shortfall = record(item, at);
       return {
@@ -412,11 +424,14 @@ function optionalInteger(source: Fields, field: string, where?: string): number 
   return value === undefined || value === null ? null : integer(source, field, where);
 }
 
-/** A number that need not be whole: championship points can be halves. */
-function number(source: Fields, field: string, where?: string): number {
+/** A number that need not be whole, or null: championship points can be halves. */
+function optionalNumber(source: Fields, field: string, where?: string): number | null {
   const value = source[field];
+  if (value === undefined || value === null) {
+    return null;
+  }
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Malformed(`${named(field, where)} is not a number`);
+    throw new Malformed(`${named(field, where)} is neither a number nor null`);
   }
   return value;
 }

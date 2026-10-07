@@ -9,7 +9,8 @@ type Column<T> = {
 
 type DataTableProps<T> = {
   columns: Array<Column<T>>;
-  rows: T[];
+  /** Not changed here: the rows are often a published file that every tab of the page shares. */
+  rows: ReadonlyArray<T>;
   emptyText?: string;
 };
 

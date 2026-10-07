@@ -129,8 +129,6 @@ npm run dev
 npx wrangler dev
 ```
 
-Set `NEXT_PUBLIC_DYNAMIC_API_BASE_URL=http://localhost:8787` if the frontend should call the local Worker directly for live/status/queue APIs. Leave it empty for static-only browsing.
-
 For local Worker artifact fallback, set this in your shell or `.dev.vars`:
 
 ```text
@@ -441,9 +439,9 @@ Build output directory: out
 Node version: 22
 ```
 
-No frontend secret is required for historical mode. `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` defaults to `/data`; only set it if static JSON is served from a different path.
+No frontend secret is required for historical mode.
 
-For hybrid mode, configure `/api/*` and `/data/*` to reach the Worker, or set `NEXT_PUBLIC_DYNAMIC_API_BASE_URL` and `NEXT_PUBLIC_STATIC_DATA_BASE_PATH` to the Worker origin. Static-only deployments can continue serving committed `frontend/public/data` directly from Pages.
+For hybrid mode, configure `/api/*` and `/data/*` to reach the Worker. Static-only deployments can continue serving committed `frontend/public/data` directly from Pages.
 
 Deployment options:
 

@@ -1,10 +1,11 @@
-import type { ChartSeries, TelemetryComparison } from "@/types/domain";
+import type { LapTimeSeries } from "./published/types.ts";
+import type { TelemetryComparison } from "./telemetry-compare.ts";
 
 /** The Recharts tooltip box, shared so the charts cannot drift apart. */
 export const CHART_TOOLTIP_STYLE = { background: "#111722", border: "1px solid #283246", color: "#e5edf8" };
 
 /** Rows grouped by driver, in the order each driver first appears. */
-export function groupByDriver<T extends { driver_code: string }>(rows: T[]): Array<[string, T[]]> {
+export function groupByDriver<T extends { driver_code: string }>(rows: ReadonlyArray<T>): Array<[string, T[]]> {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
     const group = groups.get(row.driver_code);
@@ -17,12 +18,16 @@ export function groupByDriver<T extends { driver_code: string }>(rows: T[]): Arr
   return Array.from(groups.entries());
 }
 
-export function seriesToRows(series: ChartSeries[]): Array<Record<string, number | string | null>> {
-  const lapNumbers = new Set<string | number>();
+/**
+ * One row for each lap, with each driver's time on it under the driver's
+ * code, or null where the driver has no time for that lap.
+ */
+export function seriesToRows(series: ReadonlyArray<LapTimeSeries>): Array<Record<string, number | null>> {
+  const lapNumbers = new Set<number>();
   // One lookup table per series keeps the pivot linear in the number of points
   // instead of scanning every series for every lap.
   const indexed = series.map((item) => {
-    const byX = new Map<string | number, number | string | null>();
+    const byX = new Map<number, number | null>();
     item.x.forEach((x, index) => {
       lapNumbers.add(x);
       if (!byX.has(x)) {
@@ -32,9 +37,9 @@ export function seriesToRows(series: ChartSeries[]): Array<Record<string, number
     return { name: item.name, byX };
   });
   return Array.from(lapNumbers)
-    .sort((a, b) => Number(a) - Number(b))
+    .sort((a, b) => a - b)
     .map((lap) => {
-      const row: Record<string, number | string | null> = { lap };
+      const row: Record<string, number | null> = { lap };
       indexed.forEach((item) => {
         row[item.name] = item.byX.get(lap) ?? null;
       });
@@ -42,6 +47,7 @@ export function seriesToRows(series: ChartSeries[]): Array<Record<string, number
     });
 }
 
+/** One row for each distance of a comparison, for charts that share a distance axis. */
 export function telemetryRows(compare: TelemetryComparison) {
   return compare.distance_m.map((distance, index) => ({
     distance,
@@ -55,10 +61,10 @@ export function telemetryRows(compare: TelemetryComparison) {
     rpmB: compare.rpm_b[index],
     gearA: compare.gear_a[index],
     gearB: compare.gear_b[index],
-    drsA: compare.drs_a[index],
-    drsB: compare.drs_b[index],
+    drsA: compare.drs_a?.[index] ?? null,
+    drsB: compare.drs_b?.[index] ?? null,
     delta: compare.delta_speed_kph[index],
-    deltaTime: compare.delta_time_ms?.[index] ?? null
+    deltaTime: compare.delta_time_ms[index]
   }));
 }
 

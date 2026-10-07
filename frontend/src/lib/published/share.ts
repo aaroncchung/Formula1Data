@@ -1,14 +1,12 @@
 /**
  * One read of each artifact for a page, however many tabs ask for it.
  *
- * Seven of the ten tabs need the driver list and three need the laps. Each
+ * Seven of the ten tabs need the driver list and two need the laps. Each
  * tab asks for what it needs without knowing what the others hold (AR-07),
  * and this is where those requests meet.
  */
 
 import type { SessionView } from "./client.ts";
-
-const TELEMETRY_LAP = /^telemetry\/.+-lap-\d+\.json$/;
 
 /**
  * The same view, which reads each artifact once.
@@ -17,22 +15,22 @@ const TELEMETRY_LAP = /^telemetry\/.+-lap-\d+\.json$/;
  * laps is fetched and parsed once for a page. A read that fails is forgotten,
  * so that trying again asks again.
  *
- * What a read returns is therefore shared between tabs and must not be
- * changed by any of them.
+ * A driver's telemetry is kept like everything else. It is the largest file
+ * a page reads, about a megabyte, and a reader comparing laps comes back to
+ * the same driver again and again; keeping it makes each later comparison of
+ * that driver free. A page holds as many of them as it has compared drivers,
+ * and they go when the page does.
  *
- * `share` leaves out what is read once and is large in number: the telemetry
- * laps, of which a race has over a thousand and a page compares two.
+ * What a read returns is therefore shared between tabs and must not be
+ * changed by any of them, which is why the files are typed read-only.
  */
-export function shareReads(view: SessionView, share: (path: string) => boolean = isSharedArtifact): SessionView {
+export function shareReads(view: SessionView): SessionView {
   const reads = new Map<string, Promise<unknown>>();
   const shared: SessionView = {
     pointer: view.pointer,
     manifest: view.manifest,
     has: (path) => view.has(path),
     read<T>(path: string): Promise<T> {
-      if (!share(path)) {
-        return view.read<T>(path);
-      }
       const held = reads.get(path);
       if (held) {
         // The view takes `T` on trust for every read (client.ts); a second
@@ -50,8 +48,4 @@ export function shareReads(view: SessionView, share: (path: string) => boolean =
     }
   };
   return Object.freeze(shared);
-}
-
-function isSharedArtifact(path: string): boolean {
-  return !TELEMETRY_LAP.test(path);
 }

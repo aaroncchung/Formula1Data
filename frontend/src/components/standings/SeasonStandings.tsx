@@ -14,7 +14,7 @@ import { usePublishedStandings } from "@/components/standings/usePublishedStandi
 import { findSeason, seasonOverviews } from "@/lib/calendar";
 import type { ConstructorStanding, IndexSeason, PublishedIndex, Standings } from "@/lib/published/types";
 import { standingsHref, yearParam } from "@/lib/routes";
-import { defaultStandingsYear, driverName, roundLabel, standingsRounds } from "@/lib/standings-view";
+import { defaultStandingsYear, driverName, figureLabel, roundLabel, standingsRounds, winsLabel } from "@/lib/standings-view";
 import type { StandingsRound } from "@/lib/standings-view";
 
 const SOURCE_NOTE = "Taken whole from Jolpica when the data was published; nothing is added up from session results.";
@@ -123,12 +123,12 @@ function Tables({ standings, season }: { standings: Standings; season: IndexSeas
               )
             },
             { key: "team", header: "Team", render: (row) => row.constructors.join(" / ") || "--" },
-            { key: "wins", header: "Wins", align: "right", render: (row) => row.wins },
+            { key: "wins", header: "Wins", align: "right", render: (row) => figureLabel(row.wins) },
             {
               key: "points",
               header: "Pts",
               align: "right",
-              render: (row) => <span className="font-mono font-black text-white">{row.points}</span>
+              render: (row) => <span className="font-mono font-black text-white">{figureLabel(row.points)}</span>
             }
           ]}
         />
@@ -161,15 +161,13 @@ function Constructors({ rows }: { rows: ReadonlyArray<ConstructorStanding> }) {
     <div className="surface overflow-hidden">
       {rows.map((row, index) => (
         <div
-          key={row.constructor_id ?? `${row.name}-${index}`}
+          key={row.constructor_id ?? `${row.name ?? "constructor"}-${index}`}
           className="grid grid-cols-[32px_1fr_auto_auto] items-center gap-3 border-b border-line/60 px-4 py-3 last:border-0"
         >
           <Position value={row.position} />
-          <span className="truncate text-sm font-semibold text-slate-200">{row.name}</span>
-          <span className="text-xs text-slate-500">
-            {row.wins} {row.wins === 1 ? "win" : "wins"}
-          </span>
-          <span className="w-12 text-right font-mono text-sm font-black text-white">{row.points}</span>
+          <span className="truncate text-sm font-semibold text-slate-200">{row.name ?? "--"}</span>
+          <span className="text-xs text-slate-500">{winsLabel(row.wins)}</span>
+          <span className="w-12 text-right font-mono text-sm font-black text-white">{figureLabel(row.points)}</span>
         </div>
       ))}
     </div>

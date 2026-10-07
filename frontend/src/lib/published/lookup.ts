@@ -11,7 +11,14 @@
  */
 
 import { isSessionKey } from "./layout.ts";
-import type { IndexMeeting, IndexSession, PublishedIndex, SessionIdentity, UnscheduledSession } from "./types.ts";
+import type {
+  IndexMeeting,
+  IndexSession,
+  PublishedIndex,
+  PublishedIndexSession,
+  SessionIdentity,
+  UnscheduledSession
+} from "./types.ts";
 
 /** A session named by where the calendar puts it. */
 export type SessionRoute = {
@@ -58,6 +65,12 @@ export type SessionHeading = {
   readonly location: string | null;
   readonly country: string | null;
   /**
+   * F1's key for the session's meeting, which does not move with the
+   * calendar. Null for a meeting none of whose sessions is published, and for
+   * a session the index lists outside the calendar, which names no meeting.
+   */
+  readonly meetingKey: number | null;
+  /**
    * Why there is or is not a round. `calendar`: the index places the session.
    * `unscheduled`: the index lists it as published outside the calendar.
    * `unplaced`: the index does not mention it, or could not be read, and the
@@ -65,6 +78,15 @@ export type SessionHeading = {
    */
   readonly placement: "calendar" | "unscheduled" | "unplaced";
 };
+
+/**
+ * Whether a session of the calendar is published. The index gives a session
+ * its key, and its coverage verdict, only once it is: until then neither
+ * field is there at all.
+ */
+export function isPublished(session: IndexSession): session is PublishedIndexSession {
+  return session.session_key !== undefined;
+}
 
 const YEAR = /^[0-9]{4}$/;
 const ROUND = /^[0-9]{1,2}$/;
@@ -179,6 +201,7 @@ export function headingOfEntry(entry: SessionEntry): SessionHeading {
     startTimeUtc: session.start_time_utc ?? meeting.date,
     location: meeting.location,
     country: meeting.country,
+    meetingKey: meeting.meeting_key,
     placement: "calendar"
   };
 }
@@ -192,6 +215,7 @@ export function headingOfUnscheduled(session: UnscheduledSession): SessionHeadin
     startTimeUtc: session.start_time_utc,
     location: null,
     country: null,
+    meetingKey: null,
     placement: "unscheduled"
   };
 }
@@ -210,6 +234,7 @@ export function headingOfIdentity(identity: SessionIdentity): SessionHeading {
     startTimeUtc: identity.start_time_utc,
     location: identity.location,
     country: identity.country,
+    meetingKey: identity.meeting_key,
     placement: "unplaced"
   };
 }

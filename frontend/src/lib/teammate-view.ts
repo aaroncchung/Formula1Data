@@ -1,7 +1,5 @@
 /**
- * How a team-mate comparison row is read for display
- * (`calculate_teammate_comparison` in
- * backend/app/analysis/teammate_comparison.py).
+ * How a row of the team-mate comparison is read for display.
  *
  * The row lists the quicker driver first and its gap is never negative, so
  * the gap is shown as "who, by how much" and not as a signed number. A row can
@@ -9,7 +7,7 @@
  * is said in words, never drawn as a zero or a dash that reads like a tie.
  */
 
-import type { TeammateComparisonRow } from "@/types/domain";
+import type { TeammateComparisonRow } from "./published/types.ts";
 
 export type TeammateGap =
   | { status: "reported"; quicker: string; slower: string; gap_ms: number }
@@ -21,7 +19,7 @@ export type TeammateGap =
 export function teammateGap(row: TeammateComparisonRow): TeammateGap {
   const [first, second] = row.drivers;
   const gap = row.gap_ms;
-  if (!first || !second || typeof gap !== "number" || !Number.isFinite(gap)) {
+  if (!first || !second || gap === null) {
     return { status: "none", reason: row.caveat?.trim() || "No gap was published for this team." };
   }
   if (gap === 0) {
@@ -47,19 +45,15 @@ export function teammateGapText(gap: TeammateGap): string {
 
 /**
  * What the gap rests on: how many laps were matched, how many of those were
- * trimmed, and how much the lap-by-lap difference moves around. Null for a
- * row from before these were published, which says nothing about its laps.
+ * trimmed, and how much the lap-by-lap difference moves around.
  */
-export function teammateBasis(row: TeammateComparisonRow): string | null {
+export function teammateBasis(row: TeammateComparisonRow): string {
   const matched = row.matched_lap_count;
-  if (typeof matched !== "number") {
-    return null;
-  }
   const parts = [`${matched} matched ${matched === 1 ? "lap" : "laps"}`];
-  if (typeof row.trimmed_lap_count === "number" && row.trimmed_lap_count > 0) {
+  if (row.trimmed_lap_count > 0) {
     parts.push(`${row.trimmed_lap_count} trimmed`);
   }
-  if (typeof row.gap_spread_ms === "number" && Number.isFinite(row.gap_spread_ms)) {
+  if (row.gap_spread_ms !== null) {
     parts.push(`lap-to-lap spread ${seconds(row.gap_spread_ms)}`);
   }
   return parts.join(" · ");

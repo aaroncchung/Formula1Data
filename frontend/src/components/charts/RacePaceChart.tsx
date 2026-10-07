@@ -4,9 +4,9 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 
 import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import { formatDelta, formatMs } from "@/lib/format";
-import type { RacePaceRow } from "@/types/domain";
+import type { RacePaceRow } from "@/lib/published/types";
 
-export function RacePaceChart({ rows }: { rows: RacePaceRow[] }) {
+export function RacePaceChart({ rows }: { rows: ReadonlyArray<RacePaceRow> }) {
   const data = rows.map((row) => ({
     driver: row.driver_code,
     median: row.median_lap_ms,

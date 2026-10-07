@@ -1,6 +1,9 @@
+import Link from "next/link";
+
 import { PageHeader } from "@/components/dashboard/PageHeader";
 import { compactDate } from "@/lib/format";
 import type { SessionHeading } from "@/lib/published/lookup";
+import { meetingHref } from "@/lib/routes";
 
 /**
  * The heading of a session page. For a session the calendar places it comes
@@ -17,8 +20,32 @@ export function SessionHeader({ heading, actions }: { heading: SessionHeading; a
       eyebrow={eyebrow(heading)}
       title={`${heading.meetingName} - ${heading.sessionName}`}
       description={place ? `${date} · ${place}` : date}
-      actions={actions}
+      actions={
+        <>
+          <WeekendLink heading={heading} />
+          {actions}
+        </>
+      }
     />
+  );
+}
+
+/**
+ * The way from a session to its weekend. Only for a session the calendar
+ * places: one it has no entry for has no meeting page to go to. The link is
+ * by the meeting's key where there is one, like every link to a session.
+ */
+function WeekendLink({ heading }: { heading: SessionHeading }) {
+  if (heading.placement !== "calendar" || heading.round === null) {
+    return null;
+  }
+  return (
+    <Link
+      className="rounded border border-line px-4 py-2 text-sm font-bold text-slate-200"
+      href={meetingHref(heading.year, { meeting_key: heading.meetingKey, round: heading.round })}
+    >
+      Race weekend
+    </Link>
   );
 }
 

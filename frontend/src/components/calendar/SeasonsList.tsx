@@ -52,8 +52,8 @@ function SeasonCard({ season }: { season: SeasonOverview }) {
         {season.meetingCount} {season.meetingCount === 1 ? "meeting" : "meetings"} in the calendar
       </div>
       <div className="mt-1 text-sm text-slate-400">
-        <span className="font-semibold text-slate-200">{season.publishedCount}</span>{" "}
-        {season.publishedCount === 1 ? "session" : "sessions"} published
+        <span className="font-semibold text-slate-200">{season.publishedCount}</span> of {season.coveredCount}{" "}
+        covered {season.coveredCount === 1 ? "session" : "sessions"} published
       </div>
       {season.partialCount > 0 ? (
         <div className="mt-3 text-xs font-bold uppercase text-amber">{season.partialCount} with partial data</div>

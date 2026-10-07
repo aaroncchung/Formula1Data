@@ -17,7 +17,16 @@ import {
 import { notifyWhenGone } from "../src/lib/published/session.ts";
 import { shareReads } from "../src/lib/published/share.ts";
 import { DEFAULT_SESSION_TAB, SESSION_TABS, hashOfTab, tabFromHash } from "../src/lib/published/tabs.ts";
-import { compareTelemetry, defaultComparison, readTelemetry } from "../src/lib/published/telemetry.ts";
+import {
+  compareTelemetry,
+  defaultComparison,
+  isCleanLap,
+  lapMarks,
+  openingNote,
+  preferredLap,
+  readTelemetry,
+  telemetryLaps
+} from "../src/lib/published/telemetry.ts";
 
 import {
   bucketOf,
@@ -35,13 +44,16 @@ import {
 
 function lap(driver, number, time, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     driver_code: driver,
     lap_number: number,
     lap_time_ms: time,
+    sector_1_ms: null,
+    sector_2_ms: null,
+    sector_3_ms: null,
     compound: "MEDIUM",
     tyre_age: number,
     stint: 1,
+    position: null,
     is_pit_in_lap: false,
     is_pit_out_lap: false,
     is_deleted: false,
@@ -52,66 +64,161 @@ function lap(driver, number, time, overrides = {}) {
 }
 
 /** One lap of telemetry: five samples along 4 km, `pace` ms for each kilometre. */
-function telemetryLap(driver, number, pace) {
-  return [0, 1000, 2000, 3000, 4000].map((distance, index) => ({
-    session_id: "2026-08-r",
-    driver_code: driver,
+function telemetryLap(number, pace) {
+  const samples = [0, 1, 2, 3, 4];
+  return {
     lap_number: number,
-    distance_m: distance,
-    speed_kph: 200 + index * 20,
-    throttle_pct: 100,
-    brake: false,
-    rpm: 11000,
-    gear: 7,
-    drs: 0,
-    x: distance,
-    y: index,
-    relative_time_ms: index * pace
-  }));
+    start_ms: 3_500_000 + number * 80_000,
+    time_ms: samples.map((index) => index * pace),
+    distance_m: samples.map((index) => index * 1000),
+    speed_kph: samples.map((index) => 200 + index * 20),
+    throttle_pct: samples.map(() => 100),
+    brake: samples.map(() => false),
+    rpm: samples.map(() => 11000),
+    gear: samples.map(() => 7),
+    drs: null,
+    x: samples.map((index) => index * 1000),
+    y: samples.map((index) => index)
+  };
 }
 
+// Antonelli is in the timing and the telemetry and not in the fixture's
+// driver list, which has two drivers.
 const LAPS = [
   lap("RUS", 1, 80_000),
   lap("RUS", 2, 70_500),
   lap("RUS", 3, 70_100),
   lap("VER", 1, 80_500),
   lap("VER", 2, 70_300),
-  lap("VER", 3, 70_900)
+  lap("VER", 3, 70_900),
+  lap("ANT", 1, 81_000),
+  lap("ANT", 2, 70_800)
 ];
 
-const TELEMETRY_LAPS = LAPS.map((row) => ({
-  driver_code: row.driver_code,
-  lap_number: row.lap_number,
-  path: `telemetry/${row.driver_code.toLowerCase()}-lap-${row.lap_number}.json`,
-  sample_count: 5,
-  raw_sample_count: 5,
-  size_bytes: 1024
-}));
+const TELEMETRY_DRIVERS = ["RUS", "VER", "ANT"];
+const lapsOf = (code) => LAPS.filter((row) => row.driver_code === code);
+
+/** telemetry/index.json: each driver's laps as parallel arrays, and the driver's file. */
+const TELEMETRY_INDEX = {
+  channels: ["time_ms", "distance_m", "speed_kph", "throttle_pct", "brake", "rpm", "gear", "x", "y"],
+  max_samples_per_lap: 300,
+  drivers: TELEMETRY_DRIVERS.map((code) => ({
+    driver_code: code,
+    path: `telemetry/${code}.json`,
+    lap_number: lapsOf(code).map((row) => row.lap_number),
+    lap_time_ms: lapsOf(code).map((row) => row.lap_time_ms),
+    compound: lapsOf(code).map((row) => row.compound),
+    is_accurate: lapsOf(code).map((row) => row.is_accurate),
+    is_deleted: lapsOf(code).map((row) => row.is_deleted),
+    is_pit_in_lap: lapsOf(code).map((row) => row.is_pit_in_lap),
+    is_pit_out_lap: lapsOf(code).map((row) => row.is_pit_out_lap),
+    sample_count: lapsOf(code).map(() => 5),
+    raw_sample_count: lapsOf(code).map(() => 5),
+    has_position: lapsOf(code).map(() => true)
+  }))
+};
+
+/** telemetry/<code>.json: every lap of one driver. Lap n runs 17,000 + 100 n ms a kilometre. */
+const driverTelemetry = (code) => ({
+  driver_code: code,
+  laps: lapsOf(code).map((row) => telemetryLap(row.lap_number, 17_000 + row.lap_number * 100))
+});
 
 /**
  * Every file a session page reads, in the smallest form each tab accepts,
  * added to the fixture's generation (which has the drivers, the results and
- * the summary). The telemetry laps are files of their own.
+ * the summary). Each driver's telemetry is a file of its own.
  */
 const SESSION_FILES = {
   "laps.json": LAPS,
-  "stints.json": [{ session_id: "2026-08-r", driver_code: "RUS", stint: 1, compound: "MEDIUM", start_lap: 1, end_lap: 3, lap_count: 3 }],
-  "pit-stops.json": [{ session_id: "2026-08-r", driver_code: "RUS", lap_number: 3, duration_ms: 21552, local_time: "0 days 01:22:52.191000" }],
-  "weather.json": [{ session_id: "2026-08-r", lap_number: null, timestamp: "0 days 00:00:38.376000", air_temp_c: 33.6, track_temp_c: 53.2, rainfall: false }],
-  "race-control.json": [{ session_id: "2026-08-r", lap_number: 1, timestamp: "2026-06-28 12:20:00", category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN" }],
-  "position-replay.json": [{ session_id: "2026-08-r", frame_index: 0, lap_number: 1, timestamp_ms: 3_425_000, positions: [{ driver_code: "RUS", x: 1, y: 2 }] }],
-  "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2", metadata: {} }],
-  "analysis/race-pace.json": { session_id: "2026-08-r", drivers: [{ driver_code: "RUS", median_lap_ms: 70_300, lap_count: 2 }], stints: [], caveats: [] },
-  "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: [], caveats: [] },
-  "analysis/ideal-laps.json": { session_id: "2026-08-r", rows: [] },
-  "analysis/team-mate-comparison.json": { session_id: "2026-08-r", rows: [], caveats: [] },
-  "analysis/strategy.json": { session_id: "2026-08-r", stints: [], compound_usage: { MEDIUM: 1 }, pit_stops: [], undercut_overcut: [], race_control_overlays: [], caveats: [] },
-  "analysis/track-dominance.json": { session_id: "2026-08-r", representative_laps: [], minisector_count: 0, minisectors: [], caveats: [] },
-  "analysis/corner-analysis.json": { session_id: "2026-08-r", representative_laps: [], corners: [], caveats: [] },
-  "analysis/car-performance.json": { session_id: "2026-08-r", drivers: [], teams: [], caveats: [] },
-  "analysis/pace-prediction.json": { session_id: "2026-08-r", available: false, session_type: "Race", drivers: [], teams: [], caveats: [] },
-  "telemetry/index.json": { schema_version: 1, generated_at: "2026-10-06T00:04:33Z", session_id: "2026-08-r", max_samples_per_lap: 300, laps: TELEMETRY_LAPS },
-  ...Object.fromEntries(TELEMETRY_LAPS.map((entry) => [entry.path, telemetryLap(entry.driver_code, entry.lap_number, 17_000 + entry.lap_number * 100)]))
+  "stints.json": [{ driver_code: "RUS", stint: 1, compound: "MEDIUM", start_lap: 1, end_lap: 3, lap_count: 3 }],
+  "pit-stops.json": [
+    {
+      driver_code: "RUS",
+      lap_number: 3,
+      entry_time_ms: 4_972_191,
+      duration_ms: 21552,
+      under_red_flag: false,
+      stationary_ms: 2400,
+      pit_lane_ms: 21480,
+      sources: { duration_ms: "timing", stationary_ms: "pit_stop_series", pit_lane_ms: "pit_stop_series" }
+    }
+  ],
+  "weather.json": [{ time_ms: 38_376, lap_number: null, air_temp_c: 33.6, track_temp_c: 53.2, humidity_pct: 30.3, wind_speed_kph: 1.0, rainfall: false }],
+  "race-control.json": [{ time_ms: 3_300_000, lap_number: 1, category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN", scope: "Track" }],
+  "position-replay.json": {
+    interval_ms: 5000,
+    time_ms: [3_425_000],
+    lap_number: [1],
+    drivers: [{ driver_code: "RUS", x: [1], y: [2], speed_kph: [200], distance_m: [0] }]
+  },
+  "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2" }],
+  "analysis/race-pace.json": {
+    drivers: [
+      {
+        driver_code: "RUS",
+        compound: "MEDIUM",
+        stint: null,
+        lap_count: 2,
+        median_lap_ms: 70_300,
+        mean_lap_ms: 70_300,
+        trimmed_mean_lap_ms: 70_300,
+        fastest_clean_lap_ms: 70_100,
+        gap_to_best_ms: 0
+      }
+    ],
+    stints: [],
+    caveats: []
+  },
+  "analysis/tyre-degradation.json": {
+    model: {
+      method: "Theil-Sen residual filter followed by ordinary least squares",
+      minimum_laps: 8,
+      max_slope_standard_error_ms_per_lap: 20,
+      max_slope_relative_standard_error: 0.25,
+      race_fuel_correction_ms_per_lap: 55,
+      sprint_fuel_correction_ms_per_lap: 35
+    },
+    rows: [],
+    caveats: []
+  },
+  "analysis/team-mate-comparison.json": { rows: [], caveats: [] },
+  "analysis/strategy.json": {
+    compound_usage: { MEDIUM: 1 },
+    pit_lane_time: { median_ms: 21552, fastest_ms: 21552, slowest_ms: 21552, timed_stop_count: 1, stop_count: 1 },
+    pit_loss: {
+      estimate_ms: null,
+      spread_ms: null,
+      qualifying_stop_count: 0,
+      stop_count: 1,
+      minimum_stop_count: 3,
+      baseline_window_laps: 5,
+      excluded_stop_counts: { too_few_baseline_laps: 1 },
+      stops: []
+    },
+    pit_loss_estimate_ms: null,
+    undercut_overcut: [],
+    caveats: []
+  },
+  "analysis/track-dominance.json": { representative_laps: [], excluded_drivers: [], minisector_count: 0, minisectors: [], caveats: [] },
+  "analysis/corner-analysis.json": { corner_source: "official", representative_laps: [], corners: [], caveats: [] },
+  "analysis/car-performance.json": { drivers: [], teams: [], caveats: [] },
+  // A race is published without this file; it is here so that the tab's
+  // reader has all six of its analyses to read.
+  "analysis/pace-prediction.json": { available: false, session_type: "Race", drivers: [], teams: [], caveats: [] },
+  "corners.json": {
+    corners: [
+      { number: 1, letter: null, x: 1000, y: 1, angle: 90, distance_m: 1000 },
+      { number: 2, letter: "A", x: 3000, y: 3, angle: -90, distance_m: 3000 }
+    ],
+    distance_source: "archive",
+    fits_track: true,
+    off_track_m: 0.4,
+    reference_lap: { driver_code: "RUS", lap_number: 3, length_m: 4000 },
+    rotation: 0
+  },
+  "telemetry/index.json": TELEMETRY_INDEX,
+  ...Object.fromEntries(TELEMETRY_DRIVERS.map((code) => [`telemetry/${code}.json`, driverTelemetry(code)]))
 };
 
 /**
@@ -177,19 +284,21 @@ const TAB_READS = {
       "analysis/track-dominance.json",
       "analysis/corner-analysis.json",
       "analysis/car-performance.json",
-      "analysis/pace-prediction.json"
+      "analysis/pace-prediction.json",
+      "corners.json"
     ]
   },
   strategy: { required: ["stints.json", "pit-stops.json"], optional: ["analysis/strategy.json"] },
-  telemetry: { required: ["telemetry/index.json", "laps.json", "drivers.json"], optional: [] },
-  "position-replay": { required: ["position-replay.json", "drivers.json"], optional: [] },
+  // The three tabs that draw the track read the circuit's corner map.
+  telemetry: { required: ["telemetry/index.json", "drivers.json"], optional: ["corners.json"] },
+  "position-replay": { required: ["position-replay.json", "drivers.json"], optional: ["corners.json"] },
   weather: { required: ["weather.json"], optional: [] },
   "race-control": { required: ["race-control.json"], optional: [] },
   results: { required: ["results.json", "drivers.json"], optional: [] }
 };
 
-// The telemetry tab also reads the two laps it compares first.
-const FIRST_COMPARISON = ["telemetry/rus-lap-3.json", "telemetry/ver-lap-2.json"];
+// The telemetry tab also reads the files of the two drivers it compares first.
+const FIRST_COMPARISON = ["telemetry/RUS.json", "telemetry/VER.json"];
 
 const TAB_READERS = {
   overview: readOverview,
@@ -244,7 +353,7 @@ test("a file two tabs need is requested once for the page", async () => {
 
   const all = requested();
   assert.equal(all.length, new Set(all).size, `requested twice: ${all.filter((path, index) => all.indexOf(path) !== index)}`);
-  // Seven tabs read the drivers and three read the laps.
+  // Seven tabs read the drivers and two read the laps.
   assert.equal(all.filter((path) => path === "drivers.json").length, 1);
   assert.equal(all.filter((path) => path === "laps.json").length, 1);
 });
@@ -269,7 +378,8 @@ test("a required file that is missing costs the tabs that need it and no others"
 
   const available = SESSION_TABS.filter((tab) => tabAvailability(view, tab.id).available).map((tab) => tab.id);
 
-  assert.deepEqual(available, ["lap-times", "performance", "strategy", "position-replay", "weather", "race-control", "results"]);
+  // The telemetry tab is among them: a lap is chosen from the telemetry index, which has its time.
+  assert.deepEqual(available, ["lap-times", "performance", "strategy", "telemetry", "position-replay", "weather", "race-control", "results"]);
   assert.equal((await readResults(view)).results.length, 2);
   assert.equal((await readWeather(view)).length, 1);
 });
@@ -282,9 +392,18 @@ test("an analysis the generation leaves out is absent without a request, and its
 
   const performance = await readPerformance(view);
   assert.equal(performance.drivers.length, 2);
+  assert.equal(performance.sessionType, "R");
   assert.deepEqual(
-    [performance.idealLaps, performance.teammateComparison, performance.trackDominance, performance.cornerAnalysis, performance.carPerformance, performance.pacePrediction],
-    [null, null, null, null, null, null]
+    [
+      performance.idealLaps,
+      performance.teammateComparison,
+      performance.trackDominance,
+      performance.cornerAnalysis,
+      performance.carPerformance,
+      performance.pacePrediction,
+      performance.corners
+    ],
+    [null, null, null, null, null, null, null]
   );
   assert.deepEqual(requested(), ["drivers.json"]);
 
@@ -304,7 +423,9 @@ test("one optional analysis can be absent while the others are read", async () =
   assert.notEqual(performance.trackDominance, null);
   assert.notEqual(performance.pacePrediction, null);
   assert.ok(!requested().includes("analysis/corner-analysis.json"));
-  assert.equal(requested().length, 6);
+  // The drivers, the five other analyses and the corner map.
+  assert.equal(requested().length, 7);
+  assert.equal(performance.corners.corners.length, 2);
 });
 
 // AR-07: one artifact that failed to load used to replace the whole page.
@@ -330,9 +451,12 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
   const wrong = {
     "weather.json": { error: "no weather" },
     "summary.json": [],
-    "analysis/race-pace.json": { session_id: "2026-08-r", caveats: [] },
-    "analysis/tyre-degradation.json": { session_id: "2026-08-r", rows: "none" },
-    "telemetry/index.json": { schema_version: 1 }
+    "analysis/strategy.json": { compound_usage: {}, caveats: [] },
+    "analysis/race-pace.json": { stints: [], caveats: [] },
+    "analysis/tyre-degradation.json": { rows: "none", caveats: [] },
+    "telemetry/index.json": { max_samples_per_lap: 300, drivers: [] },
+    // The frames of format 1, which was a list.
+    "position-replay.json": [{ frame_index: 0, positions: [] }]
   };
   const bucket = bucketOf();
   republish(bucket, { ...SESSION_FILES, ...wrong });
@@ -342,10 +466,16 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
   assert.equal((await failureOf(readOverview(view))).code, "invalid_artifact");
   assert.equal((await failureOf(readRacePace(view))).code, "invalid_artifact");
   assert.equal((await failureOf(readTelemetry(view))).code, "invalid_artifact");
-  assert.match((await failureOf(readTelemetry(view))).message, /telemetry\/index\.json has no list of laps/);
+  assert.match((await failureOf(readTelemetry(view))).message, /telemetry\/index\.json has no list of channels/);
+  const strategy = await failureOf(readStrategy(view));
+  assert.equal(strategy.code, "invalid_artifact");
+  assert.match(strategy.message, /analysis\/strategy\.json has no list of undercut_overcut/);
+  const replay = await failureOf(readPositionReplay(view));
+  assert.equal(replay.code, "invalid_artifact");
+  assert.match(replay.message, /position-replay\.json is not an object/);
   // The tabs that do not read those files are untouched.
   assert.equal((await readResults(view)).results.length, 2);
-  assert.equal((await readStrategy(view)).stints.length, 1);
+  assert.equal((await readRaceControl(view)).length, 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -375,16 +505,17 @@ test("a read that failed is not remembered", async () => {
   assert.deepEqual(requested(), ["laps.json", "laps.json", "laps.json"]);
 });
 
-// A race has over a thousand of them and a page compares two at a time.
-test("telemetry laps are not kept by a shared view", async () => {
+// The largest file a page reads, and the one a reader comes back to most.
+test("a driver's telemetry is kept by a shared view like any other file", async () => {
   const { view, requested } = await wholeSession({ share: true });
 
-  await view.read("telemetry/rus-lap-3.json");
-  await view.read("telemetry/rus-lap-3.json");
+  const first = await view.read("telemetry/RUS.json");
+  const second = await view.read("telemetry/RUS.json");
   await view.read("telemetry/index.json");
   await view.read("telemetry/index.json");
 
-  assert.deepEqual(requested(), ["telemetry/rus-lap-3.json", "telemetry/rus-lap-3.json", "telemetry/index.json"]);
+  assert.equal(first, second);
+  assert.deepEqual(requested(), ["telemetry/RUS.json", "telemetry/index.json"]);
 });
 
 test("a shared view is still the pinned view: same pointer, same manifest, same refusals", async () => {
@@ -414,122 +545,274 @@ test("a shared view still tells its holder when its generation is gone", async (
 // Telemetry
 // ---------------------------------------------------------------------------
 
+const INDEXED = telemetryLaps(TELEMETRY_INDEX);
+const CLEAN = { is_accurate: true, is_deleted: false, is_pit_in_lap: false, is_pit_out_lap: false };
+const UNKNOWN = { is_accurate: null, is_deleted: null, is_pit_in_lap: null, is_pit_out_lap: null };
+
+test("the index's parallel arrays read as one row for each lap", () => {
+  assert.equal(INDEXED.length, LAPS.length);
+  assert.deepEqual(INDEXED[2], { driver_code: "RUS", lap_number: 3, lap_time_ms: 70_100, compound: "MEDIUM", ...CLEAN });
+  assert.deepEqual(INDEXED.at(-1), { driver_code: "ANT", lap_number: 2, lap_time_ms: 70_800, compound: "MEDIUM", ...CLEAN });
+  // Lap 1 is from a standing start, and the timing does not call it accurate.
+  assert.equal(INDEXED[0].is_accurate, false);
+  assert.equal(isCleanLap(INDEXED[0]), false);
+  assert.equal(isCleanLap(INDEXED[2]), true);
+});
+
+// ---------------------------------------------------------------------------
+// Which laps a comparison opens on
+// ---------------------------------------------------------------------------
+
+/** The index's laps with some of them changed, each named as "RUS/3". */
+const withLaps = (changes) =>
+  INDEXED.map((entry) => ({ ...entry, ...(changes[`${entry.driver_code}/${entry.lap_number}`] ?? {}) }));
+
+// The quickest lap of a session on paper is often one that does not count.
+test("a deleted lap, however quick, is not the lap a comparison opens on", () => {
+  // Verstappen's lap 2 becomes the quickest of the session, and is deleted.
+  const laps = withLaps({ "VER/2": { lap_time_ms: 69_000, is_deleted: true } });
+
+  assert.equal(preferredLap(laps, "VER").lap_number, 3);
+  // His next best, 70.9 s, is slower than Antonelli's 70.8 s.
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "RUS", lap: 3 },
+    { driver: "ANT", lap: 2 }
+  ]);
+});
+
+test("neither is a lap into or out of the pits", () => {
+  const laps = withLaps({ "RUS/3": { is_pit_in_lap: true }, "VER/2": { is_pit_out_lap: true } });
+
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "RUS", lap: 2 },
+    { driver: "ANT", lap: 2 }
+  ]);
+  assert.equal(preferredLap(laps, "VER").lap_number, 3);
+});
+
+test("a driver with no clean lap is offered their fastest of any kind, after every driver who has a clean one", () => {
+  // Every lap of Russell's is inaccurate, and one of them is the quickest of the session.
+  const laps = withLaps({
+    "RUS/1": { is_accurate: false },
+    "RUS/2": { is_accurate: false, lap_time_ms: 60_000 },
+    "RUS/3": { is_accurate: false }
+  });
+
+  assert.equal(preferredLap(laps, "RUS").lap_number, 2);
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "VER", lap: 2 },
+    { driver: "ANT", lap: 2 }
+  ]);
+  // With only the two of them, he is compared, second.
+  const two = laps.filter((entry) => entry.driver_code !== "ANT");
+  assert.deepEqual(defaultComparison(two), [
+    { driver: "VER", lap: 2 },
+    { driver: "RUS", lap: 2 }
+  ]);
+  assert.match(openingNote(two, defaultComparison(two)), /RUS has no lap known to be clean/);
+});
+
+test("a lap whose kind is not known is not taken for a clean one", () => {
+  const laps = withLaps({ "RUS/3": { is_accurate: null }, "VER/2": { is_deleted: null, is_pit_in_lap: null } });
+
+  // Not known to be accurate: not clean. Known to be accurate, with nothing said against it: clean.
+  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "RUS" && entry.lap_number === 3)), false);
+  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "VER" && entry.lap_number === 2)), true);
+  assert.equal(preferredLap(laps, "RUS").lap_number, 2);
+});
+
+// An index published before the four flags has none of the arrays. Its laps
+// are of unknown kind, and the tab opens as it did then.
+test("an index from before the flags opens on each driver's fastest lap of any kind, and says so", () => {
+  const before = structuredClone(TELEMETRY_INDEX);
+  for (const entry of before.drivers) {
+    for (const flag of ["is_accurate", "is_deleted", "is_pit_in_lap", "is_pit_out_lap"]) {
+      delete entry[flag];
+    }
+  }
+  const laps = telemetryLaps(before);
+
+  assert.deepEqual(laps[2], { driver_code: "RUS", lap_number: 3, lap_time_ms: 70_100, compound: "MEDIUM", ...UNKNOWN });
+  const pair = defaultComparison(laps);
+  assert.deepEqual(pair, [
+    { driver: "RUS", lap: 3 },
+    { driver: "VER", lap: 2 }
+  ]);
+  assert.match(openingNote(laps, pair), /RUS and VER have no lap known to be clean .* so that is the fastest of any kind/);
+  assert.deepEqual(lapMarks(laps[2]), []);
+});
+
+test("the tab says it opened on clean laps only when it did, and nothing when it compares nothing", () => {
+  assert.match(openingNote(INDEXED, defaultComparison(INDEXED)), /^It opens on the fastest clean lap of each of the two quickest drivers/);
+  assert.equal(openingNote(INDEXED, null), null);
+});
+
+test("a lap menu marks the laps whose time is not one to judge a driver by", () => {
+  const [lap1] = INDEXED;
+
+  assert.deepEqual(lapMarks(lap1), []);
+  assert.deepEqual(lapMarks({ ...lap1, is_deleted: true }), ["deleted"]);
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_in_lap: true }), ["pit in"]);
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_out_lap: true }), ["pit out"]);
+  // A lap that leaves the pits and comes straight back in.
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_in_lap: true, is_pit_out_lap: true, is_deleted: true }), ["deleted", "pit in", "pit out"]);
+  // Nothing is said of a lap nothing is known about.
+  assert.deepEqual(lapMarks({ ...lap1, ...UNKNOWN }), []);
+});
+
 test("the first comparison is the fastest lap of each of the two quickest drivers", () => {
-  assert.deepEqual(defaultComparison(TELEMETRY_LAPS, LAPS), [
+  assert.deepEqual(defaultComparison(INDEXED), [
     { driver: "RUS", lap: 3 },
     { driver: "VER", lap: 2 }
   ]);
 });
 
-test("a lap without telemetry, and a deleted lap, cannot be the lap compared", () => {
-  const withoutRussellsBest = TELEMETRY_LAPS.filter((entry) => !(entry.driver_code === "RUS" && entry.lap_number === 3));
-  assert.deepEqual(defaultComparison(withoutRussellsBest, LAPS)[0], { driver: "VER", lap: 2 });
-  assert.deepEqual(defaultComparison(withoutRussellsBest, LAPS)[1], { driver: "RUS", lap: 2 });
+test("a lap without telemetry cannot be the lap compared", () => {
+  const withoutRussellsBest = INDEXED.filter((entry) => !(entry.driver_code === "RUS" && entry.lap_number === 3));
 
-  const deleted = LAPS.map((row) => (row.driver_code === "VER" && row.lap_number === 2 ? { ...row, is_deleted: true } : row));
-  assert.deepEqual(defaultComparison(TELEMETRY_LAPS, deleted)[1], { driver: "VER", lap: 3 });
+  assert.deepEqual(defaultComparison(withoutRussellsBest), [
+    { driver: "VER", lap: 2 },
+    { driver: "RUS", lap: 2 }
+  ]);
 });
 
-// What the old dashboard always did: the first two entries of the index,
-// which are lap 1 of the first two drivers.
 test("without lap times the first comparison is the first lap of two different drivers", () => {
-  const untimed = LAPS.map((row) => ({ ...row, lap_time_ms: null }));
+  const untimed = INDEXED.map((entry) => ({ ...entry, lap_time_ms: null }));
 
-  assert.deepEqual(defaultComparison(TELEMETRY_LAPS, untimed), [
-    { driver: "RUS", lap: 1 },
-    { driver: "VER", lap: 1 }
-  ]);
-  assert.deepEqual(defaultComparison(TELEMETRY_LAPS, []), [
+  assert.deepEqual(defaultComparison(untimed), [
     { driver: "RUS", lap: 1 },
     { driver: "VER", lap: 1 }
   ]);
 });
 
 test("one driver's laps are compared with each other, and one lap with nothing", () => {
-  const russell = TELEMETRY_LAPS.filter((entry) => entry.driver_code === "RUS");
+  const russell = INDEXED.filter((entry) => entry.driver_code === "RUS");
+  const untimed = russell.map((entry) => ({ ...entry, lap_time_ms: null }));
 
-  assert.deepEqual(defaultComparison(russell, LAPS), [
+  assert.deepEqual(defaultComparison(untimed), [
     { driver: "RUS", lap: 1 },
     { driver: "RUS", lap: 2 }
   ]);
-  assert.equal(defaultComparison(russell.slice(0, 1), LAPS), null);
-  assert.equal(defaultComparison([], LAPS), null);
+  assert.equal(defaultComparison(russell.slice(0, 1)), null);
+  assert.equal(defaultComparison([]), null);
 });
 
-test("the telemetry tab opens on the index and the two laps it compares", async () => {
+test("the telemetry tab opens on the index and the files of the two drivers it compares", async () => {
   const { view, requested } = await wholeSession({ share: true });
 
   const telemetry = await readTelemetry(view);
 
-  assert.equal(telemetry.laps.length, 6);
+  assert.equal(telemetry.laps.length, LAPS.length);
   assert.deepEqual(telemetry.pair, [
     { driver: "RUS", lap: 3 },
     { driver: "VER", lap: 2 }
   ]);
   assert.equal(telemetry.notice, null);
-  // The comparison is the old reader's, with the lap and driver it looks up.
+  // What the comparison says of a lap comes from the index and the driver list.
   assert.deepEqual(telemetry.comparison.driver_a, {
     driver_code: "RUS",
     team: "Mercedes",
     lap_time_ms: 70_100,
     compound: "MEDIUM",
-    session: "2026-08-r",
     lap_number: 3
   });
-  assert.equal(telemetry.comparison.driver_b.team, "Red Bull Racing");
+  assert.equal(telemetry.comparison.driver_b.team, "Red Bull");
   assert.deepEqual(telemetry.comparison.distance_m, [0, 1000, 2000, 3000, 4000]);
   // Russell's lap 3 runs 17,300 ms a kilometre and Verstappen's lap 2 17,200.
   assert.deepEqual(telemetry.comparison.delta_time_ms, [0, -100, -200, -300, -400]);
-  assert.deepEqual(requested().sort(), ["drivers.json", "laps.json", "telemetry/index.json", ...FIRST_COMPARISON].sort());
+  // The session has no DRS channel, and the comparison has none to chart.
+  assert.equal(telemetry.comparison.drs_a, null);
+  assert.equal(telemetry.corners.fits_track, true);
+  // Neither the laps of the session nor any other driver's telemetry.
+  assert.deepEqual(requested().sort(), ["corners.json", "drivers.json", "telemetry/index.json", ...FIRST_COMPARISON].sort());
 });
 
-test("a later comparison requests the two laps it compares and nothing else", async () => {
+test("a driver's file is requested the first time one of their laps is compared, and never again", async () => {
   const { view, requested, forget } = await wholeSession({ share: true });
   await readTelemetry(view);
   forget();
 
-  const comparison = await compareTelemetry(view, { driver: "VER", lap: 3 }, { driver: "RUS", lap: 2 });
+  // Other laps of the two drivers the tab opened on: nothing to fetch.
+  const same = await compareTelemetry(view, { driver: "VER", lap: 3 }, { driver: "RUS", lap: 2 });
+  assert.equal(same.driver_a.driver_code, "VER");
+  assert.equal(same.driver_a.lap_time_ms, 70_900);
+  assert.equal(same.driver_b.lap_number, 2);
+  assert.deepEqual(requested(), []);
 
-  assert.equal(comparison.driver_a.driver_code, "VER");
-  assert.equal(comparison.driver_a.lap_time_ms, 70_900);
-  assert.equal(comparison.driver_b.lap_number, 2);
-  assert.deepEqual(requested().sort(), ["telemetry/rus-lap-2.json", "telemetry/ver-lap-3.json"]);
+  // A third driver: their file, once.
+  const third = await compareTelemetry(view, { driver: "ANT", lap: 2 }, { driver: "RUS", lap: 3 });
+  assert.equal(third.driver_a.lap_time_ms, 70_800);
+  // The telemetry lists a driver the driver list does not: no team, and still compared.
+  assert.equal(third.driver_a.team, null);
+  assert.deepEqual(requested(), ["telemetry/ANT.json"]);
+
+  // Two laps of one driver are one file.
+  const own = await compareTelemetry(view, { driver: "ANT", lap: 1 }, { driver: "ANT", lap: 2 });
+  assert.deepEqual(own.delta_time_ms, [0, 100, 200, 300, 400]);
+  assert.deepEqual(requested(), ["telemetry/ANT.json"]);
 });
 
-test("a lap the index does not list compares to a notice, without the pipeline's advice", async () => {
+test("a lap the index does not list compares to a notice, before any driver's file is asked for", async () => {
   const { view, requested, forget } = await wholeSession({ share: true });
   await readTelemetry(view);
   forget();
 
-  const result = await compareTelemetry(view, { driver: "RUS", lap: 99 }, { driver: "VER", lap: 2 });
+  const result = await compareTelemetry(view, { driver: "RUS", lap: 99 }, { driver: "ANT", lap: 2 });
 
   assert.deepEqual(result, { reason: "Telemetry is unavailable for one or both selected laps." });
-  assert.deepEqual(requested(), ["telemetry/ver-lap-2.json"]);
+  assert.deepEqual(requested(), []);
+  assert.deepEqual(await compareTelemetry(view, { driver: "HAM", lap: 1 }, { driver: "RUS", lap: 2 }), {
+    reason: "Telemetry is unavailable for one or both selected laps."
+  });
 });
 
 test("a first comparison that cannot be loaded leaves the tab open, with the reason", async () => {
   const { bucket, view, generation } = await wholeSession({ share: true });
-  const lapKey = `${generationPrefix(generation)}telemetry/rus-lap-3.json`;
-  bucket.fault = (key) => (key === lapKey ? new Response("Service Unavailable", { status: 503 }) : undefined);
+  const fileKey = `${generationPrefix(generation)}telemetry/RUS.json`;
+  bucket.fault = (key) => (key === fileKey ? new Response("Service Unavailable", { status: 503 }) : undefined);
 
   const telemetry = await readTelemetry(view);
 
-  assert.equal(telemetry.laps.length, 6);
+  assert.equal(telemetry.laps.length, LAPS.length);
   assert.equal(telemetry.comparison, null);
   assert.equal(telemetry.notice.reason, "The telemetry of RUS lap 3 and VER lap 2 could not be loaded.");
-  assert.match(telemetry.notice.action, /rus-lap-3\.json answered 503/);
-  // Every other lap is still there to compare.
+  assert.match(telemetry.notice.action, /telemetry\/RUS\.json answered 503/);
+  // The failed read is not kept: the same driver compares once the outage is over.
   bucket.fault = () => undefined;
   assert.equal((await compareTelemetry(view, { driver: "RUS", lap: 2 }, { driver: "VER", lap: 2 })).driver_a.lap_number, 2);
 });
 
-test("an index that names a lap the generation does not hold says so in the tab", async () => {
-  const { view } = await wholeSession({ share: true, without: ["telemetry/ver-lap-2.json"] });
+test("an index that names a file the generation does not hold says so in the tab", async () => {
+  const { view } = await wholeSession({ share: true, without: ["telemetry/VER.json"] });
 
   const telemetry = await readTelemetry(view);
 
   assert.equal(telemetry.comparison, null);
-  assert.match(telemetry.notice.action, /telemetry\/ver-lap-2\.json is not part of this session's published data/);
+  assert.match(telemetry.notice.action, /telemetry\/VER\.json is not one of the files of this session's published generation/);
+});
+
+test("a driver's file without a lap the index lists is reported as that, not as an empty chart", async () => {
+  const bucket = bucketOf();
+  const short = driverTelemetry("RUS");
+  short.laps = short.laps.filter((item) => item.lap_number !== 3);
+  republish(bucket, { ...SESSION_FILES, "telemetry/RUS.json": short });
+  const view = shareReads(await clientOf(bucket).openSession(SESSION_KEY));
+
+  const telemetry = await readTelemetry(view);
+
+  assert.equal(telemetry.comparison, null);
+  assert.equal(telemetry.notice.reason, "The telemetry of RUS lap 3 is listed for this session and is not in RUS's file.");
+});
+
+test("a driver's file that is not a driver's telemetry is invalid", async () => {
+  const bucket = bucketOf();
+  republish(bucket, { ...SESSION_FILES, "telemetry/RUS.json": [] });
+  const view = shareReads(await clientOf(bucket).openSession(SESSION_KEY));
+
+  const failure = await failureOf(compareTelemetry(view, { driver: "RUS", lap: 3 }, { driver: "VER", lap: 2 }));
+
+  assert.equal(failure.code, "invalid_artifact");
+  assert.match(failure.message, /telemetry\/RUS\.json is not an object/);
 });
 
 test("a generation that goes while the telemetry tab opens is passed on, not shown as a notice", async () => {
@@ -543,9 +826,9 @@ test("a generation that goes while the telemetry tab opens is passed on, not sho
   assert.equal((await failureOf(readTelemetry(view))).code, "generation_gone");
 });
 
-test("a session with no telemetry laps opens to a notice and requests no lap", async () => {
+test("a session with no telemetry laps opens to a notice and requests no driver's file", async () => {
   const bucket = bucketOf();
-  const generation = republish(bucket, { ...SESSION_FILES, "telemetry/index.json": { ...SESSION_FILES["telemetry/index.json"], laps: [] } });
+  const generation = republish(bucket, { ...SESSION_FILES, "telemetry/index.json": { ...TELEMETRY_INDEX, drivers: [] } });
   const view = shareReads(await clientOf(bucket).openSession(SESSION_KEY));
   bucket.requests.length = 0;
 
@@ -555,6 +838,29 @@ test("a session with no telemetry laps opens to a notice and requests no lap", a
   assert.equal(telemetry.pair, null);
   assert.equal(telemetry.comparison, null);
   assert.match(telemetry.notice.reason, /needs two laps with telemetry/);
-  assert.ok(bucket.keys().every((key) => !/-lap-\d+\.json$/.test(key)));
-  assert.ok(bucket.keys().every((key) => key.startsWith(generationPrefix(generation))));
+  assert.deepEqual(
+    bucket.keys().map((key) => key.slice(generationPrefix(generation).length)).sort(),
+    ["corners.json", "drivers.json", "telemetry/index.json"]
+  );
+});
+
+// The fixture is what the publisher writes: one driver, one lap.
+test("the telemetry the publisher writes is read, and one lap is not a comparison", async () => {
+  const view = shareReads(await clientOf(bucketOf()).openSession(SESSION_KEY));
+
+  const telemetry = await readTelemetry(view);
+
+  assert.deepEqual(telemetry.laps, [{ driver_code: "RUS", lap_number: 2, lap_time_ms: 72_037, compound: "MEDIUM", ...CLEAN }]);
+  assert.equal(telemetry.pair, null);
+  assert.match(telemetry.notice.reason, /needs two laps with telemetry/);
+  // The fixture's generation has no corner map, which is not an error.
+  assert.equal(telemetry.corners, null);
+  // The one lap compared with itself: the file reads as the schema types it.
+  // Its four samples are three at the start of the lap and one at the end,
+  // 71 seconds later, which is a hole: nothing is drawn across it.
+  const own = await compareTelemetry(view, { driver: "RUS", lap: 2 }, { driver: "RUS", lap: 2 });
+  assert.deepEqual(own.distance_m, [0, 22.2, 41.9, 2112.75, 4183.6]);
+  assert.deepEqual(own.speed_a, [299, 299, 296, null, 303]);
+  assert.deepEqual(own.delta_time_ms, [0, 0, 0, null, 0]);
+  assert.equal(own.track.length, 4);
 });

@@ -92,6 +92,7 @@ test("a session loads by its key with the round the calendar gives it today", as
     startTimeUtc: "2026-06-28T13:00:00Z",
     location: null,
     country: null,
+    meetingKey: 1315,
     placement: "calendar"
   });
   assert.deepEqual(bucket.keys(), [INDEX_KEY, POINTER_KEY, `${generationPrefix(FIRST_GENERATION)}manifest.json`]);
@@ -121,13 +122,16 @@ test("a key still names the same session after its round has moved, and the old 
     }
     meetings.unshift({
       round: 8,
+      meeting_key: null,
+      circuit_key: null,
+      circuit_name: null,
       name: "Madrid Grand Prix",
       official_name: null,
       country: null,
       location: null,
       date: "2026-06-14",
       format: "conventional",
-      sessions: [{ type: "R", name: "Race", start_time_utc: "2026-06-14T13:00:00Z" }]
+      sessions: [{ type: "R", name: "Race", start_time_utc: "2026-06-14T13:00:00Z", in_scope: true }]
     });
   });
 
@@ -182,6 +186,7 @@ test("a session outside the calendar opens by its key and has no round", async (
     startTimeUtc: "2026-06-28T13:00:00Z",
     location: null,
     country: null,
+    meetingKey: null,
     placement: "unscheduled"
   });
   assert.equal((await loaded.view.read("results.json")).length, 2);
@@ -207,6 +212,8 @@ test("a session the index does not list yet opens by its key, introduced by its 
   assert.equal(loaded.heading.meetingName, loaded.view.pointer.identity.meeting_name);
   assert.equal(loaded.heading.sessionName, "Race");
   assert.equal(loaded.heading.startTimeUtc, loaded.view.pointer.identity.start_time_utc);
+  // The pointer knows which meeting the session belongs to, though not its round.
+  assert.equal(loaded.heading.meetingKey, 1315);
 });
 
 test("a key opens its session while the index cannot be read", async () => {
@@ -229,7 +236,7 @@ test("a key nothing is published under is unknown, not an error", async () => {
   const bucket = bucketOf();
 
   assert.deepEqual(await loadSessionByKey(clientOf(bucket), 99999), { status: "unknown", missing: "key" });
-  assert.deepEqual(bucket.keys(), [INDEX_KEY, "v1/pointers/99999.json"]);
+  assert.deepEqual(bucket.keys(), [INDEX_KEY, "v2/pointers/99999.json"]);
 });
 
 test("a key the calendar lists whose pointer is absent is 'not published'", async () => {

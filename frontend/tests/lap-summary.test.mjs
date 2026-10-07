@@ -5,11 +5,17 @@ import { fastestLapByDriver } from "../src/lib/lap-summary.ts";
 
 function lap(driver, number, time, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     driver_code: driver,
     lap_number: number,
     lap_time_ms: time,
+    sector_1_ms: null,
+    sector_2_ms: null,
+    sector_3_ms: null,
+    stint: 1,
+    position: null,
+    track_status: "1",
     compound: "HARD",
+    tyre_age: number,
     is_pit_in_lap: false,
     is_pit_out_lap: false,
     is_deleted: false,
@@ -35,8 +41,7 @@ test("a deleted or untimed lap is nobody's fastest lap", () => {
     lap("VER", 30, 69_900, { is_deleted: true }),
     lap("VER", 31, 70_600),
     lap("BOT", 1, null),
-    lap("BOT", 2, 0),
-    lap("PER", 3, undefined)
+    lap("BOT", 2, 0)
   ];
 
   assert.deepEqual(

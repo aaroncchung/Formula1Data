@@ -9,55 +9,40 @@ import { SessionStateBadge } from "@/components/calendar/SessionState";
 import { useNow } from "@/components/calendar/useNow";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { findMeeting, sessionAvailability } from "@/lib/calendar";
+import { describeMeetingCoverage, lookUpMeeting, meetingCoverage, sessionAvailability } from "@/lib/calendar";
 import type { SessionAvailability } from "@/lib/calendar";
 import { calendarDay, sessionStart } from "@/lib/format";
-import { sessionHref } from "@/lib/published/lookup";
+import { isPublished, sessionHref } from "@/lib/published/lookup";
 import type { IndexMeeting, IndexSession, PublishedIndex } from "@/lib/published/types";
-import { meetingHref, seasonHref } from "@/lib/routes";
+import { meetingHref, seasonHref, SEASONS_PATH } from "@/lib/routes";
+import type { MeetingAddress } from "@/lib/routes";
 
-export function MeetingWeekend({ year, round }: { year: number; round: number }) {
+export function MeetingWeekend({ address }: { address: MeetingAddress }) {
   return (
-    <CalendarPage title={`${year} Round ${round}`}>
-      {(index) => <Meeting index={index} year={year} round={round} />}
-    </CalendarPage>
+    <CalendarPage title={addressTitle(address)}>{(index) => <Meeting index={index} address={address} />}</CalendarPage>
   );
 }
 
-function Meeting({ index, year, round }: { index: PublishedIndex; year: number; round: number }) {
+/** What the page is called before the calendar says which meeting the address names. */
+function addressTitle(address: MeetingAddress): string {
+  return address.kind === "key" ? "Meeting" : `${address.year} Round ${address.round}`;
+}
+
+function Meeting({ index, address }: { index: PublishedIndex; address: MeetingAddress }) {
   const now = useNow();
-  // Looked up in the calendar as it is now. The round in the address is where
-  // the meeting sat when the link was made; after a calendar change the same
-  // address is a different weekend, and this shows whichever it is today.
-  const lookup = findMeeting(index, year, round);
+  // Looked up in the calendar as it is now. A key names the same weekend
+  // wherever the calendar has moved it. A round is where the meeting sat when
+  // the link was made; after a calendar change the same address is a
+  // different weekend, and this shows whichever it is today.
+  const lookup = lookUpMeeting(index, address);
   if (!lookup.found) {
-    return (
-      <div>
-        <PageHeader title={`${year} Round ${round}`} />
-        <EmptyState
-          title="Meeting not found"
-          detail={
-            lookup.missing === "year"
-              ? `There is no ${year} season in the published calendar.`
-              : `The ${year} calendar has no round ${round}. Rounds are renumbered when the calendar changes.`
-          }
-        />
-        {lookup.missing === "round" ? (
-          <div className="mt-4 text-center">
-            <Link className="text-sm font-semibold text-slate-200 underline-offset-4 hover:underline" href={seasonHref(year)}>
-              See the {year} calendar
-            </Link>
-          </div>
-        ) : null}
-      </div>
-    );
+    return <MeetingNotFound address={address} missing={lookup.missing} />;
   }
 
-  const { meeting, previous, next } = lookup;
+  const { year, meeting, previous, next } = lookup;
   const place = [meeting.location, meeting.country].filter(Boolean).join(", ");
   const sprint = meeting.format?.startsWith("sprint") ?? false;
   const facts = [calendarDay(meeting.date), place, sprint ? "Sprint weekend" : null].filter(Boolean).join(" · ");
-  const published = meeting.sessions.filter((session) => session.session_key !== null).length;
   return (
     <div>
       <PageHeader
@@ -74,11 +59,9 @@ function Meeting({ index, year, round }: { index: PublishedIndex; year: number; 
           </>
         }
       />
-      <p className="mb-4 text-sm text-slate-400">
-        {published === 0
-          ? "None of this weekend's sessions is published yet."
-          : `${published} of ${meeting.sessions.length} sessions published.`}
-      </p>
+      {meeting.sessions.length > 0 ? (
+        <p className="mb-4 text-sm text-slate-400">{describeMeetingCoverage(meetingCoverage(meeting))}</p>
+      ) : null}
       {meeting.sessions.length === 0 ? (
         <EmptyState title="No sessions listed" detail="The calendar has this meeting, and no sessions for it yet." />
       ) : (
@@ -107,13 +90,11 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
   );
   // Only a published session has a dashboard, and it is reached by its key.
   // The others are shown as what they are and lead nowhere.
-  if (session.session_key === null) {
+  if (!isPublished(session)) {
     return (
       <div className={clsx("h-full rounded-lg border border-line/60 bg-panel/50 p-5", state === "scheduled" && "border-dashed")}>
         {body}
-        <div className="mt-3 text-xs text-slate-500">
-          {state === "scheduled" ? "Not run yet." : "No data is published for this session."}
-        </div>
+        <div className="mt-3 text-xs text-slate-500">{UNPUBLISHED_NOTE[state] ?? ""}</div>
       </div>
     );
   }
@@ -127,6 +108,38 @@ function SessionCard({ session, state }: { session: IndexSession; state: Session
     </Link>
   );
 }
+
+function MeetingNotFound({ address, missing }: { address: MeetingAddress; missing: "year" | "round" | "key" }) {
+  // The season to offer instead, when the address names one the calendar has.
+  const year = address.kind === "round" && missing === "round" ? address.year : null;
+  const detail =
+    address.kind === "key"
+      ? `The published calendar has no meeting with the key ${address.meetingKey}. A meeting has a key once one of its sessions is published.`
+      : missing === "year"
+        ? `There is no ${address.year} season in the published calendar.`
+        : `The ${address.year} calendar has no round ${address.round}. Rounds are renumbered when the calendar changes.`;
+  return (
+    <div>
+      <PageHeader title={addressTitle(address)} />
+      <EmptyState title="Meeting not found" detail={detail} />
+      <div className="mt-4 text-center">
+        <Link
+          className="text-sm font-semibold text-slate-200 underline-offset-4 hover:underline"
+          href={year === null ? SEASONS_PATH : seasonHref(year)}
+        >
+          {year === null ? "See every season" : `See the ${year} calendar`}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/** What a card says under a session that has no dashboard to open. */
+const UNPUBLISHED_NOTE: Partial<Record<SessionAvailability, string>> = {
+  scheduled: "Not run yet.",
+  not_published: "Run, and not published yet.",
+  not_covered: "This site does not publish this kind of session."
+};
 
 function NeighbourLink({
   year,
@@ -143,7 +156,7 @@ function NeighbourLink({
   return (
     <Link
       className="inline-flex items-center gap-2 rounded border border-line px-3 py-2 text-sm font-bold text-slate-200"
-      href={meetingHref(year, meeting.round)}
+      href={meetingHref(year, meeting)}
       title={`${direction === "previous" ? "Previous" : "Next"} meeting: ${meeting.name}`}
     >
       {direction === "previous" ? <ArrowLeft size={15} aria-hidden="true" /> : null}

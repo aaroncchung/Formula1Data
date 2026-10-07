@@ -45,7 +45,7 @@ function Season({ index, year }: { index: PublishedIndex; year: number }) {
       <PageHeader
         eyebrow="Season"
         title={`${year} Season`}
-        description={`${overview.meetingCount} ${overview.meetingCount === 1 ? "meeting" : "meetings"} in the calendar · ${overview.publishedCount} of ${overview.sessionCount + overview.unscheduledCount} sessions published${overview.partialCount > 0 ? `, ${overview.partialCount} with partial data` : ""}.`}
+        description={`${overview.meetingCount} ${overview.meetingCount === 1 ? "meeting" : "meetings"} in the calendar · ${overview.publishedCount} of the ${overview.coveredCount} sessions this site covers published${overview.partialCount > 0 ? `, ${overview.partialCount} with partial data` : ""}.`}
         actions={
           <>
             <Link className="rounded border border-line px-4 py-2 text-sm font-bold text-slate-200" href={standingsHref(year)}>
@@ -91,7 +91,7 @@ function MeetingCard({ year, meeting, now }: { year: number; meeting: IndexMeeti
             {sprint ? <span className="text-amber"> · Sprint weekend</span> : null}
           </div>
           <h2 className="mt-2 text-xl font-black text-white">
-            <Link href={meetingHref(year, meeting.round)} className="transition hover:text-redline">
+            <Link href={meetingHref(year, meeting)} className="transition hover:text-redline">
               {meeting.name}
             </Link>
           </h2>

@@ -3,6 +3,7 @@
  * themselves: which round they are after, and how a driver is named.
  */
 
+import { isPublished } from "./published/lookup.ts";
 import type { DriverStanding, IndexSeason, PublishedIndex, Standings } from "./published/types.ts";
 
 export type StandingsRound = {
@@ -61,10 +62,24 @@ export function defaultStandingsYear(index: PublishedIndex): number | null {
     index.seasons.some(
       (season) =>
         season.year === year &&
-        season.meetings.some((meeting) => meeting.sessions.some((session) => session.session_key !== null))
+        season.meetings.some((meeting) => meeting.sessions.some(isPublished))
     )
   );
   return started ?? years[0] ?? null;
+}
+
+/**
+ * A figure of a standings row as the page prints it. The format lets Jolpica
+ * leave any of them out, and a figure that was left out is not a zero: a
+ * driver with no points published is not a driver on no points.
+ */
+export function figureLabel(value: number | null): string {
+  return value === null ? "--" : String(value);
+}
+
+/** "3 wins", "1 win", and "-- wins" when the number was not published. */
+export function winsLabel(wins: number | null): string {
+  return `${figureLabel(wins)} ${wins === 1 ? "win" : "wins"}`;
 }
 
 /** A driver's full name, or whatever part of it was published. */

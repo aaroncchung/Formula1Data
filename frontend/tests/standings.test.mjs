@@ -3,8 +3,15 @@ import test from "node:test";
 
 import { standingsKey } from "../src/lib/published/layout.ts";
 import { parseStandings } from "../src/lib/published/parse.ts";
-import { defaultStandingsYear, driverName, roundLabel, standingsRounds } from "../src/lib/standings-view.ts";
-import { BASE_URL, bucketOf, clientOf, edit, failureOf } from "./support/published-bucket.mjs";
+import {
+  defaultStandingsYear,
+  driverName,
+  figureLabel,
+  roundLabel,
+  standingsRounds,
+  winsLabel
+} from "../src/lib/standings-view.ts";
+import { BASE_URL, bucketOf, clientOf, edit, failureOf, PUBLISHED } from "./support/published-bucket.mjs";
 import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./support/sample-index.mjs";
 
 // The shape f1data/standings.py writes (`fetch_standings`). The figures are
@@ -12,7 +19,7 @@ import { fixtureIndex, indexOf, meeting, sampleIndex, session } from "./support/
 // against an official 179, and HAM ahead of RUS.
 const STANDINGS = {
   schema_version: 1,
-  format_version: 1,
+  format_version: 2,
   year: 2026,
   rounds: { drivers: 9, constructors: 9 },
   drivers: [
@@ -53,7 +60,7 @@ const STANDINGS = {
   ]
 };
 
-const KEY = "v1/standings/2026.json";
+const KEY = "v2/standings/2026.json";
 
 function publishedWith(standings = STANDINGS) {
   return bucketOf({ [KEY]: JSON.stringify(standings) });
@@ -159,16 +166,26 @@ test("standings that are not JSON are invalid, not missing", async () => {
 
 test("standings in another format say which side is behind", async () => {
   const newer = await failureOf(
-    clientOf(publishedWith(changed((value) => { value.format_version = 2; }))).standings(2026)
+    clientOf(publishedWith(changed((value) => { value.format_version = 3; }))).standings(2026)
   );
   assert.equal(newer.code, "format_mismatch");
   assert.equal(newer.details.site, "older");
   assert.equal(newer.details.object, "standings");
 
+  // What `v1/standings/` held: the same tables, in format 1.
   const older = await failureOf(
-    clientOf(publishedWith(changed((value) => { value.format_version = 0; }))).standings(2026)
+    clientOf(publishedWith(changed((value) => { value.format_version = 1; }))).standings(2026)
   );
-  assert.equal(older.details.site, "newer");
+  assert.equal(older.code, "format_mismatch");
+  assert.deepEqual(older.details, { object: "standings", expected: 2, found: 1, site: "newer" });
+  assert.match(older.message, /newer than the data/);
+});
+
+test("the standings the publisher writes are read as they are", async () => {
+  const standings = await clientOf(bucketOf()).standings(2026);
+
+  assert.deepEqual(standings, JSON.parse(PUBLISHED[KEY]));
+  assert.equal(standings.constructors[0].points, 556.5);
 });
 
 test("standings with another schema version are not read", async () => {
@@ -190,13 +207,13 @@ test("each field the page shows is checked before the table is trusted", () => {
     [(value) => { value.constructors = null; }, /constructors is not a list/],
     [(value) => { delete value.rounds; }, /rounds is not an object/],
     [(value) => { value.rounds.drivers = "9"; }, /rounds\.drivers is not an integer/],
-    [(value) => { value.drivers[1].points = "154"; }, /drivers\[1\]\.points is not a number/],
-    [(value) => { value.drivers[0].points = null; }, /drivers\[0\]\.points is not a number/],
+    [(value) => { value.drivers[1].points = "154"; }, /drivers\[1\]\.points is neither a number nor null/],
     [(value) => { value.drivers[2].wins = 1.5; }, /drivers\[2\]\.wins is not an integer/],
+    [(value) => { value.constructors[0].wins = "6"; }, /constructors\[0\]\.wins is not an integer/],
     [(value) => { value.drivers[0].constructors = "Mercedes"; }, /drivers\[0\]\.constructors is not a list/],
     [(value) => { value.drivers[0].constructors = [7]; }, /drivers\[0\]\.constructors\[0\] is not a string/],
     [(value) => { value.drivers[0].driver_code = 12; }, /drivers\[0\]\.driver_code is neither a string nor null/],
-    [(value) => { value.constructors[1].name = null; }, /constructors\[1\]\.name is not a string/],
+    [(value) => { value.constructors[1].name = 7; }, /constructors\[1\]\.name is neither a string nor null/],
     [(value) => { value.constructors[0] = "Mercedes"; }, /constructors\[0\] is not an object/]
   ];
 
@@ -210,29 +227,39 @@ test("each field the page shows is checked before the table is trusted", () => {
   assert.throws(() => parseStandings([], 2026), /the standings is not an object/);
 });
 
-test("what Jolpica leaves out for a driver is null, and the row is still read", () => {
+test("what Jolpica leaves out of a row is null, and the row is still read", () => {
   // A driver Jolpica has not classified has no position, and an older season
-  // has neither codes nor permanent numbers.
+  // has neither codes nor permanent numbers. A figure it leaves out stays
+  // absent: it is not read as zero points or no wins.
   const sparse = changed((value) => {
     value.drivers[2] = {
       position: null,
-      points: 0,
-      wins: 0,
+      points: null,
+      wins: null,
       driver_code: null,
       driver_number: null,
       given_name: null,
       family_name: "Hamilton",
       constructors: []
     };
-    value.constructors[1].constructor_id = null;
-    value.constructors[1].position = null;
+    value.constructors[1] = { constructor_id: null, position: null, points: null, wins: null, name: null };
   });
 
   const standings = parseStandings(sparse, 2026);
 
   assert.deepEqual(standings.drivers[2], sparse.drivers[2]);
-  assert.equal(standings.constructors[1].constructor_id, null);
+  assert.deepEqual(standings.constructors[1], sparse.constructors[1]);
   assert.equal(driverName(standings.drivers[2]), "Hamilton");
+});
+
+test("a figure the standings leave out is shown as absent, never as zero", () => {
+  assert.equal(figureLabel(null), "--");
+  assert.equal(figureLabel(0), "0");
+  assert.equal(figureLabel(236.5), "236.5");
+  assert.equal(winsLabel(null), "-- wins");
+  assert.equal(winsLabel(0), "0 wins");
+  assert.equal(winsLabel(1), "1 win");
+  assert.equal(winsLabel(11), "11 wins");
 });
 
 test("parsed standings cannot be changed by the page that shows them", () => {

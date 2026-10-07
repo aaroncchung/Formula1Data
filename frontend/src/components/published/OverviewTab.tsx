@@ -47,8 +47,12 @@ function Overview({ summary, drivers, laps, racePace, stints, pitStops }: Sessio
           <div className="space-y-3">
             {drivers.map((driver) => (
               <div key={driver.code} className="flex items-center justify-between gap-3 rounded border border-line bg-white/[0.03] p-3">
-                <DriverBadge code={driver.code} color={driver.team.color} />
-                <TeamColorPill name={driver.team.name} color={driver.team.color} />
+                <DriverBadge code={driver.code} color={driver.team?.color} />
+                {driver.team ? (
+                  <TeamColorPill name={driver.team.name} color={driver.team.color} />
+                ) : (
+                  <span className="text-xs text-slate-500">No team listed</span>
+                )}
               </div>
             ))}
           </div>

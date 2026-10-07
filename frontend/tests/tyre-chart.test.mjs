@@ -5,10 +5,15 @@ import { describeTyreAgePlot, isTyreAgePoint, tyreAgePlot, tyreFitsFor } from ".
 
 function lap(driver, number, overrides = {}) {
   return {
-    session_id: "2026-08-r",
     driver_code: driver,
     lap_number: number,
     lap_time_ms: 72000 + number,
+    sector_1_ms: null,
+    sector_2_ms: null,
+    sector_3_ms: null,
+    stint: 1,
+    position: null,
+    track_status: "1",
     compound: "MEDIUM",
     tyre_age: number,
     is_pit_in_lap: false,
@@ -78,7 +83,7 @@ test("laps without a lap time or a tyre age are left out and counted", () => {
   const plot = tyreAgePlot([
     lap("RUS", 1, { lap_time_ms: null }),
     lap("RUS", 2, { tyre_age: null }),
-    lap("RUS", 3, { tyre_age: undefined }),
+    lap("RUS", 3, { lap_time_ms: null, tyre_age: null }),
     lap("RUS", 4, { lap_time_ms: 0 }),
     lap("RUS", 5)
   ]);
@@ -168,7 +173,22 @@ test("a tooltip payload is recognised only when it is a plotted lap", () => {
 });
 
 function fit(driver, stint) {
-  return { driver_code: driver, compound: "MEDIUM", stint, sample_count: 10, stint_length: 10, caveats: [] };
+  return {
+    driver_code: driver,
+    compound: "MEDIUM",
+    stint,
+    sample_count: 10,
+    stint_length: 10,
+    fit_status: "too_few_laps",
+    degradation_ms_per_lap: null,
+    raw_slope_ms_per_lap: null,
+    fuel_correction_ms_per_lap: 55,
+    r_squared: null,
+    residual_spread_ms: null,
+    slope_standard_error_ms_per_lap: null,
+    excluded_outlier_count: 0,
+    caveats: []
+  };
 }
 
 const FITS = [fit("ANT", 1), fit("ANT", 2), fit("HAM", 1), fit("RUS", 1), fit("RUS", 2), fit("RUS", 3)];

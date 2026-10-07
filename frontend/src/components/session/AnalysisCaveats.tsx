@@ -1,5 +1,5 @@
 /** The method notes an analysis publishes with its result, shown under it. */
-export function AnalysisCaveats({ caveats }: { caveats?: string[] }) {
+export function AnalysisCaveats({ caveats }: { caveats?: ReadonlyArray<string> }) {
   if (!caveats?.length) {
     return null;
   }

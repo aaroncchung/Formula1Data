@@ -1,4 +1,4 @@
-import type { Lap, TyreDegradationRow } from "@/types/domain";
+import type { Lap, TyreDegradationRow } from "./published/types.ts";
 
 /**
  * The data behind the tyre degradation chart: lap time against tyre age for
@@ -106,7 +106,7 @@ export function isTyreAgePoint(value: unknown): value is TyreAgePoint {
 }
 
 export type TyreFitSelection = {
-  shown: TyreDegradationRow[];
+  shown: ReadonlyArray<TyreDegradationRow>;
   /** Fits that belong to the drivers on screen, shown or not. */
   total: number;
 };
@@ -141,8 +141,9 @@ export type TyreFit =
     }
   /**
    * No rate. `poor_fit`: the laps scatter too much to fix the slope.
-   * `too_few_laps`: too few clean laps to fit. `not_reported`: the row holds
-   * no rate and does not say why. `reason` is the publisher's own sentence.
+   * `too_few_laps`: too few clean laps to fit. `not_reported`: the fit is
+   * marked as good and the row holds no rate. `reason` is the publisher's
+   * own sentence where it gave one.
    */
   | { status: "poor_fit" | "too_few_laps" | "not_reported"; reason: string };
 
@@ -151,26 +152,26 @@ export type TyreFit =
  *
  * A fit the analysis did not report has to stay unreported on the page: its
  * row still carries a stint and a lap count, and a table that prints "-- ms/lap"
- * or a zero for it reads as a measured rate. The status decides first, so a
- * row marked as a poor fit shows no rate even if it carries a number. A row
- * with no status is one from before there was a status, and has a rate when
- * it has a number.
+ * or a zero for it reads as a measured rate. The status decides, so a row
+ * marked as a poor fit shows no rate even if it carries a number.
  */
 export function tyreFit(row: TyreDegradationRow): TyreFit {
-  const reason = row.caveats?.find((caveat) => caveat.trim() !== "");
-  if (row.fit_status === "poor_fit" || row.fit_status === "too_few_laps") {
-    return { status: row.fit_status, reason: reason ?? UNREPORTED_REASONS[row.fit_status] };
+  const reason = row.caveats.find((caveat) => caveat.trim() !== "");
+  switch (row.fit_status) {
+    case "poor_fit":
+    case "too_few_laps":
+      return { status: row.fit_status, reason: reason ?? UNREPORTED_REASONS[row.fit_status] };
+    case "ok":
+      // The format gives a rate with every good fit. One without is shown
+      // as having none, which is what it has.
+      return row.degradation_ms_per_lap === null
+        ? { status: "not_reported", reason: UNREPORTED_REASONS.not_reported }
+        : {
+            status: "reported",
+            rate_ms_per_lap: row.degradation_ms_per_lap,
+            standard_error_ms_per_lap: row.slope_standard_error_ms_per_lap
+          };
   }
-  if (isMeasured(row.degradation_ms_per_lap)) {
-    return {
-      status: "reported",
-      rate_ms_per_lap: row.degradation_ms_per_lap,
-      standard_error_ms_per_lap: isMeasured(row.slope_standard_error_ms_per_lap)
-        ? row.slope_standard_error_ms_per_lap
-        : null
-    };
-  }
-  return { status: "not_reported", reason: reason ?? UNREPORTED_REASONS.not_reported };
 }
 
 const UNREPORTED_REASONS = {

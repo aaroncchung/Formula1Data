@@ -3,36 +3,40 @@
  * which of them each tab reads.
  *
  * One reader for each tab, so that a tab asks for exactly its own files when
- * it is first opened (AR-07). The contents are still in the site's existing
- * format, hence the existing types; step 3 of the rewrite replaces these with
- * generated ones.
+ * it is first opened (AR-07).
+ *
+ * A file's type is not written here. It is looked up from its path in
+ * `GenerationFiles`, which is the published schema, so a path the format
+ * does not have, or a file read as something the schema does not say it is,
+ * does not compile.
  */
 
-import type {
-  CarPerformanceResult,
-  ChartSeries,
-  CornerAnalysisResult,
-  Driver,
-  IdealLapsResult,
-  Lap,
-  PacePredictionResult,
-  PitStop,
-  PositionReplayFrame,
-  RaceControlMessage,
-  RacePaceResult,
-  Result,
-  SessionSummary,
-  Stint,
-  StrategyResult,
-  TeammateComparisonResult,
-  TrackDominanceResult,
-  TyreDegradationResult,
-  WeatherSample
-} from "../../types/domain";
-import type { TelemetryIndex } from "../static-api-core.ts";
 import type { SessionView } from "./client.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { SessionTabId } from "./tabs.ts";
+import type {
+  CarPerformance,
+  CornerAnalysis,
+  Corners,
+  Driver,
+  GenerationFiles,
+  IdealLaps,
+  Lap,
+  LapTimeSeries,
+  PacePrediction,
+  PitStop,
+  PositionReplay,
+  RaceControlMessage,
+  RacePace,
+  Result,
+  SessionSummary,
+  Stint,
+  Strategy,
+  TeammateComparison,
+  TrackDominance,
+  TyreDegradation,
+  WeatherSample
+} from "./types.ts";
 
 /** One file of a generation: where it is, and how it is read as what it is. */
 export type ArtifactFile<T> = {
@@ -41,8 +45,8 @@ export type ArtifactFile<T> = {
 };
 
 /**
- * Every file a session page reads, except the telemetry laps, which are named
- * by the telemetry index and read two at a time (telemetry.ts).
+ * Every file a session page reads, except the drivers' telemetry, which the
+ * telemetry index names and which is read a driver at a time (telemetry.ts).
  *
  * An object artifact names the fields a component maps over. Only that much
  * of a shape is checked, because a component that maps over a missing list
@@ -50,26 +54,28 @@ export type ArtifactFile<T> = {
  * by the manifest's format version (rule 7).
  */
 export const ARTIFACTS = {
-  summary: recordOf<SessionSummary>("summary.json"),
-  drivers: listOf<Driver>("drivers.json"),
-  laps: listOf<Lap>("laps.json"),
-  results: listOf<Result>("results.json"),
-  stints: listOf<Stint>("stints.json"),
-  pitStops: listOf<PitStop>("pit-stops.json"),
-  weather: listOf<WeatherSample>("weather.json"),
-  raceControl: listOf<RaceControlMessage>("race-control.json"),
-  positionReplay: listOf<PositionReplayFrame>("position-replay.json"),
-  lapTimes: listOf<ChartSeries>("analysis/lap-times.json"),
-  racePace: recordOf<RacePaceResult>("analysis/race-pace.json", ["drivers"]),
-  tyreDegradation: recordOf<TyreDegradationResult>("analysis/tyre-degradation.json", ["rows"]),
-  idealLaps: recordOf<IdealLapsResult>("analysis/ideal-laps.json", ["rows"]),
-  teammateComparison: recordOf<TeammateComparisonResult>("analysis/team-mate-comparison.json", ["rows"]),
-  strategy: recordOf<StrategyResult>("analysis/strategy.json"),
-  trackDominance: recordOf<TrackDominanceResult>("analysis/track-dominance.json", ["minisectors"]),
-  cornerAnalysis: recordOf<CornerAnalysisResult>("analysis/corner-analysis.json", ["corners"]),
-  carPerformance: recordOf<CarPerformanceResult>("analysis/car-performance.json", ["drivers"]),
-  pacePrediction: recordOf<PacePredictionResult>("analysis/pace-prediction.json", ["drivers"]),
-  telemetryIndex: recordOf<TelemetryIndex>("telemetry/index.json", ["laps"])
+  summary: recordOf("summary.json"),
+  drivers: listOf("drivers.json"),
+  results: listOf("results.json"),
+  laps: listOf("laps.json"),
+  stints: listOf("stints.json"),
+  pitStops: listOf("pit-stops.json"),
+  weather: listOf("weather.json"),
+  raceControl: listOf("race-control.json"),
+  strategy: recordOf("analysis/strategy.json", ["undercut_overcut", "caveats"]),
+  lapTimes: listOf("analysis/lap-times.json"),
+  racePace: recordOf("analysis/race-pace.json", ["drivers", "stints", "caveats"]),
+  tyreDegradation: recordOf("analysis/tyre-degradation.json", ["rows", "caveats"]),
+  idealLaps: recordOf("analysis/ideal-laps.json", ["rows"]),
+  teammateComparison: recordOf("analysis/team-mate-comparison.json", ["rows", "caveats"]),
+  trackDominance: recordOf("analysis/track-dominance.json", ["minisectors", "excluded_drivers", "caveats"]),
+  cornerAnalysis: recordOf("analysis/corner-analysis.json", ["corners", "caveats"]),
+  carPerformance: recordOf("analysis/car-performance.json", ["drivers", "caveats"]),
+  pacePrediction: recordOf("analysis/pace-prediction.json", ["drivers", "caveats"]),
+  telemetryIndex: recordOf("telemetry/index.json", ["channels", "drivers"]),
+  positionReplay: recordOf("position-replay.json", ["drivers", "time_ms", "lap_number"]),
+  // The circuit's own corner map, for the tabs that draw the track.
+  corners: recordOf("corners.json", ["corners"])
 } as const;
 
 type TabFiles = {
@@ -87,8 +93,8 @@ const A = ARTIFACTS;
  * knows which a generation holds before it asks, so a missing one costs no
  * request and is not an error.
  *
- * The telemetry tab also reads two telemetry laps for each comparison, which
- * no table can list.
+ * The telemetry tab also reads the telemetry of the drivers it compares,
+ * which no table can list: the index says which files there are.
  */
 const TAB_FILES: Readonly<Record<SessionTabId, TabFiles>> = {
   overview: { required: [A.summary, A.drivers, A.laps, A.racePace, A.stints, A.pitStops], optional: [] },
@@ -96,11 +102,19 @@ const TAB_FILES: Readonly<Record<SessionTabId, TabFiles>> = {
   "race-pace": { required: [A.racePace, A.tyreDegradation, A.laps, A.drivers], optional: [] },
   performance: {
     required: [A.drivers],
-    optional: [A.idealLaps, A.teammateComparison, A.trackDominance, A.cornerAnalysis, A.carPerformance, A.pacePrediction]
+    optional: [
+      A.idealLaps,
+      A.teammateComparison,
+      A.trackDominance,
+      A.cornerAnalysis,
+      A.carPerformance,
+      A.pacePrediction,
+      A.corners
+    ]
   },
   strategy: { required: [A.stints, A.pitStops], optional: [A.strategy] },
-  telemetry: { required: [A.telemetryIndex, A.laps, A.drivers], optional: [] },
-  "position-replay": { required: [A.positionReplay, A.drivers], optional: [] },
+  telemetry: { required: [A.telemetryIndex, A.drivers], optional: [A.corners] },
+  "position-replay": { required: [A.positionReplay, A.drivers], optional: [A.corners] },
   weather: { required: [A.weather], optional: [] },
   "race-control": { required: [A.raceControl], optional: [] },
   results: { required: [A.results, A.drivers], optional: [] }
@@ -132,11 +146,11 @@ export function tabAvailability(view: Pick<SessionView, "has">, tab: SessionTabI
 
 export type SessionOverview = {
   readonly summary: SessionSummary;
-  readonly drivers: Driver[];
-  readonly laps: Lap[];
-  readonly racePace: RacePaceResult;
-  readonly stints: Stint[];
-  readonly pitStops: PitStop[];
+  readonly drivers: ReadonlyArray<Driver>;
+  readonly laps: ReadonlyArray<Lap>;
+  readonly racePace: RacePace;
+  readonly stints: ReadonlyArray<Stint>;
+  readonly pitStops: ReadonlyArray<PitStop>;
 };
 
 export async function readOverview(view: SessionView): Promise<SessionOverview> {
@@ -153,8 +167,8 @@ export async function readOverview(view: SessionView): Promise<SessionOverview> 
 }
 
 export type SessionLapTimes = {
-  readonly series: ChartSeries[];
-  readonly drivers: Driver[];
+  readonly series: ReadonlyArray<LapTimeSeries>;
+  readonly drivers: ReadonlyArray<Driver>;
 };
 
 /**
@@ -169,10 +183,10 @@ export async function readLapTimes(view: SessionView): Promise<SessionLapTimes> 
 }
 
 export type SessionRacePace = {
-  readonly racePace: RacePaceResult;
-  readonly tyreDegradation: TyreDegradationResult;
-  readonly laps: Lap[];
-  readonly drivers: Driver[];
+  readonly racePace: RacePace;
+  readonly tyreDegradation: TyreDegradation;
+  readonly laps: ReadonlyArray<Lap>;
+  readonly drivers: ReadonlyArray<Driver>;
 };
 
 export async function readRacePace(view: SessionView): Promise<SessionRacePace> {
@@ -188,18 +202,23 @@ export async function readRacePace(view: SessionView): Promise<SessionRacePace> 
 
 /** Each analysis is null when the generation does not hold it. */
 export type SessionPerformance = {
-  readonly drivers: Driver[];
-  readonly idealLaps: IdealLapsResult | null;
-  readonly teammateComparison: TeammateComparisonResult | null;
-  readonly trackDominance: TrackDominanceResult | null;
-  readonly cornerAnalysis: CornerAnalysisResult | null;
-  readonly carPerformance: CarPerformanceResult | null;
-  readonly pacePrediction: PacePredictionResult | null;
+  /** The session's code, from its pointer: which analyses a session has depends on what kind it is. */
+  readonly sessionType: string;
+  readonly drivers: ReadonlyArray<Driver>;
+  readonly idealLaps: IdealLaps | null;
+  readonly teammateComparison: TeammateComparison | null;
+  readonly trackDominance: TrackDominance | null;
+  readonly cornerAnalysis: CornerAnalysis | null;
+  readonly carPerformance: CarPerformance | null;
+  /** Published for a practice session only. */
+  readonly pacePrediction: PacePrediction | null;
+  /** The circuit's corner map, for the track the dominance is drawn on. */
+  readonly corners: Corners | null;
 };
 
 export async function readPerformance(view: SessionView): Promise<SessionPerformance> {
   requireListed(view, "performance");
-  const [drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction] =
+  const [drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction, corners] =
     await Promise.all([
       A.drivers.read(view),
       readIfListed(view, A.idealLaps),
@@ -207,16 +226,27 @@ export async function readPerformance(view: SessionView): Promise<SessionPerform
       readIfListed(view, A.trackDominance),
       readIfListed(view, A.cornerAnalysis),
       readIfListed(view, A.carPerformance),
-      readIfListed(view, A.pacePrediction)
+      readIfListed(view, A.pacePrediction),
+      readIfListed(view, A.corners)
     ]);
-  return { drivers, idealLaps, teammateComparison, trackDominance, cornerAnalysis, carPerformance, pacePrediction };
+  return {
+    sessionType: view.pointer.identity.session_type,
+    drivers,
+    idealLaps,
+    teammateComparison,
+    trackDominance,
+    cornerAnalysis,
+    carPerformance,
+    pacePrediction,
+    corners
+  };
 }
 
 /** `strategy` is null when the generation does not hold the analysis. */
 export type SessionStrategy = {
-  readonly stints: Stint[];
-  readonly pitStops: PitStop[];
-  readonly strategy: StrategyResult | null;
+  readonly stints: ReadonlyArray<Stint>;
+  readonly pitStops: ReadonlyArray<PitStop>;
+  readonly strategy: Strategy | null;
 };
 
 export async function readStrategy(view: SessionView): Promise<SessionStrategy> {
@@ -230,28 +260,34 @@ export async function readStrategy(view: SessionView): Promise<SessionStrategy> 
 }
 
 export type SessionReplay = {
-  readonly frames: PositionReplayFrame[];
-  readonly drivers: Driver[];
+  readonly replay: PositionReplay;
+  readonly drivers: ReadonlyArray<Driver>;
+  /** The circuit's corner map; null when the generation has none. */
+  readonly corners: Corners | null;
 };
 
-/** The largest artifact of a session after the telemetry, at 2 to 4 MB. Read by its own tab only. */
+/** The largest artifact of a session after the telemetry, at over half a megabyte. Read by its own tab only. */
 export async function readPositionReplay(view: SessionView): Promise<SessionReplay> {
   requireListed(view, "position-replay");
-  const [frames, drivers] = await Promise.all([A.positionReplay.read(view), A.drivers.read(view)]);
-  return { frames, drivers };
+  const [replay, drivers, corners] = await Promise.all([
+    A.positionReplay.read(view),
+    A.drivers.read(view),
+    readIfListed(view, A.corners)
+  ]);
+  return { replay, drivers, corners };
 }
 
-export function readWeather(view: SessionView): Promise<WeatherSample[]> {
+export function readWeather(view: SessionView): Promise<ReadonlyArray<WeatherSample>> {
   return A.weather.read(view);
 }
 
-export function readRaceControl(view: SessionView): Promise<RaceControlMessage[]> {
+export function readRaceControl(view: SessionView): Promise<ReadonlyArray<RaceControlMessage>> {
   return A.raceControl.read(view);
 }
 
 export type SessionResults = {
-  readonly results: Result[];
-  readonly drivers: Driver[];
+  readonly results: ReadonlyArray<Result>;
+  readonly drivers: ReadonlyArray<Driver>;
 };
 
 /** The classification, with the drivers it needs for names, teams and colours. */
@@ -283,37 +319,67 @@ export function readIfListed<T>(view: SessionView, file: ArtifactFile<T>): Promi
   return view.has(file.path) ? file.read(view) : Promise.resolve(null);
 }
 
-function listOf<T>(path: string): ArtifactFile<T[]> {
-  return {
-    path,
-    async read(view) {
-      const payload = await view.read<unknown>(path);
-      if (!Array.isArray(payload)) {
-        throw new PublishedDataError("invalid_artifact", `${path} is not a list.`, { path });
-      }
-      const rows: unknown[] = payload;
-      return rows as T[];
-    }
-  };
+/** The files the schema says are lists, and the ones it says are objects. */
+type ListPath = {
+  [Path in keyof GenerationFiles]: GenerationFiles[Path] extends ReadonlyArray<unknown> ? Path : never;
+}[keyof GenerationFiles];
+type RecordPath = Exclude<keyof GenerationFiles, ListPath>;
+
+/** The fields of an object that the schema says are lists. */
+type ListField<T> = { [Field in keyof T]: T[Field] extends ReadonlyArray<unknown> ? Field : never }[keyof T] & string;
+
+/** A file that is a list, read as the list the schema says it is. */
+function listOf<Path extends ListPath>(path: Path): ArtifactFile<GenerationFiles[Path]> {
+  return { path, read: (view) => readList(view, path) };
 }
 
-function recordOf<T>(path: string, lists: ReadonlyArray<string> = []): ArtifactFile<T> {
-  return {
-    path,
-    async read(view) {
-      const payload = await view.read<unknown>(path);
-      if (!isRecord(payload)) {
-        throw new PublishedDataError("invalid_artifact", `${path} is not an object.`, { path });
-      }
-      for (const field of lists) {
-        if (!Array.isArray(payload[field])) {
-          throw new PublishedDataError("invalid_artifact", `${path} has no list of ${field}.`, { path, field });
-        }
-      }
-      return payload as T;
-    }
-  };
+/**
+ * A file that is an object. `lists` names the fields a page maps over, which
+ * are checked to be lists; they can only be fields the schema types as one.
+ */
+function recordOf<Path extends RecordPath>(
+  path: Path,
+  lists: ReadonlyArray<ListField<GenerationFiles[Path]>> = []
+): ArtifactFile<GenerationFiles[Path]> {
+  return { path, read: (view) => readRecord(view, path, lists) };
 }
+
+/**
+ * Read a path of a generation as the object the schema says is there. `path`
+ * is the real path and `As` the schema's path for it; they differ only for a
+ * driver's telemetry, which has one schema path for every driver's file.
+ */
+export function readRecord<As extends RecordPath>(
+  view: SessionView,
+  path: string,
+  lists: ReadonlyArray<ListField<GenerationFiles[As]>> = []
+): Promise<GenerationFiles[As]> {
+  return checkedRecord<GenerationFiles[As]>(view, path, lists);
+}
+
+async function readList<T>(view: SessionView, path: string): Promise<T> {
+  // The view takes the type on trust (client.ts); that it is a list at all
+  // is what is checked here.
+  const payload = await view.read<T>(path);
+  if (!Array.isArray(payload)) {
+    throw new PublishedDataError("invalid_artifact", `${path} is not a list.`, { path });
+  }
+  return payload;
+}
+
+async function checkedRecord<T>(view: SessionView, path: string, lists: ReadonlyArray<string>): Promise<T> {
+  const payload = await view.read<T>(path);
+  if (!isRecord(payload)) {
+    throw new PublishedDataError("invalid_artifact", `${path} is not an object.`, { path });
+  }
+  for (const field of lists) {
+    if (!Array.isArray(payload[field])) {
+      throw new PublishedDataError("invalid_artifact", `${path} has no list of ${field}.`, { path, field });
+    }
+  }
+  return payload;
+}
+
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

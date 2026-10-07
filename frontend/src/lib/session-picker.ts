@@ -10,7 +10,7 @@
 
 import { publishedSessions } from "./calendar.ts";
 import type { PublishedSession } from "./calendar.ts";
-import { findSession, parseSessionAddress } from "./published/lookup.ts";
+import { findSession, isPublished, parseSessionAddress } from "./published/lookup.ts";
 import type { IndexMeeting, PublishedIndex } from "./published/types.ts";
 import { roundParam, yearParam } from "./routes.ts";
 import type { Query } from "./routes.ts";
@@ -106,7 +106,7 @@ export function pickerKeyForQuery(index: PublishedIndex, query: Query): number |
   // today. When that session is not published the picker still starts at its
   // meeting, through the year and round below.
   const named = address ? findSession(index, address.route) : null;
-  if (named?.found && named.entry.session.session_key !== null) {
+  if (named?.found && isPublished(named.entry.session)) {
     return named.entry.session.session_key;
   }
   const year = yearParam(query);

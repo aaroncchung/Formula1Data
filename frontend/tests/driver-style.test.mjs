@@ -9,7 +9,7 @@ import {
   teamDriverStyles
 } from "../src/lib/driver-style.ts";
 
-// The 2026 field as published in sessions/2026-08-r/drivers.json, in the
+// The 2026 field as published in the Austrian GP's drivers.json, in the
 // order that file lists it (classification order, not team order).
 const FIELD_2026 = [
   ["RUS", "#00D7B6"], ["VER", "#4781D7"], ["ANT", "#00D7B6"], ["PIA", "#F47600"],
@@ -146,14 +146,17 @@ test("styles for a session's drivers come from the team colour", () => {
   const drivers = [
     { code: "RUS", team: { color: "#00D7B6" } },
     { code: "ANT", team: { color: "#00D7B6" } },
-    { code: "VER", team: { color: null } }
+    { code: "VER", team: { color: null } },
+    // F1's driver list can name no team for a driver.
+    { code: "DOO", team: null }
   ];
   const styles = teamDriverStyles(drivers);
 
   assert.equal(driverStyle(styles, "RUS").color, "#00d7b6");
   assert.equal(typeof driverStyle(styles, "RUS").dash, "string");
   assert.equal(driverStyle(styles, "VER").color, FALLBACK_DRIVER_COLOR);
-  assert.deepEqual(teamColorByDriver(drivers), { RUS: "#00D7B6", ANT: "#00D7B6", VER: null });
+  assert.deepEqual(teamColorByDriver(drivers), { RUS: "#00D7B6", ANT: "#00D7B6", VER: null, DOO: undefined });
+  assert.equal(driverStyle(styles, "DOO").color, FALLBACK_DRIVER_COLOR);
 });
 
 const MERCEDES = [

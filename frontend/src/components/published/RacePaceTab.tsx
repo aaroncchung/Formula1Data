@@ -23,7 +23,7 @@ function RacePace({ racePace, tyreDegradation, laps, drivers }: SessionRacePace)
   const colors = teamColorByDriver(drivers);
   return (
     <div className="space-y-5">
-      <ChartPanel title="Driver Race Pace" description={(racePace.caveats ?? []).join(" ")}>
+      <ChartPanel title="Driver Race Pace" description={racePace.caveats.join(" ")}>
         <RacePaceChart rows={racePace.drivers} />
       </ChartPanel>
       <ChartPanel
