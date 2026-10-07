@@ -196,8 +196,9 @@ export function compareLaps(
   // A lap has telemetry only when its car data runs from its start to its
   // end, so the last sample is at the line.
   const lastSample = samplesA.count - 1;
+  const lastOfB = samplesB.count - 1;
   const lengthA = samplesA.distance[lastSample] ?? 0;
-  const lengthB = samplesB.distance[samplesB.count - 1] ?? 0;
+  const lengthB = samplesB.distance[lastOfB] ?? 0;
   const scale = lengthA > 0 && lengthB > 0 ? lengthB / lengthA : 1;
   const rows: Array<{ distance: number; a: Reading | null; b: Reading | null }> = [];
   samplesA.distance.forEach((distance, index) => {
@@ -208,14 +209,21 @@ export function compareLaps(
       rows.push({ distance: (samplesA.published[previous] + samplesA.published[index]) / 2, a: null, b: null });
     }
     // The line itself is given exactly: scaled, it could land a rounding
-    // error past B's last sample and read as nothing.
-    const place = index === lastSample ? lengthB : distance * scale;
+    // error past B's last sample and read as nothing. Every sample of A that
+    // is at the line, and a lap can have more than one: a published distance
+    // has one decimal, and a lap's last samples can be closer than that.
+    const place = lengthA > 0 && distance === lengthA ? lengthB : distance * scale;
+    // And where A's lap ends, so does B's: at its last sample, and not at
+    // the first of several that its distance puts at the line. That is what
+    // makes the delta at the line the difference between the two lap times.
+    const ofB =
+      index === lastSample
+        ? lastOfB >= 0
+          ? readingAt(b.lap, lastOfB)
+          : null
+        : readB(place, standingMs(samplesA, index));
     // The chart's axis is lap A's distance as it is published.
-    rows.push({
-      distance: samplesA.published[index],
-      a: readingAt(a.lap, index),
-      b: readB(place, standingMs(samplesA, index))
-    });
+    rows.push({ distance: samplesA.published[index], a: readingAt(a.lap, index), b: ofB });
   });
 
   const of = (side: "a" | "b", field: Exclude<keyof Reading, "drs">) => rows.map((row) => row[side]?.[field] ?? null);

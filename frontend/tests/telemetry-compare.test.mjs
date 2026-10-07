@@ -119,6 +119,100 @@ test("a lap with a hole in it is nowhere apart from itself either, whatever its 
   }
 });
 
+// A published distance has one decimal. A lap that ends a millisecond after a
+// sample of its car has its last two samples at one distance, and was read at
+// the line as arriving there at the first of them.
+test("the delta at the line is the difference between the two lap times, whatever a lap's last samples are", () => {
+  const steady = (end) => [[0, 0, 144], [36_000, 1_440, 144], [end, 2_880, 144]];
+  const a = lap(3, steady(72_000));
+  // Ends 1 ms later, 0.04 m further on: the same distance, as published.
+  const b = lap(2, [...steady(72_000), [72_001, 2_880, 144]]);
+  const c = lap(4, [...steady(72_000), [72_001, 2_880, 144], [72_003, 2_880, 144]]);
+
+  for (const [first, second] of [[a, b], [b, a], [b, c], [c, b], [a, c], [c, a], [b, b], [c, c]]) {
+    const comparison = compare(first, second);
+
+    assert.equal(comparison.delta_time_ms.at(-1), second.time_ms.at(-1) - first.time_ms.at(-1));
+    // And nothing before it is lost: every sample of the first lap has the second beside it.
+    assert.equal(comparison.delta_time_ms.includes(null), false);
+  }
+});
+
+test("every sample of A at the line reads B at its line, not a rounding error past it", () => {
+  // 4000.1 * (4005.5 / 4000.1) is 4005.5000000000005.
+  const a = lap(3, [[0, 0, 200], [40_000, 2_000, 200], [80_000, 4_000.1, 200], [80_001, 4_000.1, 200]]);
+  const b = lap(2, [[0, 0, 200], [40_000, 2_002.7, 200], [80_500, 4_005.5, 200]]);
+
+  const comparison = compare(a, b);
+
+  assert.deepEqual(comparison.delta_time_ms.slice(-2), [500, 499]);
+  assert.equal(comparison.speed_b.includes(null), false);
+});
+
+// Four reviews in a row found a lap this comparison got wrong, each one a
+// shape the cases above did not have: a distance that does not start at
+// nought, a rounding error beside a standstill, two samples at the line. So
+// the promises are also tried on laps nobody chose, with everything a
+// published lap has been seen to have and in every combination: a reading at
+// the line a fraction of a metre off nought, a standstill, a distance that
+// steps back a tenth while the car stands, and samples at one distance at
+// the start and at the end. The numbers are the same on every run.
+function lapsNobodyChose(howMany) {
+  let seed = 20261007;
+  const random = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 2 ** 32;
+  };
+  const pick = (values) => values[Math.floor(random() * values.length)];
+  const oneDecimal = (value) => Math.round(value * 10) / 10;
+  const made = [];
+  for (let number = 0; number < howMany; number += 1) {
+    const atTheLine = pick([0, 0, -1, -0.7, -0.4, 0.3, 0.4, 0.1, -0.2]);
+    const count = 20 + Math.floor(random() * 60);
+    const standsFrom = random() < 0.4 ? 5 + Math.floor(random() * (count - 10)) : -1;
+    const standsFor = 2 + Math.floor(random() * 8);
+    const twiceAtTheStart = random() < 0.2;
+    const moreAtTheEnd = random() < 0.4 ? 1 + Math.floor(random() * 2) : 0;
+    const samples = [[0, oneDecimal(atTheLine), 100]];
+    let distance = atTheLine;
+    for (let index = 1; index < count; index += 1) {
+      const standing = standsFrom >= 0 && index > standsFrom && index <= standsFrom + standsFor;
+      if (!standing && !(twiceAtTheStart && index === 1)) {
+        distance += 30 + random() * 40;
+      } else if (standing && random() < 0.3) {
+        distance -= 0.1;
+      }
+      samples.push([samples[index - 1][0] + 200 + Math.floor(random() * 80), oneDecimal(distance), 100 + (index % 7) * 10]);
+    }
+    for (let extra = 0; extra < moreAtTheEnd; extra += 1) {
+      samples.push([samples.at(-1)[0] + 1 + Math.floor(random() * 3), samples.at(-1)[1], 100]);
+    }
+    made.push(lap(number + 1, samples));
+  }
+  return made;
+}
+
+test("on laps nobody chose, a lap is nowhere apart from itself and two laps start and end together", () => {
+  const laps = lapsNobodyChose(600);
+
+  for (let index = 0; index + 1 < laps.length; index += 2) {
+    const [a, b] = [laps[index], laps[index + 1]];
+    const itself = compare(a, a);
+    assert.equal(itself.delta_time_ms.every((delta) => delta === 0), true, `lap ${a.lap_number} is apart from itself`);
+    assert.deepEqual(itself.speed_b, itself.speed_a);
+
+    const [ab, ba] = [compare(a, b), compare(b, a)];
+    const where = `laps ${a.lap_number} and ${b.lap_number}`;
+    assert.equal(ab.delta_time_ms[0], 0, where);
+    // The difference between the two lap times, the same either way round.
+    assert.equal(ab.delta_time_ms.at(-1), b.time_ms.at(-1) - a.time_ms.at(-1), where);
+    assert.equal(ba.delta_time_ms.at(-1), a.time_ms.at(-1) - b.time_ms.at(-1), where);
+    // Neither lap has a hole, so every sample of one has the other beside it.
+    assert.equal(ab.delta_time_ms.includes(null) || ab.speed_b.includes(null), false, where);
+    assert.equal(ab.distance_m.length, a.time_ms.length, where);
+  }
+});
+
 // The point of interpolating: with 300 samples a lap, the nearest sample is
 // up to an eighth of a second away, which is more than most gaps being read.
 test("the time delta is how much later B reached each distance, interpolated and not taken from the nearest sample", () => {
