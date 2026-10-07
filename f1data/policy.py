@@ -52,6 +52,17 @@ CLASSIFICATION_DATE_TOLERANCE = timedelta(days=3)
 # day; another meeting is a week away at the least.
 SAME_MEETING_TOLERANCE = timedelta(days=3)
 
+# How long a request made by FastF1, or beside it, may wait: to connect, and
+# then between one piece of the answer and the next. FastF1 sets no limit of
+# its own, so a connection that is accepted and then goes quiet would hold a
+# run until whatever started it gives up on it. F1's largest feed is about
+# 30 MB and arrives in seconds.
+REQUEST_TIMEOUT_SECONDS = (30.0, 120.0)
+
+# A run of the whole job writes down when it finished. One that has not for
+# this long has missed two turns of a six-hour schedule.
+RUN_IS_OVERDUE_AFTER = timedelta(hours=13)
+
 # A fetch is stamped by the machine that made it. A stamp further ahead of
 # this machine's clock than this was written by a clock that was wrong, and
 # says nothing about when the fetch was made.

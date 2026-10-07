@@ -90,6 +90,15 @@ jobs:
           fi
           python -m f1data build "${arguments[@]}" | tee publish-output.txt
 
+      # The fetch stage runs on a machine at home, since F1 refuses this one,
+      # and a job that stops running there says nothing anywhere. When this
+      # workflow is started by a schedule it asks when that job last finished
+      # and fails if that is too long ago, so that it is noticed here. One
+      # part asks; the others would only say the same.
+      - name: Check that the fetch job is running
+        if: github.event_name == 'schedule' && matrix.part == 0
+        run: python -m f1data last-run
+
       - name: Summarise
         if: always()
         run: |

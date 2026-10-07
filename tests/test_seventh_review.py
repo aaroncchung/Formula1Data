@@ -57,7 +57,8 @@ def fetch_due(tmp_path, monkeypatch, capsys, f1_answers) -> tuple[list[int], str
         attempted.append(event)
         if event != AUSTRIA_ENTRY.round:
             raise FetchError(f"F1 has no session information for {year} round {event}")
-        return fetched_session(cache_dir.parent / f"fetched-{len(attempted)}")
+        # Into the directory it was given, as a fetch is.
+        return fetched_session(cache_dir.parent)
 
     monkeypatch.setattr(cli_module, "fastf1_cache", no_cache)
     monkeypatch.setattr(cli_module, "load_schedule", lambda fastf1, year: CALENDAR)

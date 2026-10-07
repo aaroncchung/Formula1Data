@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -41,6 +43,29 @@ class HttpRecord:
 
 class ForbiddenHostError(RuntimeError):
     """A request was about to go to a host this stage must not contact."""
+
+
+@contextmanager
+def request_timeouts(timeout: tuple[float, float]) -> Iterator[None]:
+    """Give every request made through ``requests`` a time limit, unless it has one.
+
+    ``timeout`` is seconds to connect and seconds between pieces of the
+    answer. FastF1 asks for its feeds and its calendar with no limit at all,
+    and a server that accepts a connection and then sends nothing would hold
+    the caller for ever.
+    """
+    original = requests.Session.send
+
+    def send(session: requests.Session, request: requests.PreparedRequest, **kwargs: Any):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = timeout
+        return original(session, request, **kwargs)
+
+    requests.Session.send = send  # type: ignore[method-assign]
+    try:
+        yield
+    finally:
+        requests.Session.send = original  # type: ignore[method-assign]
 
 
 class HttpRecorder:

@@ -178,11 +178,26 @@ def new_snapshot_id(now: datetime | None = None) -> str:
     return f"{now.strftime('%Y%m%dT%H%M%SZ')}-{secrets.token_hex(4)}"
 
 
-def write_snapshot(store: ObjectStore, fetched: FetchedSession, now: datetime | None = None) -> Snapshot:
-    """Archive a fetched session. Call after the fetch has released its cache."""
+def write_snapshot(
+    store: ObjectStore, fetched: FetchedSession, now: datetime | None = None, snapshot_id: str | None = None
+) -> Snapshot:
+    """Archive a fetched session. Call after the fetch has released its cache.
+
+    ``now`` is when the session was fetched. ``snapshot_id`` names a snapshot
+    whose upload may have been started before (f1data/spool.py): its parts are
+    then written over what the earlier attempt left, and its marker written
+    once. If the marker is there already the earlier attempt finished, and
+    the snapshot is returned as it stands with nothing written.
+    """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    snapshot_id = new_snapshot_id(now)
+    if snapshot_id is None:
+        snapshot_id = new_snapshot_id(now)
+    elif not layout.is_snapshot_id(snapshot_id):
+        raise ArchiveError(f"Not a snapshot id: {snapshot_id!r}")
     prefix = layout.snapshot_prefix(fetched.identity.session_key, snapshot_id)
+    finished = store.get(f"{prefix}{layout.SNAPSHOT_MARKER}")
+    if finished is not None:
+        return Snapshot.from_json(json.loads(finished.data))
     session_dir = fetched.cache_dir / fetched.identity.archive_path
     if not session_dir.is_dir() or not any(session_dir.glob("*.ff1pkl")):
         raise ArchiveError(f"No parsed feeds to archive under {session_dir}")
@@ -482,6 +497,26 @@ def partial_publication_time(snapshots: list[Snapshot], now: datetime | None = N
     return min(plausible_fetch_time(snapshot, now) or now for snapshot in counted) + RETRY_WINDOW
 
 
+# What a note says of a fetch that was started and not seen to end.
+INTERRUPTED = "interrupted: the run ended before this fetch did"
+
+
+def note_fetch_started(store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime) -> None:
+    """Note that a fetch of this calendar entry is being made, before it is.
+
+    A run can end without a word: the scheduler stops it at its time limit,
+    the machine goes to sleep, a request never returns. Nothing was then
+    noted of the fetch it was in, so the next run took the same session
+    first and could end the same way, and no later session had its turn. The
+    note is written as a failure before the fetch starts, and is replaced by
+    what happened when the fetch ends: its error, or that it succeeded.
+
+    Each one counts: ``failures`` is how many fetches of the entry in a row
+    have not succeeded, this one included until it does.
+    """
+    _note(store, year, session_type, start_time_utc, now, INTERRUPTED, another=True)
+
+
 def note_failed_fetch(
     store: ObjectStore, year: int, session_type: str, start_time_utc: str, error: str, now: datetime
 ) -> None:
@@ -491,20 +526,49 @@ def note_failed_fetch(
     session that failed an hour ago from one never tried, and would try the
     same ones first every time.
     """
+    _note(store, year, session_type, start_time_utc, now, error, another=False)
+
+
+def note_fetch_succeeded(store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime) -> None:
+    """Note that the entry was fetched: it has no failure to its name, and its count starts again."""
+    key = layout.attempt_key(year, session_type, start_time_utc)
+    data = dump_json({"succeeded_at": format_utc(now.astimezone(timezone.utc))})
+    for _ in range(3):
+        current = store.get(key)
+        if current is None:
+            return
+        try:
+            store.put(key, data, if_match=current.etag)
+            return
+        except PreconditionFailed:
+            continue
+
+
+def _note(
+    store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime, error: str, another: bool
+) -> None:
     key = layout.attempt_key(year, session_type, start_time_utc)
     now = now.astimezone(timezone.utc)
-    data = dump_json({"failed_at": format_utc(now), "error": error[:500]})
     # Written against what is there, like everything else that changes in
     # place (rule 2), and only over an older note: two runs can fail the same
     # session a moment apart and finish their writes in the other order.
     for _ in range(3):
         current = store.get(key)
+        noted, failures, interrupted = None, 0, False
         try:
-            noted = parse_utc(json.loads(current.data)["failed_at"]) if current is not None else None
+            if current is not None:
+                payload = json.loads(current.data)
+                noted = parse_utc(payload["failed_at"])
+                failures = _whole_number(payload.get("failures", 1))
+                interrupted = payload.get("error") == INTERRUPTED
         except Exception:
-            noted = None
-        if noted is not None and now <= noted <= now + CLOCK_TOLERANCE:
+            noted, failures, interrupted = None, 0, False
+        # The outcome of a fetch replaces the note made when it started,
+        # whatever the clocks say; any other note gives way only to a later one.
+        if noted is not None and now <= noted <= now + CLOCK_TOLERANCE and not (interrupted and not another):
             return
+        counted = failures + 1 if another or not interrupted else failures
+        data = dump_json({"failed_at": format_utc(now), "error": error[:500], "failures": max(counted, 1)})
         try:
             if current is None:
                 store.put(key, data, if_absent=True)
@@ -513,6 +577,19 @@ def note_failed_fetch(
             return
         except PreconditionFailed:
             continue
+
+
+def failing_fetches(store: ObjectStore, now: datetime) -> dict[str, tuple[int, str]]:
+    """How many fetches in a row have failed for each calendar entry that is failing, and the last error."""
+    failing: dict[str, tuple[int, str]] = {}
+    for key in failed_fetches(store, now):
+        found = store.get(key)
+        try:
+            payload = json.loads(found.data) if found is not None else {}
+            failing[key] = (_whole_number(payload.get("failures", 1)), str(payload.get("error") or ""))
+        except Exception:
+            continue
+    return failing
 
 
 def failed_fetches(store: ObjectStore, now: datetime) -> dict[str, datetime]:

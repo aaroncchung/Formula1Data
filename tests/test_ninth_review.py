@@ -243,7 +243,8 @@ def test_a_directory_listing_does_not_walk_the_rest_of_the_store(tmp_path, monke
     rglob = pathlib.Path.rglob
 
     def watching(self, pattern):
-        walked.append(self.relative_to(tmp_path).as_posix())
+        # The store's own root: on Windows it is written in the form that may be of any length.
+        walked.append(self.relative_to(store.root).as_posix())
         return rglob(self, pattern)
 
     monkeypatch.setattr(pathlib.Path, "rglob", watching)

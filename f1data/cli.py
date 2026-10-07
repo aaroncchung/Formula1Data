@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import platform
 import shutil
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,9 +19,17 @@ from f1data.archive import (
     ArchiveError,
     Snapshot,
     archive_directory,
+    dump_json,
     failed_fetches,
+    failing_fetches,
+    format_utc,
     list_snapshots,
+    new_snapshot_id,
     note_failed_fetch,
+    note_fetch_started,
+    note_fetch_succeeded,
+    parse_utc,
+    select_snapshot,
     write_snapshot,
 )
 from f1data.classification import ClassificationUnavailable, fetch_classified_laps
@@ -26,8 +37,26 @@ from f1data.config import ConfigError, load_env_file, open_store
 from f1data.coverage import evaluate_coverage
 from f1data.due import least_recently_failed_first, plan_fetches
 from f1data.fetch import F1_ARCHIVE_HOSTS, FetchError, f1_is_answering, fastf1_cache, fetch_session
+from f1data.httplog import request_timeouts
+from f1data.policy import REQUEST_TIMEOUT_SECONDS, RUN_IS_OVERDUE_AFTER
 from f1data.schedule import ScheduledSession, load_schedule
+from f1data.spool import (
+    CACHE_DIRECTORY,
+    Spooled,
+    describe,
+    discard,
+    keep,
+    new_fetch_directory,
+    spool_root,
+    sweep,
+    uploading,
+    waiting,
+)
 from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
+
+# After this many fetches of one session have failed one after the other, a
+# run says so at its end, apart from the line it prints for each.
+_SAY_SO_AFTER_FAILURES = 3
 
 # After this many fetches have failed one after the other, the batch asks
 # whether F1 is answering at all, and stops if it is not, rather than fail its
@@ -79,7 +108,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     _add_store_argument(due)
     due.add_argument(
-        "--season", type=int, action="append", help="Season to look at. Repeatable. Defaults to this year."
+        "--season",
+        type=int,
+        action="append",
+        help="Season to look at. Repeatable. Defaults to this year, last year, and any year with a "
+        "session the archive does not hold in full.",
     )
     due.add_argument("--limit", type=int, help="Fetch at most this many sessions.")
     due.add_argument("--dry-run", action="store_true", help="Say what would be fetched and stop.")
@@ -119,9 +152,26 @@ def main(argv: list[str] | None = None) -> None:
     )
     _add_store_argument(both)
     both.add_argument(
-        "--season", type=int, action="append", help="Season to look at. Repeatable. Defaults to this year."
+        "--season",
+        type=int,
+        action="append",
+        help="Season to look at. Repeatable. Defaults to this year, last year, and any year with a "
+        "session the archive does not hold in full.",
     )
     both.set_defaults(func=run_job, limit=None, dry_run=False, session_key=None, shard=None)
+
+    last = subparsers.add_parser(
+        "last-run",
+        help="Say when the whole job last finished on the machine that fetches. Fails if that is too long ago.",
+    )
+    _add_store_argument(last)
+    last.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=RUN_IS_OVERDUE_AFTER.total_seconds() / 3600,
+        help="How long ago the last run may have finished. Defaults to two turns of a six-hour schedule.",
+    )
+    last.set_defaults(func=run_last_run)
 
     copy = subparsers.add_parser(
         "copy-archive",
@@ -150,6 +200,7 @@ def main(argv: list[str] | None = None) -> None:
     schema.set_defaults(func=run_schema)
 
     args = parser.parse_args(argv)
+    _write_utf8()
     load_env_file(Path(".env"))
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -157,7 +208,22 @@ def main(argv: list[str] | None = None) -> None:
     )
     # FastF1 installs its own handler; without this every line prints twice.
     logging.getLogger("fastf1").propagate = False
-    raise SystemExit(args.func(args))
+    with request_timeouts(REQUEST_TIMEOUT_SECONDS):
+        raise SystemExit(args.func(args))
+
+
+def _write_utf8() -> None:
+    """Print in UTF-8 whatever the console's code page is.
+
+    A scheduled task has no console, and its output is sent to a file in the
+    machine's code page: a meeting with an accent in its name (São Paulo)
+    would then raise where the name is printed.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+        except Exception:
+            pass
 
 
 def run_probe(args: argparse.Namespace) -> int:
@@ -200,27 +266,131 @@ def run_probe(args: argparse.Namespace) -> int:
             shutil.rmtree(cache_dir, ignore_errors=True)
 
 
+class _NotArchived(RuntimeError):
+    """A session was fetched and could not be archived. It is in the spool."""
+
+
+def _archive(store: ObjectStore, spooled: Spooled) -> Snapshot | None:
+    """Archive a fetch from the spool and remove it from there. ``None`` when another run is at it."""
+    with uploading(spooled.directory) as held:
+        if not held:
+            return None
+        snapshot = write_snapshot(
+            store, spooled.fetched, now=spooled.fetched_at, snapshot_id=spooled.snapshot_id
+        )
+    discard(spooled.directory)
+    return snapshot
+
+
+def _archive_what_is_waiting(store: ObjectStore, spool: Path) -> tuple[int, list[Spooled]]:
+    """Upload the fetches an earlier run could not. Returns how many were, and the ones still waiting.
+
+    Before anything is asked of F1: these have been fetched once already.
+    """
+    archived, still_waiting = 0, []
+    for removed in sweep(spool):
+        print(f"Removed {removed.name} from the spool: a fetch that never finished.")
+    for spooled in waiting(spool):
+        try:
+            snapshot = _archive(store, spooled)
+        except Exception as exc:
+            print(f"{describe(spooled)}: fetched earlier, and still NOT ARCHIVED: {type(exc).__name__}: {exc}")
+            still_waiting.append(spooled)
+            continue
+        if snapshot is None:
+            print(f"{describe(spooled)}: fetched earlier, being archived by another run.")
+            still_waiting.append(spooled)
+            continue
+        archived += 1
+        print(f"{describe(spooled)}: fetched earlier, archived now.")
+        _print_snapshot(snapshot)
+    return archived, still_waiting
+
+
+def _fetch_and_archive(store: ObjectStore, spool: Path, year: int, event: int | str, session_type: str) -> Snapshot:
+    """Fetch one session into the spool and archive it from there.
+
+    Raises whatever the fetch raises, and ``_NotArchived`` when the session
+    was fetched and the archive would not take it: it then stays in the
+    spool, and the next run uploads it before it fetches anything.
+    """
+    directory = new_fetch_directory(spool)
+    try:
+        fetched = fetch_session(year, event, session_type, directory / CACHE_DIRECTORY)
+        fetched_at = datetime.now(timezone.utc)
+        spooled = keep(directory, fetched, fetched_at, new_snapshot_id(fetched_at))
+    except BaseException:
+        # Not a whole fetch, so nothing a snapshot could be made of.
+        discard(directory)
+        raise
+    try:
+        snapshot = _archive(store, spooled)
+    except Exception as exc:
+        raise _NotArchived(f"{type(exc).__name__}: {exc}. Kept in {directory}") from exc
+    if snapshot is None:
+        raise _NotArchived(f"another run holds {directory}")
+    return snapshot
+
+
 def run_fetch(args: argparse.Namespace) -> int:
     store = _store(args.store)
     event = int(args.event) if str(args.event).isdigit() else args.event
-    with tempfile.TemporaryDirectory(prefix="f1data-fetch-", ignore_cleanup_errors=True) as scratch:
-        fetched = fetch_session(args.year, event, args.session, Path(scratch) / "cache")
-        snapshot = write_snapshot(store, fetched)
+    try:
+        snapshot = _fetch_and_archive(store, spool_root(), args.year, event, args.session)
+    except _NotArchived as exc:
+        print(f"FETCHED, NOT ARCHIVED: {exc}. `fetch-due` or `run` uploads it before it fetches anything.")
+        return 1
     _print_snapshot(snapshot)
     return 0
+
+
+def _seasons_in_scope(now: datetime, snapshots: list[Snapshot], published_short: set[int]) -> list[int]:
+    """The seasons a run looks at when it is not told which.
+
+    This year and last, so that the turn of the year drops nothing that
+    finished in December. And any year with a session the archive does not
+    hold in full: such a session is fetched again for as long as that is so
+    (rule 3), however old it is, and it used to stop being looked at on the
+    first of January.
+    """
+    years = {now.year, now.year - 1}
+    by_session: dict[int, list[Snapshot]] = {}
+    for snapshot in snapshots:
+        by_session.setdefault(snapshot.session_key, []).append(snapshot)
+    for session_key, group in by_session.items():
+        best = select_snapshot(group)
+        if best is not None and (not best.complete or session_key in published_short):
+            years.add(best.identity.year)
+    return sorted(years)
 
 
 def run_fetch_due(args: argparse.Namespace) -> int:
     store = _store(args.store)
     now = datetime.now(timezone.utc)
-    seasons = args.season or [now.year]
-    failed = failed_in_a_row = 0
+    spool = spool_root()
+    failed = failed_in_a_row = not_archived = 0
+    still_waiting: list[Spooled] = []
+    if not args.dry_run:
+        _, still_waiting = _archive_what_is_waiting(store, spool)
+        not_archived = len(still_waiting)
+    snapshots = list_snapshots(store)
+    published_short = _published_short(store)
+    seasons = args.season or _seasons_in_scope(now, snapshots, published_short)
     with tempfile.TemporaryDirectory(prefix="f1data-run-", ignore_cleanup_errors=True) as scratch:
         with fastf1_cache(Path(scratch) / "run") as fastf1:
-            try:
-                schedule = [session for year in seasons for session in load_schedule(fastf1, year)]
-            except Exception as exc:
-                raise SystemExit(f"Could not load the calendar, so nothing was fetched: {exc}") from exc
+            schedule: list[ScheduledSession] = []
+            loaded = 0
+            for year in seasons:
+                # One season's calendar failing is no reason to leave the
+                # others unlooked at: the new year's may not be out yet.
+                try:
+                    schedule += load_schedule(fastf1, year)
+                    loaded += 1
+                except Exception as exc:
+                    failed += 1
+                    print(f"Could not load the calendar of {year}, so nothing of it is fetched: {exc}")
+            if not loaded:
+                raise SystemExit("Could not load any calendar, so nothing was fetched.")
 
             def classified_laps(session: ScheduledSession) -> dict[str, int] | None:
                 try:
@@ -232,11 +402,22 @@ def run_fetch_due(args: argparse.Namespace) -> int:
 
             plans = plan_fetches(
                 schedule,
-                list_snapshots(store),
+                snapshots,
                 now,
                 classified_laps,
-                published_short=_published_short(store),
+                published_short=published_short,
             )
+            # A session that is in the spool has been fetched. It has only to
+            # be archived, and asking F1 for it again would not help that.
+            in_the_spool = {
+                layout.attempt_key(
+                    spooled.fetched.identity.year,
+                    spooled.fetched.identity.session_type,
+                    spooled.fetched.identity.start_time_utc,
+                )
+                for spooled in still_waiting
+            }
+            plans = [plan for plan in plans if plan.attempt_key not in in_the_spool]
             # A batch can be cut short. So that the same sessions are not the
             # ones it reaches every time, those that failed last time wait
             # behind those that have not been tried.
@@ -251,10 +432,19 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                 print(f"{label}: {plan.reason}")
                 if args.dry_run:
                     continue
-                cache_dir = Path(scratch) / f"fetch-{number}"
+                entry = (session.year, session.session_type, session.start_time_utc or "")
+                # Before the fetch, so that a run that ends in the middle of
+                # it has still said that it tried.
+                note_fetch_started(store, *entry, datetime.now(timezone.utc))
                 try:
-                    fetched = fetch_session(session.year, session.round, session.session_type, cache_dir)
-                    snapshot = write_snapshot(store, fetched)
+                    snapshot = _fetch_and_archive(store, spool, session.year, session.round, session.session_type)
+                except _NotArchived as exc:
+                    # F1 answered. The fault is the archive's, and the session
+                    # is not fetched again: the next run uploads what was kept.
+                    not_archived += 1
+                    failed_in_a_row = 0
+                    note_fetch_succeeded(store, *entry, datetime.now(timezone.utc))
+                    print(f"  FETCHED, NOT ARCHIVED: {exc}. The next run uploads it before it fetches anything.")
                 except Exception as exc:
                     # One session failing must not stop the others. The next
                     # run plans it again, since nothing was archived. A fetch
@@ -263,14 +453,7 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                     failed += 1
                     failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
-                    note_failed_fetch(
-                        store,
-                        session.year,
-                        session.session_type,
-                        session.start_time_utc or "",
-                        f"{type(exc).__name__}: {exc}",
-                        datetime.now(timezone.utc),
-                    )
+                    note_failed_fetch(store, *entry, f"{type(exc).__name__}: {exc}", datetime.now(timezone.utc))
                     if failed_in_a_row >= _ASK_AFTER_FAILURES_IN_A_ROW:
                         # This year's index and last year's: one of the two
                         # exists on any day of any year.
@@ -288,10 +471,25 @@ def run_fetch_due(args: argparse.Namespace) -> int:
                             break
                 else:
                     failed_in_a_row = 0
+                    note_fetch_succeeded(store, *entry, datetime.now(timezone.utc))
                     _print_snapshot(snapshot)
-                finally:
-                    shutil.rmtree(cache_dir, ignore_errors=True)
-    return 1 if failed else 0
+    if not args.dry_run:
+        _say_what_keeps_failing(store, schedule, now)
+    return 1 if failed or not_archived else 0
+
+
+def _say_what_keeps_failing(store: ObjectStore, schedule: list[ScheduledSession], now: datetime) -> None:
+    """Name the sessions whose fetch has failed several times running, where an operator will see it."""
+    failing = failing_fetches(store, datetime.now(timezone.utc))
+    for session in schedule:
+        count, error = failing.get(
+            layout.attempt_key(session.year, session.session_type, session.start_time_utc or ""), (0, "")
+        )
+        if count >= _SAY_SO_AFTER_FAILURES:
+            print(
+                f"ATTENTION: {session.year} round {session.round} {session.meeting_name} {session.session_name} "
+                f"has failed to fetch {count} times in a row. Last: {error}"
+            )
 
 
 def _published_short(store: ObjectStore) -> set[int]:
@@ -374,12 +572,71 @@ def run_build(args: argparse.Namespace) -> int:
 def run_job(args: argparse.Namespace) -> int:
     """Fetch, then build. Each stage is idempotent, so a run that is cut short,
     or a machine that was off for a weekend, is made good by the next run."""
-    if args.season is None:
-        args.season = [datetime.now(timezone.utc).year]
-    fetched = run_fetch_due(args)
-    # A failed fetch is no reason to hold back what the archive already has.
-    built = run_build(args)
-    return 1 if fetched or built else 0
+    started = datetime.now(timezone.utc)
+    clock = time.monotonic()
+    print(f"[{format_utc(started)}] run started")
+    status = 1
+    try:
+        try:
+            fetched = run_fetch_due(args)
+        except SystemExit as stopped:
+            # The fetch stage could not start. That is no reason to hold back
+            # what the archive already has, any more than one failed fetch is.
+            print(stopped)
+            fetched = 1
+        if args.season is None:
+            args.season = [started.year]
+        built = run_build(args)
+        status = 1 if fetched or built else 0
+    finally:
+        finished = datetime.now(timezone.utc)
+        print(f"[{format_utc(finished)}] run finished, exit {status}, {time.monotonic() - clock:.0f} s")
+        _note_the_run(args.store, started, finished, status)
+    return status
+
+
+def _note_the_run(spec: str | None, started: datetime, finished: datetime, status: int) -> None:
+    """Write down that a run of the whole job ended, where something else can see that one has not.
+
+    A run that fails says so in its log and its exit code. A run that does
+    not happen says nothing anywhere, and this is what `last-run` reads.
+    """
+    try:
+        _store(spec).put(
+            layout.LAST_RUN_KEY,
+            dump_json(
+                {
+                    "started_at": format_utc(started),
+                    "finished_at": format_utc(finished),
+                    "exit_code": status,
+                    "host": platform.node(),
+                }
+            ),
+        )
+    except Exception as exc:
+        print(f"Could not write down that the run ended: {type(exc).__name__}: {exc}")
+
+
+def run_last_run(args: argparse.Namespace) -> int:
+    found = _store(args.store).get(layout.LAST_RUN_KEY)
+    if found is None:
+        print("No run of the whole job has been written down in this store.")
+        return 1
+    try:
+        record = json.loads(found.data)
+        finished = parse_utc(record["finished_at"])
+    except Exception as exc:
+        print(f"The record of the last run cannot be read: {type(exc).__name__}: {exc}")
+        return 1
+    hours = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
+    print(
+        f"The last run finished at {record['finished_at']} on {record.get('host') or 'an unnamed machine'}, "
+        f"{hours:.1f} hours ago, with exit code {record.get('exit_code')}."
+    )
+    if hours > args.max_age_hours:
+        print(f"That is more than {args.max_age_hours:g} hours: the job is not running.")
+        return 1
+    return 0
 
 
 def run_copy_archive(args: argparse.Namespace) -> int:
@@ -394,36 +651,82 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     corrections = [item for item in items if _is_correction(item.key)]
     # The same goes for the notes of fetches that failed: they are this
     # store's memory of its own runs.
-    items = [
+    # The same goes for the notes of fetches that failed and of runs that
+    # ended: they are this store's memory of its own runs.
+    sessions = f"{layout.ARCHIVE_PREFIX}sessions/"
+    markers = [item for item in items if item.key.startswith(sessions) and _is_marker(item.key)]
+    # Whatever else the archive holds that is not part of a session: a whole
+    # directory kept as one file, with its description last.
+    others = [
         item
         for item in items
-        if not _is_correction(item.key) and not item.key.startswith(layout.ATTEMPTS_PREFIX)
+        if not item.key.startswith((sessions, layout.ATTEMPTS_PREFIX, layout.RUNS_PREFIX))
+        and not _is_correction(item.key)
     ]
-    # The marker goes last, as it did when the snapshot was first written: a
-    # snapshot is only visible once all of it is there.
-    ordered = [item for item in items if not _is_marker(item.key)]
-    ordered += [item for item in items if _is_marker(item.key)]
-    copied = skipped = 0
+    others = [item for item in others if not item.key.endswith(".json")] + [
+        item for item in others if item.key.endswith(".json")
+    ]
+    copied = skipped = not_whole = 0
     with tempfile.TemporaryDirectory(prefix="f1data-copy-") as scratch:
-        for item in ordered:
-            local = Path(scratch) / "object"
-            if not source.download_file(item.key, local):
-                raise SystemExit(f"{item.key} disappeared from the source while copying")
-            existing = destination.head(item.key)
-            if existing is not None and _same_bytes(destination, existing, local, Path(scratch) / "theirs"):
+        local, theirs = Path(scratch) / "object", Path(scratch) / "theirs"
+
+        def copy(key: str, described: dict[str, Any] | None = None) -> bool:
+            """Copy one object. False when the source does not hold it as ``described``."""
+            nonlocal copied, skipped
+            if not source.download_file(key, local):
+                return False
+            if described is not None and (
+                local.stat().st_size != described.get("size_bytes") or _sha256(local) != described.get("sha256")
+            ):
+                return False
+            existing = destination.head(key)
+            if existing is not None and _same_bytes(destination, existing, local, theirs):
                 skipped += 1
-                continue
-            content_type = JSON_CONTENT_TYPE if item.key.endswith(".json") else "application/gzip"
-            destination.put_file(item.key, local, content_type=content_type)
+                return True
+            content_type = JSON_CONTENT_TYPE if key.endswith(".json") else "application/gzip"
+            destination.put_file(key, local, content_type=content_type)
             copied += 1
-            print(f"copied {item.key} ({item.size} bytes)")
+            print(f"copied {key} ({local.stat().st_size} bytes)")
+            return True
+
+        for marker in markers:
+            # A snapshot is what its marker says it is: the parts it names,
+            # with the sizes and checksums it gives them. Those are copied,
+            # each checked, and the marker after them. A listing of the
+            # source is not a snapshot of it: taken while a fetch is being
+            # uploaded there, it can hold a marker and not the parts that
+            # were written a moment before it.
+            prefix = marker.key[: -len(layout.SNAPSHOT_MARKER)]
+            found = source.get(marker.key)
+            try:
+                parts = Snapshot.from_json(json.loads(found.data)).objects if found is not None else None
+            except Exception:
+                parts = None
+            if parts is None or not all(copy(f"{prefix}{name}", described) for name, described in sorted(parts.items())):
+                not_whole += 1
+                print(f"left {marker.key}: the source does not hold the snapshot as its marker describes it")
+                continue
+            copy(marker.key)
+        for item in others:
+            if not copy(item.key):
+                raise SystemExit(f"{item.key} disappeared from the source while copying")
     print(f"Copied {copied} object(s); {skipped} already there.")
     if corrections:
         print(
             f"Left {len(corrections)} correction(s) of a snapshot's record where they are: "
             "the destination measures for itself."
         )
-    return 0
+    if not_whole:
+        print(f"Left {not_whole} snapshot(s) that are not whole at the source. Copy again when they are.")
+    return 1 if not_whole else 0
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_archive_directory(args: argparse.Namespace) -> int:

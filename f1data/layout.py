@@ -73,6 +73,10 @@ ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:
 # they order the next run's fetches and nothing else reads them.
 ATTEMPTS_PREFIX = f"{ARCHIVE_PREFIX}attempts/"
+# When the whole job last finished on the machine that fetches. Not part of
+# the archive either: it is how a job that has stopped running is noticed.
+RUNS_PREFIX = f"{ARCHIVE_PREFIX}runs/"
+LAST_RUN_KEY = f"{RUNS_PREFIX}last.json"
 SNAPSHOT_MARKER = "snapshot.json"
 # Beside a snapshot whose record a build found to disagree with its feeds.
 # There is one such object for each version of the measurement, and code

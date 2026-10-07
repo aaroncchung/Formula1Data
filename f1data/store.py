@@ -147,7 +147,7 @@ class DirectoryStore:
     """
 
     def __init__(self, root: Path) -> None:
-        self.root = Path(root)
+        self.root = _long_path(Path(root))
 
     @contextmanager
     def _writing(self) -> Iterator[None]:
@@ -172,7 +172,7 @@ class DirectoryStore:
                 if if_match is not None or if_absent:
                     current = self.get(key)
                     _check_precondition(key, None if current is None else current.data, if_match, if_absent)
-                os.replace(temporary, path)
+                _rename(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -364,6 +364,42 @@ class S3Store:
     def delete(self, key: str) -> None:
         """Only the contract tests delete, to clean up after themselves."""
         self._client.delete_object(Bucket=self._bucket, Key=self._key(key))
+
+
+def _long_path(path: Path) -> Path:
+    """The path in the form Windows takes at any length.
+
+    A generation is filed under 64 characters of its name, in a directory of
+    its session, and Windows refuses a path of more than 260 characters
+    unless a machine-wide setting says otherwise or the path is written this
+    way. Elsewhere a path is a path.
+    """
+    if os.name != "nt":
+        return path
+    text = str(path.resolve())
+    if text.startswith("\\\\?\\"):
+        return Path(text)
+    if text.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + text[2:])
+    return Path("\\\\?\\" + text)
+
+
+def _rename(temporary: Path, path: Path) -> None:
+    """Put a finished file in its place.
+
+    On Windows the rename is refused while another process has the old file
+    open: an indexer or a virus scanner, for the moment it takes to look.
+    That passes, so it is tried again for a couple of seconds before it is
+    an error.
+    """
+    for attempt in range(20):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.1)
 
 
 def _try_lock(handle: Any) -> bool:

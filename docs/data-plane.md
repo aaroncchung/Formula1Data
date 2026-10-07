@@ -30,6 +30,7 @@ archive/sessions/<session_key>/<snapshot_id>/     never served
     remeasured.json            only where a build found the snapshot's record wrong
 archive/legacy/<name>-<id>.tar.gz + .json         a whole directory, kept as it was
 archive/attempts/<year>/<start>-<type>.json       a note that a fetch of that session failed
+archive/runs/last.json                            when the whole job last finished, and on which machine
 
 v2/pointers/<session_key>.json                    one per published session
 v2/generations/<session_key>/<generation>/        immutable; manifest.json written last
@@ -161,7 +162,8 @@ defaults to the `F1DATA_STORE` environment variable.
 | Command | What it does |
 | --- | --- |
 | `run` | The whole job: `fetch-due`, then `build`. What a schedule runs |
-| `fetch-due` | Fetch every finished race and sprint the archive does not hold in full. `--dry-run` to see the plan |
+| `last-run` | Say when `run` last finished on the machine that fetches. Exits 1 when that is more than 13 hours ago, or was never |
+| `fetch-due` | Fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan |
 | `fetch --year Y --event E --session S` | Fetch one session as a new snapshot |
 | `build` | Build and publish every archived session that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
@@ -176,10 +178,23 @@ work: the one that loses a write reads again and decides again. That holds for
 a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
-One session failing to fetch does not stop the others. A failed fetch is
-noted, and the next run takes the sessions that have not failed first and the
+A session is fetched into a spool on the machine (`%LOCALAPPDATA%\f1data\spool`,
+or `~/.cache/f1data/spool`, or wherever `F1DATA_SPOOL` says) and stays there
+until its snapshot's marker is in the archive. If the upload fails, the run
+says `FETCHED, NOT ARCHIVED` and exits 1, and the next run uploads what was
+kept before it asks F1 for anything: a session F1 has served is not fetched a
+second time because the bucket was out of reach.
+
+One session failing to fetch does not stop the others. A fetch is noted when
+it starts, as one that has not succeeded, and the note is replaced when it
+ends; so a run that is killed in the middle of a fetch has still said that it
+tried. The next run takes the sessions that have not failed first and the
 ones that have last, the longest ago first: every session has its turn before
-any has a second. After two failures in a row `fetch-due` also asks F1's
+any has a second. A session whose fetch has failed three times running is
+named in a line that begins `ATTENTION`. Every request FastF1 makes has a time
+limit (30 seconds to connect, two minutes between pieces of an answer), so a
+connection that goes quiet fails that fetch and does not hold the run. After
+two failures in a row `fetch-due` also asks F1's
 archive, and FastF1's mirror of it, for this season's index and last season's.
 If any answers, the fault is with those sessions and the batch carries on; if
 none does, the batch stops until the next run.
@@ -211,9 +226,10 @@ Fetching has to run on a machine F1 answers, which rules out hosted runners
 (decision 2 of the plan: a scheduled task on a local machine). With the
 credentials above in `.env`, `python -m f1data run` is the whole job, and it is
 safe to run as often as you like: it fetches only what is due and builds only
-what changed. Every three hours is plenty for the 48-hour bar.
+what changed. Every six hours is what the retry interval asks for, and is
+plenty for the 48-hour bar.
 
-On Windows, from PowerShell, with the two paths set to yours:
+On Windows, from an elevated PowerShell, with the two paths set to yours:
 
 ```powershell
 $repo   = "C:\path\to\Formula1Data"
@@ -221,19 +237,53 @@ $python = "C:\path\to\venv\Scripts\python.exe"
 $log    = "$env:LOCALAPPDATA\f1data\run.log"
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 
-$action   = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $repo `
-              -Argument "/c `"`"$python`" -m f1data run >> `"$log`" 2>&1`""
-$trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
-              -RepetitionInterval (New-TimeSpan -Hours 3)
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-              -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-Register-ScheduledTask -TaskName "Formula1Data run" -Action $action -Trigger $trigger -Settings $settings
+$action    = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $repo `
+               -Argument "/c `"`"$python`" -m f1data run >> `"$log`" 2>&1`""
+$trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
+               -RepetitionInterval (New-TimeSpan -Hours 6)
+$settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
+               -ExecutionTimeLimit (New-TimeSpan -Hours 2) -WakeToRun
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
+Register-ScheduledTask -TaskName "Formula1Data run" -Action $action -Trigger $trigger `
+  -Settings $settings -Principal $principal
 ```
+
+The principal is what makes it unattended. Registered without one, a task
+runs only while its user is logged in: log out for the weekend and nothing
+runs, and since Python never starts, nothing is logged either. `S4U` is "run
+whether the user is logged on or not" without a stored password. A task run
+that way cannot reach network shares, and files that a sync client has not
+put on the disk are not there for it: keep the checkout, the virtual
+environment and `.env` on a local disk outside OneDrive or the like.
 
 `-StartWhenAvailable` runs a missed start when the machine comes back on, and
 the job catches up on anything it missed, because F1's archive keeps past
-sessions. The machine does not have to be on when a session finishes. Nothing
-has registered this task yet.
+sessions. The machine does not have to be on when a session finishes.
+`-MultipleInstances IgnoreNew` keeps a second run from starting while one is
+going; two at once would not lose anything, only fetch twice.
+
+The definition above builds with these cmdlets, but nothing has registered
+the task yet, and it has not run on a schedule.
+
+### Knowing that it ran
+
+- **The log** is `%LOCALAPPDATA%\f1data\run.log`, in UTF-8. Each run starts with
+  `[<time>] run started` and ends with `[<time>] run finished, exit <code>,
+  <seconds> s`. Exit 1 means something failed: a fetch, an upload, a build.
+  A line beginning `ATTENTION` names a session whose fetch keeps failing, and
+  `FETCHED, NOT ARCHIVED` one that is waiting in the spool.
+- **A run that did not happen** writes nothing, so it is looked for from
+  outside: `python -m f1data last-run` reads `archive/runs/last.json` from the
+  bucket and exits 1 when the last run finished more than 13 hours ago. Run it
+  from any machine that can read the bucket; the publish workflow runs it when
+  it is started by a schedule, so that a job that has stopped turns a
+  workflow red.
+- **The task itself:** `Get-ScheduledTaskInfo -TaskName "Formula1Data run"`
+  gives the last run time and result, and Task Scheduler's history says why a
+  start was skipped.
+- **A session published as partial** is not a failure and exits 0. It is in
+  the pointer and the index (`complete: false`, with what is short), and on
+  the session's page.
 
 ## When a session counts as complete
 
