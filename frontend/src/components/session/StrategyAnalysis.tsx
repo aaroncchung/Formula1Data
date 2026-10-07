@@ -80,7 +80,7 @@ function StationaryMetric({ summary }: { summary: StationarySummary }) {
     <StrategyMetric
       label={label}
       value={seconds(summary.median_ms)}
-      detail={`Car standing still · fastest ${seconds(fastest.stationary_ms)}, ${fastest.driver_code} on lap ${fastest.lap_number} · ${summary.timedStopCount} of ${summary.stopCount} stops reported`}
+      detail={`Car standing still · fastest ${seconds(fastest.stationary_ms)}, ${fastest.driver_code} on lap ${fastest.lap_number} · F1 reports a stop for ${summary.timedStopCount} of ${summary.stopCount} entries to the pit lane${unreportedNote(summary)}`}
     />
   );
 }
@@ -95,9 +95,21 @@ function PitLaneMetric({ summary }: { summary: PitLaneSummary }) {
     <StrategyMetric
       label={label}
       value={seconds(summary.median_ms)}
-      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · ${summary.timedStopCount} of ${summary.stopCount} stops timed${redFlagNote(summary.redFlagCount)}`}
+      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · ${summary.timedStopCount} of ${summary.stopCount} entries timed, whether or not the car stopped${redFlagNote(summary.redFlagCount)}`}
     />
   );
+}
+
+/**
+ * What an entry with no stop reported may be. The timing has every entry to
+ * the pit lane, and F1's pit-stop feed the stops: in the 2025 Canadian GP the
+ * whole field followed the safety car down the pit lane on lap 67, and 49 of
+ * the 82 entries of that race are that.
+ */
+function unreportedNote(summary: StationarySummary): string {
+  return summary.timedStopCount < summary.stopCount
+    ? " · the rest are drive-throughs, passages behind the safety car, or stops its feed left out"
+    : "";
 }
 
 /** Why some entries to the pit lane are in none of the figures. */

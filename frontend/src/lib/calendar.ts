@@ -44,7 +44,9 @@ export function sessionAvailability(session: IndexSession, now: number): Session
   }
   const start = timeOf(session.start_time_utc);
   // A session with no start time is one the calendar has not timed yet, so it
-  // cannot have been run.
+  // cannot have been run. One whose start has passed has started: whether it
+  // has finished the calendar cannot say, and what a page says of
+  // `not_published` has to be true of a race that is still going on.
   return start === null || start > now ? "scheduled" : "not_published";
 }
 

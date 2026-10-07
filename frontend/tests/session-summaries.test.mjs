@@ -240,6 +240,33 @@ test("a provisional order gives places and no points", () => {
   ]);
 });
 
+// With no classification the result is the order on track. A card gave it
+// out as each driver's finish, the car that never left the grid included.
+test("a provisional order is told as one, and a car that completed no lap has no place in it", () => {
+  const provisional = RESULTS.map((row, index) => ({
+    ...row,
+    classified_position: null,
+    points: null,
+    provisional: true,
+    laps: index === RESULTS.length - 1 ? 0 : 57
+  }));
+  const last = provisional.at(-1);
+  const field = { drivers: DRIVERS, results: provisional, racePace: null, idealLaps: null };
+
+  const cards = driverCards(field);
+
+  const ran = cards.find((card) => card.driver.code === provisional[0].driver_code);
+  assert.deepEqual([ran.finish, ran.provisional], [provisional[0].position, true]);
+  const neverRan = cards.find((card) => card.driver.code === last.driver_code);
+  assert.deepEqual([neverRan.finish, neverRan.classification], [null, null]);
+  const teams = teamCards(field);
+  assert.equal(teams.every((card) => card.provisional), true);
+  assert.equal(teams.some((card) => card.bestFinish === last.position), false);
+  // A classification says so of itself, and its places are places.
+  assert.equal(driverCards({ ...field, results: RESULTS }).some((card) => card.provisional), false);
+  assert.equal(teamCards({ ...field, results: RESULTS }).some((card) => card.provisional), false);
+});
+
 test("drivers F1's list names no team for are shown together, not left out", () => {
   const drivers = [...DRIVERS, driver("DOO", "Jack Doohan", 7, null), driver("COL", "Franco Colapinto", 43, null)];
 

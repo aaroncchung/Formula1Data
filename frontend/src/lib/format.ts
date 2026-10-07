@@ -1,10 +1,18 @@
+/**
+ * A lap time, to the thousandth: `1:15.521`.
+ *
+ * Rounded to whole milliseconds before it is split into minutes and seconds.
+ * An average has a decimal, and split first, 119,999.6 ms was one minute and
+ * 59.9996 seconds, which prints as `1:60.000`.
+ */
 export function formatMs(value?: number | null): string {
-  if (value === null || value === undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
     return "--";
   }
-  const minutes = Math.floor(value / 60000);
-  const seconds = ((value % 60000) / 1000).toFixed(3).padStart(6, "0");
-  return `${minutes}:${seconds}`;
+  const whole = Math.round(Math.abs(value));
+  const minutes = Math.floor(whole / 60000);
+  const seconds = ((whole % 60000) / 1000).toFixed(3).padStart(6, "0");
+  return `${value < 0 && whole > 0 ? "-" : ""}${minutes}:${seconds}`;
 }
 
 export function formatDelta(value?: number | null): string {
@@ -29,6 +37,34 @@ export function compactDate(value?: string | null): string {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(
     new Date(value)
   );
+}
+
+/**
+ * When a session was run, for the heading of a page about it. A moment is
+ * given in the reader's own time zone with the zone named, like
+ * `sessionStart`, and with its year: "Mar 7, 2026, 11:00 PM EST". A bare date
+ * there would be the reader's date for a race run somewhere else, with nothing
+ * to say so, and a day off from the meeting's own. A value that is only a day,
+ * which is all the calendar has for a session it has not timed, is that day.
+ * `timeZone` is for tests; a page leaves it out.
+ */
+export function sessionWhen(value?: string | null, timeZone?: string): string {
+  if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return calendarDay(value);
+  }
+  const time = value ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(time)) {
+    return "TBC";
+  }
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone
+  }).format(time);
 }
 
 /**

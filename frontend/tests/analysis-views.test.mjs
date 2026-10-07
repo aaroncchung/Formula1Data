@@ -165,6 +165,18 @@ test("a dead heat is level, which is not the same as no gap", () => {
   assert.equal(teammateGapText(teammateGap(team({ gap_ms: 0 }))), "Level");
 });
 
+// The 2025 Canadian GP, as published: Russell 1:15.5212, Antonelli 1:15.5213.
+test("a gap too small to print is level, not one driver quicker by nothing", () => {
+  for (const gap of [0.1, 0.4, -0.3]) {
+    const row = team({ gap_ms: gap });
+    assert.deepEqual(teammateGap(row), { status: "level", drivers: ["SAI", "ALB"] }, String(gap));
+    assert.equal(teammateGapText(teammateGap(row)), "Level");
+  }
+  // From half a millisecond it prints as a thousandth, and is a gap.
+  assert.equal(teammateGapText(teammateGap(team({ gap_ms: 0.5 }))), "SAI quicker by 0.001s");
+  assert.equal(teammateGapText(teammateGap(team({ gap_ms: -0.7 }))), "ALB quicker by 0.001s");
+});
+
 test("a gap that arrives negative names the second driver as the quicker", () => {
   assert.deepEqual(teammateGap(team({ gap_ms: -90 })), { status: "reported", quicker: "ALB", slower: "SAI", gap_ms: 90 });
 });

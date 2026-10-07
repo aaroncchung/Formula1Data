@@ -15,7 +15,7 @@ import { SessionStates } from "@/components/published/SessionStates";
 import { usePublishedSession } from "@/components/published/usePublishedSession";
 import { SessionSelect } from "@/components/summary/SessionSelect";
 import { latestPublishedSession } from "@/lib/calendar";
-import { compactDate } from "@/lib/format";
+import { sessionWhen } from "@/lib/format";
 import type { SessionView } from "@/lib/published/client";
 import { sessionHref } from "@/lib/published/lookup";
 import type { SessionAddress, SessionHeading } from "@/lib/published/lookup";
@@ -178,7 +178,7 @@ function SessionBar({ id, calendar, onRetryCalendar, selectedKey, heading, view,
   const facts = heading
     ? [
         heading.round === null ? String(heading.year) : `${heading.year} Round ${heading.round}`,
-        compactDate(heading.startTimeUtc),
+        sessionWhen(heading.startTimeUtc),
         [heading.location, heading.country].filter(Boolean).join(", ")
       ]
         .filter(Boolean)

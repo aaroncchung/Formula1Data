@@ -22,7 +22,10 @@ export function teammateGap(row: TeammateComparisonRow): TeammateGap {
   if (!first || !second || gap === null) {
     return { status: "none", reason: row.caveat?.trim() || "No gap was published for this team." };
   }
-  if (gap === 0) {
+  // Level to the thousandth of a second, which is what the page prints. The
+  // gap is published to a tenth of a millisecond, and one of 0.1 ms was
+  // given out as one driver "quicker by 0.000s".
+  if (Math.round(Math.abs(gap)) === 0) {
     return { status: "level", drivers: [first.driver_code, second.driver_code] };
   }
   // The publisher puts the quicker driver first. A negative gap would mean it

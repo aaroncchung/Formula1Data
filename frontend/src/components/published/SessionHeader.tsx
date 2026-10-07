@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { PageHeader } from "@/components/dashboard/PageHeader";
-import { compactDate } from "@/lib/format";
+import { sessionWhen } from "@/lib/format";
 import type { SessionHeading } from "@/lib/published/lookup";
 import { meetingHref } from "@/lib/routes";
 
@@ -14,7 +14,7 @@ import { meetingHref } from "@/lib/routes";
  */
 export function SessionHeader({ heading, actions }: { heading: SessionHeading; actions?: React.ReactNode }) {
   const place = [heading.location, heading.country].filter(Boolean).join(", ");
-  const date = compactDate(heading.startTimeUtc);
+  const date = sessionWhen(heading.startTimeUtc);
   return (
     <PageHeader
       eyebrow={eyebrow(heading)}

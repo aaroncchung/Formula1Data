@@ -68,17 +68,34 @@ export type DriverCard = {
   readonly finish: number | null;
   /** What the classification prints for the driver, "3" or "R"; null when the driver has no result. */
   readonly classification: string | null;
+  /**
+   * The place is from the order on track and not from a classification, which
+   * the session does not have yet. It is where the car was running, and a
+   * card says so: it is not where the driver finished.
+   */
+  readonly provisional: boolean;
   readonly medianLapMs: number | null;
   readonly idealLapMs: number | null;
 };
 
+/**
+ * A row of a provisional order for a car that completed no lap. The order
+ * puts it last, since it has to put it somewhere; it was not running in any
+ * place, and with a classification it would have a letter and no number.
+ */
+function neverRan(result: Result): boolean {
+  return result.provisional && result.laps === 0;
+}
+
 export function driverCards(field: FieldArtifacts): DriverCard[] {
   return field.drivers.map((driver) => {
-    const result = field.results?.find((row) => row.driver_code === driver.code) ?? null;
+    const found = field.results?.find((row) => row.driver_code === driver.code) ?? null;
+    const result = found && !neverRan(found) ? found : null;
     return {
       driver,
       finish: result ? classifiedPlace(result) : null,
       classification: result ? resultPosition(result).text : null,
+      provisional: result?.provisional ?? false,
       medianLapMs: field.racePace?.drivers.find((row) => row.driver_code === driver.code)?.median_lap_ms ?? null,
       idealLapMs: field.idealLaps?.rows.find((row) => row.driver_code === driver.code)?.ideal_lap_ms ?? null
     };
@@ -95,6 +112,8 @@ export type TeamCard = {
   readonly points: number | null;
   /** The better of the places the team's drivers were classified in; null when neither has one. */
   readonly bestFinish: number | null;
+  /** That place is from the order on track, as `DriverCard.provisional`. */
+  readonly provisional: boolean;
   /** Laps that counted towards race pace; null when the session has no pace analysis. */
   readonly paceLaps: number | null;
 };
@@ -119,7 +138,10 @@ export function teamCards(field: FieldArtifacts): TeamCard[] {
     const pace = (field.racePace?.drivers ?? []).filter((row) =>
       team.drivers.some((driver) => driver.code === row.driver_code)
     );
-    const places = results.map(classifiedPlace).filter((place): place is number => place !== null);
+    const places = results
+      .filter((row) => !neverRan(row))
+      .map(classifiedPlace)
+      .filter((place): place is number => place !== null);
     // A team the classification leaves out scored nothing, which is a true
     // zero. A team whose rows carry no points at all is a provisional order,
     // which has none to give.
@@ -131,6 +153,7 @@ export function teamCards(field: FieldArtifacts): TeamCard[] {
       drivers: team.drivers,
       points: field.results && hasPoints ? results.reduce((sum, row) => sum + (row.points ?? 0), 0) : null,
       bestFinish: places.length ? Math.min(...places) : null,
+      provisional: results.some((row) => row.provisional),
       paceLaps: field.racePace ? pace.reduce((sum, row) => sum + row.lap_count, 0) : null
     };
   });

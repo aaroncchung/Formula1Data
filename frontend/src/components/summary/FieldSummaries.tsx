@@ -48,7 +48,10 @@ function DriverCardView({ card }: { card: DriverCard }) {
         )}
       </div>
       <div className="mt-5 grid grid-cols-3 gap-2 border-t border-line/70 pt-4 text-center">
-        <Stat label="Finish" value={card.finish === null ? (card.classification ?? "--") : `P${card.finish}`} />
+        <Stat
+          label={card.provisional ? "Running order" : "Finish"}
+          value={card.finish === null ? (card.classification ?? "--") : `P${card.finish}`}
+        />
         <Stat label="Median pace" value={formatMs(card.medianLapMs)} />
         <Stat label="Ideal" value={formatMs(card.idealLapMs)} />
       </div>
@@ -92,7 +95,10 @@ function TeamCardView({ card }: { card: TeamCard }) {
       </div>
       <div className="mt-5 grid grid-cols-3 gap-2 border-t border-line/70 pt-4 text-center">
         <Stat label="Points here" value={card.points === null ? "--" : String(card.points)} />
-        <Stat label="Best finish" value={card.bestFinish === null ? "--" : `P${card.bestFinish}`} />
+        <Stat
+          label={card.provisional ? "Best running" : "Best finish"}
+          value={card.bestFinish === null ? "--" : `P${card.bestFinish}`}
+        />
         <Stat label="Pace laps" value={card.paceLaps === null ? "--" : String(card.paceLaps)} />
       </div>
     </div>

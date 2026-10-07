@@ -157,7 +157,7 @@ test("every sample of A at the line reads B at its line, not a rounding error pa
 // the line a fraction of a metre off nought, a standstill, a distance that
 // steps back a tenth while the car stands, and samples at one distance at
 // the start and at the end. The numbers are the same on every run.
-function lapsNobodyChose(howMany) {
+function lapsNobodyChose(howMany, { everMoving = false } = {}) {
   let seed = 20261007;
   const random = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -169,10 +169,10 @@ function lapsNobodyChose(howMany) {
   for (let number = 0; number < howMany; number += 1) {
     const atTheLine = pick([0, 0, -1, -0.7, -0.4, 0.3, 0.4, 0.1, -0.2]);
     const count = 20 + Math.floor(random() * 60);
-    const standsFrom = random() < 0.4 ? 5 + Math.floor(random() * (count - 10)) : -1;
+    const standsFrom = !everMoving && random() < 0.4 ? 5 + Math.floor(random() * (count - 10)) : -1;
     const standsFor = 2 + Math.floor(random() * 8);
-    const twiceAtTheStart = random() < 0.2;
-    const moreAtTheEnd = random() < 0.4 ? 1 + Math.floor(random() * 2) : 0;
+    const twiceAtTheStart = !everMoving && random() < 0.2;
+    const moreAtTheEnd = !everMoving && random() < 0.4 ? 1 + Math.floor(random() * 2) : 0;
     const samples = [[0, oneDecimal(atTheLine), 100]];
     let distance = atTheLine;
     for (let index = 1; index < count; index += 1) {
@@ -210,6 +210,43 @@ test("on laps nobody chose, a lap is nowhere apart from itself and two laps star
     // Neither lap has a hole, so every sample of one has the other beside it.
     assert.equal(ab.delta_time_ms.includes(null) || ab.speed_b.includes(null), false, where);
     assert.equal(ab.distance_m.length, a.time_ms.length, where);
+  }
+});
+
+// And what lap B reads between the line and the line, worked out here a
+// second time and the plain way: for laps that never stand still, the place
+// of each sample of A is its share of A's lap, B's time and speed there are
+// on the straight line between B's two samples either side, and its gear is
+// the nearer sample's.
+test("on laps nobody chose, B is read at A's share of the lap, between its own two samples either side", () => {
+  const laps = lapsNobodyChose(400, { everMoving: true });
+  const close = (actual, expected, within, where) =>
+    assert.equal(Math.abs(actual - expected) <= within, true, `${where}: ${actual}, and ${expected} by hand`);
+
+  for (let index = 0; index + 1 < laps.length; index += 2) {
+    const [a, b] = [laps[index], laps[index + 1]];
+    const comparison = compare(a, b);
+    const fromTheLine = (lap) => lap.distance_m.map((distance) => distance - lap.distance_m[0]);
+    const [alongA, alongB] = [fromTheLine(a), fromTheLine(b)];
+    const [lengthA, lengthB] = [alongA.at(-1), alongB.at(-1)];
+
+    alongA.forEach((along, row) => {
+      const where = `laps ${a.lap_number} and ${b.lap_number}, row ${row}`;
+      const place = (along / lengthA) * lengthB;
+      let before = 0;
+      while (before + 2 < alongB.length && alongB[before + 1] <= place) {
+        before += 1;
+      }
+      const share = Math.min(Math.max((place - alongB[before]) / (alongB[before + 1] - alongB[before]), 0), 1);
+      const between = (channel) => channel[before] + (channel[before + 1] - channel[before]) * share;
+      close(comparison.delta_time_ms[row], between(b.time_ms) - a.time_ms[row], 0.11, `${where}, time`);
+      close(comparison.speed_b[row], between(b.speed_kph), 0.06, `${where}, speed`);
+      assert.equal(comparison.speed_a[row], a.speed_kph[row], where);
+      assert.equal(comparison.distance_m[row], a.distance_m[row], where);
+    });
+    // At the line B is its own last sample, in every channel.
+    assert.equal(comparison.speed_b.at(-1), b.speed_kph.at(-1));
+    assert.equal(comparison.gear_b.at(-1), b.gear.at(-1));
   }
 });
 

@@ -30,7 +30,7 @@ const STATES: Record<
   },
   not_published: {
     label: "Not published",
-    meaning: "This session has been run, and its data is not published",
+    meaning: "This session has started or been run, and its data is not published",
     tone: "border-line bg-white/[0.03] text-slate-500",
     icon: CircleDashed
   },

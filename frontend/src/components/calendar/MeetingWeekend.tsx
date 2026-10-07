@@ -137,7 +137,7 @@ function MeetingNotFound({ address, missing }: { address: MeetingAddress; missin
 /** What a card says under a session that has no dashboard to open. */
 const UNPUBLISHED_NOTE: Partial<Record<SessionAvailability, string>> = {
   scheduled: "Not run yet.",
-  not_published: "Run, and not published yet.",
+  not_published: "Started or run, and not published yet.",
   not_covered: "This site does not publish this kind of session."
 };
 

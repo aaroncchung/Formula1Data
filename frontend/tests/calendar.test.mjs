@@ -41,7 +41,7 @@ test("a session the publisher covers is scheduled until it starts and not publis
   assert.equal(race.in_scope, true);
 
   assert.equal(sessionAvailability(race, NOW), "scheduled");
-  // The moment it starts it has been run, as far as the calendar can tell.
+  // The moment it starts it is no longer to come. Whether it is over the calendar cannot tell.
   const start = Date.parse(race.start_time_utc);
   assert.equal(sessionAvailability(race, start - 1), "scheduled");
   assert.equal(sessionAvailability(race, start), "not_published");
