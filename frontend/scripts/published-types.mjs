@@ -17,8 +17,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { compile } from "json-schema-to-typescript";
-
 export const SCHEMA_URL = new URL("../../schema/published-v2.schema.json", import.meta.url);
 export const TYPES_URL = new URL("../src/lib/published/schema.ts", import.meta.url);
 
@@ -36,8 +34,26 @@ export async function readSchema() {
   return JSON.parse(await readFile(SCHEMA_URL, "utf8"));
 }
 
+/**
+ * The generator, json-schema-to-typescript. It is a development dependency
+ * and the only thing in the tests that comes from node_modules, so it is
+ * loaded when it is first needed: a checkout that has not been installed
+ * then fails saying what to do, and not with a missing module.
+ */
+async function loadCompiler() {
+  try {
+    return (await import("json-schema-to-typescript")).compile;
+  } catch (error) {
+    throw new Error(
+      "json-schema-to-typescript is not installed, so the types can neither be generated nor checked against the schema. Run `npm ci` in frontend/ first.",
+      { cause: error }
+    );
+  }
+}
+
 /** The text of the types file for a schema. The same schema always gives the same text. */
 export async function generatePublishedTypes(schema) {
+  const compile = await loadCompiler();
   const text = await compile(schema, "PublishedFormat", {
     bannerComment: BANNER,
     // A model that declares its fields closed is closed; nothing is added.
