@@ -166,7 +166,7 @@ def test_a_stop_is_one_stop_however_many_lines_describe_it():
         + pit_line("01:00:02.000", [stop("", "2.4", "19.9"), stop("9", "3.0", "20.5", "2026-06-28T13:09:00.000Z")])
         + pit_line("01:00:03.000", {"0": stop("5")})
         # Keys that are no place, and an entry that is no entry.
-        + pit_line("01:00:04.000", {"_deleted": [0], "2": "gone"})
+        + pit_line("01:00:04.000", {"_kf": True, "2": "gone"})
     )
 
     stops = parse_pit_stop_series(feed)
@@ -450,7 +450,7 @@ EVERY_READING = frozenset({"AirTemp", "Humidity", "Pressure", "Rainfall", "Track
 
 
 def test_every_line_of_a_real_weather_feed_gives_every_reading():
-    assert weather_readings_sent(AUSTRIAN_WEATHER) == {38_376: EVERY_READING, 98_372: EVERY_READING}
+    assert weather_readings_sent(AUSTRIAN_WEATHER) == {38_376: [EVERY_READING], 98_372: [EVERY_READING]}
 
 
 @pytest.mark.parametrize("junk", [b"", b"not a stream line\r\n", b"00:00:01.000[]\r\n", b"\xff\xfe\x00", b"00:00:01.000" + b"[" * 5000])

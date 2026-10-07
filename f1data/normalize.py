@@ -98,6 +98,15 @@ _LATE_REPORT_MS = 120_000
 # of one stop. For the twenty-eight stops of that race they are within 0.4 s.
 _SAME_STOP_MS = 2_000
 
+# F1's weather service sends 0.0 for a sensor that gave it no reading. The
+# track temperature of the 2026 Azerbaijan GP reads 46.6, 0.0, 47.3 in three
+# samples a minute apart, and again later in the race; the Bahrain GP's does
+# the same twice. Nothing in the line says so. A temperature or a humidity of
+# exactly zero is taken for that when the readings either side of it are both
+# at least this far from zero, and for a reading in every other case.
+_DROPOUT_JUMP = 20.0
+_SENSORS_THAT_DROP_OUT = ("air_temp_c", "track_temp_c", "humidity_pct")
+
 
 class SessionDataError(RuntimeError):
     """The session cannot be published as it stands: its laps or its result are unusable."""
@@ -637,18 +646,27 @@ def weather(session: Any, session_type: str, extras: dict[str, bytes] | None = N
     the feed was kept has no bytes to ask, and its samples are published as
     FastF1 has them; the 51 sessions archived by then were checked, and
     every line of every one gives every reading.
+
+    One thing is not F1's as sent: a zero F1 sends for a sensor that had no
+    reading (``_without_dropouts``).
     """
     frame = _frame(session, "weather_data")
     if len(frame) == 0 or "Time" not in frame.columns:
         return []
     leader_lap = _leader_lap(session) if session_type.upper() in RACE_LIKE_SESSION_TYPES else None
     sent = weather_readings_sent(extras[WEATHER_SERIES]) if extras and WEATHER_SERIES in extras else None
+    seen_at: dict[int, int] = {}
     rows: list[WeatherSample] = []
     for _, row in frame.iterrows():
         moment = _milliseconds(row.get("Time"))
         if moment is None:
             continue
-        given = sent.get(moment, frozenset()) if sent is not None else None
+        given = None
+        if sent is not None:
+            # The nth sample with a time is the nth line with it.
+            lines = sent.get(moment, [])
+            given = lines[seen_at.get(moment, 0)] if seen_at.get(moment, 0) < len(lines) else frozenset()
+            seen_at[moment] = seen_at.get(moment, 0) + 1
 
         def reading(name: str) -> Any:
             return row.get(name) if given is None or name in given else None
@@ -667,6 +685,23 @@ def weather(session: Any, session_type: str, extras: dict[str, bytes] | None = N
                 wind_speed_kph=wind * _METRES_PER_SECOND_IN_KPH if wind is not None else None,
             )
         )
+    return _without_dropouts(rows)
+
+
+def _without_dropouts(rows: list[WeatherSample]) -> list[WeatherSample]:
+    """The samples with no reading where F1 sent the zero it sends in place of one."""
+    for name in _SENSORS_THAT_DROP_OUT:
+        values = [getattr(row, name) for row in rows]
+        for index, value in enumerate(values):
+            if value is None or value != 0:
+                continue
+            either_side = [
+                next((other for other in reversed(values[:index]) if other), None),
+                next((other for other in values[index + 1 :] if other), None),
+            ]
+            near = [other for other in either_side if other is not None]
+            if near and all(abs(other) >= _DROPOUT_JUMP for other in near):
+                rows[index] = rows[index].model_copy(update={name: None})
     return rows
 
 

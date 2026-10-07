@@ -45,19 +45,24 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
     from fastf1 import _api
 
     extras: dict[str, bytes] = {}
-    # The weather is asked for a second time: FastF1 has just loaded it, so
-    # the answer comes out of its cache of responses.
-    for name in (PIT_STOP_SERIES, WEATHER_SERIES):
-        try:
-            response = fastf1.Cache.requests_get(
-                f"{_api.base_url}/static/{archive_path}{name}", headers=_api.headers
-            )
-            # F1 answers 403 for a feed it does not hold, as it did for the
-            # pit stops of races before late 2024.
-            if response.status_code == 200 and response.content:
-                extras[name] = response.content
-        except Exception as exc:
-            _logger.warning("Could not fetch %s: %s", name, exc)
+    # The pit stops are asked of F1 alone: what F1 answers for them is how a
+    # feed F1 does not hold is told from one that failed to arrive
+    # (``f1_does_not_hold`` in f1data/coverage.py). The weather is asked for a
+    # second time, where FastF1 has just asked for it: of F1, then of
+    # FastF1's mirror. Whichever of the two answered FastF1 answers again out
+    # of its cache of responses.
+    asked_of = {PIT_STOP_SERIES: (_api.base_url,), WEATHER_SERIES: (_api.base_url, _api.base_url_mirror)}
+    for name, hosts in asked_of.items():
+        for host in hosts:
+            try:
+                response = fastf1.Cache.requests_get(f"{host}/static/{archive_path}{name}", headers=_api.headers)
+                # F1 answers 403 for a feed it does not hold, as it did for
+                # the pit stops of races before late 2024.
+                if response.status_code == 200 and response.content:
+                    extras[name] = response.content
+                    break
+            except Exception as exc:
+                _logger.warning("Could not fetch %s from %s: %s", name, host, exc)
 
     try:
         info = _circuit_info(fastf1, session)
@@ -66,6 +71,24 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
     except Exception as exc:
         _logger.warning("Could not fetch the circuit information: %s", exc)
     return extras
+
+
+def weather_lines_are_kept(session: Any, extras: dict[str, bytes]) -> bool:
+    """Whether a fetch has what a build needs to tell a reading F1 sent from one FastF1 filled in.
+
+    It has when the weather feed's own lines are among ``extras``, or when
+    FastF1 loaded no weather for them to be the lines of. A fetch that loaded
+    the weather and could not keep its lines is not archived: its snapshot
+    would be built with FastF1's zeros and nothing would say so
+    (f1data/fetch.py).
+    """
+    if WEATHER_SERIES in extras:
+        return True
+    try:
+        loaded = session.weather_data
+    except Exception:
+        return True
+    return loaded is None or len(loaded) == 0
 
 
 def _circuit_info(fastf1: Any, session: Any) -> Any:
@@ -114,6 +137,14 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
     stops late and without a lap, and each can still be told by its time
     (``pit_stops`` in f1data/normalize.py). Its ``lap_number`` is ``None``.
     ``time_utc`` is when the stop was first reported, whatever came after.
+
+    F1 also sends a stop twice under two places: in the 2025 Canadian GP 29
+    stops arrive as the first of a driver's list and again, a tenth of a
+    second later, as the second, with the same lap and the same figures. A
+    driver stops once on a lap, so of two stops with one driver and lap the
+    later place stands and the stop is counted once. And what F1 takes back
+    is gone: a place named in ``_deleted``, and a place past the end of a
+    list that is sent again.
     """
     stops: dict[tuple[str, int], dict[str, Any]] = {}
     for line in data.decode("utf-8-sig", errors="replace").splitlines():
@@ -124,11 +155,21 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
             payload = json.loads(line[_STREAM_TIMESTAMP_CHARS:])
             pit_times = payload.get("PitTimes") or {}
             said: list[tuple[tuple[str, int], dict[str, Any]]] = []
+            taken_back: list[tuple[str, Any]] = []
             for number, entries in list(pit_times.items()):
                 if isinstance(entries, list):
                     placed = list(enumerate(entries))
+                    # The whole list again: whatever was past its end is gone.
+                    taken_back.append((str(number), len(entries)))
                 elif isinstance(entries, dict):
                     placed = [(int(place), entry) for place, entry in entries.items() if str(place).isdigit()]
+                    deleted = entries.get("_deleted")
+                    if isinstance(deleted, list):
+                        taken_back.extend(
+                            (str(number), [place])
+                            for place in deleted
+                            if isinstance(place, int) and not isinstance(place, bool)
+                        )
                 else:
                     continue
                 for place, entry in placed:
@@ -137,6 +178,10 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
                         said.append(((str(number), place), fields))
         except Exception:
             continue
+        for number, places in taken_back:
+            for key in [key for key in stops if key[0] == number]:
+                if key[1] in places if isinstance(places, list) else key[1] >= places:
+                    del stops[key]
         for key, fields in said:
             stop = stops.setdefault(
                 key,
@@ -152,12 +197,17 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
                 # What a line leaves out, or sends empty, stands as it was.
                 if value is not None and not (name == "time_utc" and stop["time_utc"] is not None):
                     stop[name] = value
-    return [
-        stop
-        for stop in stops.values()
-        if (stop["stationary_ms"] is not None or stop["pit_lane_ms"] is not None)
-        and (stop["lap_number"] is not None or stop["time_utc"] is not None)
-    ]
+    reported: dict[Any, dict[str, Any]] = {}
+    for key, stop in stops.items():
+        if stop["stationary_ms"] is None and stop["pit_lane_ms"] is None:
+            continue
+        if stop["lap_number"] is None and stop["time_utc"] is None:
+            continue
+        # One stop a driver and lap. A stop with no lap is nobody's twin.
+        named = (stop["driver_number"], stop["lap_number"]) if stop["lap_number"] is not None else key
+        reported.pop(named, None)
+        reported[named] = stop
+    return list(reported.values())
 
 
 def _said_of_a_stop(entry: Any) -> dict[str, Any] | None:
@@ -177,19 +227,19 @@ def _said_of_a_stop(entry: Any) -> dict[str, Any] | None:
     }
 
 
-def weather_readings_sent(data: bytes) -> dict[int, frozenset[str]]:
+def weather_readings_sent(data: bytes) -> dict[int, list[frozenset[str]]]:
     """Which readings each line of F1's weather feed gives, by the line's time in milliseconds.
 
     A reading is given when the line has it and it reads as a number, or for
     ``Rainfall`` as one of the two values F1 sends. FastF1 writes 0 for one
     that is missing or empty, so that a sensor that was off comes out as a
     track at 0 degrees, still air and no rain; this is how ``weather`` in
-    f1data/normalize.py tells those from readings. Two lines with one time
-    give what both give. Never raises: a line that cannot be read gives
-    nothing, and a sample with no line to its name is published without
-    readings.
+    f1data/normalize.py tells those from readings. Lines with one time are
+    listed in the order they were sent, which is the order FastF1 keeps their
+    samples in. Never raises: a line that cannot be read gives nothing, and a
+    sample with no line to its name is published without readings.
     """
-    sent: dict[int, frozenset[str]] = {}
+    sent: dict[int, list[frozenset[str]]] = {}
     for line in data.decode("utf-8-sig", errors="replace").splitlines():
         try:
             clock = _STREAM_CLOCK.match(line[:_STREAM_TIMESTAMP_CHARS])
@@ -203,7 +253,7 @@ def weather_readings_sent(data: bytes) -> dict[int, frozenset[str]]:
                 given.add("Rainfall")
         except Exception:
             continue
-        sent[moment] = sent[moment] & frozenset(given) if moment in sent else frozenset(given)
+        sent.setdefault(moment, []).append(frozenset(given))
     return sent
 
 

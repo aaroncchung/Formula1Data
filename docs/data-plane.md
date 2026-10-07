@@ -97,7 +97,9 @@ What holds for all of them:
 - A pit stop is the timing's entry to the pit lane with F1's own figures
   beside it, matched by driver and lap. F1's feed sends a stop once and then
   only what changes, so a stop is followed by its driver and its place in
-  that driver's list, and a correction lands on the stop it corrects. F1
+  that driver's list, and a correction lands on the stop it corrects. It also
+  sends some stops twice, under two places; a driver stops once on a lap, so
+  those are one stop, here and in the count in `coverage.json`. F1
   sometimes reports a stop late and with no lap; such a report goes to the
   stop the timing shows the car finishing in the two minutes before it, when
   there is exactly one that no other report names and whose pit-lane time is
@@ -110,9 +112,13 @@ What holds for all of them:
   writes the word `None` where a code is missing; no reader takes that, or
   any other text, on trust (`f1data/loaded.py`).
 - A weather reading is null where F1 sent none. FastF1 writes 0 for those, so
-  the feed itself is archived with the session and asked. Snapshots taken
-  before it was kept are published as FastF1 has them; every line of every
-  one of those 51 sessions gives every reading.
+  the feed itself is archived with the session and asked; a fetch that loads
+  the weather and cannot keep the feed's lines is not archived, and is made
+  again. Snapshots taken before the feed was kept are published as FastF1 has
+  them; every line of every one of those 51 sessions gives every reading. F1
+  itself sends 0.0 for a sensor with no reading (the track temperature, twice
+  each in the 2026 Azerbaijan and Bahrain GPs); a temperature or humidity of
+  exactly zero between readings twenty or more away is published as null.
 - The lap a replay frame says the session had reached is the timing's: the
   highest lap any car had started by the end of the frame's window, whether
   or not either feed has samples for it.

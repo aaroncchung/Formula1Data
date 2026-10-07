@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from f1data.coverage import measure_coverage
-from f1data.extras import CIRCUIT_INFO, fetch_extras
+from f1data.extras import CIRCUIT_INFO, WEATHER_SERIES, fetch_extras, weather_lines_are_kept
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, identity_from_fastf1, session_type_code
 
@@ -101,8 +101,10 @@ def fetch_session(
 
     Returns whatever arrived, with its coverage measured. Judging whether that
     is complete is the caller's job; a partial session is still worth keeping
-    as a snapshot. Raises ``FetchError`` only when F1's session information did
-    not arrive, since without its session key there is nothing to file it under.
+    as a snapshot. Raises ``FetchError`` when F1's session information did
+    not arrive, since without its session key there is nothing to file it
+    under, and when the weather loaded and its own lines could not be kept
+    beside it (``weather_lines_are_kept`` in f1data/extras.py).
     """
     code = session_type_code(session_type)
     if cache_dir.exists() and any(cache_dir.iterdir()):
@@ -141,6 +143,15 @@ def fetch_session(
                 http=recorder,
             ) from exc
         extras = fetch_extras(fastf1, session, identity.archive_path)
+        if not weather_lines_are_kept(session, extras):
+            # Nothing is archived, and the session is fetched again on a
+            # later run like any fetch that failed.
+            raise FetchError(
+                f"FastF1 loaded the weather of {year} {event} {code} and {WEATHER_SERIES} could not be "
+                "fetched to go with it. Without the feed's own lines a reading F1 left out is published as "
+                f"a zero; requests by host and status: {recorder.summary()}",
+                http=recorder,
+            )
         coverage = measure_coverage(session, code, extras)
         versions = _versions(fastf1)
 

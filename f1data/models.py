@@ -384,7 +384,11 @@ class WeatherSample(Model):
         description="In a race or sprint, the lap the leader was on. Null before the start, after the flag, "
         "and in any other session."
     )
-    air_temp_c: Decimal1 | None
+    air_temp_c: Decimal1 | None = Field(
+        description="Null, like the track temperature and the humidity, when F1's feed gave no value for "
+        "it, or gave the zero it sends for a sensor with no reading: exactly 0 between readings twenty or "
+        "more from it."
+    )
     track_temp_c: Decimal1 | None
     humidity_pct: Decimal1 | None
     rainfall: bool | None = Field(
