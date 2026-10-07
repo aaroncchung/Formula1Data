@@ -6,7 +6,7 @@ import { ChartPanel } from "@/components/charts/ChartPanel";
 import { TelemetryCharts } from "@/components/charts/TelemetryCharts";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { formatMs } from "@/lib/format";
-import { isTelemetryNotice } from "@/lib/published/telemetry";
+import { isTelemetryNotice, lapMarks, preferredLap } from "@/lib/published/telemetry";
 import type { LapRef, TelemetryLapChoice, TelemetryNotice } from "@/lib/published/telemetry";
 import type { Corners } from "@/lib/published/types";
 import type { TelemetryComparison } from "@/lib/telemetry-compare";
@@ -49,12 +49,12 @@ export function TelemetryComparePanel({
 
   function changeDriverA(value: string) {
     setDriverA(value);
-    setLapA(quickestLap(availableLaps, value) ?? "");
+    setLapA(preferredLap(availableLaps, value)?.lap_number ?? "");
   }
 
   function changeDriverB(value: string) {
     setDriverB(value);
-    setLapB(quickestLap(availableLaps, value) ?? "");
+    setLapB(preferredLap(availableLaps, value)?.lap_number ?? "");
   }
 
   function submit() {
@@ -155,20 +155,18 @@ export function TelemetryComparePanel({
   );
 }
 
-/** A lap as the index describes it, so it can be chosen without knowing its number: "Lap 59 · 1:08.412 · HARD". */
+/**
+ * A lap as the index describes it, so it can be chosen without knowing its
+ * number: "Lap 59 · 1:08.412 · HARD". A lap that was deleted, or that goes
+ * into or out of the pits, says so: its time is not one to judge a driver by.
+ */
 function lapLabel(lap: TelemetryLapChoice): string {
-  return [`Lap ${lap.lap_number}`, lap.lap_time_ms === null ? "no time" : formatMs(lap.lap_time_ms), lap.compound]
+  return [
+    `Lap ${lap.lap_number}`,
+    lap.lap_time_ms === null ? "no time" : formatMs(lap.lap_time_ms),
+    lap.compound,
+    ...lapMarks(lap)
+  ]
     .filter((part) => part !== null)
     .join(" · ");
-}
-
-/** The lap a driver is first offered: their quickest, or the first listed when none has a time. */
-function quickestLap(laps: ReadonlyArray<TelemetryLapChoice>, driver: string): number | null {
-  const own = laps.filter((lap) => lap.driver_code === driver);
-  const timed = own.filter((lap): lap is TelemetryLapChoice & { lap_time_ms: number } => lap.lap_time_ms !== null && lap.lap_time_ms > 0);
-  const quickest = timed.reduce<(typeof timed)[number] | null>(
-    (best, lap) => (best === null || lap.lap_time_ms < best.lap_time_ms ? lap : best),
-    null
-  );
-  return quickest?.lap_number ?? own[0]?.lap_number ?? null;
 }

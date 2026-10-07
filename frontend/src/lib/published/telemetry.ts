@@ -9,8 +9,9 @@
  * driver's file once it has it, so comparing another lap of the same driver
  * asks for nothing.
  *
- * The index says everything a lap is chosen by: its time and its compound.
- * The laps of the session are not read here.
+ * The index says everything a lap is chosen by: its time, its compound, and
+ * whether it is a lap worth comparing (accurately timed, not deleted, not
+ * into or out of the pits). The laps of the session are not read here.
  */
 
 import { compareLaps } from "../telemetry-compare.ts";
@@ -32,6 +33,14 @@ export type TelemetryLapChoice = {
   /** As in the session's laps; null for a lap F1 did not time. */
   readonly lap_time_ms: number | null;
   readonly compound: Compound | null;
+  /**
+   * The lap's four flags, as in the session's laps. Null is "not known":
+   * the timing gave no value, or the index was built before it carried them.
+   */
+  readonly is_accurate: boolean | null;
+  readonly is_deleted: boolean | null;
+  readonly is_pit_in_lap: boolean | null;
+  readonly is_pit_out_lap: boolean | null;
 };
 
 /** Why there is no comparison, in words for the page; `action` is anything more to add. */
@@ -142,38 +151,85 @@ export function telemetryLaps(index: TelemetryIndex): TelemetryLapChoice[] {
       driver_code: entry.driver_code,
       lap_number: lap,
       lap_time_ms: entry.lap_time_ms[position] ?? null,
-      compound: entry.compound[position] ?? null
+      compound: entry.compound[position] ?? null,
+      is_accurate: flagAt(entry.is_accurate, position),
+      is_deleted: flagAt(entry.is_deleted, position),
+      is_pit_in_lap: flagAt(entry.is_pit_in_lap, position),
+      is_pit_out_lap: flagAt(entry.is_pit_out_lap, position)
     }))
   );
 }
 
 /**
- * The laps a telemetry tab compares first: the fastest lap of each of the two
- * drivers with the quickest laps.
+ * One lap's flag. Every index has the four arrays from pipeline version 8.
+ * One published before that has none, and is still what is served for a
+ * session until it is published again; its laps are then of unknown kind,
+ * which is not the same as clean, and not the same as dirty either.
+ */
+function flagAt(flags: ReadonlyArray<boolean | null> | undefined, position: number): boolean | null {
+  return flags?.[position] ?? null;
+}
+
+/**
+ * Whether a lap is one to open a comparison on: timed accurately, not
+ * deleted by the stewards, and neither into nor out of the pits. It has to
+ * be known to be accurate; a lap nothing is known about is not clean.
+ */
+export function isCleanLap(lap: TelemetryLapChoice): boolean {
+  return lap.is_accurate === true && lap.is_deleted !== true && lap.is_pit_in_lap !== true && lap.is_pit_out_lap !== true;
+}
+
+/** What a lap menu says of a lap besides its time: "deleted", "pit in", "pit out". */
+export function lapMarks(lap: TelemetryLapChoice): string[] {
+  return [
+    lap.is_deleted === true ? "deleted" : null,
+    lap.is_pit_in_lap === true ? "pit in" : null,
+    lap.is_pit_out_lap === true ? "pit out" : null
+  ].filter((mark): mark is string => mark !== null);
+}
+
+type TimedLap = TelemetryLapChoice & { readonly lap_time_ms: number };
+
+/**
+ * The lap of a driver to offer first: their fastest clean lap, or failing
+ * that their fastest lap of any kind, or failing that the first one listed.
+ * Null for a driver with no lap in the index.
+ */
+export function preferredLap(laps: ReadonlyArray<TelemetryLapChoice>, driver: string): TelemetryLapChoice | null {
+  const own = laps.filter((lap) => lap.driver_code === driver);
+  const timed = own.filter((lap): lap is TimedLap => lap.lap_time_ms !== null && lap.lap_time_ms > 0);
+  const fastestOf = (candidates: ReadonlyArray<TimedLap>) =>
+    candidates.reduce<TimedLap | null>((best, lap) => (best === null || lap.lap_time_ms < best.lap_time_ms ? lap : best), null);
+  return fastestOf(timed.filter(isCleanLap)) ?? fastestOf(timed) ?? own[0] ?? null;
+}
+
+/**
+ * The laps a telemetry tab compares first: the preferred lap of each of the
+ * two quickest drivers.
+ *
+ * A session's quickest lap on paper is often one that does not count: set
+ * with a wheel over the line and deleted, or cut short through the pit
+ * lane. So a driver is ranked by their fastest clean lap, and a driver who
+ * has one comes before a driver who has none, whatever the times say.
  *
  * When no lap has a time to rank it by, it is the first lap listed of each of
  * the first two drivers, or the first two laps of the only one.
  */
 export function defaultComparison(laps: ReadonlyArray<TelemetryLapChoice>): LapPair | null {
-  const fastest = new Map<string, { lap: number; time: number }>();
-  for (const lap of laps) {
-    const time = lap.lap_time_ms;
-    if (time === null || time <= 0) {
-      continue;
-    }
-    const best = fastest.get(lap.driver_code);
-    if (!best || time < best.time) {
-      fastest.set(lap.driver_code, { lap: lap.lap_number, time });
-    }
-  }
-  const ranked = [...fastest.entries()].sort(
-    ([leftDriver, left], [rightDriver, right]) => left.time - right.time || compareCodes(leftDriver, rightDriver)
-  );
+  const ranked = [...new Set(laps.map((lap) => lap.driver_code))]
+    .map((driver) => preferredLap(laps, driver))
+    .filter((lap): lap is TimedLap => lap !== null && lap.lap_time_ms !== null && lap.lap_time_ms > 0)
+    .sort(
+      (left, right) =>
+        Number(isCleanLap(right)) - Number(isCleanLap(left)) ||
+        left.lap_time_ms - right.lap_time_ms ||
+        compareCodes(left.driver_code, right.driver_code)
+    );
   if (ranked.length >= 2) {
-    const [[firstDriver, first], [secondDriver, second]] = ranked;
+    const [first, second] = ranked;
     return [
-      { driver: firstDriver, lap: first.lap },
-      { driver: secondDriver, lap: second.lap }
+      { driver: first.driver_code, lap: first.lap_number },
+      { driver: second.driver_code, lap: second.lap_number }
     ];
   }
 
@@ -186,6 +242,39 @@ export function defaultComparison(laps: ReadonlyArray<TelemetryLapChoice>): LapP
     { driver: first.driver_code, lap: first.lap_number },
     { driver: second.driver_code, lap: second.lap_number }
   ];
+}
+
+/**
+ * What the tab says of the laps it opened on. It says "clean" only of laps
+ * that are known to be: where a driver has none, or the index does not say
+ * what kind its laps are, the lap opened on is that driver's fastest of any
+ * kind, and the page says so instead of passing it off as a clean one.
+ */
+export function openingNote(laps: ReadonlyArray<TelemetryLapChoice>, pair: LapPair | null): string | null {
+  if (!pair) {
+    return null;
+  }
+  const unclean = [...new Set(pair.filter((ref) => !isCleanLap(lapOf(laps, ref))).map((ref) => ref.driver))];
+  if (unclean.length === 0) {
+    return "It opens on the fastest clean lap of each of the two quickest drivers: timed accurately, not deleted, and not into or out of the pits.";
+  }
+  const who = unclean.length === 1 ? `${unclean[0]} has` : `${unclean.join(" and ")} have`;
+  return `It opens on each driver's fastest lap. ${who} no lap known to be clean (timed accurately, not deleted, not into or out of the pits), so that is the fastest of any kind.`;
+}
+
+function lapOf(laps: ReadonlyArray<TelemetryLapChoice>, ref: LapRef): TelemetryLapChoice {
+  return (
+    laps.find((lap) => lap.driver_code === ref.driver && lap.lap_number === ref.lap) ?? {
+      driver_code: ref.driver,
+      lap_number: ref.lap,
+      lap_time_ms: null,
+      compound: null,
+      is_accurate: null,
+      is_deleted: null,
+      is_pit_in_lap: null,
+      is_pit_out_lap: null
+    }
+  );
 }
 
 export function isTelemetryNotice(value: TelemetryComparison | TelemetryNotice): value is TelemetryNotice {

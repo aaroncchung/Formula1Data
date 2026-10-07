@@ -17,7 +17,16 @@ import {
 import { notifyWhenGone } from "../src/lib/published/session.ts";
 import { shareReads } from "../src/lib/published/share.ts";
 import { DEFAULT_SESSION_TAB, SESSION_TABS, hashOfTab, tabFromHash } from "../src/lib/published/tabs.ts";
-import { compareTelemetry, defaultComparison, readTelemetry, telemetryLaps } from "../src/lib/published/telemetry.ts";
+import {
+  compareTelemetry,
+  defaultComparison,
+  isCleanLap,
+  lapMarks,
+  openingNote,
+  preferredLap,
+  readTelemetry,
+  telemetryLaps
+} from "../src/lib/published/telemetry.ts";
 
 import {
   bucketOf,
@@ -99,6 +108,10 @@ const TELEMETRY_INDEX = {
     lap_number: lapsOf(code).map((row) => row.lap_number),
     lap_time_ms: lapsOf(code).map((row) => row.lap_time_ms),
     compound: lapsOf(code).map((row) => row.compound),
+    is_accurate: lapsOf(code).map((row) => row.is_accurate),
+    is_deleted: lapsOf(code).map((row) => row.is_deleted),
+    is_pit_in_lap: lapsOf(code).map((row) => row.is_pit_in_lap),
+    is_pit_out_lap: lapsOf(code).map((row) => row.is_pit_out_lap),
     sample_count: lapsOf(code).map(() => 5),
     raw_sample_count: lapsOf(code).map(() => 5),
     has_position: lapsOf(code).map(() => true)
@@ -533,11 +546,118 @@ test("a shared view still tells its holder when its generation is gone", async (
 // ---------------------------------------------------------------------------
 
 const INDEXED = telemetryLaps(TELEMETRY_INDEX);
+const CLEAN = { is_accurate: true, is_deleted: false, is_pit_in_lap: false, is_pit_out_lap: false };
+const UNKNOWN = { is_accurate: null, is_deleted: null, is_pit_in_lap: null, is_pit_out_lap: null };
 
 test("the index's parallel arrays read as one row for each lap", () => {
   assert.equal(INDEXED.length, LAPS.length);
-  assert.deepEqual(INDEXED[2], { driver_code: "RUS", lap_number: 3, lap_time_ms: 70_100, compound: "MEDIUM" });
-  assert.deepEqual(INDEXED.at(-1), { driver_code: "ANT", lap_number: 2, lap_time_ms: 70_800, compound: "MEDIUM" });
+  assert.deepEqual(INDEXED[2], { driver_code: "RUS", lap_number: 3, lap_time_ms: 70_100, compound: "MEDIUM", ...CLEAN });
+  assert.deepEqual(INDEXED.at(-1), { driver_code: "ANT", lap_number: 2, lap_time_ms: 70_800, compound: "MEDIUM", ...CLEAN });
+  // Lap 1 is from a standing start, and the timing does not call it accurate.
+  assert.equal(INDEXED[0].is_accurate, false);
+  assert.equal(isCleanLap(INDEXED[0]), false);
+  assert.equal(isCleanLap(INDEXED[2]), true);
+});
+
+// ---------------------------------------------------------------------------
+// Which laps a comparison opens on
+// ---------------------------------------------------------------------------
+
+/** The index's laps with some of them changed, each named as "RUS/3". */
+const withLaps = (changes) =>
+  INDEXED.map((entry) => ({ ...entry, ...(changes[`${entry.driver_code}/${entry.lap_number}`] ?? {}) }));
+
+// The quickest lap of a session on paper is often one that does not count.
+test("a deleted lap, however quick, is not the lap a comparison opens on", () => {
+  // Verstappen's lap 2 becomes the quickest of the session, and is deleted.
+  const laps = withLaps({ "VER/2": { lap_time_ms: 69_000, is_deleted: true } });
+
+  assert.equal(preferredLap(laps, "VER").lap_number, 3);
+  // His next best, 70.9 s, is slower than Antonelli's 70.8 s.
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "RUS", lap: 3 },
+    { driver: "ANT", lap: 2 }
+  ]);
+});
+
+test("neither is a lap into or out of the pits", () => {
+  const laps = withLaps({ "RUS/3": { is_pit_in_lap: true }, "VER/2": { is_pit_out_lap: true } });
+
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "RUS", lap: 2 },
+    { driver: "ANT", lap: 2 }
+  ]);
+  assert.equal(preferredLap(laps, "VER").lap_number, 3);
+});
+
+test("a driver with no clean lap is offered their fastest of any kind, after every driver who has a clean one", () => {
+  // Every lap of Russell's is inaccurate, and one of them is the quickest of the session.
+  const laps = withLaps({
+    "RUS/1": { is_accurate: false },
+    "RUS/2": { is_accurate: false, lap_time_ms: 60_000 },
+    "RUS/3": { is_accurate: false }
+  });
+
+  assert.equal(preferredLap(laps, "RUS").lap_number, 2);
+  assert.deepEqual(defaultComparison(laps), [
+    { driver: "VER", lap: 2 },
+    { driver: "ANT", lap: 2 }
+  ]);
+  // With only the two of them, he is compared, second.
+  const two = laps.filter((entry) => entry.driver_code !== "ANT");
+  assert.deepEqual(defaultComparison(two), [
+    { driver: "VER", lap: 2 },
+    { driver: "RUS", lap: 2 }
+  ]);
+  assert.match(openingNote(two, defaultComparison(two)), /RUS has no lap known to be clean/);
+});
+
+test("a lap whose kind is not known is not taken for a clean one", () => {
+  const laps = withLaps({ "RUS/3": { is_accurate: null }, "VER/2": { is_deleted: null, is_pit_in_lap: null } });
+
+  // Not known to be accurate: not clean. Known to be accurate, with nothing said against it: clean.
+  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "RUS" && entry.lap_number === 3)), false);
+  assert.equal(isCleanLap(laps.find((entry) => entry.driver_code === "VER" && entry.lap_number === 2)), true);
+  assert.equal(preferredLap(laps, "RUS").lap_number, 2);
+});
+
+// An index published before the four flags has none of the arrays. Its laps
+// are of unknown kind, and the tab opens as it did then.
+test("an index from before the flags opens on each driver's fastest lap of any kind, and says so", () => {
+  const before = structuredClone(TELEMETRY_INDEX);
+  for (const entry of before.drivers) {
+    for (const flag of ["is_accurate", "is_deleted", "is_pit_in_lap", "is_pit_out_lap"]) {
+      delete entry[flag];
+    }
+  }
+  const laps = telemetryLaps(before);
+
+  assert.deepEqual(laps[2], { driver_code: "RUS", lap_number: 3, lap_time_ms: 70_100, compound: "MEDIUM", ...UNKNOWN });
+  const pair = defaultComparison(laps);
+  assert.deepEqual(pair, [
+    { driver: "RUS", lap: 3 },
+    { driver: "VER", lap: 2 }
+  ]);
+  assert.match(openingNote(laps, pair), /RUS and VER have no lap known to be clean .* so that is the fastest of any kind/);
+  assert.deepEqual(lapMarks(laps[2]), []);
+});
+
+test("the tab says it opened on clean laps only when it did, and nothing when it compares nothing", () => {
+  assert.match(openingNote(INDEXED, defaultComparison(INDEXED)), /^It opens on the fastest clean lap of each of the two quickest drivers/);
+  assert.equal(openingNote(INDEXED, null), null);
+});
+
+test("a lap menu marks the laps whose time is not one to judge a driver by", () => {
+  const [lap1] = INDEXED;
+
+  assert.deepEqual(lapMarks(lap1), []);
+  assert.deepEqual(lapMarks({ ...lap1, is_deleted: true }), ["deleted"]);
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_in_lap: true }), ["pit in"]);
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_out_lap: true }), ["pit out"]);
+  // A lap that leaves the pits and comes straight back in.
+  assert.deepEqual(lapMarks({ ...lap1, is_pit_in_lap: true, is_pit_out_lap: true, is_deleted: true }), ["deleted", "pit in", "pit out"]);
+  // Nothing is said of a lap nothing is known about.
+  assert.deepEqual(lapMarks({ ...lap1, ...UNKNOWN }), []);
 });
 
 test("the first comparison is the fastest lap of each of the two quickest drivers", () => {
@@ -730,7 +850,7 @@ test("the telemetry the publisher writes is read, and one lap is not a compariso
 
   const telemetry = await readTelemetry(view);
 
-  assert.deepEqual(telemetry.laps, [{ driver_code: "RUS", lap_number: 2, lap_time_ms: 72_037, compound: "MEDIUM" }]);
+  assert.deepEqual(telemetry.laps, [{ driver_code: "RUS", lap_number: 2, lap_time_ms: 72_037, compound: "MEDIUM", ...CLEAN }]);
   assert.equal(telemetry.pair, null);
   assert.match(telemetry.notice.reason, /needs two laps with telemetry/);
   // The fixture's generation has no corner map, which is not an error.
