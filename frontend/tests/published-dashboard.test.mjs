@@ -132,7 +132,12 @@ const SESSION_FILES = {
   ],
   "weather.json": [{ time_ms: 38_376, lap_number: null, air_temp_c: 33.6, track_temp_c: 53.2, humidity_pct: 30.3, wind_speed_kph: 1.0, rainfall: false }],
   "race-control.json": [{ time_ms: 3_300_000, lap_number: 1, category: "Flag", message: "GREEN LIGHT - PIT EXIT OPEN", flag: "GREEN", scope: "Track" }],
-  "position-replay.json": [{ session_id: "2026-08-r", frame_index: 0, lap_number: 1, timestamp_ms: 3_425_000, positions: [{ driver_code: "RUS", x: 1, y: 2 }] }],
+  "position-replay.json": {
+    interval_ms: 5000,
+    time_ms: [3_425_000],
+    lap_number: [1],
+    drivers: [{ driver_code: "RUS", x: [1], y: [2], speed_kph: [200], distance_m: [0] }]
+  },
   "analysis/lap-times.json": [{ name: "RUS", x: [1, 2, 3], y: [80_000, 70_500, 70_100], color: "#27F4D2" }],
   "analysis/race-pace.json": {
     drivers: [
@@ -412,7 +417,9 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
     "analysis/strategy.json": { compound_usage: {}, caveats: [] },
     "analysis/race-pace.json": { stints: [], caveats: [] },
     "analysis/tyre-degradation.json": { rows: "none", caveats: [] },
-    "telemetry/index.json": { max_samples_per_lap: 300, drivers: [] }
+    "telemetry/index.json": { max_samples_per_lap: 300, drivers: [] },
+    // The frames of format 1, which was a list.
+    "position-replay.json": [{ frame_index: 0, positions: [] }]
   };
   const bucket = bucketOf();
   republish(bucket, { ...SESSION_FILES, ...wrong });
@@ -426,6 +433,9 @@ test("an artifact in the wrong shape is invalid, whichever shape it should have"
   const strategy = await failureOf(readStrategy(view));
   assert.equal(strategy.code, "invalid_artifact");
   assert.match(strategy.message, /analysis\/strategy\.json has no list of undercut_overcut/);
+  const replay = await failureOf(readPositionReplay(view));
+  assert.equal(replay.code, "invalid_artifact");
+  assert.match(replay.message, /position-replay\.json is not an object/);
   // The tabs that do not read those files are untouched.
   assert.equal((await readResults(view)).results.length, 2);
   assert.equal((await readRaceControl(view)).length, 1);

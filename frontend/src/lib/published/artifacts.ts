@@ -11,7 +11,6 @@
  * does not compile.
  */
 
-import type { PositionReplayFrame } from "../../types/domain";
 import type { SessionView } from "./client.ts";
 import { PublishedDataError } from "./errors.ts";
 import type { SessionTabId } from "./tabs.ts";
@@ -25,6 +24,7 @@ import type {
   LapTimeSeries,
   PacePrediction,
   PitStop,
+  PositionReplay,
   RaceControlMessage,
   RacePace,
   Result,
@@ -72,9 +72,7 @@ export const ARTIFACTS = {
   carPerformance: recordOf("analysis/car-performance.json", ["drivers", "caveats"]),
   pacePrediction: recordOf("analysis/pace-prediction.json", ["drivers", "caveats"]),
   telemetryIndex: recordOf("telemetry/index.json", ["channels", "drivers"]),
-  // Still read on its format-1 shape; it moves to its schema type with the
-  // page that shows it.
-  positionReplay: formerListOf<PositionReplayFrame>("position-replay.json")
+  positionReplay: recordOf("position-replay.json", ["drivers", "time_ms", "lap_number"])
 } as const;
 
 type TabFiles = {
@@ -247,15 +245,15 @@ export async function readStrategy(view: SessionView): Promise<SessionStrategy> 
 }
 
 export type SessionReplay = {
-  readonly frames: PositionReplayFrame[];
+  readonly replay: PositionReplay;
   readonly drivers: ReadonlyArray<Driver>;
 };
 
-/** The largest artifact of a session after the telemetry, at 2 to 4 MB. Read by its own tab only. */
+/** The largest artifact of a session after the telemetry, at over half a megabyte. Read by its own tab only. */
 export async function readPositionReplay(view: SessionView): Promise<SessionReplay> {
   requireListed(view, "position-replay");
-  const [frames, drivers] = await Promise.all([A.positionReplay.read(view), A.drivers.read(view)]);
-  return { frames, drivers };
+  const [replay, drivers] = await Promise.all([A.positionReplay.read(view), A.drivers.read(view)]);
+  return { replay, drivers };
 }
 
 export function readWeather(view: SessionView): Promise<ReadonlyArray<WeatherSample>> {
@@ -359,10 +357,6 @@ async function checkedRecord<T>(view: SessionView, path: string, lists: Readonly
     }
   }
   return payload;
-}
-
-function formerListOf<T>(path: string): ArtifactFile<T[]> {
-  return { path, read: (view) => readList<T[]>(view, path) };
 }
 
 

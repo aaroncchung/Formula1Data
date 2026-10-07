@@ -1,4 +1,4 @@
-import type { PositionReplayFrame } from "@/types/domain";
+import type { PositionReplay } from "./published/types.ts";
 
 /**
  * Geometry for drawing positions on a circuit.
@@ -24,18 +24,6 @@ export type Projection = {
   center: Point;
   viewport: Viewport;
 };
-
-/** A coordinate as a finite number, or null when the data does not hold one. */
-export function coordinate(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
 
 /** The extent of the points, or null when there are none. */
 export function boundsOf(points: Iterable<Point>): Bounds | null {
@@ -85,26 +73,50 @@ export function project(projection: Projection, point: Point): Point {
 
 export type ReplayCar = Point & { driver: string; speedKph: number | null };
 
-/** The cars of one frame that have a driver and a position. */
-export function replayCars(frame: PositionReplayFrame): ReplayCar[] {
+/** How many frames a replay has. A session with no position data has none. */
+export function replayFrameCount(replay: PositionReplay): number {
+  return replay.time_ms.length;
+}
+
+/**
+ * The cars that have a position in one frame. A replay holds each car's
+ * track as arrays with one entry for each frame, null in a frame the car has
+ * no position for: such a car is left out of the frame, never drawn at the
+ * origin as if it had been measured there. A car can have a position and no
+ * speed, when its position data arrived and its car data did not.
+ */
+export function replayCars(replay: PositionReplay, frame: number): ReplayCar[] {
   const cars: ReplayCar[] = [];
-  for (const position of frame.positions) {
-    const x = coordinate(position.x);
-    const y = coordinate(position.y);
-    const driver = position.driver_code;
-    if (x !== null && y !== null && typeof driver === "string" && driver !== "") {
-      cars.push({ driver, x, y, speedKph: coordinate(position.speed_kph) });
+  for (const car of replay.drivers) {
+    const x = car.x[frame] ?? null;
+    const y = car.y[frame] ?? null;
+    if (x !== null && y !== null) {
+      cars.push({ driver: car.driver_code, x, y, speedKph: car.speed_kph[frame] ?? null });
     }
   }
   return cars;
+}
+
+/** Every position of every car in every frame, which between them trace the circuit. */
+export function replayPositions(replay: PositionReplay): Point[] {
+  const points: Point[] = [];
+  for (const car of replay.drivers) {
+    car.x.forEach((x, frame) => {
+      const y = car.y[frame] ?? null;
+      if (x !== null && y !== null) {
+        points.push({ x, y });
+      }
+    });
+  }
+  return points;
 }
 
 /**
  * The extent of every car position in every frame. This is the replay's
  * domain: it does not depend on which frame is on screen.
  */
-export function replayBounds(frames: ReadonlyArray<PositionReplayFrame>): Bounds | null {
-  return boundsOf(frames.flatMap(replayCars));
+export function replayBounds(replay: PositionReplay): Bounds | null {
+  return boundsOf(replayPositions(replay));
 }
 
 /** The size of the cell within which outline dots are merged, in viewport units. */
@@ -113,19 +125,17 @@ const OUTLINE_CELL = 3;
 /**
  * An SVG path of one dot per place a car has been, which together trace the
  * circuit. Only the first position in each cell is drawn, so the path stays
- * small however many frames there are. Stroke it with round caps.
+ * small however many positions there are. Stroke it with round caps.
  */
-export function outlinePath(frames: ReadonlyArray<PositionReplayFrame>, projection: Projection): string {
+export function outlinePath(positions: Iterable<Point>, projection: Projection): string {
   const taken = new Set<string>();
   const dots: string[] = [];
-  for (const frame of frames) {
-    for (const car of replayCars(frame)) {
-      const at = project(projection, car);
-      const cell = `${Math.round(at.x / OUTLINE_CELL)},${Math.round(at.y / OUTLINE_CELL)}`;
-      if (!taken.has(cell)) {
-        taken.add(cell);
-        dots.push(`M${at.x.toFixed(1)} ${at.y.toFixed(1)}h0`);
-      }
+  for (const position of positions) {
+    const at = project(projection, position);
+    const cell = `${Math.round(at.x / OUTLINE_CELL)},${Math.round(at.y / OUTLINE_CELL)}`;
+    if (!taken.has(cell)) {
+      taken.add(cell);
+      dots.push(`M${at.x.toFixed(1)} ${at.y.toFixed(1)}h0`);
     }
   }
   return dots.join("");

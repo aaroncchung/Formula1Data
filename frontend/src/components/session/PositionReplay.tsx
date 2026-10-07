@@ -3,32 +3,45 @@
 import { useMemo, useState } from "react";
 
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
-import { fitBounds, outlinePath, project, replayBounds, replayCars, type Viewport } from "@/lib/track-map";
-import type { Driver } from "@/lib/published/types";
-import type { PositionReplayFrame } from "@/types/domain";
+import { formatSessionClock } from "@/lib/durations";
+import type { Driver, PositionReplay as Replay } from "@/lib/published/types";
+import {
+  boundsOf,
+  fitBounds,
+  outlinePath,
+  project,
+  replayCars,
+  replayFrameCount,
+  replayPositions,
+  type Viewport
+} from "@/lib/track-map";
 
 // Drawn as plain SVG, not as a chart: the viewBox keeps one scale on both
 // axes at any size on screen, which chart axes do not.
 const VIEWPORT: Viewport = { width: 1000, height: 600, padding: 40 };
 const MAP_BACKGROUND = "#0b0f17";
 
-export function PositionReplay({ frames, drivers }: { frames: PositionReplayFrame[]; drivers: ReadonlyArray<Driver> }) {
-  const [index, setIndex] = useState(0);
+export function PositionReplay({ replay, drivers }: { replay: Replay; drivers: ReadonlyArray<Driver> }) {
+  const [chosen, setChosen] = useState(0);
   // Taken from every frame, once. Moving through the replay changes which
   // cars are drawn, never where a point on the circuit lands.
+  const positions = useMemo(() => replayPositions(replay), [replay]);
   const projection = useMemo(() => {
-    const bounds = replayBounds(frames);
+    const bounds = boundsOf(positions);
     return bounds ? fitBounds(bounds, VIEWPORT) : null;
-  }, [frames]);
-  const outline = useMemo(() => (projection ? outlinePath(frames, projection) : ""), [frames, projection]);
+  }, [positions]);
+  const outline = useMemo(() => (projection ? outlinePath(positions, projection) : ""), [positions, projection]);
   const styles = useMemo(() => teamDriverStyles(drivers), [drivers]);
 
-  const frame = frames[index] || frames[0];
-  if (!frame || !projection) {
+  const frames = replayFrameCount(replay);
+  if (frames === 0 || !projection) {
     return <div className="text-sm text-slate-400">No replay frames available.</div>;
   }
-  const cars = replayCars(frame);
-  const unplaced = frame.positions.length - cars.length;
+  // The replay can be replaced under the slider, when the session is opened
+  // again on another generation; a frame it no longer has is its last.
+  const index = Math.min(chosen, frames - 1);
+  const cars = replayCars(replay, index);
+  const unplaced = replay.drivers.length - cars.length;
   return (
     <div className="space-y-4">
       <svg
@@ -36,7 +49,7 @@ export function PositionReplay({ frames, drivers }: { frames: PositionReplayFram
         className="max-h-[70vh] w-full rounded border border-line"
         style={{ backgroundColor: MAP_BACKGROUND }}
         role="img"
-        aria-label={`Car positions on the circuit, frame ${index + 1} of ${frames.length}`}
+        aria-label={`Car positions on the circuit, frame ${index + 1} of ${frames}`}
       >
         <path d={outline} fill="none" stroke="#263042" strokeWidth="6" strokeLinecap="round" />
         {cars.map((car) => {
@@ -78,21 +91,27 @@ export function PositionReplay({ frames, drivers }: { frames: PositionReplayFram
           type="range"
           aria-label="Position replay frame"
           min={0}
-          max={Math.max(frames.length - 1, 0)}
+          max={frames - 1}
           value={index}
-          onChange={(event) => setIndex(Number(event.target.value))}
+          onChange={(event) => setChosen(Number(event.target.value))}
         />
         <div className="w-24 text-right font-mono text-sm text-slate-400">
-          {index + 1}/{frames.length}
+          {index + 1}/{frames}
         </div>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-        <span>Lap <strong className="font-mono text-slate-300">{frame.lap_number ?? "--"}</strong></span>
-        <span>Session time <strong className="font-mono text-slate-300">{frame.timestamp_ms != null ? `${(frame.timestamp_ms / 1000).toFixed(1)}s` : "--"}</strong></span>
+        <span>Lap <strong className="font-mono text-slate-300">{replay.lap_number[index] ?? "--"}</strong></span>
+        <span>Session clock <strong className="font-mono text-slate-300">{formatSessionClock(replay.time_ms[index])}</strong></span>
         <span>Cars <strong className="font-mono text-slate-300">{cars.length}</strong></span>
         {unplaced > 0 ? <span>{unplaced} without a position in this frame</span> : null}
+        <span>A frame is {formatSeconds(replay.interval_ms)} of the session.</span>
         <span>Team-mates share a colour: one marker is filled, the other hollow.</span>
       </div>
     </div>
   );
+}
+
+function formatSeconds(ms: number): string {
+  const seconds = ms / 1000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} ${seconds === 1 ? "second" : "seconds"}`;
 }

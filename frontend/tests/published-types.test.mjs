@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { ARTIFACTS, tabArtifacts } from "../src/lib/published/artifacts.ts";
+import { SESSION_TABS } from "../src/lib/published/tabs.ts";
+
 import { generatePublishedTypes, readSchema, TYPES_URL } from "../scripts/published-types.mjs";
 
 // src/lib/published/schema.ts is generated from schema/published-v2.schema.json
@@ -50,4 +53,38 @@ test("every path the schema publishes has a type, under the path it is published
     const definition = schema.properties[path].$ref.replace("#/$defs/", "");
     assert.ok(committed.includes(`"${path}": ${definition};`), `${path} is not typed as ${definition}`);
   }
+});
+
+// The types of the files a page reads are looked up from their paths
+// (`GenerationFiles`), so a path the schema lacks does not compile. This is
+// the same check at run time, and the other half of it: which files the
+// format publishes that no page reads, so that leaving one unread is a
+// decision somebody made and not a file nobody noticed.
+test("every file a page reads is one the schema publishes, and the unread ones are known", async () => {
+  const schema = await readSchema();
+  const prefix = "generations/{session_key}/{generation}/";
+  const published = Object.keys(schema.properties)
+    .filter((path) => path.startsWith(prefix))
+    .map((path) => path.slice(prefix.length));
+
+  const read = new Set(Object.values(ARTIFACTS).map((file) => file.path));
+  for (const tab of SESSION_TABS) {
+    for (const path of [...tabArtifacts(tab.id).required, ...tabArtifacts(tab.id).optional]) {
+      read.add(path);
+    }
+  }
+  for (const path of read) {
+    assert.ok(published.includes(path), `a page reads ${path}, which the schema does not publish`);
+  }
+
+  assert.deepEqual(published.filter((path) => !read.has(path)).sort(), [
+    // The circuit's corners: not drawn yet.
+    "corners.json",
+    // The figures behind a session's coverage verdict; the pointer carries the verdict and its shortfalls.
+    "coverage.json",
+    // Read by the client, to pin the generation, and not as a page's file.
+    "manifest.json",
+    // One path for every driver's file; the telemetry index names the files (telemetry.ts).
+    "telemetry/{driver_code}.json"
+  ]);
 });

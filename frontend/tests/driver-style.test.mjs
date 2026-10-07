@@ -9,7 +9,7 @@ import {
   teamDriverStyles
 } from "../src/lib/driver-style.ts";
 
-// The 2026 field as published in sessions/2026-08-r/drivers.json, in the
+// The 2026 field as published in the Austrian GP's drivers.json, in the
 // order that file lists it (classification order, not team order).
 const FIELD_2026 = [
   ["RUS", "#00D7B6"], ["VER", "#4781D7"], ["ANT", "#00D7B6"], ["PIA", "#F47600"],
