@@ -25,6 +25,7 @@ const DRIVER_A = "#f33d3d";
 const DRIVER_B = "#2de0c8";
 // The padding leaves room for a corner's label off the outside of the track.
 const TRACE_VIEWPORT: Viewport = { width: 300, height: 300, padding: 30 };
+const Y_AXIS_WIDTH = 62;
 const CORNER_RADIUS = 6.5;
 const CORNER_LABEL_DISTANCE = 15;
 
@@ -131,7 +132,10 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
                       stroke="#64748b"
                       tickLine={false}
                       axisLine={false}
-                      width={48}
+                      // Room for "-45000": two pit laps can be most of a minute apart, and a
+                      // narrower axis cut the minus sign off. The same on every chart, so that
+                      // one distance is at one place across them.
+                      width={Y_AXIS_WIDTH}
                       domain={chart.domain ? [...chart.domain] : ["auto", "auto"]}
                     />
                     <Tooltip
