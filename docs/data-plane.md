@@ -92,6 +92,16 @@ What holds for all of them:
   from part of the car feed rows of zeros for the moments it missed; those are
   not samples and are left out (`sent_by_f1` in `f1data/coverage.py`). A lap
   that has positions and no telemetry is still in the replay, with no speed.
+- A lap's distance never goes backwards. FastF1's does, by a tenth of a
+  metre, while a car stands in its pit box; each sample here has the furthest
+  the car had been. A car at rest has many samples at one distance, so a
+  reader that looks a sample up by distance has to say which of them it
+  means (`frontend/src/lib/telemetry-compare.ts` matches time into one
+  standstill with time into the other).
+- Arrays that run side by side (a lap's channels, a driver's laps in the
+  telemetry index, a car's frames in the replay) are of one length, and a
+  file in which they are not is not published. The schema cannot say so; the
+  models check it.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with.
 - A pit stop is the timing's entry to the pit lane with F1's own figures
