@@ -88,11 +88,17 @@ DISCARDED_NAME = "discarded"
 CACHE_DIRECTORY = "cache"
 EXTRA_DIRECTORY = "extra"
 LOCK_SUFFIX = ".lock"
-# What is written, and what is read: the records of the version before this
-# one say the same things, and a fetch it left is as good as one of this
-# version's.
+# The form of the records, and with it the rules a directory is kept by. Only
+# records of this number are acted on. Schema 1 said the same things in its
+# records, but its directories were kept by other rules: a lock inside the
+# directory, which this version does not look at, and for part of its short
+# life no mark for a session F1 had served. Read as this version's, a
+# directory another process still held could be removed, and so could a
+# served session that was not marked. A record that is not this version's is
+# left exactly as it is and reported (docs/data-plane.md says what to do).
+# Schema 1 was written only by commits of the rewrite branch on 2026-10-07,
+# before the job had run on any schedule.
 _SCHEMA_VERSION = 2
-_SCHEMA_VERSIONS_READ = (1, 2)
 _LOCK_TRIES = 5
 # A directory with no record in it is one that something other than a fetch
 # left. So is a lock with no directory, once the run that made it has had
@@ -195,28 +201,37 @@ def holding(directory: Path) -> Iterator[bool]:
     name = _name(directory)
     # A second hold in this process is refused like another process's.
     handle = None if name in _HELD else _take(lock)
-    held, gone = handle is not None, False
+    held = handle is not None
     try:
         if held:
             _HELD.add(name)
-        try:
-            yield held
-        finally:
-            if handle is not None:
-                _HELD.discard(name)
-                gone = not directory.exists()
-                _unlock(handle)
+        yield held
     finally:
         if handle is not None:
+            _HELD.discard(name)
+            # With the directory gone the lock guards nothing, and is removed.
+            # While it is still held, where a file can be removed while it is
+            # open: released first, another run could take this file, find
+            # its name still leading to it, and then have the name taken from
+            # under it. Removed first, whoever takes the file afterwards
+            # finds the name gone and takes the lock again on a new file.
+            leftover = not directory.exists() and _has_an_identity(handle) and _is_the_file_named(handle, lock)
+            if leftover:
+                leftover = not _unlink(lock)
+            _unlock(handle)
             handle.close()
-        if gone:
-            # With the directory gone the lock guards nothing. Whoever
-            # opened it meanwhile takes it, finds it is no longer the file
-            # of that name or finds no directory, and does nothing.
-            try:
-                lock.unlink()
-            except OSError:
-                pass
+            if leftover:
+                # Where an open file cannot be removed, it also cannot be
+                # removed from under another run that has it open by now.
+                _unlink(lock)
+
+
+def _unlink(path: Path) -> bool:
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def _take(lock: Path) -> Any:
@@ -248,6 +263,19 @@ def _is_the_file_named(handle: Any, path: Path) -> bool:
     except OSError:
         return False
     return (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino)
+
+
+def _has_an_identity(handle: Any) -> bool:
+    """Whether the file system can tell this file from another at all.
+
+    Where it cannot, every file looks like the one of any name, and a lock
+    could not be told from one that had been removed. So there no lock file
+    is ever removed, and the question does not arise.
+    """
+    try:
+        return os.fstat(handle.fileno()).st_ino != 0
+    except OSError:
+        return False
 
 
 def _name(directory: Path) -> str:
@@ -445,7 +473,7 @@ def waiting(root: Path, store: str | None = None) -> list[Spooled]:
     return [
         found
         for found in _readable(root)
-        if isinstance(found, Spooled) and (store is None or is_for(found.store, store))
+        if isinstance(found, Spooled) and (store is None or found.store == store)
     ]
 
 
@@ -454,7 +482,7 @@ def unfinished(root: Path, store: str | None = None) -> list[Unfinished]:
     return [
         found
         for found in _readable(root)
-        if isinstance(found, Unfinished) and (store is None or is_for(found.store, store))
+        if isinstance(found, Unfinished) and (store is None or found.store == store)
     ]
 
 
@@ -510,7 +538,7 @@ def _readable(root: Path) -> list[Spooled | Unfinished]:
 
 def _whole(directory: Path) -> Spooled:
     payload = json.loads((directory / PENDING_NAME).read_text(encoding="utf-8"))
-    if payload["schema_version"] not in _SCHEMA_VERSIONS_READ or not isinstance(payload["store"], str):
+    if payload["schema_version"] != _SCHEMA_VERSION or not isinstance(payload["store"], str):
         raise ValueError(f"written down in a form this version does not read (schema {payload['schema_version']!r})")
     fetched = FetchedSession(
         session=None,
@@ -555,26 +583,9 @@ def _started(directory: Path) -> Unfinished:
 
 def _intent(directory: Path) -> dict[str, Any]:
     intent = json.loads((Path(directory) / INTENT_NAME).read_text(encoding="utf-8"))
-    if intent["schema_version"] not in _SCHEMA_VERSIONS_READ or not isinstance(intent["store"], str):
+    if intent["schema_version"] != _SCHEMA_VERSION or not isinstance(intent["store"], str):
         raise ValueError(f"says what it is a fetch of in a form this version does not read (schema {intent['schema_version']!r})")
     return intent
-
-
-def is_for(recorded: str, store: str) -> bool:
-    """Whether a fetch recorded as made for ``recorded`` is for ``store``.
-
-    The version before this one named a bucket without its account,
-    ``r2:<bucket>``. A fetch it left is taken for the bucket of that name in
-    the account now in use: there was one account then.
-    """
-    if recorded == store:
-        return True
-    return (
-        recorded.startswith("r2:")
-        and "/" not in recorded
-        and store.startswith("r2:")
-        and store.partition("/")[2] == recorded[3:]
-    )
 
 
 def _write_whole(path: Path, payload: dict[str, Any]) -> None:

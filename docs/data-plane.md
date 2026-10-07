@@ -172,8 +172,8 @@ defaults to the `F1DATA_STORE` environment variable.
 | `run` | The whole job: `build`, then `fetch-due`, then `build` again if anything was fetched. What a schedule runs |
 | `last-run` | Say when `run` last finished on the machine that fetches. Exits 1 when that is more than 13 hours ago, or was never |
 | `fetch-due` | See through what is in the spool, then fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan, `--limit N` to start at most N new fetches |
-| `fetch --year Y --event E --session S` | Fetch one session as a new snapshot |
-| `build` | Build and publish every archived session that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
+| `fetch --year Y --event E --session S` | Fetch one session as a new snapshot. Any session is archived; only a race or a sprint is ever built |
+| `build` | Build and publish every archived race and sprint that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
 | `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves |
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
@@ -242,16 +242,26 @@ The spool wants looking at by hand in two cases. A run says so each time,
 and exits 1 for as long as either is there.
 
 - A directory whose record cannot be read is named in a line that begins
-  `ATTENTION`, with what is wrong with the record, and is left as it is.
-  Nothing is known of it, so its session is fetched again in its turn. The
-  records of the version before this one are read; one that is not is cut
-  off, or was written by a later version than the one running. What to do
-  with it: if its session has since been archived (`fetch-due --dry-run`
-  does not list it), remove the directory. If not, and it holds feeds worth
-  keeping (`cache/` with `.ff1pkl` files under it), `python -m f1data
-  archive-directory --path <the directory> --name spool-<its name>` keeps it
-  whole in the archive, where nothing reads it and nothing loses it, and
-  then it can be removed.
+  `ATTENTION`, with what is wrong with the record, and is left exactly as it
+  is: nothing in it is read, uploaded or removed. Nothing is known of it, so
+  its session is fetched again in its turn. Such a record is cut off, or was
+  written by another version of this program than the one running. A
+  directory is kept by the rules of the version that made it, its locks
+  among them, so only records of the running version's form (schema 2) are
+  acted on. Schema 1 was written only by commits of the rewrite branch on
+  2026-10-07, before the job had run on any schedule. What to do with such
+  a directory:
+  - if the version that wrote it can still be run, stop the scheduled task,
+    run that version once (`fetch-due`), and it sees its own fetches
+    through;
+  - otherwise keep the directory whole in the archive, where nothing reads
+    it and nothing loses it, and then remove it: `python -m f1data
+    archive-directory --path <the directory> --name spool-<its name in lower
+    case>`, as in `--name spool-20261007t140000z-a1b2c3d4`. The command
+    takes lower-case letters, digits and hyphens.
+
+  That `fetch-due --dry-run` does not list a session does not show that the
+  session is archived: it lists only what the job would fetch.
 - A session F1 served that can still not be read back or written down stays,
   and holds its session back, until whatever the run reports is put right or
   the directory is removed. Removing it has the session fetched again.
@@ -318,6 +328,14 @@ R2_SECRET_ACCESS_KEY=<from the same token>
 
 `CLOUDFLARE_API_TOKEN` works in place of the key pair, which is how the
 workflows publish with the secret the repository already has.
+
+`.env` is for commands run on a machine. The workflows read the same names
+from the repository's settings on GitHub, and a repository set up afresh
+needs them there: the variable `R2_BUCKET`, the secret
+`CLOUDFLARE_ACCOUNT_ID`, and either the secrets `R2_ACCESS_KEY_ID` and
+`R2_SECRET_ACCESS_KEY` or the secret `CLOUDFLARE_API_TOKEN`. Deploying the
+Worker needs `CLOUDFLARE_API_TOKEN` in any case, with permission to deploy
+Workers: an R2 key pair cannot do that.
 
 `.env` is read from the directory a command is run in, before anything else,
 as UTF-8 lines of `NAME=value`. A variable already set in the environment is
@@ -400,6 +418,11 @@ sessions. The machine does not have to be on when a session finishes.
 going; two at once would not lose anything, only fetch twice. Without the two
 battery settings a laptop on battery does not start the task, and stops one
 that is running when it is unplugged.
+
+Before a new version of this program is put on the machine, disable the task
+and let a run that is going finish (`Disable-ScheduledTask -TaskName
+"Formula1Data run"`, and `Enable-ScheduledTask` after). Otherwise two versions
+can be at work in one spool, each keeping it by its own rules.
 
 The definition above builds with these cmdlets, but nothing has registered
 the task yet, and it has not run on a schedule.

@@ -63,6 +63,8 @@ path has carried three race weekends unattended.
 
 ## Working on the site
 
+Node 22 or later (the site is built with 22 in CI, and tested with 24):
+
 ```powershell
 cd frontend
 npm ci
@@ -140,8 +142,9 @@ the committed `frontend/.env.production`.
 
 ## Limits worth knowing
 
-- Races and sprints only. The job fetches no practice or qualifying, and the
-  site shows none; `fetch` by hand takes any session.
+- Races and sprints only. The job fetches no practice or qualifying. `fetch`
+  by hand archives any session, and nothing is built or shown of one that
+  is not a race or a sprint.
 - The fetch needs a network that F1's archive answers. Without the scheduled
   task running on such a machine, nothing new arrives.
 - A pit stop is an entry to the pit lane in the timing, with F1's own figures

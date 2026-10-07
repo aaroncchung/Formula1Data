@@ -54,12 +54,13 @@ from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, archived_start_time, format_utc, identity_from_fastf1
 from f1data.policy import (
     CLASSIFICATION_RECHECK_WINDOW,
+    IN_SCOPE_SESSION_TYPES,
     NOT_ANSWERING_AFTER,
     SAME_MEETING_TOLERANCE,
     SETTLED_RECHECK_EVERY_DAYS,
     SETTLED_RECHECK_FOR_DAYS,
 )
-from f1data.publish import DecideAgain, Hold, Inputs, NewerPipeline, Pointer
+from f1data.publish import DecideAgain, Hold, Inputs, NewerPipeline, NotPublished, Pointer
 from f1data.schedule import ScheduledSession, find_scheduled_session, load_schedule
 from f1data.standings import fetch_standings
 from f1data.store import ObjectStore, PreconditionFailed
@@ -143,6 +144,11 @@ class Builder:
         snapshots = list_snapshots(self._store, session_key)
         if not snapshots:
             return None
+        # Before anything is looked up for it. `fetch` archives whatever
+        # session it is asked for; only a race or a sprint is built.
+        kind = snapshots[0].identity
+        if kind.session_type not in IN_SCOPE_SESSION_TYPES:
+            return NotPublished(f"a {kind.session_name} session, and only races and sprints are published")
         # Each fetch recorded the start time the calendar gave on its day. If
         # the calendar has since been corrected by more than the tolerance,
         # the fetches before the correction no longer match their entry and

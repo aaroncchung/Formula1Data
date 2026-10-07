@@ -67,7 +67,9 @@ FORMAT_VERSION = 2
 #      in the count of stops the feed vouches for as in pit-stops.json; the
 #      zero F1's weather sends for a sensor with no reading is no reading
 #  10  a lap's distance never goes backwards
-PIPELINE_VERSION = 10
+#  11  the car-performance figures say that they leave out the samples at
+#      which a car stands still, which they always did
+PIPELINE_VERSION = 11
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

@@ -50,6 +50,7 @@ from f1data.fetch import (
 from f1data.httplog import request_timeouts
 from f1data.policy import (
     FETCH_STAGE_BUDGET,
+    IN_SCOPE_SESSION_TYPES,
     NOT_ANSWERING_AFTER,
     REQUEST_TIMEOUT_SECONDS,
     RUN_IS_OVERDUE_AFTER,
@@ -68,7 +69,6 @@ from f1data.spool import (
     discard,
     free_bytes,
     holding,
-    is_for,
     is_stale,
     keep,
     mark_served,
@@ -458,6 +458,11 @@ def run_fetch(args: argparse.Namespace) -> int:
         print(f"FETCHED, NOT ARCHIVED: {exc}. `fetch-due` or `run` sees it through before it fetches anything.")
         return 1
     _print_snapshot(snapshot)
+    if snapshot.identity.session_type not in IN_SCOPE_SESSION_TYPES:
+        print(
+            f"  A {snapshot.identity.session_name} session is kept in the archive and nothing is made of it: "
+            "only races and sprints are built and published."
+        )
     return 0
 
 
@@ -516,7 +521,7 @@ def _see_the_spool_through(
                 except UnreadableError:
                     continue
                 if isinstance(theirs, (Spooled, Unfinished)):
-                    if is_for(theirs.store, name):
+                    if theirs.store == name:
                         seen.keeps(theirs)
                     else:
                         elsewhere += 1
@@ -540,7 +545,7 @@ def _see_the_spool_through(
             if isinstance(found, Discarded):
                 _remove(directory)
                 continue
-            if not is_for(found.store, name):
+            if found.store != name:
                 elsewhere += 1
                 continue
             if isinstance(found, Unfinished):

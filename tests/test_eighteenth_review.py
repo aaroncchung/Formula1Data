@@ -134,59 +134,13 @@ def test_a_served_fetch_is_a_fetch_that_succeeded_however_far_seeing_it_through_
         assert failing_fetches(job.store, NOW()) == {}
 
 
-# --- R18-3: what the version before wrote is read ------------------------------------
-
-
-def as_the_version_before_wrote_it(directory, store: str | None = None) -> None:
-    """A directory of the spool with its records in schema 1: no ``serving``, no name for the fetch."""
-    for name in (spool.INTENT_NAME, spool.PENDING_NAME):
-        record = directory / name
-        if record.is_file():
-            payload = json.loads(record.read_text(encoding="utf-8"))
-            payload.pop("attempt", None)
-            payload.update(schema_version=1, **({"store": store} if store else {}))
-            record.write_text(json.dumps(payload), encoding="utf-8")
-    (directory / spool.SERVING_NAME).unlink(missing_ok=True)
-
-
-def test_a_fetch_left_by_the_version_before_is_seen_through(job):
-    """Its records said the same things under another number. Every run
-    named them as unreadable and left them, with exit 0, for ever."""
-    whole = left_whole(job.spool, 2026, EIGHTH, "R", STORE)
-    served = left_served(job.spool, 2026, EIGHTH, "R", STORE, now=FIRST_FETCH + timedelta(hours=1))
-    for directory in (whole, served):
-        as_the_version_before_wrote_it(directory)
-
-    output, code = job.run()
-
-    assert "ATTENTION" not in output and code == 0
-    assert "fetched earlier, archived now." in output
-    assert "a fetch that F1 served, written down from its cache and archived." in output
-    assert len(list_snapshots(job.store)) == 2 and spool.directories(job.spool) == []
-
-
-def test_a_bucket_named_without_its_account_is_the_bucket_of_that_name(tmp_path):
-    assert spool.is_for("r2:formula-1-data-artifacts", "r2:an-account/formula-1-data-artifacts")
-    assert not spool.is_for("r2:another-bucket", "r2:an-account/formula-1-data-artifacts")
-    assert not spool.is_for("r2:one-account/a-bucket", "r2:another-account/a-bucket")
-    assert not spool.is_for("r2:a-bucket", "C:/a/directory") and spool.is_for("C:/a/directory", "C:/a/directory")
-    before = left_whole(tmp_path / "spool", store="r2:an-account/formula-1-data-artifacts")
-    as_the_version_before_wrote_it(before, store="r2:formula-1-data-artifacts")
-    assert len(spool.waiting(tmp_path / "spool", "r2:an-account/formula-1-data-artifacts")) == 1
-    assert spool.waiting(tmp_path / "spool", "r2:another-account/elsewhere") == []
-
-
-def test_a_run_against_a_bucket_takes_the_fetch_the_version_before_left_for_it(job, monkeypatch):
-    monkeypatch.setattr(cli_module, "_store_name", lambda spec: "r2:an-account/formula-1-data-artifacts")
-    before = left_whole(job.spool, 2026, EIGHTH, "R", "r2:an-account/formula-1-data-artifacts")
-    as_the_version_before_wrote_it(before, store="r2:formula-1-data-artifacts")
-    other = left_whole(job.spool, 2026, SIXTH, "R", "r2:another-bucket", now=FIRST_FETCH + timedelta(hours=1))
-
-    output, code = job.run()
-
-    assert "fetched earlier, archived now." in output and not before.exists()
-    assert "1 fetch(es) in the spool are for another store, and are left for it." in output and other.is_dir()
-    assert (job.fetched, code) == ([], 0)
+# --- R18-3: a record that is not this version's fails the run, and is never acted on ---
+#
+# The first answer was to read the version before's records, since they say
+# the same things. The review after showed what that cost
+# (tests/test_nineteenth_review.py): its directories were kept by other
+# rules, and read as this version's, two of them could be destroyed. They are
+# left as they are and reported, like any record this version did not write.
 
 
 def test_a_fetch_that_cannot_be_read_fails_the_run_that_leaves_it(job):

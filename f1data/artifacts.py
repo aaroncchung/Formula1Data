@@ -65,6 +65,11 @@ def build_artifacts(
     none, in which case the result is the order on track and says so.
     ``extras`` are the feeds archived beside the session, and ``measurement``
     its coverage as the build measured it.
+
+    Written for a race or a sprint. Of any other session ``results.json``
+    in particular says what is not so: an order by laps completed, and gaps
+    at a flag. Nothing but a race or a sprint is published
+    (``publish_session`` in f1data/publish.py), so no such file is read.
     """
     return {
         path: dump_json(artifact_json(artifact))

@@ -91,6 +91,16 @@ class Hold:
     reason: str
 
 
+class NotPublished(Hold):
+    """The session is not of a kind that is published at all, and why.
+
+    The build is a race's: a result ranked by laps completed, gaps at the
+    flag, stints, pit stops. Made of a practice or a qualifying session it
+    gives numbers that mean nothing there. Such a session can be in the
+    archive, where it does no harm; nothing is made of it (decision 5).
+    """
+
+
 class DecideAgain(RuntimeError):
     """Raised by a build that found its inputs are not what ``gather`` described.
 
@@ -212,6 +222,7 @@ class Outcome:
                     record it would be built from; left alone
     ``waiting``     not publishable yet: no classification, or short of a bar
                     with the retry window still open
+    ``out_of_scope`` not a race or a sprint: archived, and nothing is made of it
     ``no_snapshot`` nothing in the archive to build from
     ``conflict``    not settled: the pointer write was lost, or the archive's
                     record corrected, on every attempt; the next run decides again
@@ -364,10 +375,18 @@ def publish_session(
             return Outcome("no_snapshot", session_key)
         if isinstance(inputs, Hold):
             return Outcome(
-                "waiting",
+                "out_of_scope" if isinstance(inputs, NotPublished) else "waiting",
                 session_key,
                 reason=inputs.reason,
                 generation=pointer.generation if pointer is not None else None,
+            )
+        if inputs.snapshot.identity.session_type not in IN_SCOPE_SESSION_TYPES:
+            # Whatever chose it. A pointer is what makes a session one the
+            # site shows, and what is built of any other kind of session is
+            # a race's figures for something that was not a race.
+            raise PointerError(
+                f"Session {session_key} is a {inputs.snapshot.identity.session_name} session, "
+                "and only races and sprints are published"
             )
         if inputs.snapshot.session_key != int(session_key):
             # Never one session's snapshot under another session's pointer,
@@ -450,7 +469,18 @@ def publish_session(
 def derive_index(
     pointers: list[Pointer], schedules: dict[int, list[ScheduledSession]]
 ) -> dict[str, Any]:
-    """The index: the calendar, with each published session attached to its entry."""
+    """The index: the calendar, with each published session attached to its entry.
+
+    Only a race or a sprint is attached. Nothing else is published, and a
+    pointer to anything else, however it came to be there, is not shown.
+    """
+    for stray in [pointer for pointer in pointers if pointer.identity.session_type not in IN_SCOPE_SESSION_TYPES]:
+        _logger.warning(
+            "Session %s is a %s session with a pointer; it is left out of the index",
+            stray.session_key,
+            stray.identity.session_name,
+        )
+    pointers = [pointer for pointer in pointers if pointer.identity.session_type in IN_SCOPE_SESSION_TYPES]
     placed: dict[tuple[int, int, str], Pointer] = {}
     unscheduled: list[Pointer] = []
     for pointer in pointers:

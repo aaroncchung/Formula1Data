@@ -539,6 +539,7 @@ def calculate_car_performance(
             "Speed bands are sample averages: low <150, medium 150-250, high >=250 km/h.",
             "Maximum speed is telemetry-derived and may differ from the official speed trap.",
             "Throttle and braking percentages exclude samples where that channel is unavailable.",
+            "A sample at which the car has not moved since the one before, as when it stands in its pit box, is left out of every figure.",
         ],
     }
 
