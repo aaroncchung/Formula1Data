@@ -92,6 +92,7 @@ test("a session loads by its key with the round the calendar gives it today", as
     startTimeUtc: "2026-06-28T13:00:00Z",
     location: null,
     country: null,
+    meetingKey: 1315,
     placement: "calendar"
   });
   assert.deepEqual(bucket.keys(), [INDEX_KEY, POINTER_KEY, `${generationPrefix(FIRST_GENERATION)}manifest.json`]);
@@ -185,6 +186,7 @@ test("a session outside the calendar opens by its key and has no round", async (
     startTimeUtc: "2026-06-28T13:00:00Z",
     location: null,
     country: null,
+    meetingKey: null,
     placement: "unscheduled"
   });
   assert.equal((await loaded.view.read("results.json")).length, 2);
@@ -210,6 +212,8 @@ test("a session the index does not list yet opens by its key, introduced by its 
   assert.equal(loaded.heading.meetingName, loaded.view.pointer.identity.meeting_name);
   assert.equal(loaded.heading.sessionName, "Race");
   assert.equal(loaded.heading.startTimeUtc, loaded.view.pointer.identity.start_time_utc);
+  // The pointer knows which meeting the session belongs to, though not its round.
+  assert.equal(loaded.heading.meetingKey, 1315);
 });
 
 test("a key opens its session while the index cannot be read", async () => {

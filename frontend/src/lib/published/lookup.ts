@@ -65,6 +65,12 @@ export type SessionHeading = {
   readonly location: string | null;
   readonly country: string | null;
   /**
+   * F1's key for the session's meeting, which does not move with the
+   * calendar. Null for a meeting none of whose sessions is published, and for
+   * a session the index lists outside the calendar, which names no meeting.
+   */
+  readonly meetingKey: number | null;
+  /**
    * Why there is or is not a round. `calendar`: the index places the session.
    * `unscheduled`: the index lists it as published outside the calendar.
    * `unplaced`: the index does not mention it, or could not be read, and the
@@ -195,6 +201,7 @@ export function headingOfEntry(entry: SessionEntry): SessionHeading {
     startTimeUtc: session.start_time_utc ?? meeting.date,
     location: meeting.location,
     country: meeting.country,
+    meetingKey: meeting.meeting_key,
     placement: "calendar"
   };
 }
@@ -208,6 +215,7 @@ export function headingOfUnscheduled(session: UnscheduledSession): SessionHeadin
     startTimeUtc: session.start_time_utc,
     location: null,
     country: null,
+    meetingKey: null,
     placement: "unscheduled"
   };
 }
@@ -226,6 +234,7 @@ export function headingOfIdentity(identity: SessionIdentity): SessionHeading {
     startTimeUtc: identity.start_time_utc,
     location: identity.location,
     country: identity.country,
+    meetingKey: identity.meeting_key,
     placement: "unplaced"
   };
 }

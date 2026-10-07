@@ -5,7 +5,9 @@ import { calendarDay, sessionStart } from "../src/lib/format.ts";
 import { parseSessionAddress } from "../src/lib/published/lookup.ts";
 import {
   isUnderPath,
+  meetingChoice,
   meetingHref,
+  meetingQuery,
   roundParam,
   seasonHref,
   sessionChoice,
@@ -18,7 +20,7 @@ const query = (text) => new URLSearchParams(text);
 
 test("every link names what it shows in the query string", () => {
   assert.equal(seasonHref(2026), "/season?year=2026");
-  assert.equal(meetingHref(2026, 8), "/meeting?year=2026&round=8");
+  assert.equal(meetingHref(2026, { meeting_key: 1288, round: 8 }), "/meeting?key=1288");
   assert.equal(standingsHref(2026), "/standings?year=2026");
   assert.equal(sessionSummaryHref("/strategy", 11315), "/strategy?key=11315");
 });
@@ -33,8 +35,48 @@ test("a summary page names its session by key, as the session page does, and by 
   });
 });
 
+// AR-20: a round is where a meeting sits in today's calendar. A link that
+// carried one opened another weekend once a race was inserted ahead of it.
+test("a meeting is linked by its key, and by its round only while it has no key", () => {
+  assert.equal(meetingHref(2026, { meeting_key: 1288, round: 8 }), "/meeting?key=1288");
+  // The round is not in the link at all, so nothing of it can go stale.
+  assert.equal(meetingHref(2026, { meeting_key: 1288, round: 9 }), "/meeting?key=1288");
+  // None of its sessions is published, so the index has no key for it yet.
+  assert.equal(meetingHref(2026, { meeting_key: null, round: 17 }), "/meeting?year=2026&round=17");
+});
+
+test("a meeting's address is read as a key, or as a year and a round", () => {
+  assert.deepEqual(meetingChoice(query("key=1288")), { kind: "named", address: { kind: "key", meetingKey: 1288 } });
+  assert.deepEqual(meetingChoice(query("year=2026&round=8")), {
+    kind: "named",
+    address: { kind: "round", year: 2026, round: 8 }
+  });
+  // The key wins over a round given beside it, which may be out of date.
+  assert.deepEqual(meetingChoice(query("key=1288&year=2026&round=9")).address, { kind: "key", meetingKey: 1288 });
+  // A key that is not one does not hide a year and round that are well formed.
+  assert.deepEqual(meetingChoice(query("key=abc&year=2026&round=8")).address, { kind: "round", year: 2026, round: 8 });
+});
+
+test("an address that names no meeting is told apart from one that names it wrongly", () => {
+  assert.deepEqual(meetingChoice(query("")), { kind: "none" });
+  assert.deepEqual(meetingChoice(query("key=")), { kind: "none" });
+  assert.deepEqual(meetingChoice(query("tab=results")), { kind: "none" });
+  for (const text of ["key=abc", "key=1.5", "key=-3", "year=2026", "round=8", "year=26&round=8", "year=2026&round=x"]) {
+    assert.deepEqual(meetingChoice(query(text)), { kind: "invalid" }, text);
+  }
+});
+
+test("a meeting's link is read back as the address it was built from", () => {
+  for (const address of [
+    { kind: "key", meetingKey: 1288 },
+    { kind: "round", year: 2026, round: 17 }
+  ]) {
+    assert.deepEqual(meetingChoice(query(meetingQuery(address))), { kind: "named", address });
+  }
+});
+
 test("a link that was built is read back as the same values", () => {
-  const meetingQuery = new URL(meetingHref(2026, 16), "https://site.example").searchParams;
+  const meetingQuery = new URL(meetingHref(2026, { meeting_key: null, round: 16 }), "https://site.example").searchParams;
   assert.deepEqual(yearParam(meetingQuery), { status: "ok", value: 2026 });
   assert.deepEqual(roundParam(meetingQuery), { status: "ok", value: 16 });
 

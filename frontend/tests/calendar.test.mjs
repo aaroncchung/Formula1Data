@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   describeMeetingCoverage,
   findMeeting,
+  findMeetingByKey,
   findSeason,
   latestPublishedSession,
+  lookUpMeeting,
   meetingCoverage,
   nextSession,
   publishedSessions,
@@ -293,6 +295,51 @@ test("a meeting link the calendar does not have says which part is missing", () 
 
   assert.deepEqual(findMeeting(index, 2031, 1), { found: false, missing: "year" });
   assert.deepEqual(findMeeting(index, 2026, 30), { found: false, missing: "round" });
+});
+
+test("a meeting is found by its key, wherever the calendar has it", () => {
+  const index = sampleIndex();
+
+  const austria = findMeetingByKey(index, 1288);
+  assert.equal(austria.found, true);
+  assert.equal(austria.year, 2026);
+  assert.equal(austria.meeting.name, "Austrian Grand Prix");
+  assert.equal(austria.previous.name, "Barcelona Grand Prix");
+  assert.equal(austria.next.name, "British Grand Prix");
+  assert.deepEqual(lookUpMeeting(index, { kind: "key", meetingKey: 1288 }), austria);
+  assert.deepEqual(lookUpMeeting(index, { kind: "round", year: 2026, round: 8 }), austria);
+});
+
+// AR-20 again: a race is inserted, and every later round moves by one.
+test("a key names the same meeting after its round has moved, and the old round does not", () => {
+  const austria = (round) =>
+    meeting(
+      round,
+      "Austrian Grand Prix",
+      "2026-06-28",
+      [session("R", "Race", "2026-06-28T13:00:00Z", { session_key: 11315, complete: true })],
+      { meeting_key: 1288 }
+    );
+  const after = indexOf([
+    {
+      year: 2026,
+      meetings: [meeting(8, "Inserted Grand Prix", "2026-06-21", [session("R", "Race", "2026-06-21T13:00:00Z")]), austria(9)]
+    }
+  ]);
+
+  const byKey = findMeetingByKey(after, 1288);
+  assert.equal(byKey.meeting.name, "Austrian Grand Prix");
+  assert.equal(byKey.meeting.round, 9);
+  assert.equal(findMeeting(after, 2026, 8).meeting.name, "Inserted Grand Prix");
+});
+
+test("a key no meeting of the calendar has names nothing, and a meeting without a key is not matched by one", () => {
+  const index = sampleIndex();
+
+  assert.deepEqual(findMeetingByKey(index, 9999), { found: false, missing: "key" });
+  // The British Grand Prix has no published session, and so no key.
+  assert.equal(findMeeting(index, 2026, 9).meeting.meeting_key, null);
+  assert.deepEqual(findMeetingByKey(indexOf([]), 1288), { found: false, missing: "key" });
 });
 
 test("the next session is the first one that has not started", () => {

@@ -196,7 +196,7 @@ function NextUp({ index }: { index: PublishedIndex }) {
   return (
     <p className="mt-4 text-sm text-slate-400">
       <span className="eyebrow mr-2">Next</span>
-      <Link className="font-semibold text-slate-200 underline-offset-4 hover:underline" href={meetingHref(next.year, next.meeting.round)}>
+      <Link className="font-semibold text-slate-200 underline-offset-4 hover:underline" href={meetingHref(next.year, next.meeting)}>
         {next.meeting.name}
       </Link>{" "}
       · {next.session.name} · {sessionStart(next.session.start_time_utc)}

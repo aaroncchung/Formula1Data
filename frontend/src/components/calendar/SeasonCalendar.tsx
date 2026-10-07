@@ -91,7 +91,7 @@ function MeetingCard({ year, meeting, now }: { year: number; meeting: IndexMeeti
             {sprint ? <span className="text-amber"> · Sprint weekend</span> : null}
           </div>
           <h2 className="mt-2 text-xl font-black text-white">
-            <Link href={meetingHref(year, meeting.round)} className="transition hover:text-redline">
+            <Link href={meetingHref(year, meeting)} className="transition hover:text-redline">
               {meeting.name}
             </Link>
           </h2>

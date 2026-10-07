@@ -8,7 +8,8 @@
  *
  *   /seasons                          every season of the calendar
  *   /season?year=2026                 one season
- *   /meeting?year=2026&round=8        one race weekend, as the calendar numbers it today
+ *   /meeting?key=1288                 one race weekend, by F1's key for it
+ *   /meeting?year=2026&round=8        the same, as the calendar numbers it today
  *   /session?key=11315                one session's dashboard
  *   /standings?year=2026              the championship tables of a season
  *   /strategy?key=11315               and /telemetry, /drivers, /teams: one
@@ -19,13 +20,17 @@
  * A session is always linked by its key. The link to its dashboard, and the
  * reading of an address that names a session, are in lib/published/lookup.ts
  * (`sessionHref`, `parseSessionAddress`), with the rest of what turns an
- * address into a session. A meeting has no key in the index, so its link
- * carries the round, which is looked up afresh on every visit and never kept
- * (AR-20).
+ * address into a session.
+ *
+ * A meeting is linked by its key too, once the index has one for it, which
+ * is once one of its sessions is published. Until then its link carries the
+ * round, which is looked up afresh on every visit and never kept (AR-20):
+ * a link by round is good for the calendar it was made from and no longer.
  */
 
 import { parseSessionAddress, sessionQuery } from "./published/lookup.ts";
 import type { SessionAddress } from "./published/lookup.ts";
+import type { IndexMeeting } from "./published/types.ts";
 
 export const SEASONS_PATH = "/seasons";
 export const STANDINGS_PATH = "/standings";
@@ -41,8 +46,28 @@ export function seasonHref(year: number): string {
   return `${SEASON_PATH}?year=${year}`;
 }
 
-export function meetingHref(year: number, round: number): string {
-  return `${MEETING_PATH}?year=${year}&round=${round}`;
+/** How an address names a meeting: by F1's key for it, or by where the calendar has it today. */
+export type MeetingAddress =
+  | { readonly kind: "key"; readonly meetingKey: number }
+  | { readonly kind: "round"; readonly year: number; readonly round: number };
+
+/**
+ * The link to a meeting of a season. By its key where the index has one, so
+ * that the link still opens the same weekend after the calendar is
+ * renumbered; by year and round for a meeting none of whose sessions is
+ * published yet, which has no key to be linked by.
+ */
+export function meetingHref(year: number, meeting: Pick<IndexMeeting, "meeting_key" | "round">): string {
+  return `${MEETING_PATH}?${meetingQuery(
+    meeting.meeting_key === null
+      ? { kind: "round", year, round: meeting.round }
+      : { kind: "key", meetingKey: meeting.meeting_key }
+  )}`;
+}
+
+/** A meeting's address as a query string, the way `meetingChoice` reads it back. */
+export function meetingQuery(address: MeetingAddress): string {
+  return address.kind === "key" ? `key=${address.meetingKey}` : `year=${address.year}&round=${address.round}`;
 }
 
 export function standingsHref(year: number): string {
@@ -82,6 +107,36 @@ export function yearParam(query: Query): Param<number> {
 /** `?round=8`. A place in today's calendar, to be looked up there and not kept. */
 export function roundParam(query: Query): Param<number> {
   return numberParam(query, "round", ROUND);
+}
+
+/** Which meeting the meeting page was asked for. */
+export type MeetingChoice =
+  | { readonly kind: "named"; readonly address: MeetingAddress }
+  /** The address names no meeting at all. */
+  | { readonly kind: "none" }
+  /** The address tries to name a meeting and does not: a mistyped link. */
+  | { readonly kind: "invalid" };
+
+const MEETING_KEY = /^[0-9]{1,12}$/;
+const MEETING_PARAMETERS = ["key", "year", "round"];
+
+/**
+ * Read `?key=1288` or `?year=2026&round=8`. A well-formed key wins when both
+ * are given, as it does for a session: the key says which meeting, and the
+ * round beside it may be from before the calendar moved.
+ */
+export function meetingChoice(query: Query): MeetingChoice {
+  const key = query.get("key") ?? "";
+  if (MEETING_KEY.test(key)) {
+    return { kind: "named", address: { kind: "key", meetingKey: Number(key) } };
+  }
+  const year = yearParam(query);
+  const round = roundParam(query);
+  if (year.status === "ok" && round.status === "ok") {
+    return { kind: "named", address: { kind: "round", year: year.value, round: round.value } };
+  }
+  const tried = MEETING_PARAMETERS.some((name) => (query.get(name) ?? "") !== "");
+  return tried ? { kind: "invalid" } : { kind: "none" };
 }
 
 /** Which session a page that shows one session was asked for. */

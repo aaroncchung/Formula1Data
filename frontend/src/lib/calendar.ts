@@ -19,6 +19,7 @@ import type {
   PublishedIndex,
   UnscheduledSession
 } from "./published/types.ts";
+import type { MeetingAddress } from "./routes.ts";
 
 /**
  * What a page can say about one session of the calendar. Published and
@@ -231,7 +232,14 @@ export type MeetingLookup =
       readonly next: IndexMeeting | null;
     }
   /** `missing` is the first part of the link the calendar does not have. */
-  | { readonly found: false; readonly missing: "year" | "round" };
+  | { readonly found: false; readonly missing: "year" | "round" | "key" };
+
+/** The meeting an address names, as this index has it. */
+export function lookUpMeeting(index: PublishedIndex, address: MeetingAddress): MeetingLookup {
+  return address.kind === "key"
+    ? findMeetingByKey(index, address.meetingKey)
+    : findMeeting(index, address.year, address.round);
+}
 
 /** The meeting a link names by year and round, as this index has it. */
 export function findMeeting(index: PublishedIndex, year: number, round: number): MeetingLookup {
@@ -239,11 +247,31 @@ export function findMeeting(index: PublishedIndex, year: number, round: number):
   if (!season) {
     return { found: false, missing: "year" };
   }
+  return placedIn(season, (meeting) => meeting.round === round) ?? { found: false, missing: "round" };
+}
+
+/**
+ * The meeting that has F1's key for it, in whichever season and at whichever
+ * round the calendar has it now. A meeting has a key once one of its sessions
+ * is published, so a key the calendar does not have names nothing here.
+ */
+export function findMeetingByKey(index: PublishedIndex, meetingKey: number): MeetingLookup {
+  for (const season of index.seasons) {
+    const placed = placedIn(season, (meeting) => meeting.meeting_key === meetingKey);
+    if (placed) {
+      return placed;
+    }
+  }
+  return { found: false, missing: "key" };
+}
+
+/** A meeting of a season with the meetings either side of it, in the order of the rounds. */
+function placedIn(season: IndexSeason, wanted: (meeting: IndexMeeting) => boolean): MeetingLookup | null {
   const meetings = [...season.meetings].sort((left, right) => left.round - right.round);
-  const position = meetings.findIndex((meeting) => meeting.round === round);
+  const position = meetings.findIndex(wanted);
   const meeting = meetings[position];
   if (!meeting) {
-    return { found: false, missing: "round" };
+    return null;
   }
   return {
     found: true,

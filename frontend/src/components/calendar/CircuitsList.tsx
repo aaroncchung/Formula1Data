@@ -51,7 +51,7 @@ function VenueCard({ venue }: { venue: Venue }) {
   const years = [...new Set(venue.meetings.map((item) => item.year))];
   return (
     <Link
-      href={meetingHref(latest.year, latest.meeting.round)}
+      href={meetingHref(latest.year, latest.meeting)}
       className="surface group block p-5 transition hover:-translate-y-0.5 hover:border-redline/50"
     >
       <div className="flex items-start justify-between gap-3">
