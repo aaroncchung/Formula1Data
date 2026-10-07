@@ -33,7 +33,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, RootModel
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, RootModel, model_validator
 from typing_extensions import NotRequired, TypedDict
 
 # --- numbers ------------------------------------------------------------------
@@ -525,6 +525,17 @@ class Coverage(Model):
 class TelemetryDriverEntry(Model):
     """One driver's laps that have telemetry, as parallel arrays with one entry per lap."""
 
+    @model_validator(mode="after")
+    def _a_lap_has_every_figure(self) -> "TelemetryDriverEntry":
+        _one_length(
+            self,
+            (
+                "lap_number", "lap_time_ms", "compound", "is_accurate", "is_deleted", "is_pit_in_lap",
+                "is_pit_out_lap", "sample_count", "raw_sample_count", "has_position",
+            ),
+        )
+        return self
+
     driver_code: str
     path: str = Field(description="The driver's file, relative to the generation.")
     lap_number: list[int]
@@ -561,8 +572,23 @@ class TelemetryIndex(Model):
     drivers: list[TelemetryDriverEntry]
 
 
+def _one_length(model: BaseModel, names: tuple[str, ...]) -> None:
+    """Arrays that run side by side have one entry each for the same things, or the file is not published."""
+    lengths = {name: len(getattr(model, name)) for name in names if getattr(model, name) is not None}
+    if len(set(lengths.values())) > 1:
+        raise ValueError(f"arrays that should be of one length are not: {lengths}")
+
+
 class TelemetryLap(Model):
     """One lap as parallel arrays, one entry per sample."""
+
+    @model_validator(mode="after")
+    def _a_sample_has_every_channel(self) -> "TelemetryLap":
+        _one_length(
+            self,
+            ("time_ms", "distance_m", "speed_kph", "throttle_pct", "brake", "rpm", "gear", "drs", "x", "y"),
+        )
+        return self
 
     lap_number: int
     start_ms: int = Field(description="When the lap started, in milliseconds on the session clock.")
@@ -629,6 +655,17 @@ class PositionReplay(Model):
         description="The lap the session had reached: the highest any car had started."
     )
     drivers: list[ReplayDriver]
+
+    @model_validator(mode="after")
+    def _a_frame_has_every_car(self) -> "PositionReplay":
+        frames = len(self.time_ms)
+        if len(self.lap_number) != frames:
+            raise ValueError(f"{frames} frames and {len(self.lap_number)} lap numbers")
+        for driver in self.drivers:
+            lengths = {name: len(getattr(driver, name)) for name in ("x", "y", "speed_kph", "distance_m")}
+            if set(lengths.values()) != {frames}:
+                raise ValueError(f"{frames} frames and, for {driver.driver_code}, {lengths}")
+        return self
 
 
 # --- analyses -----------------------------------------------------------------

@@ -26,7 +26,17 @@ so the result is not an approximation of FastF1's: on the 2026 Austrian GP it
 is the same number for every sample of every lap
 (tests/test_recorded_race.py).
 
-Three things differ from FastF1 on purpose, all where a feed is broken:
+Four things differ from FastF1 on purpose. One is in every session:
+
+* Distance never goes backwards. FastF1 fills in the distance at a position
+  sample with a quadratic spline through the car samples, and around a car
+  standing in its pit box the spline dips: Bearman's lap 30 of the 2026
+  Canadian GP reads 4117.8, 4117.8, 4117.8, 4117.7, 4118.7 metres. Nothing
+  moved backwards, and a reader that looks a sample up by its distance finds
+  the wrong one. Here each sample has the furthest the car had been: the
+  same numbers, with a dip of a tenth of a metre taken out.
+
+The other three are where a feed is broken:
 
 * When a car is missing from part of the car feed, FastF1 gives it a row for
   every moment another car has one and fills the row with zeros. Those rows
@@ -363,7 +373,7 @@ def _lap_samples(
         return None
     return {
         "time_ms": _round_ms(on_clock[inside] - start),
-        "distance_m": lap_distance[inside],
+        "distance_m": np.maximum.accumulate(lap_distance[inside]),
         "speed_kph": continuous["Speed"][inside],
         "throttle_pct": continuous["Throttle"][inside],
         "rpm": continuous["RPM"][inside],

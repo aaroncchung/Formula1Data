@@ -203,8 +203,9 @@ def parse_pit_stop_series(data: bytes) -> list[dict[str, Any]]:
             continue
         if stop["lap_number"] is None and stop["time_utc"] is None:
             continue
-        # One stop a driver and lap. A stop with no lap is nobody's twin.
-        named = (stop["driver_number"], stop["lap_number"]) if stop["lap_number"] is not None else key
+        # One stop a driver and lap. A stop with no lap is nobody's twin, and
+        # its place in the list is not a lap: the two are named apart.
+        named = ("lap", stop["driver_number"], stop["lap_number"]) if stop["lap_number"] is not None else ("place", key)
         reported.pop(named, None)
         reported[named] = stop
     return list(reported.values())

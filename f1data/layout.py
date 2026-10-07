@@ -66,7 +66,8 @@ FORMAT_VERSION = 2
 #   9  a stop F1's pit-stop feed sends twice under two places is one stop,
 #      in the count of stops the feed vouches for as in pit-stops.json; the
 #      zero F1's weather sends for a sensor with no reading is no reading
-PIPELINE_VERSION = 9
+#  10  a lap's distance never goes backwards
+PIPELINE_VERSION = 10
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

@@ -137,9 +137,10 @@ def test_each_laps_telemetry_is_what_fastf1s_own_per_lap_call_returns(austria, t
     """``Lap.get_telemetry`` takes about 0.3 s a lap, so a spread of laps is
     compared: every fortieth, which takes in first laps, pit laps and last
     laps. The whole race was compared once, by the same code, with the same
-    result: no sample of any channel differs at all."""
+    result: no sample of any channel differs at all. The distance is
+    FastF1's with its dips taken out (f1data/telemetry.py)."""
     channels = {
-        "distance_m": "Distance", "speed_kph": "Speed", "throttle_pct": "Throttle", "rpm": "RPM",
+        "speed_kph": "Speed", "throttle_pct": "Throttle", "rpm": "RPM",
         "gear": "nGear", "brake": "Brake", "drs": "DRS", "x": "X", "y": "Y",
     }
     compared = 0
@@ -153,8 +154,26 @@ def test_each_laps_telemetry_is_what_fastf1s_own_per_lap_call_returns(austria, t
         assert (theirs["Time"].to_numpy().astype("int64") == mine.time_ms * 1_000_000).all(), where
         for name, column in channels.items():
             assert (getattr(mine, name).astype(float) == theirs[column].to_numpy().astype(float)).all(), (where, name)
+        furthest = np.maximum.accumulate(theirs["Distance"].to_numpy().astype(float))
+        assert (mine.distance_m == furthest).all(), where
         compared += 1
     assert compared >= 30
+
+
+def test_a_car_standing_in_its_pit_box_does_not_go_backwards(tmp_path):
+    """The 2026 Canadian GP, Bearman's lap 30: FastF1's distance for the lap
+    dips by a tenth of a metre while the car stands still, and the site's
+    comparison of two laps, which looks a sample up by its distance, read
+    the wrong one: a lap compared with itself came out 23 seconds apart."""
+    session, _, _ = recorded(tmp_path, 11291)
+    lap = session.laps.pick_drivers("BEA").pick_laps(30).iloc[0]
+
+    theirs = lap.get_telemetry()["Distance"].to_numpy().astype(float)
+    mine = extract_telemetry(session).laps[("BEA", 30)].distance_m
+
+    assert (np.diff(theirs) < 0).any()
+    assert (np.diff(mine) >= 0).all()
+    assert (mine == np.maximum.accumulate(theirs)).all() and float(np.abs(mine - theirs).max()) < 0.5
 
 
 def test_no_lap_is_thinned_before_the_analyses_see_it(austria, telemetry):
