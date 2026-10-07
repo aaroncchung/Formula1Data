@@ -59,6 +59,17 @@ SAME_MEETING_TOLERANCE = timedelta(days=3)
 # 30 MB and arrives in seconds.
 REQUEST_TIMEOUT_SECONDS = (30.0, 120.0)
 
+# How long the fetch stage of a run of the whole job goes on starting new
+# fetches. The build has to have its turn in every run: sessions that keep
+# failing slowly would otherwise use the whole of the time the scheduler
+# allows a run, on every run, and nothing already in the archive would be
+# published. What is left over is fetched by the next run.
+FETCH_STAGE_BUDGET = timedelta(minutes=60)
+
+# What the spool's disk has to have free before a fetch is started. A race is
+# about 200 MB in FastF1's cache, and as much again while it is packed.
+SPOOL_NEEDS_FREE_BYTES = 2 * 1024**3
+
 # A run of the whole job writes down when it finished. One that has not for
 # this long has missed two turns of a six-hour schedule.
 RUN_IS_OVERDUE_AFTER = timedelta(hours=13)

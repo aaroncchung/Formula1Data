@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 import sys
 from contextlib import contextmanager
 from dataclasses import replace
@@ -79,6 +80,8 @@ class Job:
     def __init__(self, tmp_path, monkeypatch, capsys, calendar=CALENDAR) -> None:
         self.store = Flaky(tmp_path / "store")
         self.fetched: list[int] = []
+        # The fetches that were made to finish one that was cut short.
+        self.resumed: list[int] = []
         self.fails: set[int] = set()
         self.dies_in: int | None = None
         self._capsys = capsys
@@ -87,12 +90,18 @@ class Job:
         def no_cache(cache_dir):
             yield None
 
-        def fetch(year, event, session_type, cache_dir):
+        def fetch(year, event, session_type, cache_dir, resume=False):
             self.fetched.append(event)
+            if resume:
+                self.resumed.append(event)
             if event == self.dies_in:
+                # Something of it had arrived.
+                (cache_dir / "2026").mkdir(parents=True, exist_ok=True)
                 raise KeyboardInterrupt("the scheduler stopped the task at its time limit")
             if event in self.fails:
                 raise FetchError(f"F1 has no session information for {year} round {event}")
+            # FastF1 reads back what a cut-short fetch left; this stand-in fetches it all again.
+            shutil.rmtree(cache_dir, ignore_errors=True)
             return fetched_session(cache_dir.parent)
 
         monkeypatch.setattr(cli_module, "fastf1_cache", no_cache)
@@ -104,6 +113,7 @@ class Job:
     def run(self, *arguments: str) -> tuple[str, object]:
         self._capsys.readouterr()
         self.fetched.clear()
+        self.resumed.clear()
         try:
             main(list(arguments) or ["fetch-due", "--store", "x", "--season", "2026"])
         except SystemExit as finished:
@@ -195,14 +205,14 @@ def test_an_upload_that_finished_unseen_is_not_made_again(tmp_path):
 
 
 def test_a_spooled_fetch_is_everything_a_snapshot_records(tmp_path):
-    directory = spool.new_fetch_directory(tmp_path / "spool", FIRST_FETCH)
+    directory = spool.new_fetch_directory(tmp_path / "spool", 2026, 8, "R", "a store", FIRST_FETCH)
     fetched = fetched_session(directory)
     fetched = replace(fetched, feed_status={"SessionInfo.jsonStream": 200}, attempts=2)
 
     spool.keep(directory, fetched, FIRST_FETCH, "20260628T180000Z-0badcafe")
     (kept,) = spool.waiting(tmp_path / "spool")
 
-    assert (kept.snapshot_id, kept.fetched_at) == ("20260628T180000Z-0badcafe", FIRST_FETCH)
+    assert (kept.snapshot_id, kept.fetched_at, kept.store) == ("20260628T180000Z-0badcafe", FIRST_FETCH, "a store")
     for name in ("identity", "coverage", "versions", "extras", "feed_status", "attempts", "cache_dir"):
         assert getattr(kept.fetched, name) == getattr(fetched, name), name
     assert kept.fetched.http.summary() == fetched.http.summary()
@@ -213,26 +223,22 @@ def test_a_spooled_fetch_is_everything_a_snapshot_records(tmp_path):
     ).to_json()
 
 
-def test_a_fetch_is_whole_only_once_it_says_so_and_what_never_finished_is_swept_away(tmp_path):
+def test_a_fetch_is_whole_only_once_it_says_so(tmp_path):
     root = tmp_path / "spool"
-    half = spool.new_fetch_directory(root, FIRST_FETCH)
-    (half / "cache").mkdir()
-    whole = spool.new_fetch_directory(root, FIRST_FETCH + timedelta(seconds=1))
+    started = spool.new_fetch_directory(root, 2026, 6, "R", "a store", FIRST_FETCH)
+    whole = spool.new_fetch_directory(root, 2026, 8, "R", "a store", FIRST_FETCH + timedelta(seconds=1))
     spool.keep(whole, fetched_session(whole), FIRST_FETCH, "20260628T180000Z-0badcafe")
-    unreadable = spool.new_fetch_directory(root, FIRST_FETCH + timedelta(seconds=2))
+    unreadable = spool.new_fetch_directory(root, 2026, 7, "R", "a store", FIRST_FETCH + timedelta(seconds=2))
     (unreadable / spool.PENDING_NAME).write_text("{", encoding="utf-8")
 
     assert [kept.directory for kept in spool.waiting(root)] == [whole]
-    # A fetch another run may be making now is left alone; a day on, it never finished.
-    assert spool.sweep(root) == []
-    assert spool.sweep(root, now=half.stat().st_mtime + 25 * 3600) == [half]
-    assert sorted(path.name for path in root.iterdir()) == sorted([whole.name, unreadable.name])
+    assert [(cut.directory, cut.event, cut.resumes) for cut in spool.unfinished(root)] == [(started, 6, 0)]
     with pytest.raises(ValueError, match="was not made in"):
         spool.keep(whole, fetched_session(tmp_path / "elsewhere"), FIRST_FETCH, "20260628T180000Z-0badcafe")
 
 
 def test_two_runs_do_not_archive_one_fetch_at_once(tmp_path):
-    directory = spool.new_fetch_directory(tmp_path / "spool")
+    directory = spool.new_fetch_directory(tmp_path / "spool", 2026, 8, "R", "a store")
 
     with spool.uploading(directory) as mine:
         with spool.uploading(directory) as theirs:
@@ -298,11 +304,21 @@ def test_a_run_killed_in_the_middle_of_a_fetch_does_not_begin_the_next_with_the_
     ((key, (failures, error)),) = failing_fetches(three_races.store, datetime.now(timezone.utc)).items()
     assert key == layout.attempt_key(2026, "R", CALENDAR[0].start_time_utc)
     assert (failures, error) == (1, INTERRUPTED)
-    assert list(three_races.spool.iterdir()) == []
+    # What had arrived is kept, and the next run finishes that fetch from it
+    # before it starts another (tests/test_sixteenth_review.py). If it is
+    # stopped in that too, the fetch is let go and the session waits its
+    # turn, behind the ones that have not been tried.
+    (cut_short,) = spool.unfinished(three_races.spool)
+    assert (cut_short.event, cut_short.resumes) == (SIXTH, 0)
 
-    three_races.run()
+    _, code = three_races.run()
+    assert code == "killed" and (three_races.fetched, three_races.resumed) == ([SIXTH], [SIXTH])
 
-    assert three_races.fetched == [SEVENTH, EIGHTH, SIXTH]
+    three_races.dies_in = None
+    output, _ = three_races.run()
+
+    assert "a fetch that was cut short twice is let go" in output
+    assert (three_races.fetched, three_races.resumed) == ([SEVENTH, EIGHTH, SIXTH], [])
 
 
 def test_a_fetch_that_succeeds_has_no_failure_to_its_name(three_races):
@@ -333,14 +349,14 @@ def test_the_count_of_failures_is_of_fetches_that_did_not_succeed_one_after_anot
     def count() -> int:
         return failing_fetches(store, at + timedelta(days=2)).get(layout.attempt_key(*entry), (0, ""))[0]
 
-    note_fetch_started(store, *entry, at)
-    note_failed_fetch(store, *entry, "FetchError: one", at + timedelta(seconds=5))
+    first = note_fetch_started(store, *entry, at)
+    note_failed_fetch(store, *entry, "FetchError: one", at + timedelta(seconds=5), first)
     assert count() == 1
     # A run that was killed: started, and never said how it ended.
     note_fetch_started(store, *entry, at + timedelta(hours=6))
     assert count() == 2
-    note_fetch_started(store, *entry, at + timedelta(hours=12))
-    note_failed_fetch(store, *entry, "FetchError: three", at + timedelta(hours=12, seconds=5))
+    third = note_fetch_started(store, *entry, at + timedelta(hours=12))
+    note_failed_fetch(store, *entry, "FetchError: three", at + timedelta(hours=12, seconds=5), third)
     assert count() == 3
     # A failure noted with no start before it, as a version before this one noted them.
     note_failed_fetch(store, *entry, "FetchError: four", at + timedelta(hours=18))

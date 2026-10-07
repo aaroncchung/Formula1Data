@@ -53,7 +53,7 @@ def fetch_due(tmp_path, monkeypatch, capsys, f1_answers) -> tuple[list[int], str
     def no_cache(cache_dir):
         yield None
 
-    def fetch(year, event, session_type, cache_dir):
+    def fetch(year, event, session_type, cache_dir, resume=False):
         attempted.append(event)
         if event != AUSTRIA_ENTRY.round:
             raise FetchError(f"F1 has no session information for {year} round {event}")

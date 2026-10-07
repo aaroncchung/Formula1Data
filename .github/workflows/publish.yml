@@ -13,6 +13,13 @@ name: Build and publish
 # so every run of this workflow is also a run of the plan's fourth acceptance
 # criterion, two publishers started together, on the real bucket.
 on:
+  # Every six hours, a little after the hour the machine that fetches is asked
+  # to run. GitHub runs a schedule only from the default branch, so this does
+  # nothing while the work is on a branch. What a scheduled run adds to
+  # building: it asks when the fetch job last finished (see the last step but
+  # one), which is the only thing that notices that job not running at all.
+  schedule:
+    - cron: "40 */6 * * *"
   workflow_dispatch:
     inputs:
       session_key:
@@ -97,7 +104,9 @@ jobs:
       # part asks; the others would only say the same.
       - name: Check that the fetch job is running
         if: github.event_name == 'schedule' && matrix.part == 0
-        run: python -m f1data last-run
+        # Until that job has run for the first time there is nothing to be
+        # overdue, and "never" passes.
+        run: python -m f1data last-run --allow-never
 
       - name: Summarise
         if: always()

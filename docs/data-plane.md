@@ -54,9 +54,13 @@ under `v1/` stays where it is until nothing reads it.
 ## The published format
 
 Every object under `v2/` has a model in `f1data/models.py`, and that file is
-the contract: an artifact is built as its model and written from it, so a field
-that is not declared cannot be published and a value of the wrong kind stops
-the build. `python -m f1data schema` writes the models out as
+the contract. The files of a generation are built as their models and written
+from them, so a field that is not declared cannot be published and a value of
+the wrong kind stops the build. The envelopes around them (the manifest, the
+pointer, the index and the standings) are written from dictionaries by the
+publisher; their models say what shape they have, and a test holds a bucket
+the publisher wrote against them (`tests/test_contract_fixture.py`). `python
+-m f1data schema` writes the models out as
 `schema/published-v2.schema.json`, which is what the frontend's types are
 generated from. A test fails when the committed file and the models disagree.
 
@@ -143,12 +147,16 @@ bar notices, and checks three things F1's feeds have done that a stand-in
 would not think of (rows FastF1 adds for cars missing from the car feed, pit
 stops reported with no lap, a car whose data stops before its lap does). It
 also builds the Austrian race with each of its feeds taken out in turn, since
-a session can measure correctly and still fail to build. It needs no network,
-and runs when it is told where the archive is:
+a session can measure correctly and still fail to build. It contacts neither
+F1 nor Jolpica. Told a directory it needs no network at all; told `r2` it
+reads the bucket, with the credentials in the environment (the tests do not
+read `.env`). It runs when it is told where the archive is:
 
 ```text
 F1DATA_TEST_ARCHIVE=<a directory store, or r2> python -m pytest tests/test_recorded_race.py -s
 ```
+
+In PowerShell the variable is set first: `$env:F1DATA_TEST_ARCHIVE = "<...>"`.
 
 After an intended change to what a build produces, record the golden file
 again by adding `F1DATA_WRITE_FIXTURES=1`.
@@ -179,21 +187,46 @@ a directory as it does for `r2`: two runs sharing a directory take a lock on
 it for each write.
 
 A session is fetched into a spool on the machine (`%LOCALAPPDATA%\f1data\spool`,
-or `~/.cache/f1data/spool`, or wherever `F1DATA_SPOOL` says) and stays there
-until its snapshot's marker is in the archive. If the upload fails, the run
-says `FETCHED, NOT ARCHIVED` and exits 1, and the next run uploads what was
-kept before it asks F1 for anything: a session F1 has served is not fetched a
-second time because the bucket was out of reach.
+or `~/.cache/f1data/spool`, or wherever `F1DATA_SPOOL` says), in a directory
+that says which session it is of and which store it is for before the fetch
+starts, and it stays there until its snapshot's marker is in the archive
+(`f1data/spool.py`). What a run leaves there, the next run sees through
+before it asks F1 for anything:
+
+- a fetch that is whole and was not archived, because the upload failed, is
+  uploaded. The run that fetched it says `FETCHED, NOT ARCHIVED` and exits 1;
+- a fetch that was cut short, by a kill, a full disk or a crash, is fetched
+  again into the same directory, where FastF1 reads back from its cache what
+  had arrived and asks F1 only for the rest. That is done once for a fetch:
+  one that is cut short a second time is let go and its session waits its
+  turn, so that finishing a fetch cannot be what every run starts with and
+  dies in;
+- a fetch another run is making is left alone. A run holds a lock on the
+  directory while it fetches, and the lock goes with the process, so nothing
+  is taken for abandoned by its age.
+
+A fetch is for the store it was started for: a run against another store
+neither uploads nor finishes it, and says how many it left. Only a fetch F1
+would not serve is removed. A fetch is not started with less than 2 GB free
+where the spool is, and the spool wants emptying by hand only if a fetch's
+record cannot be read, which a run says.
 
 One session failing to fetch does not stop the others. A fetch is noted when
-it starts, as one that has not succeeded, and the note is replaced when it
-ends; so a run that is killed in the middle of a fetch has still said that it
-tried. The next run takes the sessions that have not failed first and the
-ones that have last, the longest ago first: every session has its turn before
-any has a second. A session whose fetch has failed three times running is
-named in a line that begins `ATTENTION`. Every request FastF1 makes has a time
-limit (30 seconds to connect, two minutes between pieces of an answer), so a
-connection that goes quiet fails that fetch and does not hold the run. After
+it starts, as one that has not succeeded, and the note is replaced by how it
+ended; so a run that is killed in the middle of a fetch has still said that it
+tried. Sessions are taken in the order of when each was last tried, whether
+that fetch failed or arrived: the ones never tried first, then the one tried
+longest ago. A batch that is cut short, by `--limit`, by its time or because
+nothing answers, therefore reaches every session before it reaches any a
+second time. A session whose fetch has failed three times running is named in
+a line that begins `ATTENTION`.
+
+Every request FastF1 makes has a time limit: 30 seconds to connect, and two
+minutes without a byte arriving. That stops a connection that goes quiet; it
+does not bound an answer that keeps arriving slowly. `run` therefore starts no
+new fetch once its fetch stage has gone on for an hour (`fetch-due
+--budget-minutes` sets the same for a fetch stage run by hand), and builds
+what the archive has; the rest is fetched by the next run. After
 two failures in a row `fetch-due` also asks F1's
 archive, and FastF1's mirror of it, for this season's index and last season's.
 If any answers, the fault is with those sessions and the batch carries on; if
@@ -201,13 +234,14 @@ none does, the batch stops until the next run.
 
 Retries are timed from when a session was last fetched, by the stamp of the
 machine that fetched it. A stamp more than an hour ahead of this machine's
-clock, or from before the session started, is not believed, and a session with
-no believable stamp is fetched again at once.
+clock, or more than an hour before the session started, is not believed, and a
+session with no believable stamp is fetched again at once.
 
 ## Credentials
 
-R2 is reached through its S3 API. Put these in `.env` at the repository root
-(it is ignored by git), or in the environment:
+R2 is reached through its S3 API. The bucket has to exist: nothing here makes
+one. Put these in `.env` at the repository root (it is ignored by git), or in
+the environment:
 
 ```text
 F1DATA_STORE=r2
@@ -219,6 +253,37 @@ R2_SECRET_ACCESS_KEY=<from the same token>
 
 `CLOUDFLARE_API_TOKEN` works in place of the key pair, which is how the
 workflows publish with the secret the repository already has.
+
+`.env` is read from the directory a command is run in, before anything else,
+as UTF-8 lines of `NAME=value`. A variable already set in the environment is
+left as it is. The scheduled task below sets its working directory to the
+repository for this reason.
+
+## Setting up a machine
+
+On the machine that is to fetch, which has to be on a network F1 answers
+(`python -m f1data probe --year 2026 --event 8 --session R` says whether it
+is, and archives nothing):
+
+1. Python 3.12, and a checkout of this branch on a local disk. Not in a
+   folder a sync client manages (see "Running on a schedule").
+2. A virtual environment outside the checkout, and the pinned packages in it:
+   `py -3.12 -m venv C:\venvs\f1data`, then
+   `C:\venvs\f1data\Scripts\python.exe -m pip install -r requirements.txt`
+   from the checkout (`requirements-dev.txt` as well, to run the tests). The
+   versions are pinned because a snapshot is FastF1's cache as that FastF1
+   wrote it.
+3. `.env` in the checkout, as above.
+4. `python -m f1data fetch-due --dry-run` lists what would be fetched and
+   touches nothing but a listing of the bucket.
+
+The first run against an empty bucket has two seasons to fetch: every finished
+race and sprint of this year and last, about fifty sessions, each some 200 MB
+on disk while it is fetched and 100 MB in the bucket. `run` gives its fetch
+stage an hour, so the scheduled job catches up over its first few runs
+without being told to, building as it goes. To do it in one sitting instead:
+`python -m f1data fetch-due` (no time limit unless `--budget-minutes` is
+given), then `python -m f1data build`.
 
 ## Running on a schedule
 
@@ -242,7 +307,8 @@ $action    = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $repo 
 $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) `
                -RepetitionInterval (New-TimeSpan -Hours 6)
 $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-               -ExecutionTimeLimit (New-TimeSpan -Hours 2) -WakeToRun
+               -ExecutionTimeLimit (New-TimeSpan -Hours 2) -WakeToRun `
+               -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited
 Register-ScheduledTask -TaskName "Formula1Data run" -Action $action -Trigger $trigger `
   -Settings $settings -Principal $principal
@@ -260,30 +326,36 @@ environment and `.env` on a local disk outside OneDrive or the like.
 the job catches up on anything it missed, because F1's archive keeps past
 sessions. The machine does not have to be on when a session finishes.
 `-MultipleInstances IgnoreNew` keeps a second run from starting while one is
-going; two at once would not lose anything, only fetch twice.
+going; two at once would not lose anything, only fetch twice. Without the two
+battery settings a laptop on battery does not start the task, and stops one
+that is running when it is unplugged.
 
 The definition above builds with these cmdlets, but nothing has registered
 the task yet, and it has not run on a schedule.
 
 ### Knowing that it ran
 
-- **The log** is `%LOCALAPPDATA%\f1data\run.log`, in UTF-8. Each run starts with
-  `[<time>] run started` and ends with `[<time>] run finished, exit <code>,
-  <seconds> s`. Exit 1 means something failed: a fetch, an upload, a build.
-  A line beginning `ATTENTION` names a session whose fetch keeps failing, and
-  `FETCHED, NOT ARCHIVED` one that is waiting in the spool.
+- **The log** is `%LOCALAPPDATA%\f1data\run.log`, in UTF-8, written a line at
+  a time, so a run that is killed has still written what it printed. Each
+  run starts with `[<time>] run started` and, unless it was killed, ends with
+  `[<time>] run finished, exit <code>, <seconds> s`. Exit 1 means something
+  failed: a fetch, an upload, a build. A line beginning `ATTENTION` names a
+  session whose fetch keeps failing, and `FETCHED, NOT ARCHIVED` one that is
+  waiting in the spool.
 - **A run that did not happen** writes nothing, so it is looked for from
   outside: `python -m f1data last-run` reads `archive/runs/last.json` from the
   bucket and exits 1 when the last run finished more than 13 hours ago. Run it
-  from any machine that can read the bucket; the publish workflow runs it when
-  it is started by a schedule, so that a job that has stopped turns a
-  workflow red.
+  from any machine that can read the bucket. The publish workflow runs it
+  every six hours once that workflow is on the default branch, which is where
+  GitHub runs schedules from, so that a job that has stopped turns a workflow
+  red; until the job has run for the first time it lets "never" pass.
 - **The task itself:** `Get-ScheduledTaskInfo -TaskName "Formula1Data run"`
-  gives the last run time and result, and Task Scheduler's history says why a
-  start was skipped.
-- **A session published as partial** is not a failure and exits 0. It is in
-  the pointer and the index (`complete: false`, with what is short), and on
-  the session's page.
+  gives the last run time and result. Task Scheduler's history says why a
+  start was skipped, if history is enabled (it is off by default: "Enable All
+  Tasks History" in Task Scheduler).
+- **A session published as partial** is not a failure and exits 0. Its
+  pointer has `complete: false` and what it is short of; the index has
+  `complete: false`; the session's page says both.
 
 ## When a session counts as complete
 
@@ -375,15 +447,20 @@ lost write, and whenever `build --recheck` is given.
 
 | Workflow | Runs | Purpose |
 | --- | --- | --- |
-| `publish.yml` | Manually, or on a push that touches it | `build` against R2, in four parallel parts |
+| `publish.yml` | Every six hours and manually, once it is on the default branch; until then on a push to `rewrite/data-plane` that touches it or `f1data/layout.py`, where the pipeline version is | `build` against R2, in four parallel parts. On a schedule it also runs `last-run` |
 | `deploy-data-worker.yml` | On a push that touches the Worker | Tests and deploys `formula-1-data-read` |
 | `r2-contract.yml` | On a push that touches the store | The store's tests against the real bucket |
-| `probe-f1-access.yml` | Manually | Whether F1 answers a hosted runner yet |
-| `upload-archive-spool.yml` | Manually | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
+| `probe-f1-access.yml` | Manually, and on a push to the rewrite branch that touches it | Whether F1 answers a hosted runner yet |
+| `upload-archive-spool.yml` | Manually, and on a push to the rewrite branch that touches it | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
+
+A workflow can be started by hand, or by a schedule, only from the default
+branch. That is why each has a push trigger while this work is on a branch.
 
 ## Checking a publication
 
-After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/data`:
+After a `build`, with `B=https://formula-1-data-read.aaronchenxi2.workers.dev/data`
+(in PowerShell: `$B = "https://..."`, and `curl.exe` in place of `curl`, which
+there is another command's alias):
 
 1. `curl -s $B/v2/index.json` lists the calendar, and the session has a
    `session_key` and `complete`.

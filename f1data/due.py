@@ -50,17 +50,29 @@ class FetchPlan:
         return layout.attempt_key(self.session.year, self.session.session_type, self.session.start_time_utc or "")
 
 
-def least_recently_failed_first(plans: list[FetchPlan], failed_at: Mapping[str, datetime]) -> list[FetchPlan]:
-    """The plans in the order a run should take them.
+def least_recently_failed_first(
+    plans: list[FetchPlan],
+    failed_at: Mapping[str, datetime],
+    fetched_at: Mapping[str, datetime] | None = None,
+) -> list[FetchPlan]:
+    """The plans in the order a run should take them: by when each session was last tried.
 
-    Sessions whose fetch has not failed come first, oldest first, as planned.
-    After them the ones that failed, the longest ago first. A batch may be
-    cut short, by a limit or because nothing is answering; taken in this
-    order, every session is tried before any is tried a second time, so no
-    session that keeps failing can keep the others from their turn.
+    Sessions that have never been tried come first, oldest first, as planned.
+    After them the rest, the one tried longest ago first, whether that fetch
+    failed (``failed_at``) or arrived (``fetched_at``, both by
+    ``FetchPlan.attempt_key``). A batch may be cut short: by a limit, by the
+    time a run allows its fetch stage, or because nothing is answering. Taken
+    in this order every session is tried before any is tried a second time.
+    A session that keeps failing cannot keep the others from their turn, and
+    neither can one that is fetched every week and is short every time.
     """
     never = datetime.min.replace(tzinfo=timezone.utc)
-    return sorted(plans, key=lambda plan: failed_at.get(plan.attempt_key, never))
+    fetched_at = fetched_at or {}
+
+    def last_tried(plan: FetchPlan) -> datetime:
+        return max(failed_at.get(plan.attempt_key, never), fetched_at.get(plan.attempt_key, never))
+
+    return sorted(plans, key=last_tried)
 
 
 def plan_fetches(

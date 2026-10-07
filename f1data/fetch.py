@@ -96,8 +96,16 @@ def fetch_session(
     cache_dir: Path,
     attempts: int = DEFAULT_ATTEMPTS,
     sleep: Any = time.sleep,
+    resume: bool = False,
 ) -> FetchedSession:
     """Load a session from F1 into ``cache_dir``, which must be empty.
+
+    Unless ``resume`` says that the directory holds a fetch of this session
+    that was cut short (f1data/spool.py). FastF1 then reads back whatever had
+    arrived and asks F1 for the rest, as it does between its own attempts.
+    Only the requests made this time are in the record of them, so a feed
+    read back has no status of F1's beside it: one that is absent is then
+    taken as one F1 may yet supply, which is the cautious reading.
 
     Returns whatever arrived, with its coverage measured. Judging whether that
     is complete is the caller's job; a partial session is still worth keeping
@@ -107,7 +115,7 @@ def fetch_session(
     beside it (``weather_lines_are_kept`` in f1data/extras.py).
     """
     code = session_type_code(session_type)
-    if cache_dir.exists() and any(cache_dir.iterdir()):
+    if not resume and cache_dir.exists() and any(cache_dir.iterdir()):
         raise FetchError(f"Fetch needs an empty cache directory, and {cache_dir} is not empty")
 
     recorder = HttpRecorder()
