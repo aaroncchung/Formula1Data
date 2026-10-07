@@ -59,7 +59,9 @@ def driver_codes(results: pd.DataFrame, laps: pd.DataFrame) -> dict[str, str]:
     driver list. Then the result's, which is the driver list's again, or the
     classification's once that has been merged in. A driver neither of them
     names is known by the car number, as text. That is F1's own name for the
-    car in every feed, and two drivers without a code stay two drivers.
+    car in every feed, and two drivers without a code stay two drivers. So do
+    two cars a feed gives one code: the car that has it first keeps it, and
+    the other is known by its number.
     """
     codes: dict[str, str] = {}
     lap_numbers: list[str | None] = []
@@ -79,4 +81,9 @@ def driver_codes(results: pd.DataFrame, laps: pd.DataFrame) -> dict[str, str]:
     for number in [*lap_numbers, *listed]:
         if number:
             codes.setdefault(number, number)
+    taken: set[str] = set()
+    for number, code in codes.items():
+        if code in taken:
+            codes[number] = code = number
+        taken.add(code)
     return codes

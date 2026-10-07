@@ -11,10 +11,12 @@ snapshot recorded of the session, and the Austrian race's result is a fixture
 (``tests/fixtures/classification-11315.json``). With those, ``Builder.build``
 itself runs on the archive and reads nothing else.
 
-It writes nothing either. A build that finds a snapshot's record does not
-describe its feeds corrects the record in the archive, and the archive here is
-somebody's real one, so it is opened through ``ReadOnly``: such a build fails
-the test instead.
+It writes nothing either: the archive here is somebody's real one, and is
+opened through ``ReadOnly``. A build that finds a snapshot's record does not
+describe its feeds corrects the record in the archive and has the session
+decided again. That happens to a recorded session whenever the measurement
+changes and the archive has not been built since, so ``build_offline`` lets
+it happen in memory, beside the archive and not in it (``WithCorrections``).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import json
 import os
 import pickle
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +39,9 @@ from f1data.config import open_store
 from f1data.extras import PIT_STOP_SERIES
 from f1data.fetch import fastf1_cache
 from f1data.httplog import HttpRecorder
-from f1data.publish import Inputs
+from f1data.publish import DecideAgain, Inputs
 from f1data.schedule import ScheduledSession
-from f1data.store import ObjectStore
+from f1data.store import MemoryStore, ObjectStore, PreconditionFailed
 
 ARCHIVE_VARIABLE = "F1DATA_TEST_ARCHIVE"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -88,6 +91,36 @@ class ReadOnly:
 
     def delete(self, key: str) -> None:
         raise AssertionError(f"a test tried to delete {key} from the archive it reads")
+
+
+class WithCorrections:
+    """An archive that is only read, with what a build writes kept in memory beside it."""
+
+    def __init__(self, archive: ObjectStore) -> None:
+        self._archive = archive
+        self._written = MemoryStore()
+
+    def get(self, key: str) -> Any:
+        return self._written.get(key) or self._archive.get(key)
+
+    def head(self, key: str) -> Any:
+        return self._written.head(key) or self._archive.head(key)
+
+    def list(self, prefix: str) -> Any:
+        written = {item.key: item for item in self._written.list(prefix)}
+        yield from written.values()
+        yield from (item for item in self._archive.list(prefix) if item.key not in written)
+
+    def download_file(self, key: str, path: Path) -> bool:
+        return self._written.download_file(key, path) or self._archive.download_file(key, path)
+
+    def put(self, key: str, data: bytes, *, if_match: str | None = None, if_absent: bool = False, **rest: Any) -> None:
+        current = self.get(key)
+        if (if_absent and current is not None) or (
+            if_match is not None and (current is None or current.etag != if_match)
+        ):
+            raise PreconditionFailed(key)
+        self._written.put(key, data, **rest)
 
 
 def archive_store() -> ObjectStore:
@@ -167,7 +200,18 @@ def build_offline(store: ObjectStore, snapshot: Snapshot, classification: Classi
         classification_fingerprint=classification.fingerprint if classification else None,
         context=BuildContext(scheduled=scheduled, classification=classification),
     )
-    files, built_from = Builder(store, fastf1=None).build(inputs)
+    beside = WithCorrections(store)
+    try:
+        files, built_from = Builder(beside, fastf1=None).build(inputs)
+    except DecideAgain:
+        # The record did not describe the feeds as this code measures them.
+        # The build has corrected it, beside the archive, and a run would now
+        # decide again from the corrected record; so does this.
+        (corrected,) = [
+            listed for listed in list_snapshots(beside, snapshot.session_key) if listed.snapshot_id == snapshot.snapshot_id
+        ]
+        judged = corrected.judged_against(classification.laps_by_number) if classification else corrected
+        files, built_from = Builder(beside, fastf1=None).build(replace(inputs, snapshot=judged))
     assert built_from is judged
     return files
 

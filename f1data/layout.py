@@ -63,7 +63,10 @@ FORMAT_VERSION = 2
 #      placed only where the timing singles a stop out; a weather reading F1
 #      did not send is null where the feed is archived to say so; the
 #      telemetry index carries each lap's flags
-PIPELINE_VERSION = 8
+#   9  a stop F1's pit-stop feed sends twice under two places is one stop,
+#      in the count of stops the feed vouches for as in pit-stops.json; the
+#      zero F1's weather sends for a sensor with no reading is no reading
+PIPELINE_VERSION = 9
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

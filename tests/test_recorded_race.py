@@ -80,6 +80,8 @@ HUNGARY = 11342
 BELGIUM = 11334
 AUSTRALIA = 11234
 SAO_PAULO_SPRINT_2025 = 9864
+CANADA_2025 = 9963
+AZERBAIJAN = 11377
 GOLDEN = FIXTURES / f"golden-{AUSTRIA}.json"
 # The driver each single-driver removal is made for: Hamilton, who finished
 # and stopped three times.
@@ -597,6 +599,33 @@ def test_a_lap_whose_car_data_stops_short_is_not_published_and_was_never_counted
     for code, driver in measured["drivers"].items():
         published = len(telemetry.of_driver(code))
         assert driver["car_laps"] <= published <= driver["car_laps"] + driver["generated_laps"], code
+
+
+def test_stops_f1_sends_twice_are_counted_once(tmp_path):
+    """The 2025 Canadian GP: 29 of its stops arrive under two places of their
+    driver's list, a tenth of a second apart. The count of stops the feed
+    vouches for was 62, published beside 33 stops."""
+    session, extras, snapshot = recorded(tmp_path, CANADA_2025)
+
+    stops = normalize.pit_stops(session, extras, normalize.driver_codes(session))
+    measured = measure_coverage(session, "R", extras)
+
+    assert len(extras[PIT_STOP_SERIES].splitlines()) == 62
+    assert measured["pit_stops_in_series"] == sum(1 for stop in stops if stop.stationary_ms is not None) == 33
+    assert all(stop.duration_ms is None or abs(stop.pit_lane_ms - stop.duration_ms) < 1000 for stop in stops if stop.pit_lane_ms)
+
+
+def test_the_zero_f1_sends_for_a_sensor_with_no_reading_is_not_a_track_temperature(tmp_path):
+    """The 2026 Azerbaijan GP: two samples of 168 give the track as 0.0
+    degrees, between 46.6 and 47.3 and between 39.8 and 40.1."""
+    session, extras, _ = recorded(tmp_path, AZERBAIJAN)
+    assert sorted(session.weather_data["TrackTemp"])[:3] == [0.0, 0.0, 38.7]
+
+    samples = normalize.weather(session, "R", extras)
+
+    track = [sample.track_temp_c for sample in samples]
+    assert len(track) == 168 and track.count(None) == 2 and min(value for value in track if value is not None) == 38.7
+    assert all(sample.air_temp_c is not None and sample.humidity_pct is not None for sample in samples)
 
 
 # --- a race whose feeds repeat themselves --------------------------------------------
