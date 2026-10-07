@@ -57,9 +57,11 @@ from f1data.spool import (
     keep,
     new_fetch_directory,
     note_resumed,
+    note_served,
     spool_root,
     sweep,
     unfinished,
+    unreadable,
     uploading,
     waiting,
 )
@@ -340,6 +342,11 @@ def _archive_what_is_waiting(store: ObjectStore, name: str, spool: Path) -> list
     still_waiting = []
     for removed in sweep(spool):
         print(f"Removed {removed.name} from the spool: it was not a fetch.")
+    for directory in unreadable(spool):
+        print(
+            f"ATTENTION: {directory} is a fetch whose record cannot be read. "
+            "It is left as it is, for someone to look at."
+        )
     elsewhere = [spooled for spooled in waiting(spool) if spooled.store != name]
     if elsewhere:
         print(f"{len(elsewhere)} fetch(es) in the spool are waiting for another store, and are left for it.")
@@ -368,7 +375,34 @@ def _finish_what_was_cut_short(store: ObjectStore, name: str, spool: Path) -> tu
     and still not written down.
     """
     failed, left = 0, []
+    to_finish: list[Unfinished] = []
     for cut_short in unfinished(spool, name):
+        if not cut_short.resumes or cut_short.served:
+            to_finish.append(cut_short)
+            continue
+        # Cut short once, and again while it was being finished, and F1 is
+        # not known to have served all of it. A third try at the head of the
+        # run could end the run the same way; the session is fetched afresh
+        # in its turn.
+        with fetching(cut_short.directory) as free:
+            if not free:
+                left.append(cut_short)
+                continue
+        discard(cut_short.directory)
+        print(
+            f"{cut_short.year} round {cut_short.event} {cut_short.session_type}: "
+            "a fetch that was cut short twice is let go; the session waits its turn."
+        )
+    if to_finish and free_bytes(spool) < SPOOL_NEEDS_FREE_BYTES:
+        # Finishing a fetch writes to the disk that stopped it. On one that
+        # is still full it would fail the same way, or part of the way in.
+        print(
+            f"{len(to_finish)} fetch(es) that were cut short are left as they are: "
+            f"{free_bytes(spool) // 1024**2} MB free where the spool is ({spool}), and none is finished "
+            f"with less than {SPOOL_NEEDS_FREE_BYTES // 1024**2}."
+        )
+        return failed + 1, left + to_finish
+    for cut_short in to_finish:
         label = f"{cut_short.year} round {cut_short.event} {cut_short.session_type}"
 
         def note(outcome: Any, *more: Any) -> None:
@@ -383,17 +417,6 @@ def _finish_what_was_cut_short(store: ObjectStore, name: str, spool: Path) -> tu
                     datetime.now(timezone.utc),
                 )
 
-        if cut_short.resumes:
-            # Cut short once, and again while it was being finished. A third
-            # try at the head of the run could end the run the same way; the
-            # session is fetched afresh in its turn.
-            with fetching(cut_short.directory) as free:
-                if not free:
-                    left.append(cut_short)
-                    continue
-            discard(cut_short.directory)
-            print(f"{label}: a fetch that was cut short twice is let go; the session waits its turn.")
-            continue
         try:
             snapshot = _fetch_and_archive(
                 store, name, spool, cut_short.year, cut_short.event, cut_short.session_type, resume=cut_short
@@ -409,7 +432,7 @@ def _finish_what_was_cut_short(store: ObjectStore, name: str, spool: Path) -> tu
         except _NotKept as exc:
             failed += 1
             left.append(cut_short)
-            print(f"{label}: a fetch that was cut short could still not be written down: {exc}")
+            print(f"{label}: a fetch that F1 served could still not be written down: {exc}")
             continue
         except Exception as exc:
             # It is gone from the spool, and the session is planned like any other.
@@ -434,7 +457,7 @@ def _fetch_and_archive(
 ) -> Snapshot:
     """Fetch one session into the spool and archive it from there.
 
-    Raises whatever the fetch raises, when F1 would not serve the session:
+    Raises whatever the fetch raises, when F1 did not serve the session:
     nothing is then left in the spool. Once F1 has served it, it stays in
     the spool until it is archived, whatever happens: ``_NotKept`` when it
     could not be written down as whole (the next run finishes the fetch from
@@ -446,22 +469,36 @@ def _fetch_and_archive(
         if resume
         else new_fetch_directory(spool, year, event, session_type, name, start_time_utc=start_time_utc)
     )
+    # F1 served this session to an earlier fetch into this directory.
+    served = resume is not None and resume.served
     refused: Exception | None = None
     with fetching(directory) as mine:
         if not mine:
             raise _Busy(str(directory))
-        if resume is not None:
-            note_resumed(directory)
         try:
+            if resume is not None and not served:
+                # Finishing it is done once. What F1 has served is finished
+                # for as long as it takes, so nothing is counted for it.
+                note_resumed(directory)
             fetched = fetch_session(
                 year, event, session_type, directory / CACHE_DIRECTORY, resume=resume is not None
             )
         except Exception as exc:
+            if served:
+                # It is in the cache, and this time could not be read back
+                # from it. That is no more a reason to remove it than a
+                # failed upload is.
+                raise _NotKept(
+                    f"reading it back failed ({type(exc).__name__}: {exc}). What F1 sent is in {directory}"
+                ) from exc
             refused = exc
         else:
             # A fetch that was cut short was made when it was started.
             fetched_at = resume.started_at if resume else datetime.now(timezone.utc)
             try:
+                # First of all, and needing no room on the disk: from here on
+                # the directory is a session F1 served.
+                note_served(directory)
                 spooled = keep(directory, fetched, fetched_at, new_snapshot_id(fetched_at))
             except Exception as exc:
                 raise _NotKept(f"{type(exc).__name__}: {exc}. What F1 sent is in {directory}") from exc
@@ -534,11 +571,15 @@ def run_fetch_due(args: argparse.Namespace) -> int:
     budget = getattr(args, "budget_minutes", None)
     out_of_time = time.monotonic() + budget * 60 if budget is not None else None
     if not args.dry_run:
-        # What has been fetched comes before what has not: first the fetches
-        # that were cut short, which are finished from what they left, then
-        # the whole ones that are waiting for the archive.
+        # What has been fetched comes before what has not. First the whole
+        # fetches that are waiting for the archive, which is also what makes
+        # room in the spool; then the ones that were cut short, which are
+        # finished from what they left.
+        _archive_what_is_waiting(store, name, spool)
         failed, cut_short = _finish_what_was_cut_short(store, name, spool)
-        still_waiting = _archive_what_is_waiting(store, name, spool)
+        # Whatever is whole and still here, from either: it has only to be
+        # archived.
+        still_waiting = waiting(spool, name)
         not_archived = len(still_waiting)
     snapshots = list_snapshots(store)
     published_short = _published_short(store)

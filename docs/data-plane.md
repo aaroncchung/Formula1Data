@@ -194,22 +194,40 @@ starts, and it stays there until its snapshot's marker is in the archive
 before it asks F1 for anything:
 
 - a fetch that is whole and was not archived, because the upload failed, is
-  uploaded. The run that fetched it says `FETCHED, NOT ARCHIVED` and exits 1;
+  uploaded, first of all: that is also what makes room in the spool. The run
+  that fetched it says `FETCHED, NOT ARCHIVED` and exits 1;
 - a fetch that was cut short, by a kill, a full disk or a crash, is fetched
   again into the same directory, where FastF1 reads back from its cache what
-  had arrived and asks F1 only for the rest. That is done once for a fetch:
-  one that is cut short a second time is let go and its session waits its
-  turn, so that finishing a fetch cannot be what every run starts with and
-  dies in;
+  had arrived and asks F1 only for the rest. How often depends on whether F1
+  had served the whole session, which the fetch marks with an empty file,
+  `served`, before it writes anything else:
+  - if it had, and it was the writing down that failed, finishing it costs
+    F1 nothing and takes seconds. It is done on every run until it succeeds,
+    the fetch is never removed, and its session is not asked of F1 again
+    meanwhile. Each run that cannot finish it says `a fetch that F1 served
+    could still not be written down`, with the reason, and exits 1;
+  - if the fetch was stopped before that, it is finished once. One that is
+    cut short a second time is let go and its session waits its turn, so
+    that finishing a fetch cannot be what every run starts with and dies in;
 - a fetch another run is making is left alone. A run holds a lock on the
   directory while it fetches, and the lock goes with the process, so nothing
   is taken for abandoned by its age.
 
 A fetch is for the store it was started for: a run against another store
-neither uploads nor finishes it, and says how many it left. Only a fetch F1
-would not serve is removed. A fetch is not started with less than 2 GB free
-where the spool is, and the spool wants emptying by hand only if a fetch's
-record cannot be read, which a run says.
+neither uploads nor finishes it, and says how many it left. The only fetches
+removed before they are archived are ones that did not run to their end: a
+fetch that failed, and one cut short twice.
+
+With less than 2 GB free where the spool is, no fetch is started and none is
+finished. A run uploads what is whole, says what it left and why, and exits 1;
+nothing in the spool is changed, so making room is all there is to do.
+
+The spool wants looking at by hand in two cases, and a run says so each time.
+A directory whose record cannot be read is named in a line that begins
+`ATTENTION` and is left as it is; nothing is known of it, so its session is
+fetched again in its turn. And a fetch F1 served that still cannot be written
+down with room on the disk stays, and holds its session back, until whatever
+the run reports is put right or the directory is removed.
 
 One session failing to fetch does not stop the others. A fetch is noted when
 it starts, as one that has not succeeded, and the note is replaced by how it

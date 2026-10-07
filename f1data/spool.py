@@ -15,6 +15,7 @@ before it starts until its snapshot's marker is in the archive:
         intent.json      written first: which session, for which store
         .fetching        locked for as long as a run is fetching into it
         cache/           FastF1's cache
+        served           empty; made when F1 has served the session
         extra/<name>     the feeds fetched beside it
         pending.json     written last: everything else a snapshot records
 
@@ -28,14 +29,28 @@ and a run finds each directory in one of three states.
   short, by a kill, a full disk or a crash, at any point up to the last. It
   is fetched again into the same directory. FastF1 reads back from its cache
   whatever had arrived and asks F1 only for the rest, so a session that was
-  fetched in full and could not be written down costs F1 nothing more. This
-  is done once for a fetch. One that is cut short a second time is let go,
-  and its session waits its turn like any other that failed: finishing what
-  was started must not become the thing every run begins with and dies in.
+  fetched in full and could not be written down costs F1 nothing more.
 * Somebody holds ``.fetching``: another run is at it, and it is left alone.
   The lock is the operating system's and goes with the process that held
   it, so no fetch is taken for abandoned by its age, and none for alive by
   a file a dead run left.
+
+How often a fetch that was cut short is finished depends on whether F1 is
+known to have served the session, which is what ``served`` says.
+
+* Without it, once. A fetch that is cut short a second time is let go, and
+  its session waits its turn like any other that failed: finishing what was
+  started must not become the thing every run begins with and dies in. What
+  is let go is part of a session, as it is when a fetch fails.
+* With it, on every run until it is written down, and nothing the program
+  does removes it. F1 served that session once and may not serve the same
+  again, and finishing it is a matter of reading it back, which costs
+  seconds. A disk that is still full, or anything else that stops it a
+  second time and a third, leaves it where it is for someone to look at;
+  its session is not asked of F1 again meanwhile.
+
+``served`` is an empty file because the commonest reason a fetch cannot be
+written down is a disk with no room, and an empty file needs none.
 
 A fetch is for the store it was started for. A run against another store
 neither uploads it nor finishes it.
@@ -61,6 +76,7 @@ from f1data.store import _try_lock, _unlock
 
 INTENT_NAME = "intent.json"
 PENDING_NAME = "pending.json"
+SERVED_NAME = "served"
 CACHE_DIRECTORY = "cache"
 EXTRA_DIRECTORY = "extra"
 _FETCHING_LOCK = ".fetching"
@@ -123,6 +139,8 @@ class Unfinished:
     started_at: datetime
     # How many times a run has already set out to finish it.
     resumes: int = 0
+    # F1 is known to have served the session: a fetch of it has run to its end.
+    served: bool = False
     # The calendar entry's start, when the fetch was planned from the
     # calendar: what the note of its outcome is filed under.
     start_time_utc: str | None = None
@@ -199,32 +217,38 @@ def keep(directory: Path, fetched: FetchedSession, fetched_at: datetime, snapsho
 def waiting(root: Path, store: str | None = None) -> list[Spooled]:
     """Every whole fetch in the spool, oldest first; with ``store``, those made for it.
 
-    One whose record cannot be read is left where it is.
+    One whose record cannot be read is left where it is (``unreadable``).
     """
     found: list[Spooled] = []
     for directory in _directories(root):
+        if not (directory / PENDING_NAME).is_file():
+            continue
         try:
-            payload = json.loads((directory / PENDING_NAME).read_text(encoding="utf-8"))
-            if payload["schema_version"] != _SCHEMA_VERSION:
-                continue
-            if store is not None and payload["store"] != store:
-                continue
-            fetched = FetchedSession(
-                session=None,
-                identity=SessionIdentity.from_json(payload["identity"]),
-                coverage=dict(payload["coverage"]),
-                cache_dir=directory / CACHE_DIRECTORY,
-                http=_Requests(dict(payload["requests_by_host"])),  # type: ignore[arg-type]
-                attempts=int(payload["attempts"]),
-                versions=dict(payload["versions"]),
-                extras={name: (directory / EXTRA_DIRECTORY / name).read_bytes() for name in payload["extras"]},
-                feed_status=dict(payload["feed_status"]),
-            )
-            fetched_at = datetime.strptime(payload["fetched_at"], _STAMP).replace(tzinfo=timezone.utc)
-            found.append(Spooled(directory, fetched, fetched_at, str(payload["snapshot_id"]), str(payload["store"])))
+            spooled = _whole(directory)
         except Exception:
             continue
+        if store is None or spooled.store == store:
+            found.append(spooled)
     return found
+
+
+def _whole(directory: Path) -> Spooled:
+    payload = json.loads((directory / PENDING_NAME).read_text(encoding="utf-8"))
+    if payload["schema_version"] != _SCHEMA_VERSION or not isinstance(payload["store"], str):
+        raise ValueError(f"{directory} is not a fetch as this version writes one down")
+    fetched = FetchedSession(
+        session=None,
+        identity=SessionIdentity.from_json(payload["identity"]),
+        coverage=dict(payload["coverage"]),
+        cache_dir=directory / CACHE_DIRECTORY,
+        http=_Requests(dict(payload["requests_by_host"])),  # type: ignore[arg-type]
+        attempts=int(payload["attempts"]),
+        versions=dict(payload["versions"]),
+        extras={name: (directory / EXTRA_DIRECTORY / name).read_bytes() for name in payload["extras"]},
+        feed_status=dict(payload["feed_status"]),
+    )
+    fetched_at = datetime.strptime(payload["fetched_at"], _STAMP).replace(tzinfo=timezone.utc)
+    return Spooled(directory, fetched, fetched_at, str(payload["snapshot_id"]), payload["store"])
 
 
 def unfinished(root: Path, store: str | None = None) -> list[Unfinished]:
@@ -234,28 +258,49 @@ def unfinished(root: Path, store: str | None = None) -> list[Unfinished]:
     """
     found: list[Unfinished] = []
     for directory in _directories(root):
-        if (directory / PENDING_NAME).is_file():
+        if (directory / PENDING_NAME).is_file() or not (directory / INTENT_NAME).is_file():
             continue
         try:
-            intent = _intent(directory)
-            if store is not None and intent["store"] != store:
-                continue
-            found.append(
-                Unfinished(
-                    directory=directory,
-                    year=int(intent["year"]),
-                    event=intent["event"] if isinstance(intent["event"], (int, str)) else str(intent["event"]),
-                    session_type=str(intent["session_type"]),
-                    store=str(intent["store"]),
-                    started_at=datetime.strptime(intent["started_at"], _STAMP).replace(tzinfo=timezone.utc),
-                    resumes=int(intent.get("resumes") or 0),
-                    start_time_utc=intent.get("start_time_utc")
-                    if isinstance(intent.get("start_time_utc"), str)
-                    else None,
-                )
-            )
+            started = _started(directory)
         except Exception:
             continue
+        if store is None or started.store == store:
+            found.append(started)
+    return found
+
+
+def _started(directory: Path) -> Unfinished:
+    intent = _intent(directory)
+    return Unfinished(
+        directory=directory,
+        year=int(intent["year"]),
+        event=intent["event"] if isinstance(intent["event"], (int, str)) else str(intent["event"]),
+        session_type=str(intent["session_type"]),
+        store=intent["store"],
+        started_at=datetime.strptime(intent["started_at"], _STAMP).replace(tzinfo=timezone.utc),
+        resumes=int(intent.get("resumes") or 0),
+        served=(directory / SERVED_NAME).is_file(),
+        start_time_utc=intent.get("start_time_utc") if isinstance(intent.get("start_time_utc"), str) else None,
+    )
+
+
+def unreadable(root: Path) -> list[Path]:
+    """The directories that are a fetch by the record in them, where that record cannot be read.
+
+    Nothing is done with one, since nothing is known of it: not which
+    session it is of, nor which store it is for. A run names them, and the
+    session of each is fetched again in its turn like any the spool does not
+    hold.
+    """
+    found: list[Path] = []
+    for directory in _directories(root):
+        try:
+            if (directory / PENDING_NAME).is_file():
+                _whole(directory)
+            elif (directory / INTENT_NAME).is_file():
+                _started(directory)
+        except Exception:
+            found.append(directory)
     return found
 
 
@@ -263,6 +308,11 @@ def note_resumed(directory: Path) -> None:
     """Write into a cut-short fetch that a run has set out to finish it, before it does."""
     intent = _intent(directory)
     _write_whole(Path(directory) / INTENT_NAME, {**intent, "resumes": int(intent.get("resumes") or 0) + 1})
+
+
+def note_served(directory: Path) -> None:
+    """Mark a fetch as one F1 has served, when a fetch of it has run to its end and before anything else is written."""
+    (Path(directory) / SERVED_NAME).touch()
 
 
 @contextmanager
@@ -280,7 +330,7 @@ def uploading(directory: Path) -> Iterator[bool]:
 
 
 def discard(directory: Path) -> None:
-    """Remove a fetch that is in the archive, or one F1 would not serve."""
+    """Remove a fetch that is in the archive, or one F1 did not serve."""
     shutil.rmtree(directory, ignore_errors=True)
 
 
