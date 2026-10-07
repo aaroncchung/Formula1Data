@@ -172,11 +172,14 @@ function flagAt(flags: ReadonlyArray<boolean | null> | undefined, position: numb
 
 /**
  * Whether a lap is one to open a comparison on: timed accurately, not
- * deleted by the stewards, and neither into nor out of the pits. It has to
- * be known to be accurate; a lap nothing is known about is not clean.
+ * deleted by the stewards, and neither into nor out of the pits.
+ *
+ * All four have to be known. A lap whose deletion or pit flag is null may be
+ * a deleted lap or a pit lap for all the index says, and calling it clean
+ * would be saying something nobody recorded.
  */
 export function isCleanLap(lap: TelemetryLapChoice): boolean {
-  return lap.is_accurate === true && lap.is_deleted !== true && lap.is_pit_in_lap !== true && lap.is_pit_out_lap !== true;
+  return lap.is_accurate === true && lap.is_deleted === false && lap.is_pit_in_lap === false && lap.is_pit_out_lap === false;
 }
 
 /** What a lap menu says of a lap besides its time: "deleted", "pit in", "pit out". */

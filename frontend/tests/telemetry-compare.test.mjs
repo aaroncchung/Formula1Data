@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { telemetryRows } from "../src/lib/chart-utils.ts";
@@ -133,11 +134,183 @@ test("a sample of B at exactly A's distance is read as it is", () => {
   assert.deepEqual(comparison.delta_time_ms, [0, 100]);
 });
 
-test("a car standing still has several samples at one distance, and is read at the last of them", () => {
+// ---------------------------------------------------------------------------
+// Standing still
+// ---------------------------------------------------------------------------
+
+// Bearman's lap 30 of the 2026 Canadian GP, as pipeline 9 published it: the
+// sixty samples from the last metres into his pit box to the first metres
+// out of it. Fifty-two of them are at 4117.8 m, the car standing for 23
+// seconds, and the one after those is at 4117.7 m: the distance steps back a
+// tenth of a metre as the car is released.
+const BEARMAN = JSON.parse(readFileSync(new URL("./fixtures/telemetry-11291-BEA-lap-30.json", import.meta.url), "utf8"));
+const CHANNELS = ["speed", "throttle", "brake", "rpm", "gear"];
+
+// Looked up as published, the sample at 4117.7 m was found between the two
+// samples on the way in, 4117.4 m and 4117.8 m: the lap was 4.15 km/h and
+// 23,416.3 ms apart from itself there, and wrong at fifty other samples.
+test("a lap compared with itself is the same lap at every sample, through a pit stop", () => {
+  const lap30 = BEARMAN.lap;
+  const released = lap30.time_ms.indexOf(123_521);
+  assert.deepEqual(lap30.distance_m.slice(released - 3, released + 2), [4117.8, 4117.8, 4117.8, 4117.7, 4118.7]);
+  assert.equal(lap30.speed_kph[released], 0);
+
+  const comparison = compare(lap30, lap30);
+
+  assert.equal(comparison.distance_m.length, BEARMAN.sample_count);
+  assert.deepEqual(comparison.delta_time_ms, lap30.time_ms.map(() => 0));
+  assert.deepEqual(comparison.delta_speed_kph, lap30.time_ms.map(() => 0));
+  for (const channel of CHANNELS) {
+    assert.deepEqual(comparison[`${channel}_b`], comparison[`${channel}_a`], channel);
+  }
+  assert.deepEqual(comparison.speed_a, lap30.speed_kph);
+  assert.deepEqual(comparison.rpm_a, lap30.rpm);
+  // The sample that was 23 seconds from itself.
+  assert.deepEqual(
+    [comparison.speed_a[released], comparison.speed_b[released], comparison.delta_time_ms[released]],
+    [0, 0, 0]
+  );
+});
+
+test("a lap's distance is read as the furthest the car had got, so it never goes down", () => {
+  const comparison = compare(BEARMAN.lap, BEARMAN.lap);
+  const released = BEARMAN.lap.time_ms.indexOf(123_521);
+
+  assert.equal(comparison.distance_m[released], 4117.8);
+  assert.deepEqual([...comparison.distance_m].sort((left, right) => left - right), comparison.distance_m);
+  // The same for a lap it is compared with: a place a tenth of a metre back
+  // is not looked for on the way in.
+  const a = lap(3, [[0, 0, 200], [1_000, 100, 200], [2_000, 200, 200], [3_000, 300, 200]]);
+  const b = lap(2, [[0, 0, 200], [1_000, 100, 60], [9_000, 99.9, 0], [10_000, 200, 200], [11_000, 300, 200]]);
+  assert.deepEqual(compare(a, b).delta_time_ms, [0, 0, 8_000, 8_000]);
+});
+
+/**
+ * A lap of 1,000 m at 100 km/h with a stop at 500 m: there after 5 s, away
+ * again `stopMs` later, with a sample every second while it stands.
+ */
+function lapWithStop(number, stopMs) {
+  const standing = Array.from({ length: stopMs / 1_000 + 1 }, (_, second) => [5_000 + second * 1_000, 500, 0]);
+  return lap(number, [[0, 0, 100], [2_500, 250, 100], ...standing, [7_500 + stopMs, 750, 100], [10_000 + stopMs, 1_000, 100]]);
+}
+
+test("two cars standing at one place are compared moment for moment of the stop, and by the difference afterwards", () => {
+  const long = lapWithStop(1, 10_000);
+  const short = lapWithStop(2, 4_000);
+
+  // A stands for ten seconds and B for four. For four seconds they are level;
+  // then B is away, and A loses a second for each second it still stands.
+  assert.deepEqual(compare(long, short).delta_time_ms, [0, 0, 0, 0, 0, 0, 0, -1_000, -2_000, -3_000, -4_000, -5_000, -6_000, -6_000, -6_000]);
+  // The other way about, A is away after four seconds with B still standing:
+  // level while A stands, and B six seconds behind from the next place on.
+  assert.deepEqual(compare(short, long).delta_time_ms, [0, 0, 0, 0, 0, 0, 0, 6_000, 6_000]);
+});
+
+test("a car standing where the other drives through is read as it arrives, and its stop is in the delta after", () => {
+  const through = lap(1, [[0, 0, 100], [2_500, 250, 100], [5_000, 500, 100], [7_500, 750, 100], [10_000, 1_000, 100]]);
+  const stopped = lapWithStop(2, 4_000);
+
+  // A passes 500 m once. B reached it at the same moment, and left four seconds later.
+  assert.deepEqual(compare(through, stopped).delta_time_ms, [0, 0, 0, 4_000, 4_000]);
+  assert.deepEqual(compare(through, stopped).speed_b, [100, 100, 0, 100, 100]);
+  // And a car standing where the other does not: it falls behind while it stands.
+  assert.deepEqual(compare(stopped, through).delta_time_ms, [0, 0, 0, -1_000, -2_000, -3_000, -4_000, -4_000, -4_000]);
+});
+
+test("a car standing at the start of a lap is compared from the moment it was first there", () => {
   const a = lap(3, [[0, 0, 200], [1_000, 100, 200]]);
   const b = lap(2, [[0, 0, 0], [500, 0, 0], [900, 0, 60], [1_900, 100, 200]]);
 
-  assert.deepEqual(compare(a, b).delta_time_ms, [900, 900]);
+  // B stood at the line for 900 ms. A was not standing, so B is read as it
+  // was first there, and the time it stood is in the delta at the next place.
+  assert.deepEqual(compare(a, b).delta_time_ms, [0, 900]);
+  assert.deepEqual(compare(a, b).speed_b, [0, 200]);
+});
+
+// A lap with no standstill is read exactly as before: this is the plain
+// interpolation, written out again.
+test("laps that never stand still are compared as they always were", () => {
+  const samplesOf = (count, pace, wobble) =>
+    Array.from({ length: count }, (_, index) => [
+      Math.round(index * pace + wobble * Math.sin(index)),
+      Number((index * 14.3 + wobble * 0.01 * Math.sin(index * 1.7)).toFixed(1)),
+      200 + (index % 7) * 9
+    ]);
+  const a = lap(3, samplesOf(40, 250, 20));
+  const b = lap(2, samplesOf(37, 271, 30));
+  const scale = b.distance_m.at(-1) / a.distance_m.at(-1);
+  const plainly = (channel) =>
+    a.distance_m.map((distance, index) => {
+      const place = index === a.distance_m.length - 1 ? b.distance_m.at(-1) : distance * scale;
+      let low = 0;
+      while (low < b.distance_m.length - 1 && b.distance_m[low + 1] <= place) {
+        low += 1;
+      }
+      if (b.distance_m[low] === place) {
+        return b[channel][low];
+      }
+      const share = (place - b.distance_m[low]) / (b.distance_m[low + 1] - b.distance_m[low]);
+      return b[channel][low] + (b[channel][low + 1] - b[channel][low]) * share;
+    });
+
+  const comparison = compare(a, b);
+
+  assert.deepEqual(comparison.speed_b, plainly("speed_kph"));
+  assert.deepEqual(comparison.delta_time_ms, plainly("time_ms").map((time, index) => Math.round((time - a.time_ms[index]) * 10) / 10));
+  assert.deepEqual(comparison.distance_m, a.distance_m);
+});
+
+// ---------------------------------------------------------------------------
+// A channel that says nothing of a sample
+// ---------------------------------------------------------------------------
+
+// The schema lets a channel be shorter than the lap's clock. Read past its
+// end, a brake was "off" and a DRS flap "closed" where nothing said so.
+test("a channel with no entry for a sample has no value there, not a zero", () => {
+  const samples = [[0, 0, 200], [1_000, 100, 210], [2_000, 200, 220]];
+  const short = lap(3, samples, { brake: [true], drs: [12, 12], speed_kph: [200, 210], gear: [7], rpm: [], throttle_pct: [100, 90] });
+  const whole = lap(2, samples, { brake: [true, true, true], drs: [12, 12, 12] });
+
+  const comparison = compare(short, whole);
+
+  assert.deepEqual(comparison.brake_a, [1, null, null]);
+  assert.deepEqual(comparison.drs_a, [1, 1, null]);
+  assert.deepEqual(comparison.speed_a, [200, 210, null]);
+  assert.deepEqual(comparison.gear_a, [7, null, null]);
+  assert.deepEqual(comparison.rpm_a, [null, null, null]);
+  assert.deepEqual(comparison.throttle_a, [100, 90, null]);
+  // What cannot be known of one lap is not known of the difference either.
+  assert.deepEqual(comparison.delta_speed_kph, [0, 0, null]);
+  // The lap that has its channels is read in full, and the clocks still compare.
+  assert.deepEqual(comparison.brake_b, [1, 1, 1]);
+  assert.deepEqual(comparison.delta_time_ms, [0, 0, 0]);
+  assert.deepEqual(telemetryRows(comparison).map((row) => [row.brakeA, row.drsA]), [[1, 1], [null, 1], [null, null]]);
+});
+
+test("a short channel of the lap that is looked up is unknown too, between samples as at them", () => {
+  const a = lap(3, [[0, 0, 200], [1_000, 50, 200], [2_000, 100, 200], [3_000, 150, 200], [4_000, 200, 200]]);
+  const b = lap(2, [[0, 0, 100], [2_000, 100, 120], [4_000, 200, 140]], { brake: [false, true], speed_kph: [100, 120], drs: [0] });
+
+  const comparison = compare(a, b);
+
+  // Half-way to a sample that has no speed, there is no speed to interpolate.
+  assert.deepEqual(comparison.speed_b, [100, 110, 120, null, null]);
+  // Taken from the nearer sample: known until the nearer one is the one without.
+  assert.deepEqual(comparison.brake_b, [0, 1, 1, null, null]);
+  assert.deepEqual(comparison.drs_b, [0, null, null, null, null]);
+});
+
+test("a lap whose distances stop short of its clock is compared over the samples that have both", () => {
+  const whole = lap(3, [[0, 0, 200], [1_000, 100, 210], [2_000, 200, 220]]);
+  const cut = { ...whole, distance_m: [0, 100] };
+
+  // The third sample has a time and no place, so it is nowhere to be drawn or looked up.
+  const comparison = compare(cut, cut);
+  assert.deepEqual(comparison.distance_m, [0, 100]);
+  assert.deepEqual(comparison.speed_a, [200, 210]);
+  assert.deepEqual(comparison.delta_time_ms, [0, 0]);
+  // Against the whole lap, its 100 m are the whole lap's 200 m: laps are laid over each other by share.
+  assert.deepEqual(compare(whole, cut).delta_time_ms, [0, -500, -1_000]);
 });
 
 // ---------------------------------------------------------------------------
