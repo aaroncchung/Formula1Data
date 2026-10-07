@@ -39,7 +39,9 @@ export function TelemetryLaps({ view, telemetry }: { view: SessionView; telemetr
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-400">
-        {laps.length.toLocaleString("en-US")} laps of {drivers} {drivers === 1 ? "driver" : "drivers"} have telemetry.
+        {/* One string. Written as text after the count, and running on to the next line, the build
+            dropped the space in front of it and the page read "22 drivershave telemetry". */}
+        {`${laps.length.toLocaleString("en-US")} laps of ${drivers} ${drivers === 1 ? "driver" : "drivers"} have telemetry.`}{" "}
         Pick any two to compare. A driver&apos;s laps are one file of about a megabyte, loaded the first time one of
         them is compared.
       </p>

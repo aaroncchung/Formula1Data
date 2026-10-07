@@ -25,11 +25,7 @@ export function TyreFitTable({ degradation, colors }: { degradation: TyreDegrada
         </p>
         {/* The limits a fit was held to are the generation's own, so they are quoted and not repeated from memory. */}
         <p className="mt-1 text-xs text-slate-500">
-          Fitted by {lowerFirst(model.method)}, over stints of at least {model.minimum_laps} clean laps. A rate is
-          reported when the slope&apos;s standard error is within {formatNumber(model.max_slope_standard_error_ms_per_lap, 0)}{" "}
-          ms/lap or {formatNumber(model.max_slope_relative_standard_error * 100, 0)}% of the slope. The fuel correction
-          is {formatNumber(model.race_fuel_correction_ms_per_lap, 0)} ms/lap in a race and{" "}
-          {formatNumber(model.sprint_fuel_correction_ms_per_lap, 0)} ms/lap in a sprint.
+          {modelNote(model)}
         </p>
       </div>
       <DataTable
@@ -52,6 +48,16 @@ export function TyreFitTable({ degradation, colors }: { degradation: TyreDegrada
       <AnalysisCaveats caveats={degradation.caveats} />
     </div>
   );
+}
+
+/** How the fits were made and what they were held to, in the generation's own figures. */
+function modelNote(model: TyreDegradation["model"]): string {
+  const whole = (value: number) => formatNumber(value, 0);
+  return [
+    `Fitted by ${lowerFirst(model.method)}, over stints of at least ${model.minimum_laps} clean laps.`,
+    `A rate is reported when the slope's standard error is within ${whole(model.max_slope_standard_error_ms_per_lap)} ms/lap or ${whole(model.max_slope_relative_standard_error * 100)}% of the slope.`,
+    `The fuel correction is ${whole(model.race_fuel_correction_ms_per_lap)} ms/lap in a race and ${whole(model.sprint_fuel_correction_ms_per_lap)} ms/lap in a sprint.`
+  ].join(" ");
 }
 
 /** The method's name as part of a sentence. */

@@ -212,8 +212,7 @@ function TrackMap({ comparison, layout }: { comparison: TelemetryComparison; lay
       <div className="rounded-md border border-dashed border-line bg-carbon/30 p-8 text-center">
         <div className="text-sm font-bold text-white">Track trace unavailable</div>
         <p className="mt-2 text-xs leading-5 text-slate-500">
-          {comparison.driver_a.driver_code}&apos;s lap {comparison.driver_a.lap_number} was published without usable
-          position data.
+          {`${comparison.driver_a.driver_code}'s lap ${comparison.driver_a.lap_number} was published without usable position data.`}
         </p>
       </div>
     );
