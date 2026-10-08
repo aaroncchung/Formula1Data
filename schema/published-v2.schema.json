@@ -69,6 +69,17 @@
       "title": "AnalysedCorner",
       "type": "object"
     },
+    "Braking": {
+      "description": "What F1's car feed shows of a driver's braking for a corner.",
+      "enum": [
+        "seen",
+        "none",
+        "began_unread",
+        "unread"
+      ],
+      "title": "Braking",
+      "type": "string"
+    },
     "CarPerformance": {
       "additionalProperties": false,
       "description": "analysis/car-performance.json.",
@@ -529,10 +540,6 @@
           ],
           "description": "Milliseconds."
         },
-        "brake_known": {
-          "description": "False where F1's car feed has no brake reading for part of the approach to the corner, so that where the driver began to brake, or whether they braked at all, is not known. The brake point and the figures counted from it are then null, which is not word that the driver did not brake.",
-          "type": "boolean"
-        },
         "brake_start_m": {
           "anyOf": [
             {
@@ -543,7 +550,11 @@
               "type": "null"
             }
           ],
-          "description": "Null where the driver did not brake for the corner, and where brake_known is false."
+          "description": "Null unless braking is seen: the driver did not brake for the corner, or where they began to is not known."
+        },
+        "braking": {
+          "$ref": "#/$defs/Braking",
+          "description": "seen: the driver braked, and the feed shows it from where it began. none: the brake was read all the way into the corner and was not on. began_unread: the driver braked, and the feed has no brake reading where it began, so the brake point and what is counted from it are null. unread: the feed shows no braking and has no brake reading for part of the approach, so whether the driver braked is not known."
         },
         "braking_distance_m": {
           "anyOf": [
@@ -607,7 +618,7 @@
         "exit_speed_kph",
         "speed_loss_kph",
         "brake_duration_ms",
-        "brake_known"
+        "braking"
       ],
       "title": "CornerDriver",
       "type": "object"

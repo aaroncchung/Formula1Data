@@ -15,6 +15,10 @@
  */
 export type CornerSource = "official" | "inferred";
 /**
+ * seen: the driver braked, and the feed shows it from where it began. none: the brake was read all the way into the corner and was not on. began_unread: the driver braked, and the feed has no brake reading where it began, so the brake point and what is counted from it are null. unread: the feed shows no braking and has no brake reading for part of the approach, so whether the driver braked is not known.
+ */
+export type Braking = "seen" | "none" | "began_unread" | "unread";
+/**
  * analysis/lap-times.json: each driver's timed laps, ready to chart.
  */
 export type LapTimes = LapTimeSeries[];
@@ -125,6 +129,13 @@ export type TelemetryChannel =
  * weather.json: every weather sample F1 sent, about one a minute.
  */
 export type Weather = WeatherSample[];
+/**
+ * What F1's car feed shows of a driver's braking for a corner.
+ *
+ * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
+ * via the `definition` "Braking".
+ */
+export type Braking1 = "seen" | "none" | "began_unread" | "unread";
 /**
  * drivers.json: everyone in F1's driver list or the classification.
  *
@@ -340,13 +351,10 @@ export interface CornerDriver {
    */
   brake_duration_ms: number | null;
   /**
-   * False where F1's car feed has no brake reading for part of the approach to the corner, so that where the driver began to brake, or whether they braked at all, is not known. The brake point and the figures counted from it are then null, which is not word that the driver did not brake.
-   */
-  brake_known: boolean;
-  /**
-   * Null where the driver did not brake for the corner, and where brake_known is false.
+   * Null unless braking is seen: the driver did not brake for the corner, or where they began to is not known.
    */
   brake_start_m: number | null;
+  braking: Braking;
   /**
    * Metres.
    */

@@ -294,6 +294,14 @@ def calculate_corner_analysis(
         caveats.append(
             "The laps compared have no position data, so the corners cannot be placed on a map."
         )
+    elif unplaced := sum(corner["x"] is None for corner in inferred):
+        # One lap with positions for part of its length places the corners it
+        # reached: in the 2026 Monaco race, built without its circuit file,
+        # that is one corner of nine, and nothing was said of the other eight.
+        caveats.append(
+            f"{unplaced} of the {len(inferred)} corners cannot be placed on a map: the laps compared "
+            "have no position data there."
+        )
     caveats.extend(_brake_unread_caveat(inferred))
     return {
         "session_id": session_id,
@@ -305,15 +313,33 @@ def calculate_corner_analysis(
 
 
 def _brake_unread_caveat(corners: list[dict[str, Any]]) -> list[str]:
-    """What to say when a driver's braking for a corner is not known, or nothing when every one is."""
-    unread = sorted({row["driver_code"] for corner in corners for row in corner["drivers"] if not row["brake_known"]})
-    if not unread:
-        return []
-    return [
-        f"F1's car feed has no brake reading on the approach to a corner for: {', '.join(unread)}. Where "
-        "the driver began to brake there is not known, nor whether they braked: the brake point is "
-        "left out and marked as not known, which is not a driver who did not brake."
-    ]
+    """What to say of the corners whose braking F1's feed does not show whole, or nothing when it shows every one.
+
+    Two different things, said apart. A driver seen braking from the sample
+    the reading comes back on did brake, from somewhere before it. A driver
+    not seen braking at all, with part of the approach unread, may have or
+    may not.
+    """
+
+    def drivers(kind: str) -> str:
+        return ", ".join(
+            sorted({row["driver_code"] for corner in corners for row in corner["drivers"] if row["braking"] == kind})
+        )
+
+    caveats = []
+    if began := drivers("began_unread"):
+        caveats.append(
+            f"F1's car feed has no brake reading where the braking for a corner began for: {began}. The "
+            "driver braked, from a point that is not known: the brake point and what is counted from it "
+            "are left out."
+        )
+    if unread := drivers("unread"):
+        caveats.append(
+            f"F1's car feed has no brake reading on part of the approach to a corner, and shows no "
+            f"braking for it, for: {unread}. Whether the driver braked there is not known, which is not "
+            "a driver who did not brake."
+        )
+    return caveats
 
 
 def _has_position(rows: list[dict[str, Any]]) -> bool:
@@ -331,7 +357,7 @@ def _corner_driver_row(driver: str, event: dict[str, Any]) -> dict[str, Any]:
         "exit_speed_kph": _round_or_none(event.get("exit_speed_kph"), 1),
         "speed_loss_kph": _round_or_none(event.get("speed_loss_kph"), 1),
         "brake_duration_ms": _round_or_none(event.get("brake_duration_ms"), 1),
-        "brake_known": bool(event.get("brake_known", True)),
+        "braking": event["braking"],
     }
 
 
@@ -408,8 +434,9 @@ def _official_corner_rows(
                 # All the way in is from where the corner's own stretch of
                 # track begins, half-way from the corner before: braking for
                 # this corner that was seen would have been looked for there.
-                if event is not None and _brake_unread(rows, start, event["apex_distance_m"]):
-                    event["brake_known"] = False
+                if event is not None:
+                    unread = _brake_unread(rows, start, event["apex_distance_m"])
+                    event["braking"] = "unread" if unread else "none"
             if event is not None:
                 by_corner[index][driver] = _corner_driver_row(driver, event)
     if not any(placed_at):
@@ -1124,7 +1151,7 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
             merged.append(run)
 
     events = []
-    for start_index, end_index in merged:
+    for position, (start_index, end_index) in enumerate(merged):
         # A run that begins straight after a sample with no brake reading
         # began somewhere in the stretch with none: its first sample is where
         # the reading came back, not where the driver began to brake.
@@ -1132,9 +1159,15 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
         ended_unread = end_index + 1 < len(rows) and rows[end_index + 1].get("brake", False) is None
         start_distance = rows[start_index]["distance_m"]
         search_end = rows[end_index]["distance_m"] + 250
+        # The slowest point of a braking is before the next braking begins.
+        # Looked for 250 m on regardless, Albon's braking for turn 12 on lap
+        # 36 of the 2026 Australian GP, from 204 km/h to 188, found the 108
+        # km/h of turn 13: turn 12 was published as not braked for, and turn
+        # 13 with a brake point 287 m before it.
+        last_index = merged[position + 1][0] if position + 1 < len(merged) else len(rows)
         window = [
             row
-            for row in rows[start_index:]
+            for row in rows[start_index:last_index]
             if row["distance_m"] <= search_end and _number(row.get("speed_kph"))
         ]
         if not window or not _number(rows[start_index].get("speed_kph")):
@@ -1161,7 +1194,7 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
                 "brake_duration_ms": end_time - start_time
                 if end_time is not None and start_time is not None and not began_unread and not ended_unread
                 else None,
-                "brake_known": not began_unread,
+                "braking": "began_unread" if began_unread else "seen",
                 "x": _float(apex.get("x")),
                 "y": _float(apex.get("y")),
             }

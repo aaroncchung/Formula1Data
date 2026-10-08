@@ -63,9 +63,46 @@ def test_gaslys_turn_nine_is_not_published_as_a_corner_he_did_not_brake_for(tmp_
     assert [row["lap_number"] for row in result["representative_laps"] if row["driver_code"] == "GAS"] == [56]
     turn_nine = next(corner for corner in result["corners"] if corner["corner_number"] == 9)
     gasly = next(row for row in turn_nine["drivers"] if row["driver_code"] == "GAS")
-    assert gasly["brake_known"] is False and gasly["brake_start_m"] is None
+    assert gasly["braking"] == "unread" and gasly["brake_start_m"] is None
     assert gasly["apex_speed_kph"] == 212.0
     # Nearly every row of the race has every reading, and says so.
     rows = [row for corner in result["corners"] for row in corner["drivers"]]
-    assert sum(row["brake_known"] for row in rows) > len(rows) * 0.95
-    assert "GAS" in result["caveats"][-1] and "no brake reading" in result["caveats"][-1]
+    assert sum(row["braking"] in ("seen", "none") for row in rows) > len(rows) * 0.95
+    assert "GAS" in result["caveats"][-1] and "Whether the driver braked there is not known" in result["caveats"][-1]
+
+
+def test_the_thirtieth_reviews_two_corners_of_the_same_race(tmp_path):
+    """Found by the thirtieth review (GPT-6.1 Sol, 2026-10-08, at 7960ca0), on the same race.
+
+    Albon's lap 36: a light braking for turn 12, from 204 km/h, took its
+    slowest point from the braking for turn 13 that follows it. Turn 12 was
+    published as not braked for, and turn 13 with turn 12's brake point.
+
+    Russell's lap 21: seen braking for turn 1 from the sample the brake's
+    reading comes back on. The analysis said of him that it is not known
+    whether he braked.
+    """
+    session, found, snapshot = recorded(tmp_path, AUSTRALIA_2026)
+    feed = read_raw_response(archive_store(), snapshot, CAR_FEED)
+
+    files = build_artifacts(session, snapshot.identity, None, found, measure_coverage(session, "R", found), feed)
+    result = json.loads(files["analysis/corner-analysis.json"])
+
+    def row(turn: int, driver: str) -> dict:
+        corner = next(corner for corner in result["corners"] if corner["corner_number"] == turn and not corner["letter"])
+        return next(row for row in corner["drivers"] if row["driver_code"] == driver)
+
+    assert [lap["lap_number"] for lap in result["representative_laps"] if lap["driver_code"] == "ALB"] == [36]
+    twelve, thirteen = row(12, "ALB"), row(13, "ALB")
+    assert (twelve["braking"], twelve["brake_start_m"], twelve["entry_speed_kph"]) == ("seen", 4296.3, 204.0)
+    # To 180 km/h, 73 m on: its own slowest point, before the next braking begins.
+    assert (twelve["apex_speed_kph"], twelve["braking_distance_m"]) == (180.0, 73.0)
+    assert (thirteen["braking"], thirteen["brake_start_m"], thirteen["entry_speed_kph"]) == ("seen", 4514.8, 199.0)
+    # Turn 13 had turn 12's brake point, 286.5 m before a slowest point of 108 km/h.
+    assert (thirteen["apex_speed_kph"], thirteen["braking_distance_m"]) == (88.0, 102.9)
+
+    russell = row(1, "RUS")
+    assert (russell["braking"], russell["brake_start_m"]) == ("began_unread", None)
+    said = " ".join(result["caveats"])
+    began = said[said.index("where the braking for a corner began for:") :].split(".")[0]
+    assert "RUS" in began and "The driver braked, from a point that is not known" in said

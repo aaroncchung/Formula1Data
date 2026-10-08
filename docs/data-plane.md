@@ -133,9 +133,11 @@ What holds for all of them:
   a marked stretch, most of them under two seconds; in the 2026 Hungarian GP
   it is 28% of the race. A "gear" over 8 is treated the same way: it is not
   a gear, and the lap has none there. In the corner analysis a driver's row
-  says whether its braking is known (`brake_known`): where the approach to a
-  corner has no brake reading, the brake point is left out as not known,
-  which is not a driver who did not brake.
+  says what the feed shows of its braking (`braking`): seen from where it
+  began; none, with the brake read all the way in; begun in a stretch with
+  no reading, so that the driver braked from a point that is not known; or
+  not seen, with part of the approach unread, so that whether the driver
+  braked is not known. Only the first has a brake point.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

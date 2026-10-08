@@ -66,10 +66,17 @@ export function cornerName(corner: Pick<AnalysedCorner, "corner_number" | "lette
  * Gasly into turn 9 on lap 56 of the 2026 Australian GP, from 311 km/h to
  * 218 with no reading, was shown as "No braking".
  */
-export function noBrakePoint(row: { brake_known?: boolean }): string {
-  // A generation from before the analysis said which has nothing here, and
-  // is read as it was: the brake was taken to have been read.
-  return row.brake_known === false ? "No brake reading" : "No braking";
+export function noBrakePoint(row: { braking?: string }): string {
+  switch (row.braking) {
+    case "unread":
+      return "No brake reading";
+    case "began_unread":
+      // Seen braking, from the sample the reading came back on: they braked, from somewhere before it.
+      return "Braked, point not known";
+    default:
+      // "none", and a generation from before the analysis said which, read as it was.
+      return "No braking";
+  }
 }
 
 /** What the corners of an analysis are, in a sentence, for the panel that lists them. */

@@ -96,7 +96,10 @@ FORMAT_VERSION = 2
 #  19  a "gear" over 8 from F1's feed is no gear; a corner whose approach has
 #      no brake reading says so, where it was a corner the driver "did not
 #      brake for"
-PIPELINE_VERSION = 19
+#  20  a braking's slowest point is looked for before the next braking
+#      begins, so one corner's braking is not given to the next; a corner
+#      row says what is seen of its braking, in four cases and not two
+PIPELINE_VERSION = 20
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

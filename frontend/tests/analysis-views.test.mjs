@@ -352,8 +352,10 @@ test("an inferred corner is a braking zone, and is not given a turn number", () 
 // brake reading for the 365 m before the corner, from 311 km/h to 218. The
 // row has no brake point, and the page said "No braking".
 test("a corner with no brake reading on the way in is not said to have been taken without braking", () => {
-  assert.equal(noBrakePoint({ brake_known: false }), "No brake reading");
-  assert.equal(noBrakePoint({ brake_known: true }), "No braking");
+  assert.equal(noBrakePoint({ braking: "unread" }), "No brake reading");
+  assert.equal(noBrakePoint({ braking: "none" }), "No braking");
+  // Seen braking from where the reading came back: he braked, and it is not said that he may not have.
+  assert.equal(noBrakePoint({ braking: "began_unread" }), "Braked, point not known");
   // A generation from before the analysis said which is read as it was.
   assert.equal(noBrakePoint({}), "No braking");
 });

@@ -151,20 +151,23 @@ class OfficialCornerTests(unittest.TestCase):
         result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
         first, kink, third = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, "A"), (3, None)))
 
-        self.assertIs(first["brake_known"], False)
+        self.assertEqual(first["braking"], "unread")
         for field in ("brake_start_m", "braking_distance_m", "entry_speed_kph", "speed_loss_kph", "brake_duration_ms"):
             self.assertIsNone(first[field], field)
         # What the speed shows of the corner is still there.
         self.assertEqual((first["apex_distance_m"], first["apex_speed_kph"]), (1000.0, 90.0))
         # A corner nobody braked for, with the brake read all the way, is known to be that.
-        self.assertIs(kink["brake_known"], True)
+        self.assertEqual(kink["braking"], "none")
         self.assertIsNone(kink["brake_start_m"])
         # And a corner that was braked for, with every reading, has its figures.
-        self.assertIs(third["brake_known"], True)
+        self.assertEqual(third["braking"], "seen")
         self.assertEqual(third["brake_start_m"], 2850.0)
         self.assertIn(
-            "F1's car feed has no brake reading on the approach to a corner for: AAA.", result["caveats"][-1]
+            "no brake reading on part of the approach to a corner, and shows no braking for it, for: AAA. "
+            "Whether the driver braked there is not known",
+            result["caveats"][-1],
         )
+        self.assertNotIn("The driver braked", " ".join(result["caveats"]))
 
     def test_the_reading_may_come_back_before_the_corner_with_the_braking_already_done(self):
         """As it was for Gasly: the brake is read again 50 m before the slowest point, and is off."""
@@ -180,7 +183,7 @@ class OfficialCornerTests(unittest.TestCase):
         # Nothing within 75 m of the corner lacks a reading, and none of it is
         # braking. The car still arrived 210 km/h slower than it set out.
         self.assertIsNone(first["brake_start_m"])
-        self.assertIs(first["brake_known"], False)
+        self.assertEqual(first["braking"], "unread")
         self.assertEqual(first["apex_speed_kph"], 90.0)
 
     def test_braking_that_is_first_seen_where_the_reading_comes_back_did_not_begin_there(self):
@@ -196,7 +199,12 @@ class OfficialCornerTests(unittest.TestCase):
 
         # The braking is found, by its slowest point. Where it began is not
         # 950 m, and nothing counted from there is given.
-        self.assertIs(first["brake_known"], False)
+        self.assertEqual(first["braking"], "began_unread")
+        # He braked, and it is said that he did: Russell into turn 1 of the
+        # 2026 Australian GP was said not to be known to have braked at all.
+        said = " ".join(result["caveats"])
+        self.assertIn("no brake reading where the braking for a corner began for: AAA. The driver braked", said)
+        self.assertNotIn("Whether the driver braked", said)
         self.assertEqual((first["apex_distance_m"], first["apex_speed_kph"]), (1000.0, 90.0))
         for field in ("brake_start_m", "braking_distance_m", "entry_speed_kph", "speed_loss_kph", "brake_duration_ms"):
             self.assertIsNone(first[field], field)
@@ -211,7 +219,7 @@ class OfficialCornerTests(unittest.TestCase):
 
         first = by_corner(calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS))[(1, None)]["AAA"]
 
-        self.assertIs(first["brake_known"], True)
+        self.assertEqual(first["braking"], "seen")
         self.assertEqual((first["brake_start_m"], first["entry_speed_kph"], first["apex_speed_kph"]), (850.0, 300.0, 90.0))
         # How long the brake was on is not known: it may have stayed on.
         self.assertIsNone(first["brake_duration_ms"])
@@ -226,10 +234,71 @@ class OfficialCornerTests(unittest.TestCase):
         plain = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), CORNERS)
 
         self.assertEqual(marked["corners"], plain["corners"])
-        self.assertTrue(all(row["brake_known"] for corner in plain["corners"] for row in corner["drivers"]))
+        self.assertEqual(
+            {row["braking"] for corner in plain["corners"] for row in corner["drivers"]}, {"seen", "none"}
+        )
         # And nothing is said of a brake that was read wherever it mattered.
         self.assertEqual(marked["caveats"], plain["caveats"])
         self.assertNotIn("no brake reading", " ".join(plain["caveats"]))
+
+    def test_inferred_corners_that_cannot_be_placed_on_a_map_are_counted(self):
+        """The 2026 Monaco race built without its circuit file: one corner of nine has a position."""
+        whole = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"))
+        part = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA", position_until=1_500))
+        none = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA", position=False))
+
+        self.assertEqual([corner["x"] is None for corner in part["corners"]], [False, True])
+        self.assertIn("1 of the 2 corners cannot be placed on a map", part["caveats"][-1])
+        self.assertIn("The laps compared have no position data, so the corners cannot be placed", none["caveats"][-1])
+        self.assertNotIn("position data", " ".join(whole["caveats"]))
+
+    def test_a_brakings_slowest_point_is_before_the_next_braking_begins(self):
+        """Albon's lap 36 of the 2026 Australian GP: a light braking for turn 12, and 180 m on a heavy one for turn 13.
+
+        The slowest point of a braking was looked for up to 250 m past where
+        the brake came off, whatever lay there. The first braking found the
+        second one's corner: turn 12 was published as not braked for, and
+        turn 13 with turn 12's brake point, 287 m before it.
+        """
+        rows, elapsed = [], 0.0
+        for step in range(301):
+            place = step * 10.0
+            speed, braking = 204.0, False
+            if 1_000 <= place <= 1_040:
+                speed, braking = 204.0 - 16.0 * (place - 1_000) / 40, True
+            elif 1_040 < place <= 1_070:
+                # Off the brake and still slowing, as a car is through a corner.
+                speed = 188.0 - 8.0 * (place - 1_040) / 30
+            elif 1_070 < place < 1_220:
+                speed = 180.0 + 19.0 * (place - 1_070) / 150
+            elif 1_220 <= place <= 1_290:
+                speed, braking = 199.0 - 91.0 * (place - 1_220) / 70, True
+            elif 1_290 < place <= 1_500:
+                speed = 108.0 + 96.0 * (place - 1_290) / 210
+            if step:
+                elapsed += 10.0 / (speed / 3.6) * 1000
+            rows.append(
+                {
+                    "driver_code": "AAA", "lap_number": 5, "distance_m": place, "relative_time_ms": elapsed,
+                    "speed_kph": speed, "brake": braking, "throttle_pct": 0 if braking else 100,
+                    "x": place * 10, "y": 0.0,
+                }
+            )
+        corners = [
+            {"number": 12, "letter": "", "x": 10_400.0, "y": 0.0, "distance_m": 1_040.0},
+            {"number": 13, "letter": "", "x": 12_900.0, "y": 0.0, "distance_m": 1_290.0},
+        ]
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=round(elapsed))], rows, corners)
+        twelve, thirteen = (by_corner(result)[key]["AAA"] for key in ((12, None), (13, None)))
+
+        self.assertEqual(twelve["braking"], "seen")
+        self.assertEqual((twelve["brake_start_m"], twelve["entry_speed_kph"]), (1000.0, 204.0))
+        # Its slowest point is past where the brake came off, and short of the next braking.
+        self.assertEqual((twelve["apex_distance_m"], twelve["apex_speed_kph"]), (1070.0, 180.0))
+        self.assertEqual(thirteen["braking"], "seen")
+        self.assertEqual((thirteen["brake_start_m"], thirteen["entry_speed_kph"]), (1220.0, 199.0))
+        self.assertEqual((thirteen["apex_distance_m"], thirteen["apex_speed_kph"], thirteen["braking_distance_m"]), (1290.0, 108.0, 70.0))
 
     def test_without_official_corners_they_are_inferred_as_before_and_the_result_says_so(self):
         for corners in (None, [], [{"number": 1}], [{"x": 1.0, "y": 2.0, "distance_m": 3.0}]):

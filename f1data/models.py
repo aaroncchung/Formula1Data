@@ -170,6 +170,15 @@ class PitLossExclusion(str, Enum):
     TOO_FEW_BASELINE_LAPS = "too_few_baseline_laps"
 
 
+class Braking(str, Enum):
+    """What F1's car feed shows of a driver's braking for a corner."""
+
+    SEEN = "seen"
+    NONE = "none"
+    BEGAN_UNREAD = "began_unread"
+    UNREAD = "unread"
+
+
 class Confidence(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -924,7 +933,8 @@ class TrackDominance(Model):
 class CornerDriver(Model):
     driver_code: str
     brake_start_m: Decimal1 | None = Field(
-        description="Null where the driver did not brake for the corner, and where brake_known is false."
+        description="Null unless braking is seen: the driver did not brake for the corner, or where they "
+        "began to is not known."
     )
     apex_distance_m: Decimal1
     braking_distance_m: Decimal1 | None
@@ -933,11 +943,12 @@ class CornerDriver(Model):
     exit_speed_kph: Decimal1 | None
     speed_loss_kph: Decimal1 | None
     brake_duration_ms: Decimal1 | None
-    brake_known: bool = Field(
-        description="False where F1's car feed has no brake reading for part of the approach to the "
-        "corner, so that where the driver began to brake, or whether they braked at all, is not known. "
-        "The brake point and the figures counted from it are then null, which is not word that the "
-        "driver did not brake."
+    braking: Braking = Field(
+        description="seen: the driver braked, and the feed shows it from where it began. none: the brake "
+        "was read all the way into the corner and was not on. began_unread: the driver braked, and the "
+        "feed has no brake reading where it began, so the brake point and what is counted from it are "
+        "null. unread: the feed shows no braking and has no brake reading for part of the approach, so "
+        "whether the driver braked is not known."
     )
 
 
