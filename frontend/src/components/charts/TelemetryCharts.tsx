@@ -14,7 +14,7 @@ import {
 
 import { CornerMarks } from "@/components/session/CornerMarks";
 import { telemetryRows } from "@/lib/chart-utils";
-import { circuitLayout, cornersOnLap, layoutNote, trackMap } from "@/lib/circuit-layout";
+import { circuitLayout, cornerLines, layoutNote, trackMap } from "@/lib/circuit-layout";
 import type { CircuitLayout } from "@/lib/circuit-layout";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import type { Corners } from "@/lib/published/types";
@@ -64,7 +64,13 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
   const rows = telemetryRows(comparison);
   const layout = circuitLayout(corners);
   // The distance axis is lap A's own, so the corners are marked where lap A passes them.
-  const alongLap = cornersOnLap(layout, comparison.track, comparison.whole_a);
+  const lines = cornerLines(layout, comparison.track, {
+    whole: comparison.whole_a,
+    lengthM: comparison.distance_m.at(-1) ?? 0,
+    referenceLengthM: corners?.distance_source === "telemetry" ? (corners.reference_lap?.length_m ?? null) : null
+  });
+  const alongLap = lines.corners;
+  const lapA = `${comparison.driver_a.driver_code}'s lap`;
   const charts = comparison.drs_a || comparison.drs_b ? [...CHARTS, DRS_CHART] : CHARTS;
   const lapDelta = lapTimeDelta(comparison);
   // Each lap's own figures, not lap B's as it is read at lap A's places.
@@ -114,7 +120,9 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
                 <div className="text-sm font-bold text-white">{chart.title}</div>
                 <div className="text-[11px] uppercase tracking-wider text-slate-600">
                   {chart.corners && alongLap.length
-                    ? `Distance · numbered lines are the circuit's corners, where ${comparison.driver_a.driver_code}'s lap passes them`
+                    ? lines.by === "position"
+                      ? `Distance · numbered lines are the circuit's corners, where ${lapA} passes them`
+                      : `Distance · numbered lines are the circuit's corners by distance: ${lapA} has no position data, and they can be tens of metres out`
                     : "Distance"}
                 </div>
               </div>

@@ -112,14 +112,14 @@ def test_the_first_chicane_of_the_2026_italian_gp_was_braked_for_at_both_its_cor
 
 
 def test_a_corner_row_of_the_2026_austrian_gp_says_where_its_own_lap_has_the_corner(tmp_path):
-    """Stroll's lap 30 has turn 6 at 2,553.8 m; the lap the corners were placed on has it at 2,517.8 m."""
+    """Stroll's lap 30 has turn 6 at 2,553.7 m; the lap the corners were placed on has it at 2,517.8 m."""
     result = corner_analysis(tmp_path, AUSTRIA_2026)
 
     assert lap_of(result, "STR") == 30
     turn_six = next(corner for corner in result["corners"] if corner["corner_number"] == 6)
     stroll = rows_of(result, 6)["STR"]
     assert turn_six["distance_m"] == 2517.8
-    assert (stroll["corner_distance_m"], stroll["brake_start_m"], stroll["apex_distance_m"]) == (2553.8, 2424.9, 2567.7)
+    assert (stroll["corner_distance_m"], stroll["brake_start_m"], stroll["apex_distance_m"]) == (2553.7, 2424.9, 2567.7)
     # Every row of the race has one, and it is on that row's own lap: between where the driver braked and
     # where they were slowest, give or take the length of a corner.
     for corner in result["corners"]:

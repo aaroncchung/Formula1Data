@@ -153,12 +153,50 @@ const CORNER_REACH_M = 50;
 // taken for the corner. Laps disagree about distance by about 1%, which on
 // the longest circuit is 70 m.
 const CORNER_SEARCH_M = 200;
-// Two neighbouring points of a line further apart than this have a hole
-// between them, and nothing is placed on the line across it.
+// Two neighbouring points of a line further apart than this on the ground
+// have a hole between them, and nothing is placed on the line across it. The
+// analysis has the same figure.
 const LINE_STEP_M = 150;
 
 /** A place on the line a lap drove, with how far round that lap it is. */
 export type LinePoint = Point & { readonly distance_m: number };
+
+/** A corner on a lap's distance axis, and whether it was found where the lap's line passes it or put there by distance. */
+export type CornerLines = {
+  readonly by: "position" | "distance";
+  readonly corners: ReadonlyArray<{ readonly label: string; readonly distance_m: number }>;
+};
+
+/**
+ * The corner lines of a lap's distance axis.
+ *
+ * Where the lap has position data they are where its line passes each
+ * corner. A lap published with none has nothing to find a corner by: most
+ * laps of the 2026 Monaco GP are. Its corners are then put at the corner
+ * map's distances, which are along another lap and can be tens of metres
+ * out on this one, and `by` says so for the chart to say. A lap that went
+ * from line to line has them scaled to its own length, as the analysis does
+ * for such a lap; one that did not is not a lap long, and has only the
+ * corners before where it stops.
+ */
+export function cornerLines(
+  layout: CircuitLayout,
+  line: ReadonlyArray<LinePoint>,
+  lap: { readonly whole: boolean; readonly lengthM: number; readonly referenceLengthM: number | null }
+): CornerLines {
+  if (line.length > 0) {
+    return { by: "position", corners: cornersOnLap(layout, line, lap.whole) };
+  }
+  const scale =
+    lap.whole && lap.referenceLengthM !== null && lap.referenceLengthM > 0 && lap.lengthM > 0
+      ? lap.lengthM / lap.referenceLengthM
+      : 1;
+  const corners = layout.corners
+    .flatMap((corner) => (corner.distance_m === null ? [] : [{ label: corner.label, distance_m: corner.distance_m * scale }]))
+    .filter((corner) => corner.distance_m <= lap.lengthM)
+    .sort((left, right) => left.distance_m - right.distance_m);
+  return { by: "distance", corners };
+}
 
 /** One time a line comes within reach of a place: how near it comes, squared, and how far round the lap that is. */
 type Pass = { readonly off: number; readonly distance_m: number };
@@ -170,18 +208,20 @@ type Pass = { readonly off: number; readonly distance_m: number };
  * either.
  */
 function passesOf(line: ReadonlyArray<LinePoint>, at: Point, reach: number): Pass[] {
+  const step = (LINE_STEP_M * POSITION_UNITS_PER_METRE) ** 2;
   const passes: Pass[] = [];
   let nearest: Pass | null = null;
   for (let index = 0; index < line.length; index += 1) {
     const point = line[index];
     const next = line[index + 1];
-    const joined = next !== undefined && next.distance_m - point.distance_m <= LINE_STEP_M;
     let here: Pass = { off: (point.x - at.x) ** 2 + (point.y - at.y) ** 2, distance_m: point.distance_m };
-    if (joined) {
+    let joined = false;
+    if (next !== undefined) {
       const stepX = next.x - point.x;
       const stepY = next.y - point.y;
       const length = stepX ** 2 + stepY ** 2;
-      if (length > 0) {
+      joined = length <= step;
+      if (joined && length > 0) {
         // The place on the line between this sample and the next that is nearest.
         const share = Math.min(1, Math.max(0, ((at.x - point.x) * stepX + (at.y - point.y) * stepY) / length));
         const off = (point.x + share * stepX - at.x) ** 2 + (point.y + share * stepY - at.y) ** 2;

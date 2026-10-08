@@ -537,7 +537,13 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(placed, {"AAA": (1000.0, 1000.0), "BBB": (1050.0, 1050.0)})
         self.assertEqual(first["distance_m"], 1025.0)
 
-    def test_a_corner_not_braked_for_has_its_slowest_point_before_the_braking_for_the_next(self):
+    def test_a_braking_that_begins_past_a_corner_in_its_stretch_is_given_for_that_corner_too(self):
+        """A brake that goes on 3 m past turn 5 in Bahrain takes 33 km/h off the car in turn 5's stretch.
+
+        While the rule was that the brake is on before the corner, such a
+        row said "none" or "seen" by which side of the corner a sample fell.
+        """
+
         def profile(place):
             if place < 1_020:
                 return 300.0, False
@@ -550,15 +556,120 @@ class OfficialCornerTests(unittest.TestCase):
         result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(1_000, 1_150))
         kink, hairpin = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, None)))
 
-        # The brake goes on 20 m past the kink, in the kink's stretch of the
-        # lap. That is the braking for the hairpin, and the kink's slowest
-        # point is not 70 m into it.
-        self.assertEqual((kink["braking"], kink["brake_start_m"]), ("none", None))
-        self.assertEqual((kink["apex_distance_m"], kink["apex_speed_kph"]), (1000.0, 300.0))
+        # The row shows it as it is: the brake point is past the corner, and
+        # the slowest point is the slowest in the kink's stretch, at its end.
+        self.assertEqual((kink["braking"], kink["corner_distance_m"], kink["brake_start_m"]), ("seen", 1000.0, 1020.0))
+        self.assertEqual(kink["apex_distance_m"], 1070.0)
+        self.assertAlmostEqual(kink["apex_speed_kph"], 215.4, places=1)
         self.assertEqual(
             (hairpin["braking"], hairpin["brake_start_m"], hairpin["entry_speed_kph"], hairpin["apex_speed_kph"]),
             ("seen", 1020.0, 300.0, 80.0),
         )
+        self.assertIn("one that begins past a corner, in its stretch, is given for it", result["caveats"][1])
+
+    def test_a_braking_that_has_taken_little_off_the_car_by_the_end_of_a_corners_stretch_is_the_next_corners(self):
+        def profile(place):
+            if place < 1_070:
+                return 300.0, False
+            if place <= 1_150:
+                return between(place, 1_070, 1_150, 300, 80), True
+            return min(300.0, between(place, 1_150, 1_500, 80, 300)), False
+
+        rows, lap_time = driven(profile)
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(1_000, 1_150))
+        kink, hairpin = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, None)))
+
+        # The brake goes on at the last sample of the kink's stretch, which
+        # ends at 1,075 m: by the end of it the braking has taken nothing
+        # off. Fifty metres of it, and 85 km/h, was the kink's; this is not,
+        # and the kink has its own slowest speed, from before the brake.
+        self.assertEqual((kink["braking"], kink["brake_start_m"]), ("none", None))
+        self.assertEqual((kink["apex_distance_m"], kink["apex_speed_kph"]), (1000.0, 300.0))
+        self.assertEqual((hairpin["braking"], hairpin["brake_start_m"]), ("seen", 1070.0))
+
+    def test_a_braking_is_followed_no_further_than_where_the_next_one_begins(self):
+        """Two brakings 180 m apart with the car coasting between them, never gathering speed.
+
+        The car is still slowing from the first when the second begins. The
+        second corner's braking is the second, from its own brake point, and
+        not the first with a brake point 220 m further back.
+        """
+
+        def profile(place):
+            if place < 1_000:
+                return 204.0, False
+            if place <= 1_040:
+                return between(place, 1_000, 1_040, 204, 188), True
+            if place < 1_220:
+                return between(place, 1_040, 1_220, 188, 186), False
+            if place <= 1_290:
+                return between(place, 1_220, 1_290, 186, 108), True
+            return min(204.0, between(place, 1_290, 1_500, 108, 204)), False
+
+        rows, lap_time = driven(profile)
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(1_040, 1_290))
+        first, second = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, None)))
+
+        self.assertEqual((first["braking"], first["brake_start_m"]), ("seen", 1000.0))
+        # Its slowest point is the slowest in its own stretch, which ends half-way to the next corner.
+        self.assertEqual(first["apex_distance_m"], 1160.0)
+        self.assertEqual((second["braking"], second["brake_start_m"], second["entry_speed_kph"]), ("seen", 1220.0, 186.0))
+        self.assertEqual((second["apex_distance_m"], second["apex_speed_kph"], second["braking_distance_m"]), (1290.0, 108.0, 70.0))
+
+    def test_a_braking_is_followed_no_further_than_250_m_past_where_the_brake_came_off(self):
+        """A car that brakes and then coasts for 600 m has not braked for the corner at the end of it."""
+
+        def profile(place):
+            if place < 1_000:
+                return 300.0, False
+            if place <= 1_040:
+                return between(place, 1_000, 1_040, 300, 280), True
+            if place <= 1_640:
+                return between(place, 1_040, 1_640, 280, 260), False
+            return 260.0, False
+
+        rows, lap_time = driven(profile)
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(1_040, 1_600))
+        first, second = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, None)))
+
+        self.assertEqual((first["braking"], first["brake_start_m"]), ("seen", 1000.0))
+        # 560 m on from where the brake came off, still losing speed and never gathering any.
+        self.assertEqual((second["braking"], second["brake_start_m"]), ("none", None))
+
+    def test_the_second_part_of_a_chicane_has_the_braking_until_the_car_has_been_driven_on(self):
+        """The slowest sample of a chicane can be a metre short of its second part's stretch.
+
+        While the rule was that the braking's slowest point is in the
+        stretch, the second part then said "none". It has the braking when
+        the car comes into its stretch still within 8 km/h of its slowest.
+        """
+
+        def chicane(gathers_to):
+            def profile(place):
+                if place < 750:
+                    return 320.0, False
+                if place <= 910:
+                    return between(place, 750, 910, 320, 72), True
+                if place <= 920:
+                    return between(place, 910, 920, 72, 70), False
+                if place <= 930:
+                    return between(place, 920, 930, 70, gathers_to), False
+                return min(320.0, between(place, 930, 1_300, gathers_to, 250)), False
+
+            rows, lap_time = driven(profile)
+            result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(900, 950))
+            return by_corner(result)[(2, None)]["AAA"]
+
+        # Slowest at 920 m, 5 m short of the second part's stretch, which the car comes into at 73 km/h.
+        still_slowing = chicane(73.0)
+        self.assertEqual((still_slowing["braking"], still_slowing["brake_start_m"]), ("seen", 750.0))
+        self.assertEqual((still_slowing["apex_distance_m"], still_slowing["apex_speed_kph"]), (930.0, 73.0))
+        # At 80 km/h it has been driven on from the first part, and did not brake for the second.
+        driven_on = chicane(80.0)
+        self.assertEqual((driven_on["braking"], driven_on["brake_start_m"]), ("none", None))
 
     def test_a_brake_that_is_on_where_its_reading_comes_back_is_a_driver_who_braked_however_little_is_seen(self):
         rows = lap_rows("AAA")
@@ -588,7 +699,10 @@ class OfficialCornerTests(unittest.TestCase):
         row = by_corner(result)[(1, None)]["AAA"]
 
         self.assertEqual((row["braking"], row["brake_start_m"], row["apex_speed_kph"]), ("none", None, 294.0))
-        self.assertIn("A braking that takes less than 8 km/h off the car is not counted", result["caveats"][2])
+        self.assertIn(
+            "A braking is not counted for a corner unless it has taken 8 km/h off the car by the corner's slowest point",
+            result["caveats"][2],
+        )
 
     def test_without_official_corners_they_are_inferred_as_before_and_the_result_says_so(self):
         for corners in (None, [], [{"number": 1}], [{"x": 1.0, "y": 2.0, "distance_m": 3.0}]):
@@ -772,6 +886,40 @@ class OfficialCornerTests(unittest.TestCase):
         first = corners[(1, None)]["AAA"]
         self.assertEqual((first["brake_start_m"], first["apex_distance_m"], first["apex_speed_kph"]), (1090.0, 1240.0, 90.0))
         self.assertNotIn("Not seen at a corner", " ".join(result["caveats"]))
+
+    def test_a_corner_between_two_samples_is_where_the_line_between_them_passes_it(self):
+        """Piastri's lap 61 of the 2026 Dutch GP: both feeds miss a second at turn 14.
+
+        The nearest sample is 37 m from the corner and 39 m further round the
+        lap than where the line between two samples passes it, which is where
+        the chart of the lap draws the corner. The table said "At 3922 m".
+        """
+        rows = [row for row in lap_rows("AAA") if not 1_960 < row["distance_m"] < 2_050]
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+
+        # Between the samples at 1,960 m and 2,050 m, which are 40 m and 50 m from it.
+        self.assertEqual(by_corner(result)[(2, "A")]["AAA"]["corner_distance_m"], 2000.0)
+        self.assertEqual(by_corner(result)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
+
+    def test_the_line_is_not_drawn_across_a_hole_in_the_positions(self):
+        """Where the position data stops for 300 m the lap has no line, and a corner there is read by distance."""
+        rows = [
+            {**row, "x": None, "y": None} if 1_850 < row["distance_m"] < 2_150 else row for row in lap_rows("AAA")
+        ]
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+
+        self.assertEqual(by_corner(result)[(2, "A")]["AAA"]["corner_distance_m"], 2000.0)
+        # Read by distance and not by a line across the hole: a lap whose
+        # distance reads 5% long has the corner where its distance puts it.
+        long = [
+            {**row, "x": None, "y": None} if 1_850 * 1.05 < row["distance_m"] < 2_150 * 1.05 else row
+            for row in lap_rows("AAA", stretch=1.05)
+        ]
+        placed = calculate_corner_analysis("s", [lap("AAA")], long, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
+        self.assertEqual(by_corner(placed)[(2, "A")]["AAA"]["corner_distance_m"], 2100.0)
+        self.assertEqual(by_corner(placed)[(1, None)]["AAA"]["corner_distance_m"], 1050.0)
 
     def test_a_lap_that_was_not_timed_is_also_read_where_its_own_distance_puts_the_corners(self):
         """A first lap with no time, counted from the grid: only a pass where the corner should be will do,

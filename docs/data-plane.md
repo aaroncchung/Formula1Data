@@ -140,15 +140,20 @@ What holds for all of them:
   braked is not known. Only the first has a brake point. A corner's braking
   is looked for in the corner's own stretch of the lap, from half-way back to
   the corner before to half-way on to the next: a braking is the corner's
-  when the brake is on there before the corner, or when the car, slowing
-  from it, is at its slowest there. So one braking through two corners is in
-  both rows, from the one brake point, and a braking that takes less than 8
-  km/h off the car is in none. Each row says where its own lap has the
+  when the car is still slowing from it there, which it is until it has
+  gathered 8 km/h from the slowest it has been, until the next braking
+  begins, and no further than 250 m past where the brake came off. So one
+  braking through two corners is in both rows, from the one brake point; one
+  that begins past a corner, in its stretch, is in that corner's row, with a
+  brake point after the corner's place; and a braking that has not taken
+  8 km/h off the car by a corner's slowest point is not in its row. Each row
+  says where its own lap has the
   corner (`corner_distance_m`), which is what the row's other distances are
   along; the corner's own `distance_m` is along the lap the corners were
   placed on, and another lap can have the corner tens of metres from there.
-  A corner is where the lap's line passes within 50 m of it, and of several
-  passes the one where the corner should be along that lap, which is told
+  A corner is where the lap's line passes within 50 m of it, between two
+  samples where that is nearer than either, and of several passes the one
+  where the corner should be along that lap, which is told
   from the corners the line passes once. A lap that went from line to line
   and is not seen at a corner (it ended down the pit entry, or its position
   feed froze) has no row for that corner, and the result names it.

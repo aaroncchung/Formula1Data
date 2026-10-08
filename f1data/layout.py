@@ -107,7 +107,11 @@ FORMAT_VERSION = 2
 #      its own distance puts them, and one a whole lap is not seen to pass
 #      has no figures; the brake going on again is the same braking only
 #      if the car gathered no speed anywhere between
-PIPELINE_VERSION = 22
+#  23  a corner is where a lap's line passes it, between two samples as
+#      well as at one; a braking is a corner's when the car is still
+#      slowing from it in the corner's stretch, which does not turn on
+#      which side of a line one sample falls
+PIPELINE_VERSION = 23
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

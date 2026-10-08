@@ -55,8 +55,8 @@ def test_a_lap_whose_distance_runs_long_has_its_corners_where_its_line_passes_th
     assert lap_of(result, "COL") == 53
     lesmo, ascari = rows_of(result, 6)["COL"], rows_of(result, 9)["COL"]
     # It was put at 2,720.1 m, a sample 32 m from the corner that was within 200 m of the official distance.
-    assert (lesmo["corner_distance_m"], lesmo["brake_start_m"], lesmo["apex_distance_m"]) == (2757.0, 2653.2, 2730.6)
-    assert ascari["corner_distance_m"] == 4220.8
+    assert (lesmo["corner_distance_m"], lesmo["brake_start_m"], lesmo["apex_distance_m"]) == (2757.8, 2653.2, 2730.6)
+    assert ascari["corner_distance_m"] == 4225.2
     assert "Not seen at a corner" not in " ".join(result["caveats"])
 
 

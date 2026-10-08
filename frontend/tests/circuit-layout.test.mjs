@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { circuitLayout, cornersOnLap, layoutNote, trackMap, turned } from "../src/lib/circuit-layout.ts";
+import { circuitLayout, cornerLines, cornersOnLap, layoutNote, trackMap, turned } from "../src/lib/circuit-layout.ts";
 
 const VIEWPORT = { width: 600, height: 400, padding: 40 };
 
@@ -257,6 +257,36 @@ test("a whole lap whose distance goes out part-way round still has every corner 
   ]);
   // A lap that cannot be shown to have gone all the way round has only the corners that are where they should be.
   assert.deepEqual(cornersOnLap(layout, line, false).map((mark) => mark.label), ["1", "2", "3"]);
+});
+
+test("a lap with no position data has its corners by distance, and that is said", () => {
+  // Most laps of the 2026 Monaco GP are published without positions. There is nothing to find a corner by.
+  const layout = circuitLayout(
+    cornerMap([corner(2, 9_000, 0, { distance_m: 900 }), corner(1, 3_000, 0, { distance_m: 300 }), corner(3, 0, 0, { distance_m: null })])
+  );
+
+  // A lap that went from line to line is scaled to its own length, as the analysis has it.
+  assert.deepEqual(cornerLines(layout, [], { whole: true, lengthM: 4_040, referenceLengthM: 4_000 }), {
+    by: "distance",
+    corners: [
+      { label: "1", distance_m: 303 },
+      { label: "2", distance_m: 909 }
+    ]
+  });
+  // With no word of how long the lap the corners were placed on is, they are as the map has them.
+  assert.deepEqual(
+    cornerLines(layout, [], { whole: true, lengthM: 4_040, referenceLengthM: null }).corners.map((mark) => mark.distance_m),
+    [300, 900]
+  );
+  // A lap that stopped 500 m round is not a lap long, and has only the corner it reached.
+  assert.deepEqual(cornerLines(layout, [], { whole: false, lengthM: 500, referenceLengthM: 4_000 }).corners, [
+    { label: "1", distance_m: 300 }
+  ]);
+  // Where the lap has positions the corners are where its line passes them, the one with no distance too,
+  // and nothing is put by distance.
+  const found = cornerLines(layout, straightLap(1_000, 20, 1.02), { whole: true, lengthM: 1_020, referenceLengthM: 1_000 });
+  assert.equal(found.by, "position");
+  assert.deepEqual(found.corners.map((mark) => [mark.label, Math.round(mark.distance_m)]), [["3", 0], ["1", 306], ["2", 918]]);
 });
 
 test("the corners are turned with the line before one is looked for on the other", () => {

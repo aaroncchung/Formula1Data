@@ -80,6 +80,11 @@ OFFICIAL_CORNER_SEARCH_M = 200.0
 # pool, which he never reached, are within 50 m of the road out of Sainte
 # Devote and of the grid, where he had been two kilometres of lap earlier.
 OFFICIAL_CORNER_REACH_M = 50.0
+# A lap's line runs from one positioned sample to the next. Two further apart
+# than this on the ground have a hole between them, and the line is not drawn
+# across it. The position feed can miss a second or so, which at speed is
+# 100 m.
+OFFICIAL_CORNER_LINE_STEP_M = 150.0
 # ``x`` and ``y`` are F1's position data, which is in tenths of a metre.
 POSITION_UNITS_PER_METRE = 10.0
 # A driver who does not brake for a corner still has a slowest point near it.
@@ -225,17 +230,19 @@ def calculate_corner_analysis(
             "Corners are the circuit's official corner positions. Each is found on a driver's "
             "lap by position, so a distance shown for a driver is along that driver's own lap.",
             "A corner's stretch of a lap runs from half-way back to the corner before it to half-way "
-            "on to the next. A braking is a corner's when the brake is on in that stretch before the "
-            "corner, or when the car, slowing from it, is at its slowest in the stretch. The slowest "
-            "point given is the slowest in the corner's stretch before the next braking begins, and "
-            "of more than one braking the one whose slowest point is nearest the corner is given. A "
-            "braking that goes on through two corners' stretches is given for both, from the one "
-            "brake point.",
+            "on to the next. A braking is a corner's when the car is still slowing from it in that "
+            f"stretch: before it has gathered {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h from the slowest it "
+            f"has been, before the next braking begins, and within {BRAKING_REACH_M:.0f} m of where the "
+            "brake came off. The slowest point given is the slowest in the corner's stretch while it "
+            "is, and of more than one braking the one whose slowest point is nearest the corner is "
+            "given. So a braking that goes on through two corners' stretches is given for both, from "
+            "the one brake point, and one that begins past a corner, in its stretch, is given for it.",
             f"The brake coming off and going on again within {SAME_BRAKING_GAP_M:.0f} m, without the car "
-            f"gaining {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h, is one braking. A braking that takes less "
-            f"than {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h off the car is not counted. Where the driver did "
-            f"not brake for a corner, only the slowest speed within {OFFICIAL_CORNER_WINDOW_M:.0f} m of "
-            "it, before the brake next goes on past it, and the exit speed are given.",
+            f"gaining {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h, is one braking. A braking is not counted for "
+            f"a corner unless it has taken {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h off the car by the "
+            "corner's slowest point. Where the driver did not brake for a corner, only the slowest speed "
+            f"within {OFFICIAL_CORNER_WINDOW_M:.0f} m of it, before the brake next goes on past it, and "
+            "the exit speed are given.",
             "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
         ]
         unplaced = sorted(
@@ -532,26 +539,44 @@ def _corners_on_lap(
 def _passes(rows: list[dict[str, Any]], corner: dict[str, Any]) -> list[tuple[float, float]]:
     """Each time a lap's line comes within reach of a corner: how near it comes, squared, and how far round the lap.
 
-    A pass is the samples from where the line comes within reach to where it
-    next goes out of it, and is where the nearest of them is.
+    A pass runs from where the line comes within reach to where it next goes
+    out of it, or stops, and is where the line is nearest: between two
+    samples, where that is nearer than either. It used to be at the nearest
+    sample. Either feed can miss a second, and the samples either side of a
+    corner are then far from it: on Piastri's lap 61 of the 2026 Dutch GP the
+    nearest sample to turn 14 is 37 m from the corner and 39 m further round
+    the lap than where the line between two samples passes 9 m from it,
+    which is where the lap comparison's chart draws the corner.
     """
     if corner["x"] is None or corner["y"] is None:
         return []
     reach = (OFFICIAL_CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2
+    line = [
+        (float(row["x"]), float(row["y"]), float(row["distance_m"]))
+        for row in rows
+        if _number(row.get("x")) and _number(row.get("y"))
+    ]
+    step = (OFFICIAL_CORNER_LINE_STEP_M * POSITION_UNITS_PER_METRE) ** 2
     passes: list[tuple[float, float]] = []
     nearest: tuple[float, float] | None = None
-    for row in rows:
-        if not (_number(row.get("x")) and _number(row.get("y"))):
-            continue
-        off = (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2
-        if off <= reach:
-            if nearest is None or off < nearest[0]:
-                nearest = (off, float(row["distance_m"]))
-        elif nearest is not None:
+    for index, (x, y, along) in enumerate(line):
+        here = ((x - corner["x"]) ** 2 + (y - corner["y"]) ** 2, along)
+        joined = False
+        if index + 1 < len(line):
+            step_x, step_y = line[index + 1][0] - x, line[index + 1][1] - y
+            length = step_x**2 + step_y**2
+            joined = length <= step
+            if joined and length > 0:
+                # The place on the line between this sample and the next that is nearest the corner.
+                share = min(1.0, max(0.0, ((corner["x"] - x) * step_x + (corner["y"] - y) * step_y) / length))
+                off = (x + share * step_x - corner["x"]) ** 2 + (y + share * step_y - corner["y"]) ** 2
+                if off < here[0]:
+                    here = (off, along + share * (line[index + 1][2] - along))
+        if here[0] <= reach and (nearest is None or here[0] < nearest[0]):
+            nearest = here
+        if nearest is not None and (here[0] > reach or not joined):
             passes.append(nearest)
             nearest = None
-    if nearest is not None:
-        passes.append(nearest)
     return passes
 
 
@@ -610,13 +635,23 @@ def _corner_event(
 ) -> dict[str, Any] | None:
     """A driver's figures for one official corner, which is at ``distance`` and whose stretch is ``start`` to ``end``.
 
-    A braking is the corner's when the brake is on in the corner's stretch
-    before the corner, or when the car, slowing from it, is at its slowest
-    in the stretch. The second alone was the rule, and it gave a braking to
-    one corner only: a braking through two corners left the first of them
-    published as not braked for, as the first part of a chicane was. With
-    the first alone the second part would be, since the brake is off before
-    its stretch begins.
+    A braking is the corner's when the car is still slowing from it in the
+    corner's stretch, and has lost 8 km/h by its slowest point there. It is
+    slowing from it until it has gathered 8 km/h from the slowest it has
+    been, which is a car driven on; until the next braking begins; and no
+    further than 250 m past where the brake came off.
+
+    The rule used to be that the braking's slowest point is in the stretch,
+    which gave a braking to one corner only: a braking through two corners
+    left the first published as not braked for, as the first part of a
+    chicane was. Then that, or the brake on in the stretch before the
+    corner. Both turned on which side of a line a sample fell. Placing the
+    corners between samples moved them a metre or two, and 35 rows went
+    from braked for to not: a brake that goes on 3 m past turn 5 in Bahrain
+    and takes 33 km/h off in turn 5's stretch, and the second part of a
+    chicane whose slowest sample is a metre short of its stretch. What a
+    row says now changes with how much the car slows in the stretch, and
+    not with where a line is drawn through one sample.
     """
     first, last = bisect_left(along, start), bisect_left(along, end)
     counted = []
@@ -648,23 +683,25 @@ def _corner_event(
         # Counted from where the reading went on the car lost nothing, and
         # turn 6 was published as not braked for.
         peak = max(braked, key=lambda index: float(rows[index]["speed_kph"]))
-        slowing = [
-            index for index in range(peak, until) if along[index] <= reach and _number(rows[index].get("speed_kph"))
-        ]
+        # The samples the car is still slowing from the braking at.
+        slowing: list[int] = []
+        lowest = math.inf
+        for index in range(peak, until):
+            if along[index] > reach:
+                break
+            if not _number(rows[index].get("speed_kph")):
+                continue
+            speed = float(rows[index]["speed_kph"])
+            if speed - lowest >= MIN_BRAKING_SPEED_LOSS_KPH:
+                # Driven on: what the car does from here is not this braking's.
+                break
+            lowest = min(lowest, speed)
+            slowing.append(index)
         here = [index for index in slowing if first <= index < last]
         if not here:
             continue
         # The corner's slowest point is the slowest of the braking in the corner's stretch.
         apex = min(here, key=lambda index: float(rows[index]["speed_kph"]))
-        slowest = min(slowing, key=lambda index: float(rows[index]["speed_kph"]))
-        if not first <= slowest < last:
-            if not any(off >= first and along[max(on, first)] <= distance for on, off in braking):
-                continue
-            if began < first and apex == here[0]:
-                # Nowhere in the stretch is the car slower than where it
-                # comes into it: the end of a braking for the corner before,
-                # still on as the car gathers speed, is not one for this.
-                continue
         entry_speed, apex_speed = float(rows[began]["speed_kph"]), float(rows[apex]["speed_kph"])
         fastest = float(rows[peak]["speed_kph"])
         braking_distance = float(along[apex] - along[began])
