@@ -73,6 +73,35 @@ export type ComparedLap = {
 export type TrackPoint = { readonly x: number; readonly y: number };
 
 /**
+ * Figures of one lap, from its own samples and from nothing else.
+ *
+ * Not from the lap as the comparison reads it. Lap B is read at lap A's
+ * places, between its own samples, so its highest reading there is lower
+ * than its highest sample unless A happens to have a sample at that place:
+ * in the 2026 Austrian GP Verstappen's lap 57 reaches 319.9 km/h, and laid
+ * under Hamilton's lap 48 its trace reaches 318.7. The card took the second,
+ * and the same lap showed 319 km/h as lap B and 320 as lap A.
+ */
+export type LapFigures = {
+  /** The highest speed of any sample, or null for a lap with no speed. */
+  readonly max_speed_kph: number | null;
+  /** The share of the lap's samples with the throttle at 98% or more, of those that have a throttle value. */
+  readonly full_throttle_pct: number | null;
+};
+
+const FULL_THROTTLE_PCT = 98;
+
+export function lapFigures(lap: TelemetryLap): LapFigures {
+  const known = (values: ReadonlyArray<number | null>) => values.filter((value): value is number => value !== null && value !== undefined);
+  const speeds = known(lap.speed_kph);
+  const throttle = known(lap.throttle_pct);
+  return {
+    max_speed_kph: speeds.length ? Math.max(...speeds) : null,
+    full_throttle_pct: throttle.length ? (throttle.filter((value) => value >= FULL_THROTTLE_PCT).length / throttle.length) * 100 : null
+  };
+}
+
+/**
  * Every array has one entry for each entry of `distance_m`. An entry is null
  * where that lap has nothing there: outside lap B's samples, inside a hole of
  * either lap, in the row that marks a hole of either lap, and where the lap's
@@ -81,6 +110,9 @@ export type TrackPoint = { readonly x: number; readonly y: number };
 export type TelemetryComparison = {
   readonly driver_a: ComparedLap;
   readonly driver_b: ComparedLap;
+  /** Each lap's own figures: the same for a lap whichever side of the comparison it is on. */
+  readonly figures_a: LapFigures;
+  readonly figures_b: LapFigures;
   /** Metres since the start of the lap, at lap A's samples. It never goes down. */
   readonly distance_m: number[];
   readonly speed_a: Array<number | null>;
@@ -265,6 +297,8 @@ export function compareLaps(
   return {
     driver_a: a.meta,
     driver_b: b.meta,
+    figures_a: lapFigures(a.lap),
+    figures_b: lapFigures(b.lap),
     distance_m: rows.map((row) => row.distance),
     speed_a: of("a", "speed_kph"),
     speed_b: of("b", "speed_kph"),

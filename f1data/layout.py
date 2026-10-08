@@ -80,7 +80,10 @@ FORMAT_VERSION = 2
 #  14  words only: a stint with clean laps and no tyre ages is said to be
 #      short of ages, and the pace change across a stop is "after the stop",
 #      not "on the new tyres"
-PIPELINE_VERSION = 14
+#  15  words only: where the laps either side of a stop are looked for, and
+#      why none was found when the search stopped at the next stop; and that
+#      the team-mate gap drops at least one lap each way
+PIPELINE_VERSION = 15
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

@@ -66,9 +66,9 @@ def calculate_teammate_comparison(
         "Team-mates are compared on matched laps only: the same lap number, with both laps "
         "clean (lap 1, pit, deleted, inaccurate and neutralised laps are excluded).",
         "The gap is a trimmed mean of the lap-by-lap differences: the "
-        f"{TRIM_FRACTION:.0%} of matched laps with the largest difference each way are "
-        "dropped, and each driver's average is over the laps that remain. At least "
-        f"{MIN_MATCHED_LAPS} matched laps are required.",
+        f"{TRIM_FRACTION:.0%} of matched laps with the largest difference each way, and "
+        "never fewer than one lap each way, are dropped, and each driver's average is over "
+        f"the laps that remain. At least {MIN_MATCHED_LAPS} matched laps are required.",
         "Team-mates on different strategies differ by a second or more from lap to lap, so a "
         "gap that is small against the lap-to-lap spread is not a real difference.",
         "Matching by lap number assumes both cars are on track together, which holds in a "

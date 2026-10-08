@@ -369,7 +369,10 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
         self.assertIsNone(row["first_clean_lap_gain_ms"])
         self.assertEqual(row["before_lap_number"], 9)
         self.assertIsNone(row["after_lap_number"])
-        self.assertIn("No clean green-flag lap within 3 laps after the stop", row["caveat"])
+        self.assertEqual(
+            row["caveat"],
+            "No clean green-flag lap in the 3 laps after the out-lap, so no pace change is reported.",
+        )
 
     def test_a_stop_with_no_clean_lap_before_it_reports_nothing(self):
         laps = [_lap("AAA", 1, 99_000), _lap("AAA", 2, 95_000, pit_in=True)]
@@ -378,7 +381,7 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
         row = _pace_change(laps, [_stop("AAA", 2, 22_000)])
 
         self.assertIsNone(row["first_clean_lap_gain_ms"])
-        self.assertIn("before the stop", row["caveat"])
+        self.assertIn("in the 3 laps before the in-lap", row["caveat"])
 
     def test_a_lap_after_the_next_stop_is_not_the_lap_after_this_one(self):
         laps = [
@@ -393,6 +396,52 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
 
         self.assertEqual(row["stop_lap"], 10)
         self.assertIsNone(row["first_clean_lap_gain_ms"])
+        # And it says so. Ocon in the 2025 Qatar GP stopped on laps 8 and 9
+        # and ran a clean lap 11: "no clean green-flag lap within 3 laps
+        # after the stop" was said of a lap that is there.
+        self.assertEqual(
+            row["caveat"],
+            "No clean green-flag lap after the out-lap and before the next stop, on lap 11, so no "
+            "pace change is reported.",
+        )
+
+    def test_a_next_stop_beyond_the_window_is_not_why_no_lap_was_found(self):
+        laps = [_lap("AAA", number, 92_000) for number in range(7, 32)]
+        _lap_of(laps, "AAA", 10)["is_pit_in_lap"] = True
+        _lap_of(laps, "AAA", 11)["is_pit_out_lap"] = True
+        for number in (12, 13, 14):
+            _lap_of(laps, "AAA", number)["track_status"] = "4"
+
+        row = _pace_change(laps, [_stop("AAA", 10, 22_000), _stop("AAA", 30, 22_000)])
+
+        self.assertIsNone(row["first_clean_lap_gain_ms"])
+        self.assertEqual(
+            row["caveat"],
+            "No clean green-flag lap in the 3 laps after the out-lap, so no pace change is reported.",
+        )
+
+    def test_the_lap_after_may_be_the_third_after_the_out_lap(self):
+        laps = [
+            _lap("AAA", 9, 92_000),
+            _lap("AAA", 10, 95_000, pit_in=True),
+            _lap("AAA", 11, 108_000, pit_out=True),
+            _lap("AAA", 12, 140_000, track_status="4"),
+            _lap("AAA", 13, 140_000, track_status="4"),
+            _lap("AAA", 14, 90_500),
+            _lap("AAA", 15, 90_000),
+        ]
+
+        row = _pace_change(laps, [_stop("AAA", 10, 22_000)])
+
+        # Lap 14 is four lap numbers after the stop and three after the out-lap.
+        self.assertEqual((row["before_lap_number"], row["after_lap_number"]), (9, 14))
+        # And the fourth after the out-lap is not looked at.
+        for lap in laps:
+            if lap["lap_number"] == 14:
+                lap["track_status"] = "4"
+        row = _pace_change(laps, [_stop("AAA", 10, 22_000)])
+        self.assertIsNone(row["after_lap_number"])
+        self.assertIn("in the 3 laps after the out-lap", row["caveat"])
 
     def test_the_first_stop_is_the_first_the_car_changed_tyres_at(self):
         """In the 2025 Australian GP the field followed the safety car down the pit lane on laps 2 to 4.
@@ -437,7 +486,14 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
         result = calculate_strategy("2026-01-r", [], [], [], [])
         text = " ".join(result["caveats"])
 
-        self.assertIn("last clean green-flag lap before the in-lap", text)
+        # The window after the stop is counted from the out-lap: "within 3
+        # laps of the stop" was said of Alonso in the 2026 Australian GP, who
+        # stopped on lap 11 and was compared across laps 10 and 15.
+        self.assertIn(
+            "last clean green-flag lap in the 3 laps before the in-lap minus the first one in the "
+            "3 laps after the out-lap, and before their next stop",
+            text,
+        )
         # And not "on the new tyres": Sainz in the 2026 Dutch sprint stood
         # for 8.4 s on lap 16 and went out on the set he came in on.
         self.assertIn("positive is quicker after the stop", text)
@@ -851,6 +907,10 @@ class TeammateComparisonTests(unittest.TestCase):
         self.assertEqual(result["rows"], [])
         self.assertIn("matched laps only", text)
         self.assertIn("trimmed mean of the lap-by-lap differences", text)
+        # Of five matched laps one is dropped each way, which is a fifth and
+        # not the tenth the sentence gave alone (Hulkenberg and Bortoleto in
+        # the 2025 Qatar GP).
+        self.assertIn("the 10% of matched laps with the largest difference each way, and never fewer than one lap each way, are dropped", text)
         self.assertIn("No team had two drivers with clean laps", text)
 
 

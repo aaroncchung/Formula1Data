@@ -66,10 +66,11 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
   const alongLap = cornersAlongLap(layout);
   const charts = comparison.drs_a || comparison.drs_b ? [...CHARTS, DRS_CHART] : CHARTS;
   const lapDelta = lapTimeDelta(comparison);
-  const maxSpeedA = max(comparison.speed_a);
-  const maxSpeedB = max(comparison.speed_b);
-  const fullThrottleA = percentage(comparison.throttle_a, (value) => value >= 98);
-  const fullThrottleB = percentage(comparison.throttle_b, (value) => value >= 98);
+  // Each lap's own figures, not lap B's as it is read at lap A's places.
+  const maxSpeedA = comparison.figures_a.max_speed_kph;
+  const maxSpeedB = comparison.figures_b.max_speed_kph;
+  const fullThrottleA = comparison.figures_a.full_throttle_pct;
+  const fullThrottleB = comparison.figures_b.full_throttle_pct;
 
   return (
     <div className="space-y-4">
@@ -94,7 +95,7 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
           label="Full throttle"
           a={`${formatNumber(fullThrottleA, 1)}%`}
           b={`${formatNumber(fullThrottleB, 1)}%`}
-          footer="Share of the samples compared"
+          footer="Share of each lap's own samples"
         />
         <ComparisonMetric
           label="Compounds"
@@ -247,16 +248,6 @@ function TrackMap({ comparison, layout }: { comparison: TelemetryComparison; lay
       {note ? <p className="mt-2 text-center text-xs text-slate-500">{note}</p> : null}
     </div>
   );
-}
-
-function max(values: ReadonlyArray<number | null>): number | null {
-  const valid = values.filter((value): value is number => value !== null);
-  return valid.length ? Math.max(...valid) : null;
-}
-
-function percentage(values: ReadonlyArray<number | null>, predicate: (value: number) => boolean): number | null {
-  const valid = values.filter((value): value is number => value !== null);
-  return valid.length ? (valid.filter(predicate).length / valid.length) * 100 : null;
 }
 
 function lapTimeDelta(comparison: TelemetryComparison): number | null {

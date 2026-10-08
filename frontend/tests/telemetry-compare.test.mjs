@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { telemetryRows } from "../src/lib/chart-utils.ts";
-import { compareLaps, holeThresholdMs, trackOf } from "../src/lib/telemetry-compare.ts";
+import { compareLaps, holeThresholdMs, lapFigures, trackOf } from "../src/lib/telemetry-compare.ts";
 
 /**
  * A telemetry lap in the published shape, from one row for each sample:
@@ -761,4 +761,35 @@ test("a hole of lap B is marked once, whether A's samples straddle it, land in i
   assert.equal(itself.distance_m.length, b.time_ms.length + 1);
   assert.equal(itself.speed_a.filter((speed) => speed === null).length, 1);
   assert.equal(itself.delta_time_ms.every((delta) => delta === 0 || delta === null), true);
+});
+
+// ---------------------------------------------------------------------------
+// The twenty-sixth review: a lap's own figures
+// ---------------------------------------------------------------------------
+
+// The 2026 Austrian GP: Verstappen's lap 57 reaches 319.9 km/h. Laid under
+// Hamilton's lap 48 it is read at Hamilton's places, between its own samples,
+// and its trace there reaches 318.7. The card under the charts took its
+// maximum from the trace: 319 km/h as lap B, and 320 with the laps exchanged.
+test("a lap's maximum speed and its share at full throttle are its own, whichever side it is on", () => {
+  const a = lap(3, [[0, 0, 200], [1_000, 100, 300], [2_000, 200, 250]], { throttle_pct: [100, 100, 99] });
+  // B's quickest sample is at 50 m, where A has none.
+  const b = lap(2, [[0, 0, 200], [500, 50, 319.9], [1_000, 100, 250], [2_000, 200, 240]], { throttle_pct: [100, 98, 40, 97] });
+
+  const [ab, ba] = [compare(a, b), compare(b, a)];
+
+  // B as it is read at A's places never shows its quickest sample.
+  assert.equal(Math.max(...ab.speed_b), 250);
+  assert.deepEqual(ab.figures_b, { max_speed_kph: 319.9, full_throttle_pct: 50 });
+  assert.deepEqual(ab.figures_a, { max_speed_kph: 300, full_throttle_pct: 100 });
+  // The same lap, the same figures, on either side.
+  assert.deepEqual(ba.figures_a, ab.figures_b);
+  assert.deepEqual(ba.figures_b, ab.figures_a);
+});
+
+test("a lap with no samples, or a channel with no entries, has no figure and not a nought", () => {
+  assert.deepEqual(lapFigures(lap(1, [])), { max_speed_kph: null, full_throttle_pct: null });
+  // A channel shorter than the lap's clock is counted over the entries it has.
+  const short = lap(2, [[0, 0, 200], [1_000, 100, 310], [2_000, 200, 250]], { throttle_pct: [100, 20], speed_kph: [200, 310] });
+  assert.deepEqual(lapFigures(short), { max_speed_kph: 310, full_throttle_pct: 50 });
 });

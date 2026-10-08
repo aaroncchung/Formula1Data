@@ -103,11 +103,12 @@ def calculate_strategy(
             "can go down the pit lane without stopping, and the timing alone does not say "
             "which did. It includes the stationary time and has no on-track baseline in it, "
             "so it is not pit loss.",
-            "Pace change across a stop is the driver's last clean green-flag lap before the "
-            "in-lap minus the first one after the out-lap, each within "
-            f"{PACE_CHANGE_WINDOW_LAPS} laps of the driver's first stop; positive is quicker "
-            "after the stop. Pit, deleted, inaccurate, yellow-flag and neutralised laps are never "
-            "used, and no value is given when either lap is missing. A stop is nearly always a "
+            "Pace change across a stop is, for the driver's first stop, their last clean "
+            f"green-flag lap in the {PACE_CHANGE_WINDOW_LAPS} laps before the in-lap minus the "
+            f"first one in the {PACE_CHANGE_WINDOW_LAPS} laps after the out-lap, and before "
+            "their next stop; positive is quicker after the stop. Pit, deleted, inaccurate, "
+            "yellow-flag and neutralised laps are never used, and no value is given when either "
+            "lap is missing. A stop is nearly always a "
             "change of tyres, and not always: a penalty served or a repair made in the pit box "
             "is a stop on the same set, and the stop list says which each was.",
             "A car that went down the pit lane without stopping, on a drive-through penalty or "
@@ -337,15 +338,23 @@ def _pace_change_across_stop(
         )
     else:
         gain = None
+        # Where the laps were looked for, exactly: the window after the stop
+        # is counted from the out-lap, and stops short of the driver's next
+        # stop. "Within 3 laps after the stop" was said of Ocon in the 2025
+        # Qatar GP, who stopped on laps 8 and 9 and ran a clean lap 11.
+        if next_stop_lap is not None and next_stop_lap - 1 < stop_lap + 1 + window:
+            after_the_stop = f"after the out-lap and before the next stop, on lap {next_stop_lap}"
+        else:
+            after_the_stop = f"in the {window} laps after the out-lap"
         missing = " or ".join(
-            side
-            for side, lap_time in (("before", before_time), ("after", after_time))
+            where
+            for where, lap_time in (
+                (f"in the {window} laps before the in-lap", before_time),
+                (after_the_stop, after_time),
+            )
             if lap_time is None
         )
-        caveat = (
-            f"No clean green-flag lap within {window} laps {missing} the stop, "
-            "so no pace change is reported."
-        )
+        caveat = f"No clean green-flag lap {missing}, so no pace change is reported."
     return {
         "driver_code": driver,
         "stop_lap": stop_lap,
