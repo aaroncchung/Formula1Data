@@ -123,7 +123,12 @@ What holds for all of them:
   sample has no throttle and no brake (`null` in a published lap, and in what
   the analyses read), and so has a sample between it and the next. The rest
   of the sample is as F1 sent it. About four laps in a hundred have such a
-  stretch, most of them under two seconds.
+  stretch, most of them under two seconds. Not yet caught: F1 also sends 104
+  for the brake alone, beside a real throttle, and FastF1 hands that on as
+  the brake on with nothing to tell it by. It is a few hundred samples in
+  most races and most of the 2026 Hungarian GP, which is why that session
+  should not be published as the code stands
+  (docs/architecture-review-findings.md, section 10, "Open").
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its
