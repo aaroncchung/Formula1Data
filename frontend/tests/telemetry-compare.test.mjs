@@ -600,15 +600,19 @@ test("DRS is open for F1's codes 10, 12 and 14, and not for a car that may open 
 });
 
 test("the track drawn is lap A's line, over the samples that have a position", () => {
-  const samples = [[0, 0, 200], [500, 50, 200], [1_000, 100, 200]];
+  // A lap's distance does not read nought at the line: here it reads 0.4 m.
+  const samples = [[0, 0.4, 200], [500, 50.4, 200], [1_000, 100.4, 200]];
   // The position feed can start after the car data does.
   const a = lap(3, samples, { x: [null, 120, 240], y: [null, -30, -60] });
 
+  const comparison = compare(a, lap(2, samples));
+
   // Each place with how far round the lap it is, on the distance axis the comparison is drawn on.
-  assert.deepEqual(compare(a, lap(2, samples)).track, [
-    { x: 120, y: -30, distance_m: 50 },
-    { x: 240, y: -60, distance_m: 100 }
+  assert.deepEqual(comparison.track, [
+    { x: 120, y: -30, distance_m: 50.4 },
+    { x: 240, y: -60, distance_m: 100.4 }
   ]);
+  assert.deepEqual(comparison.distance_m, [0.4, 50.4, 100.4]);
   assert.deepEqual(trackOf(lap(3, samples)), []);
   assert.deepEqual(trackOf(lap(3, samples, { x: [1, 2, 3], y: null })), []);
 });

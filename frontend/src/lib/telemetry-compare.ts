@@ -70,7 +70,7 @@ export type ComparedLap = {
   readonly compound: Compound | null;
 };
 
-/** A place on the line a lap drove, and how far round the lap it is, on the distance axis the lap is drawn on. */
+/** A place on the line a lap drove, and how far round the lap it is: the lap's distance as it is published, which is the axis its charts are drawn on. */
 export type TrackPoint = { readonly x: number; readonly y: number; readonly distance_m: number };
 
 /**
@@ -393,9 +393,10 @@ export function trackOf(lap: TelemetryLap): TrackPoint[] {
   if (x === null || y === null) {
     return [];
   }
-  const { distance } = samplesOf(lap);
+  // As published, and not counted from the line: that is what the charts' axis is.
+  const { published } = samplesOf(lap);
   const points: TrackPoint[] = [];
-  distance.forEach((along, index) => {
+  published.forEach((along, index) => {
     const value = x[index];
     const other = y[index];
     // A sample taken before the position feed started, or after it stopped, has neither.
