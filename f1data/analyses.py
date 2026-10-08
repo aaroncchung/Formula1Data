@@ -105,8 +105,11 @@ def sample_rows(lap: LapSamples, indexes: np.ndarray | None = None) -> list[dict
     columns = {
         "distance_m": lap.distance_m[chosen].tolist(),
         "speed_kph": lap.speed_kph[chosen].tolist(),
-        "throttle_pct": lap.throttle_pct[chosen].tolist(),
-        "brake": lap.brake[chosen].tolist(),
+        # None where F1 gave no pedal reading: the analyses count a share of
+        # the samples that have one, and take a car for braking only when it
+        # is known to be.
+        "throttle_pct": lap.throttle(chosen),
+        "brake": lap.braking(chosen),
         "relative_time_ms": time_ms,
         "session_time_ms": [lap.start_ms + moment for moment in time_ms],
         "x": nan_as_none(lap.x[chosen]) if lap.x is not None else [None] * len(time_ms),

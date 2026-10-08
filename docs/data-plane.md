@@ -117,6 +117,13 @@ What holds for all of them:
   telemetry index, a car's frames in the replay) are of one length, and a
   file in which they are not is not published. The schema cannot say so; the
   models check it.
+- F1's car feed sends 104 for the throttle and for the brake of a sample it
+  has no pedal reading for, and repeats the speed and engine speed it last
+  had. FastF1 passes the throttle on and makes the brake "on". Here such a
+  sample has no throttle and no brake (`null` in a published lap, and in what
+  the analyses read), and so has a sample between it and the next. The rest
+  of the sample is as F1 sent it. About four laps in a hundred have such a
+  stretch, most of them under two seconds.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

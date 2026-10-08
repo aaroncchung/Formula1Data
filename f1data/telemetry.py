@@ -108,14 +108,32 @@ class LapSamples:
     # before the position feed started or after it stopped.
     x: np.ndarray | None
     y: np.ndarray | None
+    # False at a sample F1 gave no pedal reading for (``NO_PEDAL_READING``):
+    # its throttle and brake are then not readings, whatever the arrays
+    # hold. None when every sample has one.
+    pedals_known: np.ndarray | None = None
 
     @property
     def sample_count(self) -> int:
         return int(len(self.time_ms))
 
+    def throttle(self, chosen: Any = slice(None)) -> list[float | None]:
+        """The throttle at the samples chosen, with ``None`` where F1 gave no reading."""
+        return _where_known(self.throttle_pct[chosen].tolist(), self.pedals_known, chosen)
+
+    def braking(self, chosen: Any = slice(None)) -> list[bool | None]:
+        """Whether the brake was on at the samples chosen, with ``None`` where F1 gave no reading."""
+        return _where_known(self.brake[chosen].tolist(), self.pedals_known, chosen)
+
     @property
     def has_position(self) -> bool:
         return self.x is not None
+
+
+def _where_known(values: list[Any], known: np.ndarray | None, chosen: Any) -> list[Any]:
+    if known is None:
+        return values
+    return [value if there else None for value, there in zip(values, known[chosen].tolist())]
 
 
 @dataclass(frozen=True)
@@ -363,6 +381,7 @@ def _lap_samples(
         }
     held = np.clip(np.searchsorted(dates, with_edges, side="right") - 1, 0, None)
     discrete = {name: values[held] for name, values in discrete.items()}
+    pedals_known = _pedals_known(car_dates, car.channels["Throttle"][first:last], with_edges)
 
     on_clock = with_edges - clock_zero
     # Distance is unknown before the first car sample, which can only be the
@@ -382,7 +401,33 @@ def _lap_samples(
         "drs": discrete["DRS"][inside],
         "x": located["X"][inside] if located is not None else None,
         "y": located["Y"][inside] if located is not None else None,
+        "pedals_known": None if pedals_known[inside].all() else pedals_known[inside],
     }
+
+
+# What F1's car feed sends for the throttle, and for the brake, of a sample it
+# has no pedal reading for: 104, on a scale that ends at 100. FastF1 passes
+# the throttle on as it is and makes the brake "on". In the 2026 Australian
+# GP 422 laps have such a stretch, most of them under two seconds, during
+# which the feed repeats the speed and the engine speed it last had: Albon's
+# lap 7 is published braking for 1.6 s at 302 km/h with the throttle at 104%.
+NO_PEDAL_READING = 100.0
+
+
+def _pedals_known(car_dates: np.ndarray, throttle: np.ndarray, dates: np.ndarray) -> np.ndarray:
+    """For each of ``dates``, whether the lap's throttle and brake there are readings.
+
+    They are not where the car sample they are held from is one F1 marked as
+    having none, nor between such a sample and the next, where the throttle
+    is drawn on a line to or from the mark.
+    """
+    marked = throttle > NO_PEDAL_READING
+    if not marked.any():
+        return np.ones(len(dates), dtype=bool)
+    held = np.clip(np.searchsorted(car_dates, dates, side="right") - 1, 0, None)
+    following = np.clip(held + 1, None, len(car_dates) - 1)
+    between = car_dates[held] != dates
+    return ~(marked[held] | (between & marked[following]))
 
 
 def _padded_cut(times: np.ndarray, start: int, end: int, within: int | None = None) -> tuple[int, int] | None:

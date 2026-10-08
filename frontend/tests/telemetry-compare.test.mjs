@@ -793,3 +793,47 @@ test("a lap with no samples, or a channel with no entries, has no figure and not
   const short = lap(2, [[0, 0, 200], [1_000, 100, 310], [2_000, 200, 250]], { throttle_pct: [100, 20], speed_kph: [200, 310] });
   assert.deepEqual(lapFigures(short), { max_speed_kph: 310, full_throttle_pct: 50 });
 });
+
+// ---------------------------------------------------------------------------
+// The twenty-eighth review: a sample F1 gave no pedal reading for
+// ---------------------------------------------------------------------------
+
+// F1's car feed sends 104 for the throttle and for the brake of a sample it
+// has no pedal reading for, and the publisher now leaves both empty there.
+// Before, Albon's lap 7 of the 2026 Australian GP was drawn at 104% throttle
+// with the brake on for 1.6 s at 302 km/h.
+test("a sample with no pedal reading has no throttle and no brake, and is not drawn as either", () => {
+  const samples = [[0, 0, 300], [1_000, 80, 302], [2_000, 160, 302], [3_000, 240, 302], [4_000, 320, 290]];
+  const marked = lap(3, samples, { throttle_pct: [100, null, null, 100, 0], brake: [false, null, null, false, true] });
+  const whole = lap(2, samples, { throttle_pct: [100, 100, 100, 100, 0], brake: [false, false, false, false, true] });
+
+  const comparison = compare(marked, whole);
+
+  assert.deepEqual(comparison.throttle_a, [100, null, null, 100, 0]);
+  // Not 0, which is the brake off, and not 1.
+  assert.deepEqual(comparison.brake_a, [0, null, null, 0, 1]);
+  assert.deepEqual(comparison.brake_b, [0, 0, 0, 0, 1]);
+  // The rest of the sample is there: the car's speed, and so the time delta.
+  assert.deepEqual(comparison.speed_a, [300, 302, 302, 302, 290]);
+  assert.deepEqual(comparison.delta_time_ms, [0, 0, 0, 0, 0]);
+  // And the share at full throttle is of the samples that have a reading: two of three.
+  assert.equal(Math.round(comparison.figures_a.full_throttle_pct), 67);
+  assert.equal(comparison.figures_b.full_throttle_pct, 80);
+});
+
+test("lap B read between a sample with a pedal reading and one without has neither there", () => {
+  const a = lap(3, [[0, 0, 300], [1_500, 120, 302], [2_500, 200, 302], [4_000, 320, 290]]);
+  const b = lap(2, [[0, 0, 300], [1_000, 80, 302], [2_000, 160, 302], [3_000, 240, 302], [4_000, 320, 290]], {
+    throttle_pct: [100, null, null, 100, 0],
+    brake: [false, null, null, false, true]
+  });
+
+  const comparison = compare(a, b);
+
+  // 120 m is between B's two samples without a reading; 200 m between one
+  // without and one with. A throttle is read between two samples, so it needs
+  // both. A brake is the nearer sample's, and at 200 m that one has a reading.
+  assert.deepEqual(comparison.throttle_b, [100, null, null, 0]);
+  assert.deepEqual(comparison.brake_b, [0, null, 0, 1]);
+  assert.deepEqual(comparison.speed_b, [300, 302, 302, 290]);
+});

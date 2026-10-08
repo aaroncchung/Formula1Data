@@ -1385,7 +1385,10 @@ export interface DriverTelemetry {
  * via the `definition` "TelemetryLap".
  */
 export interface TelemetryLap {
-  brake: boolean[];
+  /**
+   * Whether the brake was on. Null at a sample F1's car feed gave no pedal reading for.
+   */
+  brake: (boolean | null)[];
   /**
    * Metres since the lap started, integrated from speed.
    */
@@ -1406,9 +1409,9 @@ export interface TelemetryLap {
    */
   start_ms: number;
   /**
-   * 0 to 100.
+   * 0 to 100. Null at a sample F1's car feed gave no pedal reading for: it sends 104 there, for the throttle and for the brake, and repeats the speed it last had.
    */
-  throttle_pct: number[];
+  throttle_pct: (number | null)[];
   /**
    * Milliseconds since the lap started. Add start_ms for the session clock.
    */

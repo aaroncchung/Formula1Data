@@ -86,7 +86,11 @@ FORMAT_VERSION = 2
 #  16  words only: a session with no pit-stop feed is said to be short of
 #      stationary times for its entries to the pit lane, which are not all
 #      stops
-PIPELINE_VERSION = 16
+#  17  a sample F1's car feed marks as having no pedal reading (it sends 104
+#      for the throttle and the brake) has no throttle and no brake, in a
+#      published lap and in what the analyses read: it was published as full
+#      throttle with the brake on
+PIPELINE_VERSION = 17
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

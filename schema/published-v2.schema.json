@@ -3794,8 +3794,16 @@
       "description": "One lap as parallel arrays, one entry per sample.",
       "properties": {
         "brake": {
+          "description": "Whether the brake was on. Null at a sample F1's car feed gave no pedal reading for.",
           "items": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type": "array"
         },
@@ -3849,9 +3857,16 @@
           "type": "integer"
         },
         "throttle_pct": {
-          "description": "0 to 100.",
+          "description": "0 to 100. Null at a sample F1's car feed gave no pedal reading for: it sends 104 there, for the throttle and for the brake, and repeats the speed it last had.",
           "items": {
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "type": "array"
         },
