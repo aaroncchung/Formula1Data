@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeTyreAgePlot, isTyreAgePoint, tyreAgePlot, tyreFitsFor } from "../src/lib/tyre-chart.ts";
+import { describeTyreAgePlot, isTyreAgePoint, lapsFitted, tyreAgePlot, tyreFitsFor } from "../src/lib/tyre-chart.ts";
 
 function lap(driver, number, overrides = {}) {
   return {
@@ -213,4 +213,20 @@ test("a cut list of stint fits still reports how many there are", () => {
 
 test("no drivers on screen means no stint fits", () => {
   assert.deepEqual(tyreFitsFor(FITS, [], 9), { shown: [], total: 0 });
+});
+
+// The 2026 Austrian GP, Antonelli's second stint: 23 clean laps with a tyre
+// age, one left out as an outlier, and a slope fitted to the other 22. The
+// table said "Laps fitted: 23" beside "Outliers: 1".
+test("the laps a fit is of are the ones it was not left without", () => {
+  assert.equal(lapsFitted({ fit_status: "ok", sample_count: 23, excluded_outlier_count: 1 }), 22);
+  assert.equal(lapsFitted({ fit_status: "ok", sample_count: 12, excluded_outlier_count: 0 }), 12);
+  // A fit too scattered to report was still made, of the laps it kept.
+  assert.equal(lapsFitted({ fit_status: "poor_fit", sample_count: 14, excluded_outlier_count: 2 }), 12);
+});
+
+test("a stint with too few laps to fit has no laps fitted, which is not nought", () => {
+  assert.equal(lapsFitted({ fit_status: "too_few_laps", sample_count: 5, excluded_outlier_count: 0 }), null);
+  // Enough laps until the outliers were taken out: no fit was made of the rest.
+  assert.equal(lapsFitted({ fit_status: "too_few_laps", sample_count: 9, excluded_outlier_count: 3 }), null);
 });

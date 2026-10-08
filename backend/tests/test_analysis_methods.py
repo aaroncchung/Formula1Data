@@ -438,7 +438,11 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
         text = " ".join(result["caveats"])
 
         self.assertIn("last clean green-flag lap before the in-lap", text)
-        self.assertIn("positive is quicker", text)
+        # And not "on the new tyres": Sainz in the 2026 Dutch sprint stood
+        # for 8.4 s on lap 16 and went out on the set he came in on.
+        self.assertIn("positive is quicker after the stop", text)
+        self.assertNotIn("new tyres", text)
+        self.assertIn("a stop on the same set", text)
         self.assertIn("no value is given when either lap is missing", text)
 
 
@@ -620,6 +624,47 @@ class TyreDegradationFitTests(unittest.TestCase):
         self.assertIsNone(row["degradation_ms_per_lap"])
         self.assertIsNone(row["raw_slope_ms_per_lap"])
         self.assertIn("at least 8 are required", row["caveats"][0])
+
+    def test_a_stint_with_no_tyre_ages_is_not_said_to_have_no_clean_laps(self):
+        """Bearman's third stint of the 2026 Barcelona GP: 19 clean laps on a set that went on used.
+
+        F1 gives no age for such a set, so there is nothing to fit. The row
+        said "0 clean laps, and at least 8 are required" beside a stint
+        length of 19.
+        """
+        laps = _stint("AAA", range(1, 20), lambda age: 90_000 + 40 * age)
+        for lap in laps:
+            lap["tyre_age"] = None
+        # Some of a stint's laps can have an age and the rest none.
+        some = _stint("BBB", range(1, 20), lambda age: 90_000 + 40 * age)
+        for lap in some[5:]:
+            lap["tyre_age"] = None
+
+        result = calculate_fuel_adjusted_tyre_degradation("2026-01-r", {"type": "R"}, laps + some)
+        rows = {row["driver_code"]: row for row in result["rows"]}
+
+        self.assertEqual((rows["AAA"]["sample_count"], rows["AAA"]["stint_length"]), (0, 19))
+        self.assertEqual(
+            rows["AAA"]["caveats"],
+            [
+                "No rate reported: F1 gives a tyre age for 0 of the stint's 19 clean laps, and at "
+                f"least {MIN_DEGRADATION_LAPS} with one are required. It gives none for a set that "
+                "went on used."
+            ],
+        )
+        self.assertEqual((rows["BBB"]["sample_count"], rows["BBB"]["stint_length"]), (5, 19))
+        self.assertIn("a tyre age for 5 of the stint's 19 clean laps", rows["BBB"]["caveats"][0])
+        self.assertEqual({row["fit_status"] for row in rows.values()}, {"too_few_laps"})
+
+    def test_a_stint_short_of_clean_laps_is_said_to_be_that(self):
+        laps = _stint("AAA", range(1, 6), lambda age: 90_000 + 40 * age)
+
+        (row,) = calculate_fuel_adjusted_tyre_degradation("2026-01-r", {"type": "R"}, laps)["rows"]
+
+        self.assertEqual(
+            row["caveats"],
+            [f"No rate reported: 5 clean laps, and at least {MIN_DEGRADATION_LAPS} are required."],
+        )
 
     def test_laps_lost_to_the_outlier_filter_do_not_count_towards_the_minimum(self):
         laps = _stint(

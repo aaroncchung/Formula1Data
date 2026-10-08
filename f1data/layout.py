@@ -77,7 +77,10 @@ FORMAT_VERSION = 2
 #  13  a wait in the pit lane through a red flag is neither a stop nor a
 #      passage in the strategy analysis, as on the site: it is nobody's first
 #      stop, and is left out of pit loss as a wait
-PIPELINE_VERSION = 13
+#  14  words only: a stint with clean laps and no tyre ages is said to be
+#      short of ages, and the pace change across a stop is "after the stop",
+#      not "on the new tyres"
+PIPELINE_VERSION = 14
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

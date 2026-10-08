@@ -725,8 +725,15 @@ class TyreDegradationRow(Model):
     driver_code: str
     compound: CompoundOrNull
     stint: int
-    sample_count: int
-    stint_length: int
+    sample_count: int = Field(
+        description="The stint's clean laps that have a tyre age, which are the ones a fit can use. "
+        "Those left out of the fit as outliers are still counted here: the fit is of this many less "
+        "excluded_outlier_count."
+    )
+    stint_length: int = Field(
+        description="The stint's clean laps, with a tyre age or without. F1 gives no age for a set that "
+        "went on used."
+    )
     degradation_ms_per_lap: Decimal2 | None = Field(description="Null unless fit_status is ok.")
     raw_slope_ms_per_lap: Decimal2 | None
     fuel_correction_ms_per_lap: Decimal1
@@ -799,7 +806,7 @@ class PaceChangeAcrossStop(Model):
     )
     first_clean_lap_gain_ms: int | None = Field(
         description="The lap before the stop minus the lap after it, in milliseconds. Positive is quicker "
-        "on the new tyres."
+        "after the stop, which is on other tyres unless the stop list says the tyres were not changed."
     )
     before_lap_number: int | None
     before_lap_ms: int | None

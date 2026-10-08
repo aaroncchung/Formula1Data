@@ -698,16 +698,19 @@ def calculate_fuel_adjusted_tyre_degradation(
             "excluded_outlier_count": 0,
         }
         if len(samples) < MIN_DEGRADATION_LAPS:
-            rows.append(
-                {
-                    **row,
-                    "fit_status": "too_few_laps",
-                    "caveats": [
-                        f"No rate reported: {len(samples)} clean laps, and at least "
-                        f"{MIN_DEGRADATION_LAPS} are required."
-                    ],
-                }
-            )
+            # A stint can be short of laps to fit and not of clean laps: F1
+            # gives no tyre age for a set that went on used. Bearman's third
+            # stint of the 2026 Barcelona GP has 19 clean laps and an age for
+            # none, and was said to have "0 clean laps".
+            if len(samples) == len(group):
+                why = f"{len(group)} clean laps, and at least {MIN_DEGRADATION_LAPS} are required."
+            else:
+                why = (
+                    f"F1 gives a tyre age for {len(samples)} of the stint's {len(group)} clean "
+                    f"laps, and at least {MIN_DEGRADATION_LAPS} with one are required. It gives "
+                    "none for a set that went on used."
+                )
+            rows.append({**row, "fit_status": "too_few_laps", "caveats": [f"No rate reported: {why}"]})
             continue
 
         inliers = _without_residual_outliers(samples)

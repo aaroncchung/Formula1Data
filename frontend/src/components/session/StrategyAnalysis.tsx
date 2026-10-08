@@ -13,6 +13,7 @@ import {
   pitLossSummary,
   pitStopLog,
   stationarySummary,
+  stopKeptItsTyres,
   type PitLaneSummary,
   type PitLossSummary,
   type PitStopLogRow,
@@ -74,7 +75,7 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
       ) : null}
 
       <PitStopLog stops={stops} />
-      {estimates.length ? <PaceChangeTable estimates={estimates} /> : null}
+      {estimates.length ? <PaceChangeTable estimates={estimates} pitStops={pitStops} /> : null}
 
       {caveats.length ? <p className="rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400">{caveats.join(" ")}</p> : null}
     </div>
@@ -269,27 +270,52 @@ function StopPitLossCell({ stop }: { stop: PitStopLogRow }) {
   return <span className="text-xs text-slate-500">Not estimated: {pitLossExclusionLabel(stop.pitLoss.reason)}</span>;
 }
 
-function PaceChangeTable({ estimates }: { estimates: ReadonlyArray<PaceChangeAcrossStop> }) {
+function PaceChangeTable({ estimates, pitStops }: { estimates: ReadonlyArray<PaceChangeAcrossStop>; pitStops: ReadonlyArray<PitStop> }) {
+  const sameTyres = estimates.some((estimate) => stopKeptItsTyres(estimate, pitStops));
   return (
     <div>
       <div className="mb-3">
         <h3 className="font-bold text-white">Pace change across the first stop</h3>
         <p className="mt-1 text-sm text-slate-500">
-          The driver&apos;s last clean lap before their first change of tyres against the first one after it. Quicker
-          means quicker on the new tyres. Not adjusted for fuel, traffic or track evolution.
+          The driver&apos;s last clean lap before their first stop against the first one after it. Quicker means
+          quicker after the stop, which is nearly always on other tyres.
+          {sameTyres ? " A stop marked \"same tyres\" is one F1's tyre data has the car on the same set after: a penalty served or a repair." : ""}{" "}
+          Not adjusted for fuel, traffic or track evolution.
         </p>
       </div>
       <DataTable
         rows={estimates}
         columns={[
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
-          { key: "lap", header: "Stop lap", align: "right", render: (row) => row.stop_lap },
+          {
+            key: "lap",
+            header: "Stop lap",
+            align: "right",
+            render: (row) => (
+              <>
+                {stopKeptItsTyres(row, pitStops) ? <SameTyresMark /> : null}
+                {row.stop_lap}
+              </>
+            )
+          },
           { key: "before", header: "Lap before", align: "right", render: (row) => <ComparedLap lap={row.before_lap_number} time={row.before_lap_ms} /> },
           { key: "after", header: "Lap after", align: "right", render: (row) => <ComparedLap lap={row.after_lap_number} time={row.after_lap_ms} /> },
           { key: "change", header: "Pace change", align: "right", render: (row) => <PaceChangeCell estimate={row} /> }
         ]}
       />
     </div>
+  );
+}
+
+/** Beside a stop the car left on the tyres it came in on, so the pace after it is not read as new tyres'. */
+function SameTyresMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-line bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"
+      title="F1's tyre data has the car on the same set of tyres after this stop."
+    >
+      Same tyres
+    </span>
   );
 }
 

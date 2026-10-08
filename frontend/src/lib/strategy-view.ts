@@ -309,6 +309,18 @@ export function pitLossExclusionLabel(reason: PitLossExclusion): string {
   return PIT_LOSS_EXCLUSIONS[reason];
 }
 
+/**
+ * Whether F1's tyre data has the car on the same tyres after the stop a pace
+ * change is across. A stop is nearly always a change of tyres, and the table
+ * said "quicker on the new tyres" of every one: Sainz in the 2026 Dutch
+ * sprint stood for 8.4 s on lap 16 and went out on the set he came in on.
+ */
+export function stopKeptItsTyres(estimate: Pick<PaceChangeAcrossStop, "driver_code" | "stop_lap">, stops: ReadonlyArray<PitStop>): boolean {
+  return stops.some(
+    (stop) => stopKey(stop.driver_code, stop.lap_number) === stopKey(estimate.driver_code, estimate.stop_lap) && stop.tyres_changed === false
+  );
+}
+
 export type PaceChange =
   /** `change_ms` is how much, always positive; `direction` is which way. */
   | { direction: "quicker" | "slower"; change_ms: number; text: string }
@@ -320,7 +332,7 @@ export type PaceChange =
  * The pace change across a stop, in words.
  *
  * The artifact's figure is the lap before minus the lap after, so positive is
- * quicker on the new tyres. A signed number invites reading it the other way,
+ * quicker after the stop. A signed number invites reading it the other way,
  * as this page once did ("negative is quicker"), so the direction is spelled
  * out and the number shown without a sign.
  */

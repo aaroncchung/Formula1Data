@@ -2,7 +2,7 @@ import { DataTable } from "@/components/data-table/DataTable";
 import { AnalysisCaveats } from "@/components/session/AnalysisCaveats";
 import { CompoundBadge, DriverBadge } from "@/components/session/Badges";
 import { formatNumber } from "@/lib/format";
-import { formatRate, tyreFit } from "@/lib/tyre-chart";
+import { formatRate, lapsFitted, tyreFit } from "@/lib/tyre-chart";
 import type { TyreDegradation, TyreDegradationRow } from "@/lib/published/types";
 
 /**
@@ -35,14 +35,14 @@ export function TyreFitTable({ degradation, colors }: { degradation: TyreDegrada
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
           { key: "compound", header: "Compound", render: (row) => <CompoundBadge compound={row.compound} /> },
           { key: "stint", header: "Stint", align: "right", render: (row) => row.stint },
-          { key: "laps", header: "Laps fitted", align: "right", render: (row) => row.sample_count },
+          { key: "laps", header: "Laps fitted", align: "right", render: (row) => lapsFitted(row) ?? <span className="text-slate-600">--</span> },
           { key: "raw", header: "Raw slope", align: "right", render: (row) => <Reported row={row}>{formatRate(row.raw_slope_ms_per_lap)}</Reported> },
           { key: "fuel", header: "Fuel correction", align: "right", render: (row) => <Reported row={row}>{formatRate(row.fuel_correction_ms_per_lap)}</Reported> },
           { key: "adjusted", header: "Tyre rate", align: "right", render: (row) => <RateCell row={row} /> },
           { key: "error", header: "Std error", align: "right", render: (row) => (row.slope_standard_error_ms_per_lap === null ? "--" : `± ${formatNumber(row.slope_standard_error_ms_per_lap, 1)}`) },
           { key: "spread", header: "Scatter", align: "right", render: (row) => (row.residual_spread_ms === null ? "--" : `${formatNumber(row.residual_spread_ms, 0)} ms`) },
           { key: "fit", header: "R²", align: "right", render: (row) => formatNumber(row.r_squared, 2) },
-          { key: "excluded", header: "Outliers", align: "right", render: (row) => row.excluded_outlier_count }
+          { key: "excluded", header: "Outliers left out", align: "right", render: (row) => row.excluded_outlier_count }
         ]}
       />
       <AnalysisCaveats caveats={degradation.caveats} />

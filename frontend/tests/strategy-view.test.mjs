@@ -11,7 +11,8 @@ import {
   pitLossExclusionLabel,
   pitLossSummary,
   pitStopLog,
-  stationarySummary
+  stationarySummary,
+  stopKeptItsTyres
 } from "../src/lib/strategy-view.ts";
 
 /**
@@ -421,7 +422,23 @@ test("compounds are listed most used first, and a session with none unnamed says
 
 // The figure is the lap before minus the lap after. The page used to say
 // "negative is quicker" and colour a negative value as the good one.
-test("a positive pace change is quicker on the new tyres", () => {
+// The 2026 Dutch sprint: Sainz stood for 8.4 s on lap 16 and went out on the
+// set he came in on, 0.077 s quicker on the lap after. The page said "quicker
+// on the new tyres" of every stop.
+test("a stop the car left on the same tyres is told from a change of tyres", () => {
+  const sainz = { driver_code: "SAI", stop_lap: 16 };
+  const stood = stop("SAI", 16, 23_988, [8_400, 23_900], 4_972_191, false);
+
+  assert.equal(stopKeptItsTyres(sainz, [stood]), true);
+  assert.equal(stopKeptItsTyres(sainz, [stop("SAI", 16, 23_988, [2_400, 23_900])]), false);
+  // Another driver's stop on that lap, and his own on another, say nothing of this one.
+  assert.equal(stopKeptItsTyres(sainz, [{ ...stood, driver_code: "ALB" }, { ...stood, lap_number: 9 }]), false);
+  // Where the tyre data does not say, or the stop is not in the list, nothing is claimed.
+  assert.equal(stopKeptItsTyres(sainz, [stop("SAI", 16, 23_988, [8_400, 23_900], 4_972_191, null)]), false);
+  assert.equal(stopKeptItsTyres(sainz, []), false);
+});
+
+test("a positive pace change is quicker after the stop", () => {
   // Norris in the published race: 1,507 ms quicker after his first stop.
   assert.deepEqual(paceChange({ first_clean_lap_gain_ms: 1507 }), {
     direction: "quicker",
@@ -430,7 +447,7 @@ test("a positive pace change is quicker on the new tyres", () => {
   });
 });
 
-test("a negative pace change is slower on the new tyres", () => {
+test("a negative pace change is slower after the stop", () => {
   assert.deepEqual(paceChange({ first_clean_lap_gain_ms: -332 }), {
     direction: "slower",
     change_ms: 332,

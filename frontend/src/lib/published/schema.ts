@@ -641,7 +641,7 @@ export interface PaceChangeAcrossStop {
   caveat: string;
   driver_code: string;
   /**
-   * The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres.
+   * The lap before the stop minus the lap after it, in milliseconds. Positive is quicker after the stop, which is on other tyres unless the stop list says the tyres were not changed.
    */
   first_clean_lap_gain_ms: number | null;
   /**
@@ -793,12 +793,18 @@ export interface TyreDegradationRow {
    * Milliseconds.
    */
   residual_spread_ms: number | null;
+  /**
+   * The stint's clean laps that have a tyre age, which are the ones a fit can use. Those left out of the fit as outliers are still counted here: the fit is of this many less excluded_outlier_count.
+   */
   sample_count: number;
   /**
    * Milliseconds a lap.
    */
   slope_standard_error_ms_per_lap: number | null;
   stint: number;
+  /**
+   * The stint's clean laps, with a tyre age or without. F1 gives no age for a set that went on used.
+   */
   stint_length: number;
 }
 /**

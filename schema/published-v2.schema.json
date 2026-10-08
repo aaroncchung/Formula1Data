@@ -1931,7 +1931,7 @@
               "type": "null"
             }
           ],
-          "description": "The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres."
+          "description": "The lap before the stop minus the lap after it, in milliseconds. Positive is quicker after the stop, which is on other tyres unless the stop list says the tyres were not changed."
         },
         "stop_lap": {
           "description": "The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping or waited in through a red flag.",
@@ -4112,6 +4112,7 @@
           "description": "Milliseconds."
         },
         "sample_count": {
+          "description": "The stint's clean laps that have a tyre age, which are the ones a fit can use. Those left out of the fit as outliers are still counted here: the fit is of this many less excluded_outlier_count.",
           "type": "integer"
         },
         "slope_standard_error_ms_per_lap": {
@@ -4130,6 +4131,7 @@
           "type": "integer"
         },
         "stint_length": {
+          "description": "The stint's clean laps, with a tyre age or without. F1 gives no age for a set that went on used.",
           "type": "integer"
         }
       },

@@ -148,6 +148,18 @@ export type TyreFit =
   | { status: "poor_fit" | "too_few_laps" | "not_reported"; reason: string };
 
 /**
+ * How many laps a stint's fit is of, or null for a stint no fit was made of.
+ *
+ * The row counts the laps a fit could use, and apart from that how many of
+ * them it left out as outliers. The table printed the first under "Laps
+ * fitted", beside the second: 23 for Antonelli's second stint of the 2026
+ * Austrian GP, whose slope is of 22.
+ */
+export function lapsFitted(row: Pick<TyreDegradationRow, "fit_status" | "sample_count" | "excluded_outlier_count">): number | null {
+  return row.fit_status === "too_few_laps" ? null : row.sample_count - row.excluded_outlier_count;
+}
+
+/**
  * Whether a degradation row holds a rate, and if not, why not.
  *
  * A fit the analysis did not report has to stay unreported on the page: its
