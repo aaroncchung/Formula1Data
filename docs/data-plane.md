@@ -147,6 +147,11 @@ What holds for all of them:
   corner (`corner_distance_m`), which is what the row's other distances are
   along; the corner's own `distance_m` is along the lap the corners were
   placed on, and another lap can have the corner tens of metres from there.
+  A corner is where the lap's line passes within 50 m of it, and of several
+  passes the one where the corner should be along that lap, which is told
+  from the corners the line passes once. A lap that went from line to line
+  and is not seen at a corner (it ended down the pit entry, or its position
+  feed froze) has no row for that corner, and the result names it.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

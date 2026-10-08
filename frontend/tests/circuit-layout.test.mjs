@@ -202,7 +202,7 @@ test("a corner is marked where the lap drawn passes it, which is not where anoth
   );
   const line = straightLap(4_000, 20, 2553.8 / 2518);
 
-  const marks = cornersOnLap(layout, line);
+  const marks = cornersOnLap(layout, line, false);
 
   assert.deepEqual(marks.map((mark) => mark.label), ["1", "6"]);
   // Between the samples either side of it, not at the nearer of them.
@@ -210,11 +210,60 @@ test("a corner is marked where the lap drawn passes it, which is not where anoth
   assert.ok(Math.abs(marks[0].distance_m - 300 * (2553.8 / 2518)) < 0.01, `turn 1 at ${marks[0].distance_m}`);
 });
 
+test("a lap whose own distance is out all the way round has its corners marked where its line passes them", () => {
+  // Alonso's lap 1 of the 2026 Austrian GP is counted from the grid: turn 6 is 2,765 m round it,
+  // 247 m on from the corner map's distance. The line was drawn 49 m early, and turn 8 not at all.
+  const layout = circuitLayout(
+    cornerMap([
+      corner(1, 3_000, 40, { distance_m: 300 }),
+      corner(6, 25_178, -30, { distance_m: 2517.8 }),
+      corner(8, 30_411, 20, { distance_m: 3041.1 })
+    ])
+  );
+  const line = straightLap(4_000).map((point) => ({ ...point, distance_m: point.distance_m + 247.4 }));
+
+  const marks = cornersOnLap(layout, line, false);
+
+  assert.deepEqual(marks.map((mark) => mark.label), ["1", "6", "8"]);
+  [547.4, 2765.2, 3288.5].forEach((expected, index) => {
+    assert.ok(Math.abs(marks[index].distance_m - expected) < 0.01, `${marks[index].label} at ${marks[index].distance_m}`);
+  });
+});
+
+test("a whole lap whose distance goes out part-way round still has every corner it passes marked", () => {
+  // The 2026 Japanese GP: where a car's data stops for a stretch, its lap's distance runs long from
+  // there on. Antonelli's lap 5 has 130R 236 m on from the corner map's distance, and the chicane 254.
+  const layout = circuitLayout(
+    cornerMap([
+      corner(1, 3_000, 0, { distance_m: 300 }),
+      corner(2, 9_000, 0, { distance_m: 900 }),
+      corner(3, 15_000, 0, { distance_m: 1_500 }),
+      corner(15, 30_000, 0, { distance_m: 3_000 }),
+      corner(16, 36_000, 0, { distance_m: 3_600 })
+    ])
+  );
+  const line = straightLap(4_000).map((point) => ({
+    ...point,
+    distance_m: point.distance_m > 2_000 ? point.distance_m + 240 : point.distance_m
+  }));
+
+  // It went from line to line, so it passed them all: each is where its line comes nearest.
+  assert.deepEqual(cornersOnLap(layout, line, true), [
+    { label: "1", distance_m: 300 },
+    { label: "2", distance_m: 900 },
+    { label: "3", distance_m: 1_500 },
+    { label: "15", distance_m: 3_240 },
+    { label: "16", distance_m: 3_840 }
+  ]);
+  // A lap that cannot be shown to have gone all the way round has only the corners that are where they should be.
+  assert.deepEqual(cornersOnLap(layout, line, false).map((mark) => mark.label), ["1", "2", "3"]);
+});
+
 test("the corners are turned with the line before one is looked for on the other", () => {
   // The map is drawn turned a quarter; the lap's positions are as the feed has them.
   const layout = circuitLayout(cornerMap([corner(1, 5_000, 0, { distance_m: 500 })], { rotation: 90 }));
 
-  assert.deepEqual(cornersOnLap(layout, straightLap(1_000)), [{ label: "1", distance_m: 500 }]);
+  assert.deepEqual(cornersOnLap(layout, straightLap(1_000), false), [{ label: "1", distance_m: 500 }]);
 });
 
 test("a corner the lap never comes near is not marked, nor one across a hole in the lap's positions", () => {
@@ -229,9 +278,9 @@ test("a corner the lap never comes near is not marked, nor one across a hole in 
   );
   const line = straightLap(2_000).filter((point) => point.distance_m <= 1_000 || point.distance_m >= 1_400);
 
-  assert.deepEqual(cornersOnLap(layout, line), [{ label: "1", distance_m: 300 }]);
-  assert.deepEqual(cornersOnLap(layout, []), []);
-  assert.deepEqual(cornersOnLap(circuitLayout(null), straightLap(2_000)), []);
+  assert.deepEqual(cornersOnLap(layout, line, false), [{ label: "1", distance_m: 300 }]);
+  assert.deepEqual(cornersOnLap(layout, [], false), []);
+  assert.deepEqual(cornersOnLap(circuitLayout(null), straightLap(2_000), true), []);
 });
 
 test("a stretch of the lap that passes close by a corner it is not at is never taken for it", () => {
@@ -241,11 +290,21 @@ test("a stretch of the lap that passes close by a corner it is not at is never t
   // The corner is on the way back, 1,900 m round, and lies nearer the way out, 200 m round.
   const layout = circuitLayout(cornerMap([corner(9, 2_000, 100, { distance_m: 1_900 })]));
 
-  const marks = cornersOnLap(layout, [...out, ...back]);
+  const marks = cornersOnLap(layout, [...out, ...back], true);
 
   assert.equal(marks.length, 1);
   assert.ok(Math.abs(marks[0].distance_m - 1_900) < 0.01, `at ${marks[0].distance_m}`);
+  // A corner passed once, further round the lap than the map has it, says how far the lap's
+  // distance is out. One passed twice does not: either pass could be the corner.
+  // This one is 30 m to the other side of the way out, out of reach of the way back.
+  const withAnother = circuitLayout(
+    cornerMap([corner(9, 2_000, 100, { distance_m: 1_900 }), corner(10, 5_000, -300, { distance_m: 520 })])
+  );
+  assert.deepEqual(
+    cornersOnLap(withAnother, [...out, ...back], true).map((mark) => [mark.label, Math.round(mark.distance_m)]),
+    [["10", 500], ["9", 1_900]]
+  );
   // With no word of how far round it is, the nearest of the lap's line is all there is to go by.
   const unplaced = circuitLayout(cornerMap([corner(9, 2_000, 100, { distance_m: null })]));
-  assert.ok(Math.abs(cornersOnLap(unplaced, [...out, ...back])[0].distance_m - 200) < 0.01);
+  assert.ok(Math.abs(cornersOnLap(unplaced, [...out, ...back], false)[0].distance_m - 200) < 0.01);
 });

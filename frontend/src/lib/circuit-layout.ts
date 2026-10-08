@@ -148,9 +148,10 @@ const POSITION_UNITS_PER_METRE = 10;
 // The corners of the 2026 circuits lie within 20 m of the line a fast lap takes.
 const CORNER_REACH_M = 50;
 // And, where the corner map says how far round the lap the corner is, only
-// this far from there, so that a stretch of track that passes close by (the
-// two sides of a hairpin, a crossover) is never taken for the corner. Laps
-// disagree about distance by about 1%, which on the longest circuit is 70 m.
+// this far from where that puts it on this lap, so that a stretch of track
+// that passes close by (the two sides of a hairpin, a crossover) is never
+// taken for the corner. Laps disagree about distance by about 1%, which on
+// the longest circuit is 70 m.
 const CORNER_SEARCH_M = 200;
 // Two neighbouring points of a line further apart than this have a hole
 // between them, and nothing is placed on the line across it.
@@ -158,6 +159,56 @@ const LINE_STEP_M = 150;
 
 /** A place on the line a lap drove, with how far round that lap it is. */
 export type LinePoint = Point & { readonly distance_m: number };
+
+/** One time a line comes within reach of a place: how near it comes, squared, and how far round the lap that is. */
+type Pass = { readonly off: number; readonly distance_m: number };
+
+/**
+ * Each time a line comes within reach of a place. A pass runs from where the
+ * line comes within reach to where it next goes out of it, or stops, and is
+ * where the line is nearest: between two samples, where that is nearer than
+ * either.
+ */
+function passesOf(line: ReadonlyArray<LinePoint>, at: Point, reach: number): Pass[] {
+  const passes: Pass[] = [];
+  let nearest: Pass | null = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const point = line[index];
+    const next = line[index + 1];
+    const joined = next !== undefined && next.distance_m - point.distance_m <= LINE_STEP_M;
+    let here: Pass = { off: (point.x - at.x) ** 2 + (point.y - at.y) ** 2, distance_m: point.distance_m };
+    if (joined) {
+      const stepX = next.x - point.x;
+      const stepY = next.y - point.y;
+      const length = stepX ** 2 + stepY ** 2;
+      if (length > 0) {
+        // The place on the line between this sample and the next that is nearest.
+        const share = Math.min(1, Math.max(0, ((at.x - point.x) * stepX + (at.y - point.y) * stepY) / length));
+        const off = (point.x + share * stepX - at.x) ** 2 + (point.y + share * stepY - at.y) ** 2;
+        if (off < here.off) {
+          here = { off, distance_m: point.distance_m + share * (next.distance_m - point.distance_m) };
+        }
+      }
+    }
+    if (here.off <= reach && (nearest === null || here.off < nearest.off)) {
+      nearest = here;
+    }
+    if (nearest !== null && (here.off > reach || !joined)) {
+      passes.push(nearest);
+      nearest = null;
+    }
+  }
+  return passes;
+}
+
+function median(values: ReadonlyArray<number>): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
 
 /**
  * The corners a lap passes, each with how far round that lap it is, in the
@@ -168,48 +219,51 @@ export type LinePoint = Point & { readonly distance_m: number };
  * placed the corners on: turn 6 of the 2026 Austrian GP is 2,518 m round
  * that lap and 2,554 m round Stroll's lap 30. Marked at the first on the
  * second lap's axis, the line stands 36 m before the corner. So a corner is
- * marked where the lap drawn passes it, between the two samples either side,
- * and is left out where the lap has no position data near it.
+ * marked where the lap drawn passes it, and is left out where the lap has no
+ * position data near it.
+ *
+ * Which pass is the corner, where the line passes its place more than once,
+ * is told by where the corner should be along the lap. A lap can be out by
+ * more than a search for it allows all the way round: a first lap is counted
+ * from the grid, and on Alonso's lap 1 of the 2026 Austrian GP turn 6 is
+ * 2,765 m round, 247 m on from the corner map's distance. Looked for within
+ * 200 m of that distance, the pass was thrown out and the line drawn 49 m
+ * early, at a sample that happened to be in reach; turn 8 was not drawn at
+ * all. So how far the lap's own distance is out is measured first, from the
+ * corners it passes once, and each corner is looked for where that puts it.
+ *
+ * A lap's distance can also go out part-way round, where its car data stops
+ * for a stretch, and be out from there on by more than the search allows.
+ * `whole` says the lap went from line to line. It then passed every corner,
+ * and one with no pass where it should be is where the line comes nearest
+ * it. A lap that is not whole stopped somewhere, and a corner it never
+ * reached can lie beside the road it drove earlier: only a pass where the
+ * corner should be will do. The analysis places corners by the same rule.
  */
 export function cornersOnLap(
   layout: CircuitLayout,
-  line: ReadonlyArray<LinePoint>
+  line: ReadonlyArray<LinePoint>,
+  whole: boolean
 ): Array<{ label: string; distance_m: number }> {
   const reach = (CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2;
   const turnedLine = line.map((point) => ({ ...turned(point, layout.rotation), distance_m: point.distance_m }));
-  const marks: Array<{ label: string; distance_m: number }> = [];
-  for (const corner of layout.corners) {
-    let nearest: { off: number; distance_m: number } | null = null;
-    const consider = (off: number, along: number) => {
-      const expected = corner.distance_m;
-      if (off > reach || (expected !== null && Math.abs(along - expected) > CORNER_SEARCH_M)) {
-        return;
-      }
-      if (nearest === null || off < nearest.off) {
-        nearest = { off, distance_m: along };
-      }
-    };
-    turnedLine.forEach((point, index) => {
-      consider((point.x - corner.at.x) ** 2 + (point.y - corner.at.y) ** 2, point.distance_m);
-      const next = turnedLine[index + 1];
-      if (!next || next.distance_m - point.distance_m > LINE_STEP_M) {
-        return;
-      }
-      // The place on the line between this sample and the next that is nearest the corner.
-      const stepX = next.x - point.x;
-      const stepY = next.y - point.y;
-      const length = stepX ** 2 + stepY ** 2;
-      if (length === 0) {
-        return;
-      }
-      const share = Math.min(1, Math.max(0, ((corner.at.x - point.x) * stepX + (corner.at.y - point.y) * stepY) / length));
-      const off = (point.x + share * stepX - corner.at.x) ** 2 + (point.y + share * stepY - corner.at.y) ** 2;
-      consider(off, point.distance_m + share * (next.distance_m - point.distance_m));
-    });
-    const found = nearest as { off: number; distance_m: number } | null;
-    if (found !== null) {
-      marks.push({ label: corner.label, distance_m: found.distance_m });
+  const passes = layout.corners.map((corner) => passesOf(turnedLine, corner.at, reach));
+  const out: number[] = [];
+  layout.corners.forEach((corner, index) => {
+    if (corner.distance_m !== null && passes[index].length === 1) {
+      out.push(passes[index][0].distance_m - corner.distance_m);
     }
-  }
+  });
+  const shift = median(out);
+  const marks: Array<{ label: string; distance_m: number }> = [];
+  layout.corners.forEach((corner, index) => {
+    const due = corner.distance_m === null ? null : corner.distance_m + shift;
+    const near = passes[index].filter((pass) => due === null || Math.abs(pass.distance_m - due) <= CORNER_SEARCH_M);
+    const among = near.length > 0 || !whole ? near : passes[index];
+    if (among.length > 0) {
+      const best = among.reduce((left, right) => (right.off < left.off ? right : left));
+      marks.push({ label: corner.label, distance_m: best.distance_m });
+    }
+  });
   return marks.sort((left, right) => left.distance_m - right.distance_m);
 }

@@ -212,14 +212,15 @@ def calculate_corner_analysis(
     # which may not go all the way round.
     lap_times = {row["driver_code"]: _float(row["lap_time_ms"]) for row in representatives}
     complete = {driver: _runs_its_lap_time(rows, lap_times[driver]) for driver, rows in samples.items()}
-    official = _official_corner_rows(
+    placed = _official_corner_rows(
         _usable_corners(corners),
         samples,
         reference_lap_length_m,
         _usual_lap_end(laps, by_lap),
         complete,
     )
-    if official is not None:
+    if placed is not None:
+        official, not_passed = placed
         caveats = [
             "Corners are the circuit's official corner positions. Each is found on a driver's "
             "lap by position, so a distance shown for a driver is along that driver's own lap.",
@@ -251,6 +252,16 @@ def calculate_corner_analysis(
                 f"Not a whole timed lap: {', '.join(short)}. The lap has no lap time, or its telemetry "
                 "does not run the length of it, so its corners are found by position alone, and one it "
                 "did not reach, or has no position data at, has no figures for that driver."
+            )
+        if not_passed:
+            # A whole lap can still miss a corner: one that ends down the pit
+            # entry, or leaves the track. Its rows for those corners are not
+            # there, and why is said.
+            caveats.append(
+                "Not seen at a corner on the lap compared: "
+                + "; ".join(f"{driver} at turn {', '.join(turns)}" for driver, turns in sorted(not_passed.items()))
+                + f". The lap's position data does not come within {OFFICIAL_CORNER_REACH_M:.0f} m of the "
+                "corner, so the driver has no figures for it."
             )
         caveats.extend(_brake_unread_caveat(official))
         return {
@@ -406,8 +417,11 @@ def _official_corner_rows(
     reference_lap_length_m: float | None,
     usual_lap_length_m: float,
     complete: dict[str, bool],
-) -> list[dict[str, Any]] | None:
+) -> tuple[list[dict[str, Any]], dict[str, list[str]]] | None:
     """Each official corner with every driver's figures for it, or None if no lap can place one.
+
+    With them, by driver, the corners a lap that went all the way round is
+    not seen to pass.
 
     ``complete`` says, by driver, whether the lap went all the way round.
     ``usual_lap_length_m`` is what the telemetry of a normal lap measures, or
@@ -417,14 +431,21 @@ def _official_corner_rows(
         return None
     by_corner: list[dict[str, dict[str, Any]]] = [{} for _ in corners]
     placed_at: list[list[float]] = [[] for _ in corners]
+    not_passed: dict[str, list[str]] = {}
     for driver, rows in sorted(samples.items()):
         # The official distances are along a lap of the reference length, and
         # are scaled to this lap's. A lap that stopped somewhere is not a lap
         # long, so its corners are looked for where a normal lap has them.
         length = _lap_length(rows) if complete[driver] else usual_lap_length_m
         scale = length / reference_lap_length_m if reference_lap_length_m and length > 0 else 1.0
-        distances = [_corner_distance_on_lap(rows, corner, scale, complete[driver]) for corner in corners]
+        distances = _corners_on_lap(rows, corners, scale, complete[driver])
         found = [(distance, index) for index, distance in enumerate(distances) if distance is not None]
+        if complete[driver] and len(found) < len(corners):
+            not_passed[driver] = [
+                f"{corner['number']}{corner['letter'] or ''}"
+                for corner, distance in zip(corners, distances)
+                if distance is None
+            ]
         # In the order they come round the lap, each corner owns the track
         # from half-way back to the one before to half-way on to the next.
         found.sort()
@@ -439,7 +460,7 @@ def _official_corner_rows(
                 by_corner[index][driver] = _corner_driver_row(driver, event, distance)
     if not any(placed_at):
         return None
-    return [
+    rows_by_corner = [
         {
             "corner_number": corner["number"],
             "letter": corner["letter"],
@@ -455,41 +476,83 @@ def _official_corner_rows(
         }
         for index, corner in enumerate(corners)
     ]
+    return rows_by_corner, not_passed
 
 
-def _corner_distance_on_lap(
-    rows: list[dict[str, Any]], corner: dict[str, Any], scale: float, complete: bool
-) -> float | None:
-    """How far round this lap the corner is, by the lap's own distance. None if the lap does not show it.
+def _corners_on_lap(
+    rows: list[dict[str, Any]], corners: list[dict[str, Any]], scale: float, complete: bool
+) -> list[float | None]:
+    """How far round this lap each corner is, by the lap's own distance. None for one the lap does not show.
 
-    ``scale`` turns the corner's official distance into this lap's.
+    ``scale`` turns a corner's official distance into this lap's.
     ``complete`` says whether the lap went all the way round.
+
+    A corner is where the lap's line passes it. Where the line passes it more
+    than once, or passes another corner's place on the way to somewhere else,
+    the pass that is the corner is the one where the corner should be along
+    the lap. That used to be taken from the corner's official distance alone,
+    give or take 200 m, and a lap can be further out than that all the way
+    round: a first lap is counted from the grid, and a stretch with no car
+    data leaves the lap's distance long from there on. On Colapinto's lap 53
+    of the 2026 Italian GP the first Lesmo is 2,757 m round, 233 m on from
+    its official distance. The pass was thrown out, and the corner put at a
+    sample 37 m before it that happened to be within reach. So how far the
+    lap's own distance is out is measured first, from the corners it passes
+    once, and each corner is then looked for where that puts it.
     """
-    expected = corner["distance_m"] * scale if corner["distance_m"] is not None else None
-    if corner["x"] is not None and corner["y"] is not None:
-        reach = (OFFICIAL_CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2
-        # (how far from the corner, how far round the lap) of each sample at the corner.
-        at_corner = []
-        for row in rows:
-            if _number(row.get("x")) and _number(row.get("y")):
-                off = (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2
-                if off <= reach:
-                    at_corner.append((off, float(row["distance_m"])))
-        where_expected = [
-            sample
-            for sample in at_corner
-            if expected is None or abs(sample[1] - expected) <= OFFICIAL_CORNER_SEARCH_M
-        ]
-        if where_expected:
-            return min(where_expected)[1]
-        if at_corner and complete:
+    expected = [corner["distance_m"] * scale if corner["distance_m"] is not None else None for corner in corners]
+    passes = [_passes(rows, corner) for corner in corners]
+    out = [found[0][1] - where for found, where in zip(passes, expected) if len(found) == 1 and where is not None]
+    shift = float(median(out)) if out else 0.0
+    placed: list[float | None] = []
+    for found, where in zip(passes, expected):
+        due = where + shift if where is not None else None
+        near = [item for item in found if due is None or abs(item[1] - due) <= OFFICIAL_CORNER_SEARCH_M]
+        if near:
+            placed.append(min(near)[1])
+        elif found and complete:
             # The lap passed the corner, and it is the lap's distance that is out.
-            return min(at_corner)[1]
-    # No position data where the corner is. A lap that went all the way round
-    # can still be read by distance, as far as its samples run.
-    if complete and expected is not None and rows[0]["distance_m"] <= expected <= rows[-1]["distance_m"]:
-        return expected
-    return None
+            placed.append(min(found)[1])
+        elif complete and due is not None and rows[0]["distance_m"] <= due <= rows[-1]["distance_m"] and not any(
+            _number(row.get("x")) and _number(row.get("y")) and abs(row["distance_m"] - due) <= OFFICIAL_CORNER_REACH_M
+            for row in rows
+        ):
+            # No position data where the corner should be. A lap that went
+            # all the way round can still be read by distance, as far as its
+            # samples run. Where it has position data there and the line is
+            # nowhere near the corner, the car did not go through it:
+            # Antonelli's lap 9 of the 2025 British GP ends down the pit
+            # entry, 99 m from turn 17, which was given his figures there.
+            placed.append(due)
+        else:
+            placed.append(None)
+    return placed
+
+
+def _passes(rows: list[dict[str, Any]], corner: dict[str, Any]) -> list[tuple[float, float]]:
+    """Each time a lap's line comes within reach of a corner: how near it comes, squared, and how far round the lap.
+
+    A pass is the samples from where the line comes within reach to where it
+    next goes out of it, and is where the nearest of them is.
+    """
+    if corner["x"] is None or corner["y"] is None:
+        return []
+    reach = (OFFICIAL_CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2
+    passes: list[tuple[float, float]] = []
+    nearest: tuple[float, float] | None = None
+    for row in rows:
+        if not (_number(row.get("x")) and _number(row.get("y"))):
+            continue
+        off = (float(row["x"]) - corner["x"]) ** 2 + (float(row["y"]) - corner["y"]) ** 2
+        if off <= reach:
+            if nearest is None or off < nearest[0]:
+                nearest = (off, float(row["distance_m"]))
+        elif nearest is not None:
+            passes.append(nearest)
+            nearest = None
+    if nearest is not None:
+        passes.append(nearest)
+    return passes
 
 
 def _brakings(rows: list[dict[str, Any]], along: list[float]) -> list[list[tuple[int, int]]]:
@@ -506,19 +569,35 @@ def _brakings(rows: list[dict[str, Any]], along: list[float]) -> list[list[tuple
     brakings: list[list[tuple[int, int]]] = []
     for run in _brake_runs(rows):
         came_off = brakings[-1][-1][1] if brakings else None
-        if came_off is not None and _taken_up_again(rows[came_off], rows[run[0]]):
+        if came_off is not None and _taken_up_again(rows, came_off, run[0]):
             brakings[-1].append(run)
         else:
             brakings.append([run])
     return brakings
 
 
-def _taken_up_again(came_off: dict[str, Any], back_on: dict[str, Any]) -> bool:
-    """Whether the brake going on at one sample is the braking it came off from at another, taken up again."""
-    if back_on["distance_m"] - came_off["distance_m"] > SAME_BRAKING_GAP_M:
+def _taken_up_again(rows: list[dict[str, Any]], came_off: int, back_on: int) -> bool:
+    """Whether the brake going on at one sample is the braking it came off from at another, taken up again.
+
+    What the car gains is looked for at every sample between the two, from
+    the slowest it has been since the brake came off. Looked for at the two
+    ends alone, it was missed where the car went on slowing first: on
+    Bearman's lap 49 of the 2025 Japanese GP the brake comes off at 91 km/h
+    in the chicane, the car slows to 85, gathers speed to 103, and the brake
+    goes on again at 97. That was 6 km/h gained and one braking, and the
+    second part of the chicane was published as braked for from 255 km/h.
+    """
+    if rows[back_on]["distance_m"] - rows[came_off]["distance_m"] > SAME_BRAKING_GAP_M:
         return False
-    before, after = came_off.get("speed_kph"), back_on.get("speed_kph")
-    return not (_number(before) and _number(after)) or float(after) - float(before) < MIN_BRAKING_SPEED_LOSS_KPH
+    slowest = math.inf
+    for row in rows[came_off : back_on + 1]:
+        if not _number(row.get("speed_kph")):
+            continue
+        speed = float(row["speed_kph"])
+        slowest = min(slowest, speed)
+        if speed - slowest >= MIN_BRAKING_SPEED_LOSS_KPH:
+            return False
+    return True
 
 
 def _corner_event(

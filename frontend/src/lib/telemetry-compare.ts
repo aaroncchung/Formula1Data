@@ -136,6 +136,8 @@ export type TelemetryComparison = {
   readonly delta_time_ms: Array<number | null>;
   /** The line lap A drove, in the position data's units, where it has positions. */
   readonly track: TrackPoint[];
+  /** Whether lap A went from line to line: see `runsItsLapTime`. */
+  readonly whole_a: boolean;
   readonly caveats: string[];
 };
 
@@ -320,6 +322,7 @@ export function compareLaps(
     }),
     delta_time_ms: rows.map((row) => (row.a && row.b ? round(row.b.time_ms - row.a.time_ms, 1) : null)),
     track: trackOf(a.lap),
+    whole_a: runsItsLapTime(a.meta.lap_time_ms, samplesA.time),
     caveats: [
       `The laps are laid over each other by the share of the lap covered. A lap's distance is its own car's speed added up, ${lengthLabel(lengthA)} for ${a.meta.driver_code} and ${lengthLabel(lengthB)} for ${b.meta.driver_code} here, so ${b.meta.driver_code}'s is scaled to ${a.meta.driver_code}'s.`,
       `${b.meta.driver_code}'s lap is read where ${a.meta.driver_code}'s samples are: speed, throttle, engine speed and time are interpolated between its two nearest samples, and gear, brake and DRS are taken from the nearer one.`,
@@ -385,6 +388,25 @@ function clockNote(a: ClockedLap, b: ClockedLap): string[] {
 /** A difference in seconds to the thousandth, with its sign: `+0.455 s`. */
 function seconds(ms: number): string {
   return `${ms > 0 ? "+" : ms < 0 ? "-" : ""}${(Math.abs(ms) / 1000).toFixed(3)} s`;
+}
+
+// How far a lap's telemetry may be from its lap time and still run the
+// length of it. The analysis has the same figure: on the 2026 Austrian GP all
+// 1,149 clean laps match their lap time to the millisecond.
+const LAP_TIME_TOLERANCE = 0.02;
+
+/**
+ * Whether a lap was timed and its telemetry runs the length of that time.
+ * Such a lap went from line to line, whatever its telemetry says of the
+ * distance. One with no lap time, or whose telemetry stops before the time
+ * is up, did not, or cannot be shown to have.
+ */
+export function runsItsLapTime(lapTimeMs: number | null, timeMs: ReadonlyArray<number>): boolean {
+  if (lapTimeMs === null || lapTimeMs <= 0 || timeMs.length < 2) {
+    return false;
+  }
+  const elapsed = timeMs[timeMs.length - 1] - timeMs[0];
+  return Math.abs(elapsed - lapTimeMs) <= LAP_TIME_TOLERANCE * lapTimeMs;
 }
 
 /** The line a lap drove, from the samples that have a position. */

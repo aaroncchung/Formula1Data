@@ -103,7 +103,11 @@ FORMAT_VERSION = 2
 #      lap, so a braking through two corners is given for both, and two
 #      brakings with the car driven on between them are two; a corner row
 #      says where its own lap has the corner
-PIPELINE_VERSION = 21
+#  22  a lap's corners are placed together, where its line passes them and
+#      its own distance puts them, and one a whole lap is not seen to pass
+#      has no figures; the brake going on again is the same braking only
+#      if the car gathered no speed anywhere between
+PIPELINE_VERSION = 22
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

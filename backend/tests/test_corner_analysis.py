@@ -673,6 +673,9 @@ class OfficialCornerTests(unittest.TestCase):
         )
         self.assertTrue(any(SHORT_LAP in caveat and "CCC" in caveat for caveat in result["caveats"]))
         self.assertFalse(any("No position data" in caveat for caveat in result["caveats"]))
+        # That says why it has no figures for turn 3. It is not said again as
+        # a whole lap that missed a corner, which this lap is not.
+        self.assertFalse(any("Not seen at a corner" in caveat for caveat in result["caveats"]))
 
     def test_a_lap_that_stops_short_and_has_no_position_data_is_in_no_corner(self):
         """Its distance says how far it got, not where the corners are on it."""
@@ -724,19 +727,134 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(corners[(3, None)]["AAA"]["apex_distance_m"], 3000.0)
 
     def test_a_corner_is_only_found_where_the_lap_passes_it(self):
-        """A corner a kilometre off the track is on no lap by position. With a
-        distance it is still read by that; with none it is not there at all."""
+        """A corner a kilometre off the line a lap drove is on that lap nowhere, whatever the corner's distance.
+
+        The lap has position data where the corner should be, and it is not
+        at the corner. It used to be read there by distance: Antonelli's lap
+        9 of the 2025 British GP ends down the pit entry, 99 m from turn 17,
+        and was given figures for turn 17.
+        """
         elsewhere = [dict(CORNERS[0]), dict(CORNERS[1], y=10_000.0), dict(CORNERS[2])]
 
-        by_distance = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), elsewhere)
+        with_distance = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), elsewhere)
         unplaced = calculate_corner_analysis(
             "s", [lap("AAA")], lap_rows("AAA"), [{**corner, "distance_m": None} for corner in elsewhere]
         )
 
-        self.assertEqual(by_corner(by_distance)[(2, "A")]["AAA"]["apex_distance_m"], 2000.0)
+        self.assertEqual(by_corner(with_distance)[(2, "A")], {})
+        self.assertEqual(set(by_corner(with_distance)[(1, None)]), {"AAA"})
+        self.assertIn(
+            "Not seen at a corner on the lap compared: AAA at turn 2A. The lap's position data does not come "
+            "within 50 m of the corner",
+            " ".join(with_distance["caveats"]),
+        )
         self.assertEqual(by_corner(unplaced)[(2, "A")], {})
         self.assertEqual(unplaced["corners"][1]["distance_m"], None)
         self.assertEqual(set(by_corner(unplaced)[(1, None)]), {"AAA"})
+
+    def test_a_lap_whose_own_distance_is_out_all_the_way_round_has_its_corners_where_its_line_passes_them(self):
+        """A first lap is counted from the grid, and a lap with a stretch of no car data runs long from there on.
+
+        Colapinto's lap 53 of the 2026 Italian GP has the first Lesmo 2,757 m
+        round, 233 m on from its official distance. The corner was looked for
+        within 200 m of that distance: the pass was thrown out, and the
+        corner put at a sample 37 m before it that happened to be in reach.
+        """
+        rows = [{**row, "distance_m": row["distance_m"] + 240.0} for row in lap_rows("AAA")]
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+        corners = by_corner(result)
+
+        self.assertEqual(
+            [corners[key]["AAA"]["corner_distance_m"] for key in ((1, None), (2, "A"), (3, None))],
+            [1240.0, 2240.0, 3240.0],
+        )
+        first = corners[(1, None)]["AAA"]
+        self.assertEqual((first["brake_start_m"], first["apex_distance_m"], first["apex_speed_kph"]), (1090.0, 1240.0, 90.0))
+        self.assertNotIn("Not seen at a corner", " ".join(result["caveats"]))
+
+    def test_a_lap_that_was_not_timed_is_also_read_where_its_own_distance_puts_the_corners(self):
+        """A first lap with no time, counted from the grid: only a pass where the corner should be will do,
+        and where that is on this lap is told by the corners its line passes once."""
+        rows = [{**row, "distance_m": row["distance_m"] + 240.0} for row in lap_rows("AAA")]
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=None)], rows, CORNERS)
+
+        self.assertIn(SHORT_LAP, " ".join(result["caveats"]))
+        self.assertEqual(
+            [by_corner(result)[key]["AAA"]["corner_distance_m"] for key in ((1, None), (2, "A"), (3, None))],
+            [1240.0, 2240.0, 3240.0],
+        )
+
+    def test_a_whole_lap_whose_distance_goes_out_part_way_round_still_has_the_corners_after_that(self):
+        """Where a car's data stops for a stretch its lap's distance runs long from there on.
+
+        The lap went from line to line, so it passed every corner: one with
+        no pass where it should be is where the line comes nearest it.
+        """
+        rows = [
+            {**row, "distance_m": row["distance_m"] + (240.0 if row["distance_m"] > 2_500 else 0.0)}
+            for row in lap_rows("AAA")
+        ]
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+
+        self.assertEqual(
+            [by_corner(result)[key]["AAA"]["corner_distance_m"] for key in ((1, None), (2, "A"), (3, None))],
+            [1000.0, 2000.0, 3240.0],
+        )
+        self.assertNotIn("Not seen at a corner", " ".join(result["caveats"]))
+
+    def test_how_far_a_laps_distance_is_out_is_not_taken_from_a_corner_its_line_passes_twice(self):
+        """The two sides of a hairpin: the side that is the corner is the one where the corner should be."""
+        hairpin = dict(CORNERS[2])
+        # The line also runs 30 m from turn 3's place early in the lap, 500 m round.
+        rows = passing_close_to(hairpin, lap_rows("AAA"), at_m=500)
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+
+        self.assertEqual(by_corner(result)[(3, None)]["AAA"]["corner_distance_m"], 3000.0)
+        self.assertEqual(by_corner(result)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
+        # On a lap that was not timed there is nothing else to go by. Were the early pass taken to say
+        # how far out the lap's distance is, neither corner would be where it should be, and neither found.
+        untimed = calculate_corner_analysis(
+            "s", [lap("AAA", lap_time_ms=None)], rows, [CORNERS[0], hairpin]
+        )
+        self.assertEqual(by_corner(untimed)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
+        self.assertEqual(by_corner(untimed)[(3, None)]["AAA"]["corner_distance_m"], 3000.0)
+
+    def test_the_car_slowing_on_after_the_brake_comes_off_and_then_gathering_speed_is_driven_on_to_another_braking(self):
+        """Bearman's lap 49 of the 2025 Japanese GP: off the brake at 91 km/h in the chicane, down to 85, up to 103, on again at 97.
+
+        What the car had gained was taken from the two ends: 97 against 91.
+        The two applications were one braking, and the second part of the
+        chicane was published as braked for from 255 km/h, 144 m back.
+        """
+
+        def profile(place):
+            if place < 930:
+                return 255.0, False
+            if place <= 1_090:
+                return between(place, 930, 1_090, 255, 91), True
+            if place <= 1_100:
+                return between(place, 1_090, 1_100, 91, 85), False
+            if place <= 1_130:
+                return between(place, 1_100, 1_130, 85, 103), False
+            if place < 1_140:
+                return between(place, 1_130, 1_140, 103, 97), False
+            if place <= 1_150:
+                return between(place, 1_140, 1_150, 97, 93), True
+            return min(255.0, between(place, 1_150, 1_400, 93, 255)), False
+
+        rows, lap_time = driven(profile)
+
+        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=lap_time)], rows, corners_at(1_100, 1_170))
+        first, second = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, None)))
+
+        self.assertEqual((first["braking"], first["brake_start_m"], first["apex_speed_kph"]), ("seen", 930.0, 85.0))
+        # The second application takes 4 km/h off, which is not counted, and the first is not the second corner's.
+        self.assertEqual((second["braking"], second["brake_start_m"]), ("none", None))
+        self.assertEqual((second["apex_distance_m"], second["apex_speed_kph"]), (1150.0, 93.0))
 
     def test_corners_with_no_distance_are_still_found_by_position(self):
         placed_only = [{**corner, "distance_m": None} for corner in CORNERS]

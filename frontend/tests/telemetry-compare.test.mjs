@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { telemetryRows } from "../src/lib/chart-utils.ts";
-import { compareLaps, holeThresholdMs, lapFigures, trackOf } from "../src/lib/telemetry-compare.ts";
+import { compareLaps, holeThresholdMs, lapFigures, runsItsLapTime, trackOf } from "../src/lib/telemetry-compare.ts";
 
 /**
  * A telemetry lap in the published shape, from one row for each sample:
@@ -615,6 +615,26 @@ test("the track drawn is lap A's line, over the samples that have a position", (
   assert.deepEqual(comparison.distance_m, [0.4, 50.4, 100.4]);
   assert.deepEqual(trackOf(lap(3, samples)), []);
   assert.deepEqual(trackOf(lap(3, samples, { x: [1, 2, 3], y: null })), []);
+});
+
+test("a lap went from line to line when it was timed and its telemetry runs the length of that time", () => {
+  const samples = [[0, 0, 200], [45_000, 2_000, 200], [90_000, 4_000, 200]];
+  const timed = (lapTimeMs) =>
+    compareLaps(
+      { meta: { ...meta("RUS", 3), lap_time_ms: lapTimeMs }, lap: lap(3, samples) },
+      { meta: meta("VER", 2), lap: lap(2, samples) },
+      300
+    ).whole_a;
+
+  assert.equal(timed(90_000), true);
+  // To 2%, as the analysis has it.
+  assert.equal(timed(91_500), true);
+  // A lap that stopped part-way round: its telemetry ends a third of the lap time early.
+  assert.equal(timed(135_000), false);
+  // A lap with no time cannot be shown to have gone round.
+  assert.equal(timed(null), false);
+  assert.equal(runsItsLapTime(90_000, []), false);
+  assert.equal(runsItsLapTime(0, [0, 90_000]), false);
 });
 
 test("a comparison says how it was made, and what it can miss", () => {

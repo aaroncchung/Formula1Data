@@ -64,7 +64,7 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
   const rows = telemetryRows(comparison);
   const layout = circuitLayout(corners);
   // The distance axis is lap A's own, so the corners are marked where lap A passes them.
-  const alongLap = cornersOnLap(layout, comparison.track);
+  const alongLap = cornersOnLap(layout, comparison.track, comparison.whole_a);
   const charts = comparison.drs_a || comparison.drs_b ? [...CHARTS, DRS_CHART] : CHARTS;
   const lapDelta = lapTimeDelta(comparison);
   // Each lap's own figures, not lap B's as it is read at lap A's places.
