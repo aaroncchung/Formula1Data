@@ -604,7 +604,11 @@ test("the track drawn is lap A's line, over the samples that have a position", (
   // The position feed can start after the car data does.
   const a = lap(3, samples, { x: [null, 120, 240], y: [null, -30, -60] });
 
-  assert.deepEqual(compare(a, lap(2, samples)).track, [{ x: 120, y: -30 }, { x: 240, y: -60 }]);
+  // Each place with how far round the lap it is, on the distance axis the comparison is drawn on.
+  assert.deepEqual(compare(a, lap(2, samples)).track, [
+    { x: 120, y: -30, distance_m: 50 },
+    { x: 240, y: -60, distance_m: 100 }
+  ]);
   assert.deepEqual(trackOf(lap(3, samples)), []);
   assert.deepEqual(trackOf(lap(3, samples, { x: [1, 2, 3], y: null })), []);
 });

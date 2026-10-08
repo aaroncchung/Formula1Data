@@ -142,9 +142,74 @@ export function trackMap(
   };
 }
 
-/** The corners that have a place along the lap, in the order they come, for marking on a distance axis. */
-export function cornersAlongLap(layout: CircuitLayout): Array<{ label: string; distance_m: number }> {
-  return layout.corners
-    .flatMap((corner) => (corner.distance_m === null ? [] : [{ label: corner.label, distance_m: corner.distance_m }]))
-    .sort((left, right) => left.distance_m - right.distance_m);
+// The position data is in tenths of a metre.
+const POSITION_UNITS_PER_METRE = 10;
+// A lap passes a corner where its line comes this near the corner's place.
+// The corners of the 2026 circuits lie within 20 m of the line a fast lap takes.
+const CORNER_REACH_M = 50;
+// And, where the corner map says how far round the lap the corner is, only
+// this far from there, so that a stretch of track that passes close by (the
+// two sides of a hairpin, a crossover) is never taken for the corner. Laps
+// disagree about distance by about 1%, which on the longest circuit is 70 m.
+const CORNER_SEARCH_M = 200;
+// Two neighbouring points of a line further apart than this have a hole
+// between them, and nothing is placed on the line across it.
+const LINE_STEP_M = 150;
+
+/** A place on the line a lap drove, with how far round that lap it is. */
+export type LinePoint = Point & { readonly distance_m: number };
+
+/**
+ * The corners a lap passes, each with how far round that lap it is, in the
+ * order they come, for marking on the lap's own distance axis.
+ *
+ * A lap's distance is its own car's speed added up, and laps disagree by
+ * tens of metres. The corner map's distances are along the lap the publisher
+ * placed the corners on: turn 6 of the 2026 Austrian GP is 2,518 m round
+ * that lap and 2,554 m round Stroll's lap 30. Marked at the first on the
+ * second lap's axis, the line stands 36 m before the corner. So a corner is
+ * marked where the lap drawn passes it, between the two samples either side,
+ * and is left out where the lap has no position data near it.
+ */
+export function cornersOnLap(
+  layout: CircuitLayout,
+  line: ReadonlyArray<LinePoint>
+): Array<{ label: string; distance_m: number }> {
+  const reach = (CORNER_REACH_M * POSITION_UNITS_PER_METRE) ** 2;
+  const turnedLine = line.map((point) => ({ ...turned(point, layout.rotation), distance_m: point.distance_m }));
+  const marks: Array<{ label: string; distance_m: number }> = [];
+  for (const corner of layout.corners) {
+    let nearest: { off: number; distance_m: number } | null = null;
+    const consider = (off: number, along: number) => {
+      const expected = corner.distance_m;
+      if (off > reach || (expected !== null && Math.abs(along - expected) > CORNER_SEARCH_M)) {
+        return;
+      }
+      if (nearest === null || off < nearest.off) {
+        nearest = { off, distance_m: along };
+      }
+    };
+    turnedLine.forEach((point, index) => {
+      consider((point.x - corner.at.x) ** 2 + (point.y - corner.at.y) ** 2, point.distance_m);
+      const next = turnedLine[index + 1];
+      if (!next || next.distance_m - point.distance_m > LINE_STEP_M) {
+        return;
+      }
+      // The place on the line between this sample and the next that is nearest the corner.
+      const stepX = next.x - point.x;
+      const stepY = next.y - point.y;
+      const length = stepX ** 2 + stepY ** 2;
+      if (length === 0) {
+        return;
+      }
+      const share = Math.min(1, Math.max(0, ((corner.at.x - point.x) * stepX + (corner.at.y - point.y) * stepY) / length));
+      const off = (point.x + share * stepX - corner.at.x) ** 2 + (point.y + share * stepY - corner.at.y) ** 2;
+      consider(off, point.distance_m + share * (next.distance_m - point.distance_m));
+    });
+    const found = nearest as { off: number; distance_m: number } | null;
+    if (found !== null) {
+      marks.push({ label: corner.label, distance_m: found.distance_m });
+    }
+  }
+  return marks.sort((left, right) => left.distance_m - right.distance_m);
 }

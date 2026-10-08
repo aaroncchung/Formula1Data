@@ -14,7 +14,7 @@ import {
 
 import { CornerMarks } from "@/components/session/CornerMarks";
 import { telemetryRows } from "@/lib/chart-utils";
-import { circuitLayout, cornersAlongLap, layoutNote, trackMap } from "@/lib/circuit-layout";
+import { circuitLayout, cornersOnLap, layoutNote, trackMap } from "@/lib/circuit-layout";
 import type { CircuitLayout } from "@/lib/circuit-layout";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
 import type { Corners } from "@/lib/published/types";
@@ -63,7 +63,8 @@ const DRS_CHART: TelemetryChartDef = { keyA: "drsA", keyB: "drsB", title: "DRS o
 export function TelemetryCharts({ comparison, corners }: { comparison: TelemetryComparison; corners: Corners | null }) {
   const rows = telemetryRows(comparison);
   const layout = circuitLayout(corners);
-  const alongLap = cornersAlongLap(layout);
+  // The distance axis is lap A's own, so the corners are marked where lap A passes them.
+  const alongLap = cornersOnLap(layout, comparison.track);
   const charts = comparison.drs_a || comparison.drs_b ? [...CHARTS, DRS_CHART] : CHARTS;
   const lapDelta = lapTimeDelta(comparison);
   // Each lap's own figures, not lap B's as it is read at lap A's places.
@@ -112,7 +113,9 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div className="text-sm font-bold text-white">{chart.title}</div>
                 <div className="text-[11px] uppercase tracking-wider text-slate-600">
-                  {chart.corners && alongLap.length ? "Distance · numbered lines are the circuit's corners" : "Distance"}
+                  {chart.corners && alongLap.length
+                    ? `Distance · numbered lines are the circuit's corners, where ${comparison.driver_a.driver_code}'s lap passes them`
+                    : "Distance"}
                 </div>
               </div>
               <div className="h-[190px]">
@@ -145,7 +148,6 @@ export function TelemetryCharts({ comparison, corners }: { comparison: Telemetry
                       formatter={(value) => `${formatNumber(Number(value), chart.unit === "ms" ? 0 : 1)}${chart.unit ? ` ${chart.unit}` : ""}`}
                     />
                     {chart.keyB ? <Legend /> : <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />}
-                    {/* A corner's distance is along the lap the publisher placed it on, a few metres off any other lap's own. */}
                     {chart.corners
                       ? alongLap.map((corner) => (
                           <ReferenceLine

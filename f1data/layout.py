@@ -99,7 +99,11 @@ FORMAT_VERSION = 2
 #  20  a braking's slowest point is looked for before the next braking
 #      begins, so one corner's braking is not given to the next; a corner
 #      row says what is seen of its braking, in four cases and not two
-PIPELINE_VERSION = 20
+#  21  a corner's braking is looked for in the corner's own stretch of the
+#      lap, so a braking through two corners is given for both, and two
+#      brakings with the car driven on between them are two; a corner row
+#      says where its own lap has the corner
+PIPELINE_VERSION = 21
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

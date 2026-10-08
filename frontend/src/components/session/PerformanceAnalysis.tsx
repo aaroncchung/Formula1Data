@@ -7,7 +7,7 @@ import { TeammateComparison } from "@/components/session/TeammateComparison";
 import { TrackDominance } from "@/components/session/TrackDominance";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
-import { cornerName, cornerSourceNote, noBrakePoint, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
+import { cornerName, cornerPlace, cornerSourceNote, noBrakePoint, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
 import type { SessionPerformance } from "@/lib/published/artifacts";
 import type { CarPerformance, CornerAnalysis, Driver, IdealLaps, PacePrediction } from "@/lib/published/types";
 
@@ -107,14 +107,13 @@ function CornerAnalysisView({ result, drivers }: { result: CornerAnalysis; drive
   const rows = result.corners.flatMap((corner) =>
     corner.drivers.map((driver) => ({
       ...driver,
-      corner: cornerName(corner, result.corner_source),
-      cornerDistance: corner.distance_m
+      corner: cornerName(corner, result.corner_source)
     }))
   );
   return <DataTable rows={rows} columns={[
     { key: "corner", header: "Corner", render: (row) => row.corner },
-    // Where along the lap the corner is, so a row can be found on the telemetry's distance axis.
-    { key: "at", header: "At", align: "right", render: (row) => metres(row.cornerDistance) },
+    // Where along the driver's own lap the corner is, so a row can be found on that lap's distance axis.
+    { key: "at", header: "At", align: "right", render: (row) => metres(cornerPlace(row)) },
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     {
       key: "brake",

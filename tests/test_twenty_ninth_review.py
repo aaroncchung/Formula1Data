@@ -104,5 +104,5 @@ def test_the_thirtieth_reviews_two_corners_of_the_same_race(tmp_path):
     russell = row(1, "RUS")
     assert (russell["braking"], russell["brake_start_m"]) == ("began_unread", None)
     said = " ".join(result["caveats"])
-    began = said[said.index("where the braking for a corner began for:") :].split(".")[0]
+    began = said[said.index("where the braking for a corner began") :].split(".")[0]
     assert "RUS" in began and "The driver braked, from a point that is not known" in said

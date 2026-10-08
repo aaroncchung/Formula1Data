@@ -17,7 +17,7 @@
               "type": "null"
             }
           ],
-          "description": "Metres."
+          "description": "Along the lap the circuit's corners were placed on when corner_source is official, and otherwise the middle of where the drivers were slowest. A driver's own lap has the corner at that driver's corner_distance_m."
         },
         "drivers": {
           "items": {
@@ -554,7 +554,7 @@
         },
         "braking": {
           "$ref": "#/$defs/Braking",
-          "description": "seen: the driver braked, and the feed shows it from where it began. none: the brake was read all the way into the corner and was not on. began_unread: the driver braked, and the feed has no brake reading where it began, so the brake point and what is counted from it are null. unread: the feed shows no braking and has no brake reading for part of the approach, so whether the driver braked is not known."
+          "description": "seen: the driver braked, and the feed shows it from where it began. none: the brake was read all the way into the corner, and no braking that is the corner's took 8 km/h off the car. began_unread: the driver braked, and where it began the feed has no brake reading, or has the brake on while the car gathers speed, so the brake point and what is counted from it are null. unread: no braking that counts is seen and the feed has no brake reading for part of the approach, so whether the driver braked is not known."
         },
         "braking_distance_m": {
           "anyOf": [
@@ -567,6 +567,11 @@
             }
           ],
           "description": "Metres."
+        },
+        "corner_distance_m": {
+          "description": "Where the corner is along this driver's own lap, which is what the other distances of the row are along: an official corner as it is found on the lap, and a corner inferred from the braking where this driver was slowest. Laps measure their own distance and disagree by tens of metres, so this is not the corner's distance_m.",
+          "type": "number",
+          "x-decimals": 1
         },
         "driver_code": {
           "type": "string"
@@ -610,6 +615,7 @@
       },
       "required": [
         "driver_code",
+        "corner_distance_m",
         "brake_start_m",
         "apex_distance_m",
         "braking_distance_m",

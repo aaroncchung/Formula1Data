@@ -7,6 +7,7 @@ the optional FastAPI service.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections import defaultdict
 import math
 from statistics import mean, median
@@ -85,6 +86,14 @@ POSITION_UNITS_PER_METRE = 10.0
 # It is looked for this far either side of the corner, and never past the
 # midpoint to the next one.
 OFFICIAL_CORNER_WINDOW_M = 75.0
+# The brake coming off and going on again is one braking when it goes on
+# within this far of where it came off.
+SAME_BRAKING_GAP_M = 80.0
+# A braking is counted when it takes this much off the car, over this far.
+MIN_BRAKING_SPEED_LOSS_KPH = 8.0
+MIN_BRAKING_DISTANCE_M = 5.0
+# Its slowest point is looked for no further than this past where the brake came off.
+BRAKING_REACH_M = 250.0
 
 
 def calculate_track_dominance(
@@ -199,7 +208,6 @@ def calculate_corner_analysis(
     """
     by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
     representatives, samples = representative_telemetry_laps(laps, by_lap)
-    events_by_driver = {driver: _braking_events(driver, rows) for driver, rows in samples.items()}
     # A driver who retires early is here with whatever lap they managed,
     # which may not go all the way round.
     lap_times = {row["driver_code"]: _float(row["lap_time_ms"]) for row in representatives}
@@ -207,7 +215,6 @@ def calculate_corner_analysis(
     official = _official_corner_rows(
         _usable_corners(corners),
         samples,
-        events_by_driver,
         reference_lap_length_m,
         _usual_lap_end(laps, by_lap),
         complete,
@@ -216,9 +223,18 @@ def calculate_corner_analysis(
         caveats = [
             "Corners are the circuit's official corner positions. Each is found on a driver's "
             "lap by position, so a distance shown for a driver is along that driver's own lap.",
-            "A driver's braking figures for a corner are those of the braking whose slowest "
-            "point is nearest it. Where the driver did not brake for a corner, only the slowest "
-            f"speed within {OFFICIAL_CORNER_WINDOW_M:.0f} m of it and the exit speed are given.",
+            "A corner's stretch of a lap runs from half-way back to the corner before it to half-way "
+            "on to the next. A braking is a corner's when the brake is on in that stretch before the "
+            "corner, or when the car, slowing from it, is at its slowest in the stretch. The slowest "
+            "point given is the slowest in the corner's stretch before the next braking begins, and "
+            "of more than one braking the one whose slowest point is nearest the corner is given. A "
+            "braking that goes on through two corners' stretches is given for both, from the one "
+            "brake point.",
+            f"The brake coming off and going on again within {SAME_BRAKING_GAP_M:.0f} m, without the car "
+            f"gaining {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h, is one braking. A braking that takes less "
+            f"than {MIN_BRAKING_SPEED_LOSS_KPH:.0f} km/h off the car is not counted. Where the driver did "
+            f"not brake for a corner, only the slowest speed within {OFFICIAL_CORNER_WINDOW_M:.0f} m of "
+            "it, before the brake next goes on past it, and the exit speed are given.",
             "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
         ]
         unplaced = sorted(
@@ -250,8 +266,8 @@ def calculate_corner_analysis(
         "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
     ]
     events: list[dict[str, Any]] = []
-    for driver_events in events_by_driver.values():
-        events.extend(driver_events)
+    for driver, rows in samples.items():
+        events.extend(_braking_events(driver, rows))
 
     clusters: list[list[dict[str, Any]]] = []
     for event in sorted(events, key=lambda row: row["apex_distance_m"]):
@@ -276,7 +292,8 @@ def calculate_corner_analysis(
                 by_driver[event["driver_code"]] = event
         driver_rows = []
         for driver, event in sorted(by_driver.items()):
-            driver_rows.append(_corner_driver_row(driver, event))
+            # A corner found from the braking is, on a driver's lap, where that driver was slowest.
+            driver_rows.append(_corner_driver_row(driver, event, event["apex_distance_m"]))
         position_event = min(cluster, key=lambda row: abs(row["apex_distance_m"] - center))
         inferred.append(
             {
@@ -316,9 +333,10 @@ def _brake_unread_caveat(corners: list[dict[str, Any]]) -> list[str]:
     """What to say of the corners whose braking F1's feed does not show whole, or nothing when it shows every one.
 
     Two different things, said apart. A driver seen braking from the sample
-    the reading comes back on did brake, from somewhere before it. A driver
-    not seen braking at all, with part of the approach unread, may have or
-    may not.
+    the reading comes back on did brake, from somewhere before it, and so did
+    one slowed by a brake that reads on from where the car was still
+    gathering speed. A driver not seen braking at all, with part of the
+    approach unread, may have or may not.
     """
 
     def drivers(kind: str) -> str:
@@ -329,9 +347,9 @@ def _brake_unread_caveat(corners: list[dict[str, Any]]) -> list[str]:
     caveats = []
     if began := drivers("began_unread"):
         caveats.append(
-            f"F1's car feed has no brake reading where the braking for a corner began for: {began}. The "
-            "driver braked, from a point that is not known: the brake point and what is counted from it "
-            "are left out."
+            "F1's car feed has no brake reading where the braking for a corner began, or has the brake "
+            f"on there while the car gathers speed, for: {began}. The driver braked, from a point that is "
+            "not known: the brake point and what is counted from it are left out."
         )
     if unread := drivers("unread"):
         caveats.append(
@@ -346,9 +364,10 @@ def _has_position(rows: list[dict[str, Any]]) -> bool:
     return any(_number(row.get("x")) and _number(row.get("y")) for row in rows)
 
 
-def _corner_driver_row(driver: str, event: dict[str, Any]) -> dict[str, Any]:
+def _corner_driver_row(driver: str, event: dict[str, Any], corner_distance: float) -> dict[str, Any]:
     return {
         "driver_code": driver,
+        "corner_distance_m": round(corner_distance, 1),
         "brake_start_m": _round_or_none(event.get("brake_start_m"), 1),
         "apex_distance_m": round(event["apex_distance_m"], 1),
         "braking_distance_m": _round_or_none(event.get("braking_distance_m"), 1),
@@ -384,7 +403,6 @@ def _usable_corners(corners: list[dict[str, Any]] | None) -> list[dict[str, Any]
 def _official_corner_rows(
     corners: list[dict[str, Any]],
     samples: dict[str, list[dict[str, Any]]],
-    events_by_driver: dict[str, list[dict[str, Any]]],
     reference_lap_length_m: float | None,
     usual_lap_length_m: float,
     complete: dict[str, bool],
@@ -410,35 +428,15 @@ def _official_corner_rows(
         # In the order they come round the lap, each corner owns the track
         # from half-way back to the one before to half-way on to the next.
         found.sort()
+        along = [row["distance_m"] for row in rows]
+        brakings = _brakings(rows, along)
         for place, (distance, index) in enumerate(found):
             start = (found[place - 1][0] + distance) / 2 if place else -math.inf
             end = (distance + found[place + 1][0]) / 2 if place + 1 < len(found) else math.inf
             placed_at[index].append(distance)
-            braking = [
-                event
-                for event in events_by_driver.get(driver, [])
-                if start <= event["apex_distance_m"] < end
-            ]
-            if braking:
-                event = min(braking, key=lambda item: abs(item["apex_distance_m"] - distance))
-            else:
-                near = (
-                    max(start, distance - OFFICIAL_CORNER_WINDOW_M),
-                    min(end, distance + OFFICIAL_CORNER_WINDOW_M),
-                )
-                event = _slowest_point_near(rows, distance, *near)
-                # No braking was seen. That is a driver who did not brake only
-                # if the brake was read all the way in: Gasly's lap 56 of the
-                # 2026 Australian GP has no reading for the 365 m before turn
-                # 9, from 311 km/h to 218, and was published as "no braking".
-                # All the way in is from where the corner's own stretch of
-                # track begins, half-way from the corner before: braking for
-                # this corner that was seen would have been looked for there.
-                if event is not None:
-                    unread = _brake_unread(rows, start, event["apex_distance_m"])
-                    event["braking"] = "unread" if unread else "none"
+            event = _corner_event(rows, along, brakings, distance, start, end)
             if event is not None:
-                by_corner[index][driver] = _corner_driver_row(driver, event)
+                by_corner[index][driver] = _corner_driver_row(driver, event, distance)
     if not any(placed_at):
         return None
     return [
@@ -494,16 +492,186 @@ def _corner_distance_on_lap(
     return None
 
 
+def _brakings(rows: list[dict[str, Any]], along: list[float]) -> list[list[tuple[int, int]]]:
+    """A lap's brakings, in order: each the brake applications that make it up, from first sample to last.
+
+    The brake coming off and going on again is one braking, taken up again,
+    when it goes on within 80 m and the car has not gained 8 km/h, the least
+    a braking has to take off to be counted. A car that has gained it has
+    been driven on from one corner and is being slowed for another: on
+    Albon's lap 78 of the 2026 Monaco GP the brake comes off at 79 km/h for
+    turn 5 and goes on again 74 m later, at 140 km/h, for the hairpin. Those
+    were one braking, and the hairpin's.
+    """
+    brakings: list[list[tuple[int, int]]] = []
+    for run in _brake_runs(rows):
+        came_off = brakings[-1][-1][1] if brakings else None
+        if came_off is not None and _taken_up_again(rows[came_off], rows[run[0]]):
+            brakings[-1].append(run)
+        else:
+            brakings.append([run])
+    return brakings
+
+
+def _taken_up_again(came_off: dict[str, Any], back_on: dict[str, Any]) -> bool:
+    """Whether the brake going on at one sample is the braking it came off from at another, taken up again."""
+    if back_on["distance_m"] - came_off["distance_m"] > SAME_BRAKING_GAP_M:
+        return False
+    before, after = came_off.get("speed_kph"), back_on.get("speed_kph")
+    return not (_number(before) and _number(after)) or float(after) - float(before) < MIN_BRAKING_SPEED_LOSS_KPH
+
+
+def _corner_event(
+    rows: list[dict[str, Any]],
+    along: list[float],
+    brakings: list[list[tuple[int, int]]],
+    distance: float,
+    start: float,
+    end: float,
+) -> dict[str, Any] | None:
+    """A driver's figures for one official corner, which is at ``distance`` and whose stretch is ``start`` to ``end``.
+
+    A braking is the corner's when the brake is on in the corner's stretch
+    before the corner, or when the car, slowing from it, is at its slowest
+    in the stretch. The second alone was the rule, and it gave a braking to
+    one corner only: a braking through two corners left the first of them
+    published as not braked for, as the first part of a chicane was. With
+    the first alone the second part would be, since the brake is off before
+    its stretch begins.
+    """
+    first, last = bisect_left(along, start), bisect_left(along, end)
+    counted = []
+    for position, braking in enumerate(brakings):
+        began, came_off = braking[0][0], braking[-1][1]
+        if began >= last:
+            break
+        # The slowest point of a braking is before the next braking begins.
+        # Looked for 250 m on regardless, Albon's braking for turn 12 on lap
+        # 36 of the 2026 Australian GP, from 204 km/h to 188, found the 108
+        # km/h of turn 13: turn 12 was published as not braked for, and turn
+        # 13 with a brake point 287 m before it.
+        until = brakings[position + 1][0][0] if position + 1 < len(brakings) else len(rows)
+        reach = along[came_off] + BRAKING_REACH_M
+        on_samples = [
+            index for on, off in braking for index in range(on, off + 1) if _number(rows[index].get("speed_kph"))
+        ]
+        # With the brake on, on the way to the corner. A brake that only goes
+        # on past the corner is taken as far as the end of the corner's stretch.
+        approach = [index for index in on_samples if along[index] <= distance]
+        braked = approach or [index for index in on_samples if index < last]
+        if not braked or not _number(rows[began].get("speed_kph")):
+            continue
+        # The car slows for the corner from the fastest it is on the way
+        # there with the brake on. That is where the braking begins, unless
+        # the brake reads on while the car gathers speed: on Stroll's lap 36
+        # of the 2026 Australian GP it reads on for 636 m, most of it at full
+        # throttle, from 150 km/h up to 253 and down to 189 for turn 6.
+        # Counted from where the reading went on the car lost nothing, and
+        # turn 6 was published as not braked for.
+        peak = max(braked, key=lambda index: float(rows[index]["speed_kph"]))
+        slowing = [
+            index for index in range(peak, until) if along[index] <= reach and _number(rows[index].get("speed_kph"))
+        ]
+        here = [index for index in slowing if first <= index < last]
+        if not here:
+            continue
+        # The corner's slowest point is the slowest of the braking in the corner's stretch.
+        apex = min(here, key=lambda index: float(rows[index]["speed_kph"]))
+        slowest = min(slowing, key=lambda index: float(rows[index]["speed_kph"]))
+        if not first <= slowest < last:
+            if not any(off >= first and along[max(on, first)] <= distance for on, off in braking):
+                continue
+            if began < first and apex == here[0]:
+                # Nowhere in the stretch is the car slower than where it
+                # comes into it: the end of a braking for the corner before,
+                # still on as the car gathers speed, is not one for this.
+                continue
+        entry_speed, apex_speed = float(rows[began]["speed_kph"]), float(rows[apex]["speed_kph"])
+        fastest = float(rows[peak]["speed_kph"])
+        braking_distance = float(along[apex] - along[began])
+        if fastest - apex_speed < MIN_BRAKING_SPEED_LOSS_KPH or braking_distance < MIN_BRAKING_DISTANCE_M:
+            continue
+        # A braking that begins straight after a sample with no brake reading
+        # began somewhere in the stretch with none: its first sample is where
+        # the reading came back, not where the driver began to brake. Nor is
+        # it where a reading went on with the car still to gather speed.
+        gathered = fastest - min(float(rows[index]["speed_kph"]) for index in braked if index <= peak)
+        began_unread = (began > 0 and rows[began - 1].get("brake", False) is None) or (
+            gathered >= MIN_BRAKING_SPEED_LOSS_KPH
+        )
+        # For this corner the brake is last on where the last application
+        # begun before the slowest point came off.
+        last_on = max(off for on, off in braking if on <= apex)
+        ended_unread = last_on + 1 < len(rows) and rows[last_on + 1].get("brake", False) is None
+        start_time = _interpolate(rows, along[began], "_elapsed_ms")
+        end_time = _interpolate(rows, along[last_on], "_elapsed_ms")
+        counted.append(
+            {
+                "brake_start_m": None if began_unread else along[began],
+                "apex_distance_m": float(along[apex]),
+                "braking_distance_m": None if began_unread else braking_distance,
+                "entry_speed_kph": None if began_unread else entry_speed,
+                "apex_speed_kph": apex_speed,
+                "exit_speed_kph": _interpolate(rows, min(along[-1], along[apex] + 150), "speed_kph"),
+                "speed_loss_kph": None if began_unread else entry_speed - apex_speed,
+                "brake_duration_ms": end_time - start_time
+                if end_time is not None and start_time is not None and not began_unread and not ended_unread
+                else None,
+                "braking": "began_unread" if began_unread else "seen",
+            }
+        )
+    if counted:
+        return min(counted, key=lambda item: abs(item["apex_distance_m"] - distance))
+
+    # No braking is the corner's. Its slowest point is looked for before the
+    # brake next goes on past it, which is for another corner.
+    runs = [run for braking in brakings for run in braking]
+    following = next((along[on] for on, _ in runs if along[on] > distance), math.inf)
+    event = _slowest_point_near(
+        rows,
+        distance,
+        max(start, distance - OFFICIAL_CORNER_WINDOW_M),
+        min(end, distance + OFFICIAL_CORNER_WINDOW_M),
+        following,
+    )
+    if event is None:
+        return None
+    # That is a driver who did not brake only if the brake was read all the
+    # way in: Gasly's lap 56 of the 2026 Australian GP has no reading for the
+    # 365 m before turn 9, from 311 km/h to 218, and was published as "no
+    # braking". All the way in is from where the corner's own stretch of
+    # track begins. And a brake that is on where its reading comes back, on
+    # the way in, is a driver who braked, however little of it was seen.
+    came_back_on = any(
+        on > 0 and rows[on - 1].get("brake", False) is None and start <= along[on] <= event["apex_distance_m"]
+        for on, _ in runs
+    )
+    if came_back_on:
+        event["braking"] = "began_unread"
+    elif _brake_unread(rows, start, event["apex_distance_m"]):
+        event["braking"] = "unread"
+    else:
+        event["braking"] = "none"
+    return event
+
+
 def _brake_unread(rows: list[dict[str, Any]], start: float, end: float) -> bool:
     """Whether any sample of a stretch of a lap has no brake reading."""
     return any(start <= row["distance_m"] <= end and row.get("brake", False) is None for row in rows)
 
 
 def _slowest_point_near(
-    rows: list[dict[str, Any]], distance: float, start: float, end: float
+    rows: list[dict[str, Any]], distance: float, start: float, end: float, before: float = math.inf
 ) -> dict[str, Any] | None:
-    """The slowest sample around a corner the driver did not brake for, as a corner event."""
-    window = [row for row in rows if start <= row["distance_m"] <= end and _number(row.get("speed_kph"))]
+    """The slowest sample around a corner the driver did not brake for, as a corner event.
+
+    Looked for from ``start`` to ``end``, and short of ``before``.
+    """
+    window = [
+        row
+        for row in rows
+        if start <= row["distance_m"] <= end and row["distance_m"] < before and _number(row.get("speed_kph"))
+    ]
     if not window:
         return None
     apex = min(window, key=lambda row: (float(row["speed_kph"]), abs(row["distance_m"] - distance)))
@@ -1130,7 +1298,8 @@ def _prepare_samples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [row for row in deduped if row.get("_elapsed_ms") is not None]
 
 
-def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _brake_runs(rows: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    """A lap's brake applications: the first and the last sample of each stretch with the brake on."""
     runs: list[tuple[int, int]] = []
     start = None
     for index, row in enumerate(rows):
@@ -1142,10 +1311,14 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
             start = None
     if start is not None:
         runs.append((start, len(rows) - 1))
+    return runs
 
+
+def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The brakings of a lap, wherever they are: what corners are inferred from when the circuit's are not known."""
     merged: list[tuple[int, int]] = []
-    for run in runs:
-        if merged and rows[run[0]]["distance_m"] - rows[merged[-1][1]]["distance_m"] <= 80:
+    for run in _brake_runs(rows):
+        if merged and rows[run[0]]["distance_m"] - rows[merged[-1][1]]["distance_m"] <= SAME_BRAKING_GAP_M:
             merged[-1] = (merged[-1][0], run[1])
         else:
             merged.append(run)
@@ -1158,12 +1331,8 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
         began_unread = start_index > 0 and rows[start_index - 1].get("brake", False) is None
         ended_unread = end_index + 1 < len(rows) and rows[end_index + 1].get("brake", False) is None
         start_distance = rows[start_index]["distance_m"]
-        search_end = rows[end_index]["distance_m"] + 250
+        search_end = rows[end_index]["distance_m"] + BRAKING_REACH_M
         # The slowest point of a braking is before the next braking begins.
-        # Looked for 250 m on regardless, Albon's braking for turn 12 on lap
-        # 36 of the 2026 Australian GP, from 204 km/h to 188, found the 108
-        # km/h of turn 13: turn 12 was published as not braked for, and turn
-        # 13 with a brake point 287 m before it.
         last_index = merged[position + 1][0] if position + 1 < len(merged) else len(rows)
         window = [
             row
@@ -1176,7 +1345,7 @@ def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, A
         entry_speed = float(rows[start_index]["speed_kph"])
         apex_speed = float(apex["speed_kph"])
         braking_distance = float(apex["distance_m"] - start_distance)
-        if entry_speed - apex_speed < 8 or braking_distance < 5:
+        if entry_speed - apex_speed < MIN_BRAKING_SPEED_LOSS_KPH or braking_distance < MIN_BRAKING_DISTANCE_M:
             continue
         exit_speed = _interpolate(rows, min(rows[-1]["distance_m"], apex["distance_m"] + 150), "speed_kph")
         start_time = _interpolate(rows, start_distance, "_elapsed_ms")

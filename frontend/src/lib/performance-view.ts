@@ -65,18 +65,40 @@ export function cornerName(corner: Pick<AnalysedCorner, "corner_number" | "lette
  * car feed had no brake reading on the approach, and then nothing is known:
  * Gasly into turn 9 on lap 56 of the 2026 Australian GP, from 311 km/h to
  * 218 with no reading, was shown as "No braking".
+ *
+ * A generation built before `braking` says it with `brake_known`, and one
+ * built before that says nothing. Both are still read while the sessions
+ * are rebuilt, so the older word is kept: without it that same row of
+ * Gasly's, from a generation that knew, was "No braking" again.
  */
-export function noBrakePoint(row: { braking?: string }): string {
+export function noBrakePoint(row: { braking?: string; brake_known?: boolean }): string {
   switch (row.braking) {
     case "unread":
       return "No brake reading";
     case "began_unread":
       // Seen braking, from the sample the reading came back on: they braked, from somewhere before it.
       return "Braked, point not known";
-    default:
-      // "none", and a generation from before the analysis said which, read as it was.
+    case "none":
+    case "seen":
       return "No braking";
+    default:
+      return row.brake_known === false ? "No brake reading" : "No braking";
   }
+}
+
+/**
+ * Where a corner is on the lap a row's figures are from, in metres, or null
+ * when the generation does not say.
+ *
+ * The row's brake point is along the driver's own lap, and laps disagree
+ * about distance: on Stroll's lap 30 of the 2026 Austrian GP turn 6 is at
+ * 2,554 m, and the table put "At 2,518 m" beside his figures, which is where
+ * the lap the corners were placed on has it. A generation from before each
+ * row said where its own lap has the corner has no place to show, and the
+ * other lap's is not shown in its stead.
+ */
+export function cornerPlace(row: { corner_distance_m?: number | null }): number | null {
+  return row.corner_distance_m ?? null;
 }
 
 /** What the corners of an analysis are, in a sentence, for the panel that lists them. */

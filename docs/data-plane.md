@@ -137,7 +137,16 @@ What holds for all of them:
   began; none, with the brake read all the way in; begun in a stretch with
   no reading, so that the driver braked from a point that is not known; or
   not seen, with part of the approach unread, so that whether the driver
-  braked is not known. Only the first has a brake point.
+  braked is not known. Only the first has a brake point. A corner's braking
+  is looked for in the corner's own stretch of the lap, from half-way back to
+  the corner before to half-way on to the next: a braking is the corner's
+  when the brake is on there before the corner, or when the car, slowing
+  from it, is at its slowest there. So one braking through two corners is in
+  both rows, from the one brake point, and a braking that takes less than 8
+  km/h off the car is in none. Each row says where its own lap has the
+  corner (`corner_distance_m`), which is what the row's other distances are
+  along; the corner's own `distance_m` is along the lap the corners were
+  placed on, and another lap can have the corner tens of metres from there.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

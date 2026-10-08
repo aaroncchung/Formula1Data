@@ -932,6 +932,12 @@ class TrackDominance(Model):
 
 class CornerDriver(Model):
     driver_code: str
+    corner_distance_m: Decimal1 = Field(
+        description="Where the corner is along this driver's own lap, which is what the other distances "
+        "of the row are along: an official corner as it is found on the lap, and a corner inferred from "
+        "the braking where this driver was slowest. Laps measure their own distance and disagree by "
+        "tens of metres, so this is not the corner's distance_m."
+    )
     brake_start_m: Decimal1 | None = Field(
         description="Null unless braking is seen: the driver did not brake for the corner, or where they "
         "began to is not known."
@@ -945,10 +951,11 @@ class CornerDriver(Model):
     brake_duration_ms: Decimal1 | None
     braking: Braking = Field(
         description="seen: the driver braked, and the feed shows it from where it began. none: the brake "
-        "was read all the way into the corner and was not on. began_unread: the driver braked, and the "
-        "feed has no brake reading where it began, so the brake point and what is counted from it are "
-        "null. unread: the feed shows no braking and has no brake reading for part of the approach, so "
-        "whether the driver braked is not known."
+        "was read all the way into the corner, and no braking that is the corner's took 8 km/h off the "
+        "car. began_unread: the driver braked, and where it began the feed has no brake reading, or has "
+        "the brake on while the car gathers speed, so the brake point and what is counted from it are "
+        "null. unread: no braking that counts is seen and the feed has no brake reading for part of the "
+        "approach, so whether the driver braked is not known."
     )
 
 
@@ -957,7 +964,11 @@ class AnalysedCorner(Model):
         description="The circuit's own number when corner_source is official, otherwise the order found."
     )
     letter: str | None
-    distance_m: Decimal1 | None
+    distance_m: Decimal1 | None = Field(
+        description="Along the lap the circuit's corners were placed on when corner_source is official, "
+        "and otherwise the middle of where the drivers were slowest. A driver's own lap has the corner "
+        "at that driver's corner_distance_m."
+    )
     x: Decimal1 | None
     y: Decimal1 | None
     drivers: list[CornerDriver]

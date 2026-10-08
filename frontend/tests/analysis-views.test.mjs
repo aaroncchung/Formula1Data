@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cornerName, cornerSourceNote, minisectorTally, noBrakePoint, unavailableAnalyses } from "../src/lib/performance-view.ts";
+import { cornerName, cornerPlace, cornerSourceNote, minisectorTally, noBrakePoint, unavailableAnalyses } from "../src/lib/performance-view.ts";
 import { teammateBasis, teammateGap, teammateGapText } from "../src/lib/teammate-view.ts";
 import { formatRate, reportedFitCount, tyreFit, tyreFitLabel } from "../src/lib/tyre-chart.ts";
 
@@ -358,4 +358,20 @@ test("a corner with no brake reading on the way in is not said to have been take
   assert.equal(noBrakePoint({ braking: "began_unread" }), "Braked, point not known");
   // A generation from before the analysis said which is read as it was.
   assert.equal(noBrakePoint({}), "No braking");
+  // And one from when it said so with another word is read by that word: these are still
+  // served while the sessions are rebuilt, and Gasly's row of one was "No braking" again.
+  assert.equal(noBrakePoint({ brake_known: false }), "No brake reading");
+  assert.equal(noBrakePoint({ brake_known: true }), "No braking");
+  // Where both are there, the newer word is the one that is read.
+  assert.equal(noBrakePoint({ braking: "none", brake_known: false }), "No braking");
+  assert.equal(noBrakePoint({ braking: "began_unread", brake_known: false }), "Braked, point not known");
+});
+
+test("a corner row is placed where its own lap has the corner", () => {
+  // Stroll's lap 30 of the 2026 Austrian GP has turn 6 at 2,554 m. The lap the corners
+  // were placed on has it at 2,518 m, which was put beside his brake point.
+  assert.equal(cornerPlace({ corner_distance_m: 2553.8 }), 2553.8);
+  // A generation from before a row said where its own lap has the corner has nothing to show.
+  assert.equal(cornerPlace({}), null);
+  assert.equal(cornerPlace({ corner_distance_m: null }), null);
 });
