@@ -93,7 +93,10 @@ FORMAT_VERSION = 2
 #  18  each pedal's mark for no reading is taken by itself, the brake's from
 #      F1's raw car feed, which a build now reads out of the raw responses
 #      kept with a snapshot: FastF1 hands a brake of 104 on as the brake on
-PIPELINE_VERSION = 18
+#  19  a "gear" over 8 from F1's feed is no gear; a corner whose approach has
+#      no brake reading says so, where it was a corner the driver "did not
+#      brake for"
+PIPELINE_VERSION = 19
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

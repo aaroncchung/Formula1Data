@@ -232,6 +232,41 @@ def test_both_pedals_marked_have_neither_and_other_cars_are_untouched():
     assert lap_of(session, feed, number=3).brake_known is None
 
 
+# --- a gear that is no gear -------------------------------------------------------------------------
+
+
+def test_a_gear_no_car_has_is_no_reading_until_the_next_that_is_one():
+    """The 2026 Dutch GP, car 1: 52 samples with a "gear" between 9 and 40, standing in the pit lane."""
+    session = make_race()
+    frame = session.car_data["2"]
+    seconds = frame["SessionTime"].dt.total_seconds()
+    inside = (seconds >= STRETCH[0]) & (seconds <= STRETCH[1])
+    frame.loc[inside, "nGear"] = [9 + 4 * step for step in range(int(inside.sum()))]
+
+    lap = lap_of(session, None)
+    gears = lap.gears()
+
+    assert unknown(gears)[in_stretch(lap)].all()
+    assert max(gear for gear in gears if gear is not None) <= 8
+    # Nothing else of those samples is touched, and no other lap or car.
+    assert lap.throttle_known is None and lap.brake_known is None
+    assert lap_of(session, None, number=3).gear_known is None and lap_of(session, None, code="AAA").gear_known is None
+    files = build_artifacts(session, IDENTITY, None, extras(), measure_coverage(session, "R", extras()))
+    published = next(lap for lap in read(files, "telemetry/BBB.json")["laps"] if lap["lap_number"] == 2)
+    assert None in published["gear"] and max(gear for gear in published["gear"] if gear is not None) <= 8
+    assert None not in published["speed_kph"] and None not in published["rpm"]
+
+
+@pytest.mark.parametrize(("gear", "is_one"), [(0, True), (1, True), (8, True), (9, False), (40, False), (-1, False)])
+def test_neutral_and_the_eight_gears_are_gears(gear, is_one):
+    session = make_race()
+    frame = session.car_data["2"]
+    seconds = frame["SessionTime"].dt.total_seconds()
+    frame.loc[(seconds >= STRETCH[0]) & (seconds <= STRETCH[1]), "nGear"] = gear
+
+    assert (lap_of(session, None).gear_known is None) is is_one
+
+
 # --- a raw feed that is not this session's -----------------------------------------------------
 
 
@@ -400,6 +435,55 @@ def test_raw_responses_that_are_not_a_table_of_them_give_nothing_and_say_so(tmp_
         assert read_raw_response(store, snapshot, CAR_FEED) is None
 
     assert "cannot be read as the responses FastF1 kept" in caplog.text
+
+
+def test_a_record_that_names_something_to_load_is_not_read(tmp_path):
+    """A response is kept as a dictionary of plain values. Anything else is not run to find out what it is."""
+    import pickle
+    import sqlite3
+
+    fetched = fetched_with(tmp_path, {f"{ADDRESS}{CAR_FEED}": (200, b"the feed")})
+    cache = fetched.cache_dir / HTTP_CACHE_FILE
+    ran = tmp_path / "ran"
+
+    class Runs:
+        def __reduce__(self):
+            return (open, (str(ran), "w"))
+
+    database = sqlite3.connect(cache)
+    database.execute("insert into responses (key, value) values (?, ?)", ("foreign", pickle.dumps(Runs())))
+    record = {"url": f"{ADDRESS}{CAR_FEED}", "status_code": 200, "_content": b"the feed, at greater length", "at": Runs()}
+    database.execute("insert into responses (key, value) values (?, ?)", ("half foreign", pickle.dumps(record)))
+    database.commit()
+    database.close()
+    store = MemoryStore()
+    snapshot = write_snapshot(store, fetched)
+
+    # The record the fetch wrote is read, and the two that name a thing to call are passed over, unrun.
+    assert read_raw_response(store, snapshot, CAR_FEED) == b"the feed"
+    assert not ran.exists()
+
+
+def test_the_raw_responses_are_read_where_a_database_cannot_be_loaded_from_memory(tmp_path, monkeypatch):
+    """Loading one from memory needs an SQLite built to allow it, which Python's is not everywhere."""
+    import sqlite3
+
+    feed = car_feed_of(make_race())
+    store, snapshot = archived(tmp_path, {f"{ADDRESS}{CAR_FEED}": (200, feed)})
+    real = sqlite3.connect
+
+    class WithoutDeserialize:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def __getattr__(self, name):
+            if name == "deserialize":
+                raise AttributeError("this SQLite cannot load a database from memory")
+            return getattr(self._connection, name)
+
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: WithoutDeserialize(real(*args, **kwargs)))
+
+    assert read_raw_response(store, snapshot, CAR_FEED) == feed
 
 
 def test_a_snapshot_with_no_raw_responses_gives_nothing(tmp_path):

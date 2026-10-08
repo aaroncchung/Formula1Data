@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { cornerName, cornerSourceNote, minisectorTally, unavailableAnalyses } from "../src/lib/performance-view.ts";
+import { cornerName, cornerSourceNote, minisectorTally, noBrakePoint, unavailableAnalyses } from "../src/lib/performance-view.ts";
 import { teammateBasis, teammateGap, teammateGapText } from "../src/lib/teammate-view.ts";
 import { formatRate, reportedFitCount, tyreFit, tyreFitLabel } from "../src/lib/tyre-chart.ts";
 
@@ -346,4 +346,14 @@ test("an inferred corner is a braking zone, and is not given a turn number", () 
   assert.equal(cornerName(corner(3), "inferred"), "Braking zone 3");
   assert.match(cornerSourceNote("inferred"), /could not be used/);
   assert.match(cornerSourceNote("inferred"), /not as the circuit numbers its turns/);
+});
+
+// Gasly into turn 9 on lap 56 of the 2026 Australian GP: F1's car feed has no
+// brake reading for the 365 m before the corner, from 311 km/h to 218. The
+// row has no brake point, and the page said "No braking".
+test("a corner with no brake reading on the way in is not said to have been taken without braking", () => {
+  assert.equal(noBrakePoint({ brake_known: false }), "No brake reading");
+  assert.equal(noBrakePoint({ brake_known: true }), "No braking");
+  // A generation from before the analysis said which is read as it was.
+  assert.equal(noBrakePoint({}), "No braking");
 });

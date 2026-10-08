@@ -57,6 +57,21 @@ export function cornerName(corner: Pick<AnalysedCorner, "corner_number" | "lette
     : `Braking zone ${corner.corner_number}`;
 }
 
+/**
+ * What to say where a driver's row for a corner has no brake point.
+ *
+ * Two things leave it empty. The driver took the corner without braking,
+ * which the analysis knows when the brake was read all the way in. Or F1's
+ * car feed had no brake reading on the approach, and then nothing is known:
+ * Gasly into turn 9 on lap 56 of the 2026 Australian GP, from 311 km/h to
+ * 218 with no reading, was shown as "No braking".
+ */
+export function noBrakePoint(row: { brake_known?: boolean }): string {
+  // A generation from before the analysis said which has nothing here, and
+  // is read as it was: the brake was taken to have been read.
+  return row.brake_known === false ? "No brake reading" : "No braking";
+}
+
 /** What the corners of an analysis are, in a sentence, for the panel that lists them. */
 export function cornerSourceNote(source: CornerAnalysis["corner_source"]): string {
   return source === "official"

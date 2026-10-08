@@ -635,7 +635,10 @@ class TelemetryLap(Model):
         "so it is taken from F1's raw feed."
     )
     rpm: list[int]
-    gear: list[int]
+    gear: list[int | None] = Field(
+        description="0 for neutral, 1 to 8. Null from a sample for which F1's car feed sent a number "
+        "that is no gear until the next that is one."
+    )
     drs: list[int] | None = Field(
         description="F1's DRS code. Null when the channel is left out of the session."
     )
@@ -920,7 +923,9 @@ class TrackDominance(Model):
 
 class CornerDriver(Model):
     driver_code: str
-    brake_start_m: Decimal1 | None = Field(description="Null where the driver did not brake for the corner.")
+    brake_start_m: Decimal1 | None = Field(
+        description="Null where the driver did not brake for the corner, and where brake_known is false."
+    )
     apex_distance_m: Decimal1
     braking_distance_m: Decimal1 | None
     entry_speed_kph: Decimal1 | None
@@ -928,6 +933,12 @@ class CornerDriver(Model):
     exit_speed_kph: Decimal1 | None
     speed_loss_kph: Decimal1 | None
     brake_duration_ms: Decimal1 | None
+    brake_known: bool = Field(
+        description="False where F1's car feed has no brake reading for part of the approach to the "
+        "corner, so that where the driver began to brake, or whether they braked at all, is not known. "
+        "The brake point and the figures counted from it are then null, which is not word that the "
+        "driver did not brake."
+    )
 
 
 class AnalysedCorner(Model):

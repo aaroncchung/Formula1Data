@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 import logging
 import pickle
@@ -30,6 +31,7 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
+import zlib
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -912,16 +914,22 @@ def read_raw_response(store: ObjectStore, snapshot: Snapshot, name: str) -> byte
         raise ArchiveError(f"Snapshot {snapshot.snapshot_id} is missing {HTTP_ARCHIVE}")
     if hashlib.sha256(found.data).hexdigest() != described.get("sha256"):
         raise ArchiveError(f"{key} does not match its snapshot")
-    try:
-        database = sqlite3.connect(":memory:")
+    # Opened as a file. A database can be loaded from memory only where
+    # Python's SQLite was built to allow it, which is not everywhere this runs.
+    with tempfile.TemporaryDirectory(prefix="f1data-responses-") as scratch:
+        unpacked = Path(scratch) / "responses.sqlite"
         try:
-            database.deserialize(gzip.decompress(found.data))
-            rows = database.execute("select value from responses").fetchall()
-        finally:
-            database.close()
-    except (OSError, EOFError, sqlite3.Error) as error:
-        _logger.warning("%s cannot be read as the responses FastF1 kept (%s); nothing is taken from it", key, error)
-        return None
+            unpacked.write_bytes(gzip.decompress(found.data))
+            database = sqlite3.connect(f"{unpacked.as_uri()}?mode=ro", uri=True)
+            try:
+                rows = database.execute("select value from responses").fetchall()
+            finally:
+                database.close()
+        except (OSError, EOFError, zlib.error, sqlite3.Error) as error:
+            _logger.warning(
+                "%s cannot be read as the responses FastF1 kept (%s); nothing is taken from it", key, error
+            )
+            return None
     best: bytes | None = None
     for (blob,) in rows:
         response = _kept_response(blob)
@@ -933,10 +941,22 @@ def read_raw_response(store: ObjectStore, snapshot: Snapshot, name: str) -> byte
     return best
 
 
+class _PlainValues(pickle.Unpickler):
+    """Reads a record made of plain values, and refuses one that names anything to load or to call.
+
+    The HTTP cache keeps a response as a pickled dictionary of text, bytes
+    and numbers, with no class in it. Refusing every name is what keeps the
+    reading of a record from being the running of whatever it names.
+    """
+
+    def find_class(self, module: str, name: str) -> Any:
+        raise pickle.UnpicklingError(f"a record of a response names {module}.{name}")
+
+
 def _kept_response(blob: Any) -> tuple[str, int, bytes] | None:
     """The address, the status and the body of one response the HTTP cache kept, or ``None`` if it is not one."""
     try:
-        response = pickle.loads(blob)
+        response = _PlainValues(io.BytesIO(blob)).load()
     except Exception:  # noqa: BLE001 - whatever a record that is not one of these raises
         return None
     if not isinstance(response, dict):

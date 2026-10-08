@@ -131,7 +131,11 @@ What holds for all of them:
   so and takes the brake to have no reading where the throttle has none,
   which misses the brake marked by itself. About four laps in a hundred have
   a marked stretch, most of them under two seconds; in the 2026 Hungarian GP
-  it is 28% of the race.
+  it is 28% of the race. A "gear" over 8 is treated the same way: it is not
+  a gear, and the lap has none there. In the corner analysis a driver's row
+  says whether its braking is known (`brake_known`): where the approach to a
+  corner has no brake reading, the brake point is left out as not known,
+  which is not a driver who did not brake.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

@@ -187,7 +187,7 @@ def _published_lap(lap: LapSamples, with_drs: bool) -> TelemetryLap:
         throttle_pct=[None if value is None else int(round(value)) for value in lap.throttle(keep)],
         brake=lap.braking(keep),
         rpm=_whole(lap.rpm[keep]),
-        gear=lap.gear[keep].tolist(),
+        gear=lap.gears(keep),
         drs=lap.drs[keep].tolist() if with_drs else None,
         x=nan_as_none(lap.x[keep]) if lap.x is not None else None,
         y=nan_as_none(lap.y[keep]) if lap.y is not None else None,

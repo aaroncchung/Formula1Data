@@ -136,6 +136,101 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(len(inferred["corners"]), 2)
         self.assertLess(OFFICIAL_CORNER_WINDOW_M, 1000)
 
+    def test_a_corner_with_no_brake_reading_on_the_way_in_is_not_a_corner_nobody_braked_for(self):
+        """Gasly's lap 56 of the 2026 Australian GP, turn 9: no brake reading from 311 km/h down to 218.
+
+        F1's car feed has stretches with no reading of the brake. With none
+        on the approach, no braking is seen, and the corner was published
+        with a null brake point, which the page reads out as "no braking".
+        """
+        rows = lap_rows("AAA")
+        for row in rows:
+            if 800 <= row["distance_m"] <= 1_000:
+                row["brake"] = None
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+        first, kink, third = (by_corner(result)[key]["AAA"] for key in ((1, None), (2, "A"), (3, None)))
+
+        self.assertIs(first["brake_known"], False)
+        for field in ("brake_start_m", "braking_distance_m", "entry_speed_kph", "speed_loss_kph", "brake_duration_ms"):
+            self.assertIsNone(first[field], field)
+        # What the speed shows of the corner is still there.
+        self.assertEqual((first["apex_distance_m"], first["apex_speed_kph"]), (1000.0, 90.0))
+        # A corner nobody braked for, with the brake read all the way, is known to be that.
+        self.assertIs(kink["brake_known"], True)
+        self.assertIsNone(kink["brake_start_m"])
+        # And a corner that was braked for, with every reading, has its figures.
+        self.assertIs(third["brake_known"], True)
+        self.assertEqual(third["brake_start_m"], 2850.0)
+        self.assertIn(
+            "F1's car feed has no brake reading on the approach to a corner for: AAA.", result["caveats"][-1]
+        )
+
+    def test_the_reading_may_come_back_before_the_corner_with_the_braking_already_done(self):
+        """As it was for Gasly: the brake is read again 50 m before the slowest point, and is off."""
+        rows = lap_rows("AAA")
+        for row in rows:
+            if 780 <= row["distance_m"] <= 920:
+                row["brake"] = None
+            elif 920 < row["distance_m"] <= 1_000:
+                row["brake"] = False
+
+        first = by_corner(calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS))[(1, None)]["AAA"]
+
+        # Nothing within 75 m of the corner lacks a reading, and none of it is
+        # braking. The car still arrived 210 km/h slower than it set out.
+        self.assertIsNone(first["brake_start_m"])
+        self.assertIs(first["brake_known"], False)
+        self.assertEqual(first["apex_speed_kph"], 90.0)
+
+    def test_braking_that_is_first_seen_where_the_reading_comes_back_did_not_begin_there(self):
+        rows = lap_rows("AAA")
+        # No reading for the first hundred metres of the braking for turn 1,
+        # which begins at 850 m: it comes back at 950 m with the brake on.
+        for row in rows:
+            if 800 <= row["distance_m"] < 950:
+                row["brake"] = None
+
+        result = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+        first = by_corner(result)[(1, None)]["AAA"]
+
+        # The braking is found, by its slowest point. Where it began is not
+        # 950 m, and nothing counted from there is given.
+        self.assertIs(first["brake_known"], False)
+        self.assertEqual((first["apex_distance_m"], first["apex_speed_kph"]), (1000.0, 90.0))
+        for field in ("brake_start_m", "braking_distance_m", "entry_speed_kph", "speed_loss_kph", "brake_duration_ms"):
+            self.assertIsNone(first[field], field)
+        self.assertIsNotNone(first["exit_speed_kph"])
+
+    def test_a_reading_lost_after_the_braking_began_leaves_where_it_began(self):
+        rows = lap_rows("AAA")
+        # The reading goes at 1,010 m, straight after the last sample braked on.
+        for row in rows:
+            if 1_000 < row["distance_m"] <= 1_100:
+                row["brake"] = None
+
+        first = by_corner(calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS))[(1, None)]["AAA"]
+
+        self.assertIs(first["brake_known"], True)
+        self.assertEqual((first["brake_start_m"], first["entry_speed_kph"], first["apex_speed_kph"]), (850.0, 300.0, 90.0))
+        # How long the brake was on is not known: it may have stayed on.
+        self.assertIsNone(first["brake_duration_ms"])
+
+    def test_a_stretch_with_no_reading_away_from_any_corner_changes_nothing(self):
+        rows = lap_rows("AAA")
+        for row in rows:
+            if 300 <= row["distance_m"] <= 500:
+                row["brake"] = None
+
+        marked = calculate_corner_analysis("s", [lap("AAA")], rows, CORNERS)
+        plain = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), CORNERS)
+
+        self.assertEqual(marked["corners"], plain["corners"])
+        self.assertTrue(all(row["brake_known"] for corner in plain["corners"] for row in corner["drivers"]))
+        # And nothing is said of a brake that was read wherever it mattered.
+        self.assertEqual(marked["caveats"], plain["caveats"])
+        self.assertNotIn("no brake reading", " ".join(plain["caveats"]))
+
     def test_without_official_corners_they_are_inferred_as_before_and_the_result_says_so(self):
         for corners in (None, [], [{"number": 1}], [{"x": 1.0, "y": 2.0, "distance_m": 3.0}]):
             result = calculate_corner_analysis("s", [lap("AAA")], lap_rows("AAA"), corners)

@@ -33,6 +33,12 @@ CAR_FEED = "CarData.z.jsonStream"
 # scale is taken for it.
 NO_PEDAL_READING = 100.0
 
+# A car has eight forward gears, and 0 is neutral. F1's feed now and then
+# sends something else: car 1 in the 2026 Dutch GP has 52 samples with a
+# "gear" between 9 and 40, standing in the pit lane through the red flag.
+# Whatever those are, they are not gears.
+HIGHEST_GEAR = 8
+
 # F1's names for the channels of a car's sample. FastF1 leaves a sample out
 # when it lacks any of the first five, and so does this.
 _RPM, _SPEED, _GEAR, _THROTTLE, _BRAKE = "0", "2", "3", "4", "5"

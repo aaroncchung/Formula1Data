@@ -75,7 +75,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
-from f1data.carfeed import NO_PEDAL_READING, PedalMarks
+from f1data.carfeed import HIGHEST_GEAR, NO_PEDAL_READING, PedalMarks
 from f1data.coverage import MAX_SAMPLE_GAP_SECONDS, lap_is_usable, sent_by_f1
 from f1data.loaded import driver_codes, text
 
@@ -117,6 +117,8 @@ class LapSamples:
     # since F1 marks each by itself. None when every sample has one.
     throttle_known: np.ndarray | None = None
     brake_known: np.ndarray | None = None
+    # False at a sample whose gear is a number no gear has (``HIGHEST_GEAR``).
+    gear_known: np.ndarray | None = None
 
     @property
     def sample_count(self) -> int:
@@ -129,6 +131,10 @@ class LapSamples:
     def braking(self, chosen: Any = slice(None)) -> list[bool | None]:
         """Whether the brake was on at the samples chosen, with ``None`` where F1 gave no reading."""
         return _where_known(self.brake[chosen].tolist(), self.brake_known, chosen)
+
+    def gears(self, chosen: Any = slice(None)) -> list[int | None]:
+        """The gear at the samples chosen, with ``None`` where what F1 sent is not one."""
+        return _where_known(self.gear[chosen].tolist(), self.gear_known, chosen)
 
     @property
     def has_position(self) -> bool:
@@ -395,6 +401,7 @@ def _lap_samples(
     discrete = {name: values[held] for name, values in discrete.items()}
     throttle_known = _drawn_between_readings(car_dates, car.channels["ThrottleMarked"][first:last], with_edges)
     brake_known = _held_from_a_reading(car_dates, car.channels["BrakeMarked"][first:last], with_edges)
+    gear_known = _held_from_a_reading(car_dates, car.channels["GearMarked"][first:last], with_edges)
 
     on_clock = with_edges - clock_zero
     # Distance is unknown before the first car sample, which can only be the
@@ -416,6 +423,7 @@ def _lap_samples(
         "y": located["Y"][inside] if located is not None else None,
         "throttle_known": None if throttle_known[inside].all() else throttle_known[inside],
         "brake_known": None if brake_known[inside].all() else brake_known[inside],
+        "gear_known": None if gear_known[inside].all() else gear_known[inside],
     }
 
 
@@ -523,6 +531,7 @@ def _car_feed(
     # its zeros would be published as a car standing still in mid-lap.
     usable = ~np.isnan(channels["Speed"]) & sent_by_f1(frame)
     channels["ThrottleMarked"] = channels["Throttle"] > NO_PEDAL_READING
+    channels["GearMarked"] = (channels["nGear"] < 0) | (channels["nGear"] > HIGHEST_GEAR)
     channels["BrakeMarked"] = _brake_marked(frame, channels["ThrottleMarked"], usable, marks, number)
     return _feed(frame["Date"], channels, usable, clock_zero)
 

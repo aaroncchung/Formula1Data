@@ -7,7 +7,7 @@ import { TeammateComparison } from "@/components/session/TeammateComparison";
 import { TrackDominance } from "@/components/session/TrackDominance";
 import { teamColorByDriver } from "@/lib/driver-style";
 import { formatDelta, formatMs, formatNumber } from "@/lib/format";
-import { cornerName, cornerSourceNote, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
+import { cornerName, cornerSourceNote, noBrakePoint, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
 import type { SessionPerformance } from "@/lib/published/artifacts";
 import type { CarPerformance, CornerAnalysis, Driver, IdealLaps, PacePrediction } from "@/lib/published/types";
 
@@ -121,7 +121,8 @@ function CornerAnalysisView({ result, drivers }: { result: CornerAnalysis; drive
       header: "Brake point",
       align: "right",
       // A driver can take a corner without braking for it; the row then has an apex and an exit and no braking.
-      render: (row) => (row.brake_start_m === null ? <span className="text-slate-500">No braking</span> : `${formatNumber(row.brake_start_m, 0)} m`)
+      // And F1's feed can have no brake reading on the way in, which is not the same and is said apart.
+      render: (row) => (row.brake_start_m === null ? <span className="text-slate-500">{noBrakePoint(row)}</span> : `${formatNumber(row.brake_start_m, 0)} m`)
     },
     { key: "distance", header: "Brake distance", align: "right", render: (row) => metres(row.braking_distance_m) },
     { key: "entry", header: "Entry", align: "right", render: (row) => speed(row.entry_speed_kph) },

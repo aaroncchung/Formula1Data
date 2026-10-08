@@ -837,3 +837,16 @@ test("lap B read between a sample with a pedal reading and one without has neith
   assert.deepEqual(comparison.brake_b, [0, null, 0, 1]);
   assert.deepEqual(comparison.speed_b, [300, 302, 302, 290]);
 });
+
+// The 2026 Dutch GP, car 1: F1's feed sends a "gear" between 9 and 40 for
+// fourteen seconds in the pit lane, and the publisher now leaves it empty.
+test("a sample with no gear has none on the chart, and the gear either side is as it was", () => {
+  const samples = [[0, 0, 0], [1_000, 0, 0], [2_000, 0, 0], [3_000, 10, 60], [4_000, 40, 120]];
+  const a = lap(4, samples, { gear: [0, null, null, 1, 2] });
+
+  const comparison = compare(a, lap(3, samples, { gear: [0, 0, 0, 1, 2] }));
+
+  assert.deepEqual(comparison.gear_a, [0, null, null, 1, 2]);
+  assert.deepEqual(comparison.gear_b, [0, 0, 0, 1, 2]);
+  assert.deepEqual(comparison.speed_a, [0, 0, 0, 60, 120]);
+});
