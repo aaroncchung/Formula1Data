@@ -168,7 +168,8 @@ function SessionFigureCards({ view }: { view: SessionView }) {
       <MetricCard
         label="Session field"
         value={summary ? summary.driver_count : "--"}
-        detail={summary ? `${summary.lap_count} timing laps` : settled ? "Not published for this session" : pending}
+        // Not "timing laps": the count is of the lap table, which has a row for the lap a car stopped on.
+        detail={summary ? `${summary.lap_count} laps across all drivers` : settled ? "Not published for this session" : pending}
       />
       <MetricCard
         label="Ideal-lap leader"

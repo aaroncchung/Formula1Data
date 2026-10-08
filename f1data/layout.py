@@ -83,7 +83,10 @@ FORMAT_VERSION = 2
 #  15  words only: where the laps either side of a stop are looked for, and
 #      why none was found when the search stopped at the next stop; and that
 #      the team-mate gap drops at least one lap each way
-PIPELINE_VERSION = 15
+#  16  words only: a session with no pit-stop feed is said to be short of
+#      stationary times for its entries to the pit lane, which are not all
+#      stops
+PIPELINE_VERSION = 16
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

@@ -202,10 +202,18 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
     # for. The two counts are not compared: the timing counts every entry to
     # the pit lane, and across the 21 sessions of 2026 the feed held between
     # 25% (Monza, 8 of 32) and 100% of them.
-    stops = int(measurement.get("pit_stops_in_timing") or 0)
-    if race_like and stops and not measurement.get("pit_stops_in_series"):
+    entries = int(measurement.get("pit_stops_in_timing") or 0)
+    if race_like and entries and not measurement.get("pit_stops_in_series"):
+        # Entries, and not stops: of the 20 in the 2025 Sao Paulo sprint, 18
+        # are cars that waited in the pit lane through a red flag and one
+        # went through without stopping.
         shortfalls.append(
-            Shortfall("pit_stop_series", None, f"no stationary times for {stops} stop(s) in the timing")
+            Shortfall(
+                "pit_stop_series",
+                None,
+                "no stationary time from F1's pit-stop feed, and the timing has "
+                f"{entries} {'entry' if entries == 1 else 'entries'} to the pit lane",
+            )
         )
     # The corner analysis can fall back to inferring corners from braking, so
     # a build does not fail without this. It is still a bar: with it missing

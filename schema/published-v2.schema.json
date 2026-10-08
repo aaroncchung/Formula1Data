@@ -721,9 +721,11 @@
           "x-decimals": 1
         },
         "pit_stops_in_series": {
+          "description": "Stops F1's pit-stop feed gives a stationary time or a pit-lane time for.",
           "type": "integer"
         },
         "pit_stops_in_timing": {
+          "description": "Entries to the pit lane the timing shows, whether or not the car stopped: a wait through a red flag and a drive-through penalty are each one.",
           "type": "integer"
         },
         "session_ended": {
@@ -3103,7 +3105,7 @@
           "type": "boolean"
         },
         "lap_count": {
-          "description": "Laps in laps.json, over every driver.",
+          "description": "Laps in laps.json, over every driver. That counts the lap a car stopped on, which FastF1 adds a row for and F1's timing has none of: one or two in most races.",
           "type": "integer"
         },
         "meeting": {

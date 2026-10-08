@@ -225,7 +225,10 @@ class SessionSummary(Model):
     circuit: str | None = Field(description="F1's short name for the circuit.")
     country: str | None
     driver_count: int
-    lap_count: int = Field(description="Laps in laps.json, over every driver.")
+    lap_count: int = Field(
+        description="Laps in laps.json, over every driver. That counts the lap a car stopped on, which "
+        "FastF1 adds a row for and F1's timing has none of: one or two in most races."
+    )
     weather_summary: str = Field(
         description="One line for a heading: the air and track temperature ranges, and rain or dry."
     )
@@ -528,8 +531,13 @@ class Coverage(Model):
     feeds: CoverageFeeds
     session_ended: bool
     total_laps: int | None = Field(description="The race distance in laps.")
-    pit_stops_in_timing: int
-    pit_stops_in_series: int
+    pit_stops_in_timing: int = Field(
+        description="Entries to the pit lane the timing shows, whether or not the car stopped: a wait "
+        "through a red flag and a drive-through penalty are each one."
+    )
+    pit_stops_in_series: int = Field(
+        description="Stops F1's pit-stop feed gives a stationary time or a pit-lane time for."
+    )
     circuit_corners: int
     max_sample_gap_seconds: Decimal1 = Field(
         description="The longest hole between two samples that a lap's car or position data may have and "

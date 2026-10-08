@@ -884,7 +884,13 @@ export interface Coverage {
    * The longest hole between two samples that a lap's car or position data may have and still count.
    */
   max_sample_gap_seconds: number;
+  /**
+   * Stops F1's pit-stop feed gives a stationary time or a pit-lane time for.
+   */
   pit_stops_in_series: number;
+  /**
+   * Entries to the pit lane the timing shows, whether or not the car stopped: a wait through a red flag and a drive-through penalty are each one.
+   */
   pit_stops_in_timing: number;
   session_ended: boolean;
   shortfalls: Shortfall[];
@@ -1291,7 +1297,7 @@ export interface SessionSummary {
    */
   is_sample: boolean;
   /**
-   * Laps in laps.json, over every driver.
+   * Laps in laps.json, over every driver. That counts the lap a car stopped on, which FastF1 adds a row for and F1's timing has none of: one or two in most races.
    */
   lap_count: number;
   /**
@@ -1679,7 +1685,13 @@ export interface Coverage1 {
    * The longest hole between two samples that a lap's car or position data may have and still count.
    */
   max_sample_gap_seconds: number;
+  /**
+   * Stops F1's pit-stop feed gives a stationary time or a pit-lane time for.
+   */
   pit_stops_in_series: number;
+  /**
+   * Entries to the pit lane the timing shows, whether or not the car stopped: a wait through a red flag and a drive-through penalty are each one.
+   */
   pit_stops_in_timing: number;
   session_ended: boolean;
   shortfalls: Shortfall[];
@@ -1827,7 +1839,7 @@ export interface SessionSummary1 {
    */
   is_sample: boolean;
   /**
-   * Laps in laps.json, over every driver.
+   * Laps in laps.json, over every driver. That counts the lap a car stopped on, which FastF1 adds a row for and F1's timing has none of: one or two in most races.
    */
   lap_count: number;
   /**

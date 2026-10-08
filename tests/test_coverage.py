@@ -233,7 +233,13 @@ def test_a_race_with_stops_and_no_stationary_times_is_a_shortfall():
 
     found = {(item.bar, item.driver, item.detail) for item in evaluate_coverage(measure(session, "R", without_feed))}
 
-    assert found == {("pit_stop_series", None, "no stationary times for 1 stop(s) in the timing")}
+    assert found == {
+        (
+            "pit_stop_series",
+            None,
+            "no stationary time from F1's pit-stop feed, and the timing has 1 entry to the pit lane",
+        )
+    }
 
 
 def test_a_session_nobody_pitted_in_has_no_pit_stop_feed_to_miss():
