@@ -12,7 +12,9 @@ A fetch is stored as a snapshot under a name of its own and never overwritten
 ``snapshot.json`` is the marker: a snapshot without one did not finish
 uploading and is ignored. The parsed feeds are what a build reads. The raw
 responses are kept because FastF1 discards parsed feeds written under another
-cache version (AR-11), and F1 may not answer a second time.
+cache version (AR-11), and F1 may not answer a second time. A build reads one
+thing from them, F1's car feed as it was sent (``read_raw_response``), for
+what FastF1's parsing of it leaves out (f1data/carfeed.py).
 """
 
 from __future__ import annotations
@@ -21,9 +23,11 @@ import gzip
 import hashlib
 import json
 import logging
+import pickle
 import re
 import secrets
 import shutil
+import sqlite3
 import tarfile
 import tempfile
 from dataclasses import dataclass, field, replace
@@ -882,6 +886,65 @@ def read_extras(store: ObjectStore, snapshot: Snapshot) -> dict[str, bytes]:
             raise ArchiveError(f"{prefix}{name} does not match its snapshot")
         extras[name[len(EXTRA_PREFIX):]] = found.data
     return extras
+
+
+def read_raw_response(store: ObjectStore, snapshot: Snapshot, name: str) -> bytes | None:
+    """One of F1's responses as it arrived, from the raw responses kept with a snapshot.
+
+    The one F1 filed under ``name`` and answered in full, or ``None`` when
+    the snapshot keeps no raw responses or has none of that name. The raw
+    responses are the HTTP cache FastF1 wrote as it fetched: a table of
+    responses, each a record of the address asked and the bytes answered.
+
+    ``None`` as well, with a warning, when the file is not such a table. A
+    build made nothing of the raw responses before it read this one from
+    them, and is not to fail for a file it cannot read where it can still
+    say less: tests/test_carfeed.py writes one with the library FastF1 uses
+    and reads it back, so that a change to how that library keeps them is
+    met there first.
+    """
+    described = snapshot.objects.get(HTTP_ARCHIVE)
+    if not described:
+        return None
+    key = f"{layout.snapshot_prefix(snapshot.session_key, snapshot.snapshot_id)}{HTTP_ARCHIVE}"
+    found = store.get(key)
+    if found is None:
+        raise ArchiveError(f"Snapshot {snapshot.snapshot_id} is missing {HTTP_ARCHIVE}")
+    if hashlib.sha256(found.data).hexdigest() != described.get("sha256"):
+        raise ArchiveError(f"{key} does not match its snapshot")
+    try:
+        database = sqlite3.connect(":memory:")
+        try:
+            database.deserialize(gzip.decompress(found.data))
+            rows = database.execute("select value from responses").fetchall()
+        finally:
+            database.close()
+    except (OSError, EOFError, sqlite3.Error) as error:
+        _logger.warning("%s cannot be read as the responses FastF1 kept (%s); nothing is taken from it", key, error)
+        return None
+    best: bytes | None = None
+    for (blob,) in rows:
+        response = _kept_response(blob)
+        if response is None:
+            continue
+        address, status, body = response
+        if address.split("?", 1)[0].endswith(f"/{name}") and status == 200 and (best is None or len(body) > len(best)):
+            best = body
+    return best
+
+
+def _kept_response(blob: Any) -> tuple[str, int, bytes] | None:
+    """The address, the status and the body of one response the HTTP cache kept, or ``None`` if it is not one."""
+    try:
+        response = pickle.loads(blob)
+    except Exception:  # noqa: BLE001 - whatever a record that is not one of these raises
+        return None
+    if not isinstance(response, dict):
+        return None
+    address, status, body = response.get("url"), response.get("status_code"), response.get("_content")
+    if not isinstance(address, str) or not isinstance(status, int) or not isinstance(body, bytes):
+        return None
+    return address, status, body
 
 
 def _extra_content_type(name: str) -> str:

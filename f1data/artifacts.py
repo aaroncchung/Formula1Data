@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from f1data import normalize
 from f1data.analyses import position_replay, session_analyses
 from f1data.archive import dump_json
+from f1data.carfeed import parse_pedal_marks
 from f1data.classification import Classification
 from f1data.identity import SessionIdentity
 from f1data.models import (
@@ -58,13 +59,16 @@ def build_artifacts(
     classification: Classification | None,
     extras: dict[str, bytes],
     measurement: dict[str, Any],
+    car_feed: bytes | None = None,
 ) -> dict[str, bytes]:
     """A generation's files by path, from a loaded FastF1 session.
 
     ``classification`` is today's result from Jolpica, or ``None`` when it has
     none, in which case the result is the order on track and says so.
     ``extras`` are the feeds archived beside the session, and ``measurement``
-    its coverage as the build measured it.
+    its coverage as the build measured it. ``car_feed`` is F1's car feed as
+    it was sent, from the raw responses kept with the session, which says
+    where F1 had no reading of a brake (f1data/carfeed.py).
 
     Written for a race or a sprint. Of any other session ``results.json``
     in particular says what is not so: an order by laps completed, and gaps
@@ -74,7 +78,7 @@ def build_artifacts(
     return {
         path: dump_json(artifact_json(artifact))
         for path, artifact in session_artifacts(
-            session, identity, classification, extras, measurement
+            session, identity, classification, extras, measurement, car_feed
         ).items()
     }
 
@@ -85,9 +89,10 @@ def session_artifacts(
     classification: Classification | None,
     extras: dict[str, bytes],
     measurement: dict[str, Any],
+    car_feed: bytes | None = None,
 ) -> dict[str, BaseModel]:
     """The same, as models."""
-    telemetry = extract_telemetry(session)
+    telemetry = extract_telemetry(session, parse_pedal_marks(car_feed) if car_feed else None)
     codes = normalize.driver_codes(session)
     drivers = normalize.drivers(session, codes)
     laps = normalize.laps(session, codes)

@@ -24,7 +24,7 @@ file, and can run anywhere.
 ```text
 archive/sessions/<session_key>/<snapshot_id>/     never served
     fastf1-cache.tar.gz        FastF1's parsed feeds
-    http-cache.sqlite.gz       the raw HTTP responses
+    http-cache.sqlite.gz       the raw HTTP responses; a build reads F1's car feed from them
     extra/PitStopSeries.jsonStream, extra/WeatherData.jsonStream, extra/circuit-info.json
     snapshot.json              written last; without it the snapshot does not exist
     remeasured.json            only where a build found the snapshot's record wrong
@@ -117,18 +117,21 @@ What holds for all of them:
   telemetry index, a car's frames in the replay) are of one length, and a
   file in which they are not is not published. The schema cannot say so; the
   models check it.
-- F1's car feed sends 104 for the throttle and for the brake of a sample it
-  has no pedal reading for, and repeats the speed and engine speed it last
-  had. FastF1 passes the throttle on and makes the brake "on". Here such a
-  sample has no throttle and no brake (`null` in a published lap, and in what
-  the analyses read), and so has a sample between it and the next. The rest
-  of the sample is as F1 sent it. About four laps in a hundred have such a
-  stretch, most of them under two seconds. Not yet caught: F1 also sends 104
-  for the brake alone, beside a real throttle, and FastF1 hands that on as
-  the brake on with nothing to tell it by. It is a few hundred samples in
-  most races and most of the 2026 Hungarian GP, which is why that session
-  should not be published as the code stands
-  (docs/architecture-review-findings.md, section 10, "Open").
+- F1's car feed sends 104, on a scale that ends at 100, for a pedal it has no
+  reading of: most often both pedals at once, while it repeats the speed and
+  engine speed it last had, and each by itself too. FastF1 passes the
+  throttle on and makes the brake "on". Here a pedal F1 marked has no value
+  (`null` in a published lap, and in what the analyses read): the throttle at
+  a marked sample and between it and the samples either side, the brake from
+  a marked sample until the next with a reading. The rest of the sample is as
+  F1 sent it. The brake's mark cannot be seen in what FastF1 loads, so a
+  build reads it from F1's raw car feed, which is among the raw responses
+  kept with a snapshot (`http-cache.sqlite.gz`). If those are missing, cannot
+  be read, or are not the feed FastF1's table was made from, the build says
+  so and takes the brake to have no reading where the throttle has none,
+  which misses the brake marked by itself. About four laps in a hundred have
+  a marked stretch, most of them under two seconds; in the 2026 Hungarian GP
+  it is 28% of the race.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

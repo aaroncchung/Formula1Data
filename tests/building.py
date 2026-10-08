@@ -118,8 +118,10 @@ class Archive(World):
         self.feeds: dict[str, object] = {}
         self.restoring: str | None = None
         self.loaded: list[Loaded] = []
-        # Every session handed to the artifact writer, in order.
+        # Every session handed to the artifact writer, in order, and the raw
+        # car feed handed over with each.
         self.built: list[Loaded] = []
+        self.car_feeds: list[bytes | None] = []
         monkeypatch.setattr(build_module, "fastf1_cache", self._cache)
         monkeypatch.setattr(build_module, "restore_snapshot", self._restore)
         monkeypatch.setattr(build_module, "build_artifacts", self._artifacts)
@@ -159,7 +161,7 @@ class Archive(World):
         self.restoring = snapshot.snapshot_id
         return cache_dir
 
-    def _artifacts(self, session, identity, classification, extras, coverage):
+    def _artifacts(self, session, identity, classification, extras, coverage, car_feed=None):
         """Stands in for ``f1data.artifacts.build_artifacts``, with its signature.
 
         The real one puts nothing from the calendar into a generation. This
@@ -167,4 +169,5 @@ class Archive(World):
         that a test can tell which row that was.
         """
         self.built.append(session)
+        self.car_feeds.append(car_feed)
         return {"summary.json": f"round {session.event['RoundNumber']}".encode()}

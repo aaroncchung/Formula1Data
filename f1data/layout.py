@@ -90,7 +90,10 @@ FORMAT_VERSION = 2
 #      for the throttle and the brake) has no throttle and no brake, in a
 #      published lap and in what the analyses read: it was published as full
 #      throttle with the brake on
-PIPELINE_VERSION = 17
+#  18  each pedal's mark for no reading is taken by itself, the brake's from
+#      F1's raw car feed, which a build now reads out of the raw responses
+#      kept with a snapshot: FastF1 hands a brake of 104 on as the brake on
+PIPELINE_VERSION = 18
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

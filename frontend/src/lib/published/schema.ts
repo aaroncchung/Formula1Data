@@ -1386,7 +1386,7 @@ export interface DriverTelemetry {
  */
 export interface TelemetryLap {
   /**
-   * Whether the brake was on. Null at a sample F1's car feed gave no pedal reading for.
+   * Whether the brake was on. Null from a sample F1's car feed gave no reading of the brake for (it sends 104) until the next that has one. FastF1 reads that mark as the brake on, so it is taken from F1's raw feed.
    */
   brake: (boolean | null)[];
   /**
@@ -1409,7 +1409,7 @@ export interface TelemetryLap {
    */
   start_ms: number;
   /**
-   * 0 to 100. Null at a sample F1's car feed gave no pedal reading for: it sends 104 there, for the throttle and for the brake, and repeats the speed it last had.
+   * 0 to 100. Null at a sample F1's car feed gave no reading of the throttle for (it sends 104, most often for both pedals at once while it repeats the speed it last had), and between such a sample and the one before or after.
    */
   throttle_pct: (number | null)[];
   /**

@@ -67,6 +67,7 @@ The other three are where a feed is broken:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,8 +75,11 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
+from f1data.carfeed import NO_PEDAL_READING, PedalMarks
 from f1data.coverage import MAX_SAMPLE_GAP_SECONDS, lap_is_usable, sent_by_f1
 from f1data.loaded import driver_codes, text
+
+_logger = logging.getLogger(__name__)
 
 # The published resolution. Analyses read every sample (AR-11).
 MAX_PUBLISHED_SAMPLES_PER_LAP = 300
@@ -108,10 +112,11 @@ class LapSamples:
     # before the position feed started or after it stopped.
     x: np.ndarray | None
     y: np.ndarray | None
-    # False at a sample F1 gave no pedal reading for (``NO_PEDAL_READING``):
-    # its throttle and brake are then not readings, whatever the arrays
-    # hold. None when every sample has one.
-    pedals_known: np.ndarray | None = None
+    # False at a sample F1 gave no reading of that pedal for (f1data/carfeed.py):
+    # what the array holds there is then not a reading. Each pedal by itself,
+    # since F1 marks each by itself. None when every sample has one.
+    throttle_known: np.ndarray | None = None
+    brake_known: np.ndarray | None = None
 
     @property
     def sample_count(self) -> int:
@@ -119,11 +124,11 @@ class LapSamples:
 
     def throttle(self, chosen: Any = slice(None)) -> list[float | None]:
         """The throttle at the samples chosen, with ``None`` where F1 gave no reading."""
-        return _where_known(self.throttle_pct[chosen].tolist(), self.pedals_known, chosen)
+        return _where_known(self.throttle_pct[chosen].tolist(), self.throttle_known, chosen)
 
     def braking(self, chosen: Any = slice(None)) -> list[bool | None]:
         """Whether the brake was on at the samples chosen, with ``None`` where F1 gave no reading."""
-        return _where_known(self.brake[chosen].tolist(), self.pedals_known, chosen)
+        return _where_known(self.brake[chosen].tolist(), self.brake_known, chosen)
 
     @property
     def has_position(self) -> bool:
@@ -196,8 +201,15 @@ class _Feed:
         return int(len(self.date))
 
 
-def extract_telemetry(session: Any) -> SessionTelemetry:
-    """Full-resolution telemetry for every lap of a loaded FastF1 session that has any."""
+def extract_telemetry(session: Any, pedal_marks: dict[str, PedalMarks] | None = None) -> SessionTelemetry:
+    """Full-resolution telemetry for every lap of a loaded FastF1 session that has any.
+
+    ``pedal_marks`` is what F1's raw car feed says of each car's pedals
+    (``parse_pedal_marks`` in f1data/carfeed.py), by car number. FastF1 hands
+    the brake on as a yes or a no, so only the raw feed says where F1 had no
+    reading of it. Without it, the brake is taken to have none where the
+    throttle has none, which is most of the time and not all of it.
+    """
     laps = _frame(session, "laps")
     if len(laps) == 0 or not {"DriverNumber", "LapNumber", "LapStartTime", "Time"} <= set(laps.columns):
         return SessionTelemetry({})
@@ -246,7 +258,7 @@ def extract_telemetry(session: Any) -> SessionTelemetry:
             continue
         number = numbers[row]
         if number not in feeds:
-            car = _car_feed(car_data.get(number), clock_zero)
+            car = _car_feed(car_data.get(number), clock_zero, (pedal_marks or {}).get(number), number)
             position = _position_feed(position_data.get(number), clock_zero)
             feeds[number] = (
                 car,
@@ -381,7 +393,8 @@ def _lap_samples(
         }
     held = np.clip(np.searchsorted(dates, with_edges, side="right") - 1, 0, None)
     discrete = {name: values[held] for name, values in discrete.items()}
-    pedals_known = _pedals_known(car_dates, car.channels["Throttle"][first:last], with_edges)
+    throttle_known = _drawn_between_readings(car_dates, car.channels["ThrottleMarked"][first:last], with_edges)
+    brake_known = _held_from_a_reading(car_dates, car.channels["BrakeMarked"][first:last], with_edges)
 
     on_clock = with_edges - clock_zero
     # Distance is unknown before the first car sample, which can only be the
@@ -401,27 +414,35 @@ def _lap_samples(
         "drs": discrete["DRS"][inside],
         "x": located["X"][inside] if located is not None else None,
         "y": located["Y"][inside] if located is not None else None,
-        "pedals_known": None if pedals_known[inside].all() else pedals_known[inside],
+        "throttle_known": None if throttle_known[inside].all() else throttle_known[inside],
+        "brake_known": None if brake_known[inside].all() else brake_known[inside],
     }
 
 
-# What F1's car feed sends for the throttle, and for the brake, of a sample it
-# has no pedal reading for: 104, on a scale that ends at 100. FastF1 passes
-# the throttle on as it is and makes the brake "on". In the 2026 Australian
-# GP 422 laps have such a stretch, most of them under two seconds, during
-# which the feed repeats the speed and the engine speed it last had: Albon's
-# lap 7 is published braking for 1.6 s at 302 km/h with the throttle at 104%.
-NO_PEDAL_READING = 100.0
+# F1's car feed sends 104, on a scale that ends at 100, for a pedal it has no
+# reading of (f1data/carfeed.py). FastF1 passes the throttle on as it is and
+# makes the brake "on". In the nine sessions first looked at, 422 of 10,458
+# laps have such a stretch, most of them under two seconds, during which the
+# feed repeats the speed and the engine speed it last had: Albon's lap 7 of
+# the 2026 Australian GP was published braking for 1.6 s at 302 km/h with the
+# throttle at 104%.
 
 
-def _pedals_known(car_dates: np.ndarray, throttle: np.ndarray, dates: np.ndarray) -> np.ndarray:
-    """For each of ``dates``, whether the lap's throttle and brake there are readings.
+def _held_from_a_reading(car_dates: np.ndarray, marked: np.ndarray, dates: np.ndarray) -> np.ndarray:
+    """For each of ``dates``, whether a channel that is held from the car sample before is a reading there."""
+    if not marked.any():
+        return np.ones(len(dates), dtype=bool)
+    held = np.clip(np.searchsorted(car_dates, dates, side="right") - 1, 0, None)
+    return ~marked[held]
 
-    They are not where the car sample they are held from is one F1 marked as
-    having none, nor between such a sample and the next, where the throttle
-    is drawn on a line to or from the mark.
+
+def _drawn_between_readings(car_dates: np.ndarray, marked: np.ndarray, dates: np.ndarray) -> np.ndarray:
+    """For each of ``dates``, whether a channel that is drawn on a line between two car samples is a reading there.
+
+    It is not at a car sample F1 marked as having none, nor between such a
+    sample and the one before or after, where the line runs to or from the
+    mark.
     """
-    marked = throttle > NO_PEDAL_READING
     if not marked.any():
         return np.ones(len(dates), dtype=bool)
     held = np.clip(np.searchsorted(car_dates, dates, side="right") - 1, 0, None)
@@ -483,7 +504,9 @@ def _fill_quadratic(dates: np.ndarray, values: np.ndarray) -> np.ndarray:
     return values
 
 
-def _car_feed(frame: Any, clock_zero: int) -> _Feed | None:
+def _car_feed(
+    frame: Any, clock_zero: int, marks: PedalMarks | None = None, number: str = ""
+) -> _Feed | None:
     columns = ("Speed", "RPM", "Throttle", "nGear", "Brake", "DRS")
     if frame is None or len(frame) == 0 or not {"Date", *columns} <= set(frame.columns):
         return None
@@ -499,7 +522,43 @@ def _car_feed(frame: Any, clock_zero: int) -> _Feed | None:
     # FastF1 padded in for a car missing from the feed is no sample at all:
     # its zeros would be published as a car standing still in mid-lap.
     usable = ~np.isnan(channels["Speed"]) & sent_by_f1(frame)
+    channels["ThrottleMarked"] = channels["Throttle"] > NO_PEDAL_READING
+    channels["BrakeMarked"] = _brake_marked(frame, channels["ThrottleMarked"], usable, marks, number)
     return _feed(frame["Date"], channels, usable, clock_zero)
+
+
+def _brake_marked(
+    frame: Any, throttle_marked: np.ndarray, usable: np.ndarray, marks: PedalMarks | None, number: str
+) -> np.ndarray:
+    """For each row of a car's feed, whether its brake is F1's mark for no reading.
+
+    From F1's raw feed, where the build has it. FastF1's own table cannot
+    say: the mark arrives in it as the brake on. Without the raw feed the
+    brake is taken to be marked where the throttle is, which is so for all
+    but a sample in seventy of the marked ones, and misses the brake marked
+    by itself.
+
+    The raw feed is believed only if it is plainly the feed this table was
+    made from: it has a sample for every row F1 sent, and marks the throttle
+    exactly where the table shows the mark.
+    """
+    if marks is None:
+        return throttle_marked
+    dates = frame["Date"].to_numpy(dtype="datetime64[ns]")
+    sent = usable & ~np.isnat(dates)
+    found, raw_throttle, raw_brake = marks.at(dates.astype("int64"))
+    if not found[sent].all() or not (raw_throttle[sent] == throttle_marked[sent]).all():
+        _logger.warning(
+            "The raw car feed kept with the session is not the one FastF1's table of car %s was made from "
+            "(%d of %d samples not in it, %d throttle marks apart); its brake is taken to have no reading "
+            "where its throttle has none",
+            number,
+            int((~found[sent]).sum()),
+            int(sent.sum()),
+            int((raw_throttle[sent] != throttle_marked[sent]).sum()),
+        )
+        return throttle_marked
+    return raw_brake
 
 
 def _position_feed(frame: Any, clock_zero: int) -> _Feed | None:

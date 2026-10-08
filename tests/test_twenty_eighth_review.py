@@ -65,7 +65,10 @@ def test_a_sample_f1_marks_as_having_no_pedal_reading_has_neither_a_throttle_nor
     # Nor do the samples between a marked one and the next, whose throttle is
     # on a line drawn to or from the mark.
     unknown = np.array([value is None for value in throttle])
-    assert (unknown == np.array([value is None for value in braking])).all()
+    brake_unknown = np.array([value is None for value in braking])
+    # A brake is held from the sample before, so it has no reading only from
+    # the mark on; nowhere has it none where the throttle has one.
+    assert not (brake_unknown & ~unknown).any()
     around = (session_seconds > STRETCH[0] - 0.3) & (session_seconds < STRETCH[1] + 0.3)
     assert not unknown[~around].any()
     car_seconds = make_race().car_data["2"]["SessionTime"].dt.total_seconds().to_numpy()
@@ -76,6 +79,7 @@ def test_a_sample_f1_marks_as_having_no_pedal_reading_has_neither_a_throttle_nor
     # The position feed ticks at another rate, so the lap has samples there.
     assert leading.sum() + trailing.sum() > 0
     assert unknown[leading].all() and unknown[trailing].all()
+    assert not brake_unknown[leading].any() and brake_unknown[trailing].all()
     # At the readings either side the pedals are known again.
     assert not unknown[np.isclose(session_seconds, last_reading)].any()
     assert not unknown[np.isclose(session_seconds, next_reading)].any()
@@ -88,11 +92,12 @@ def test_a_sample_f1_marks_as_having_no_pedal_reading_has_neither_a_throttle_nor
 def test_a_lap_with_every_pedal_reading_is_as_it_was():
     marked, plain = lap_of(without_a_pedal_reading(make_race()), number=3), lap_of(make_race(), number=3)
 
-    assert marked.pedals_known is None and plain.pedals_known is None
+    assert marked.throttle_known is None and marked.brake_known is None
+    assert plain.throttle_known is None and plain.brake_known is None
     assert marked.throttle() == plain.throttle() and marked.braking() == plain.braking()
     assert None not in plain.throttle() and None not in plain.braking()
     # Another car's laps are not touched by this car's stretch.
-    assert lap_of(without_a_pedal_reading(make_race()), code="AAA").pedals_known is None
+    assert lap_of(without_a_pedal_reading(make_race()), code="AAA").throttle_known is None
 
 
 def test_what_is_published_and_what_the_analyses_read_have_no_reading_there():
@@ -103,12 +108,14 @@ def test_what_is_published_and_what_the_analyses_read_have_no_reading_there():
     rows = sample_rows(lap_of(session))
 
     assert None in published["throttle_pct"] and None in published["brake"]
-    assert [value is None for value in published["throttle_pct"]] == [value is None for value in published["brake"]]
+    assert not any(
+        brake is None and throttle is not None for throttle, brake in zip(published["throttle_pct"], published["brake"])
+    )
     assert max(value for value in published["throttle_pct"] if value is not None) <= 100
     # One length still, with every other channel whole.
     assert len({len(published[name]) for name in ("time_ms", "speed_kph", "throttle_pct", "brake", "rpm", "gear")}) == 1
     assert None not in published["speed_kph"] and None not in published["rpm"]
-    assert sum(row["throttle_pct"] is None for row in rows) == sum(row["brake"] is None for row in rows) > 0
+    assert sum(row["throttle_pct"] is None for row in rows) >= sum(row["brake"] is None for row in rows) > 0
     # No other lap of the session has a hole in its pedals.
     for code in ("AAA", "BBB", "CCC"):
         for lap in read(files, f"telemetry/{code}.json")["laps"]:
@@ -152,7 +159,7 @@ def test_a_throttle_of_exactly_one_hundred_is_a_reading():
     frame = session.car_data["2"]
     assert (frame["Throttle"] == 100.0).any()
 
-    assert lap_of(session).pedals_known is None
+    assert lap_of(session).throttle_known is None and lap_of(session).brake_known is None
 
 
 def test_the_2026_australian_gp_has_no_throttle_over_one_hundred_and_no_braking_at_the_mark(tmp_path):
@@ -160,7 +167,7 @@ def test_the_2026_australian_gp_has_no_throttle_over_one_hundred_and_no_braking_
 
     telemetry = extract_telemetry(session)
 
-    marked = {key: lap for key, lap in telemetry.laps.items() if lap.pedals_known is not None}
+    marked = {key: lap for key, lap in telemetry.laps.items() if lap.throttle_known is not None}
     # 18 of the session's laps were published with a stretch of it at one mark.
     assert len(marked) > 100
     for lap in telemetry.laps.values():
@@ -169,7 +176,8 @@ def test_the_2026_australian_gp_has_no_throttle_over_one_hundred_and_no_braking_
     # Albon's lap 7: 302 km/h down the straight, with the feed repeating itself.
     albon = telemetry.laps[("ALB", 7)]
     unknown = np.array([value is None for value in albon.throttle()])
-    assert unknown.any() and (np.array([value is None for value in albon.braking()]) == unknown).all()
+    brake_unknown = np.array([value is None for value in albon.braking()])
+    assert unknown.any() and brake_unknown.any() and not (brake_unknown & ~unknown).any()
     stretch = albon.time_ms[unknown]
     assert 48_000 < stretch.min() and stretch.max() < 51_000
     assert set(np.round(albon.speed_kph[unknown])) == {302.0}

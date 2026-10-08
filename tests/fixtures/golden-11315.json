@@ -77,20 +77,20 @@
    "size_bytes": 299
   },
   "telemetry/ALB.json": {
-   "sha256": "220f8c46bf1705ee23af2da23dfa6a3c8a480d8112176be5881c53b7dad4ba17",
-   "size_bytes": 1044271
+   "sha256": "5bbb04925e40aede62c7a406b086e135787b2d1124109e774b286638481bb103",
+   "size_bytes": 1044272
   },
   "telemetry/ALO.json": {
-   "sha256": "81cbf6e4fe8fa5c0de8ddfb5eb50d32c0fa22e7e78aaf07a23f64bd4f0005ee3",
-   "size_bytes": 1028638
+   "sha256": "e2acd85d9230c0dc72c9e36463b6bf12881dd064c4dddff13967c07ab7916b73",
+   "size_bytes": 1028644
   },
   "telemetry/ANT.json": {
-   "sha256": "dcef2c1065d0b430bce98046fbdbf000ddf9257da13bc1f02b23e5d6471ee2d3",
-   "size_bytes": 1076852
+   "sha256": "c69f84415b7f2fb57acc2e05f6c49f8c37606dc02a9598fa4205153de623a85b",
+   "size_bytes": 1076854
   },
   "telemetry/BEA.json": {
-   "sha256": "c26997afd9024acd6710612d242f95bebf6c6667235162e0ae53dfdf5fc43ec4",
-   "size_bytes": 1058807
+   "sha256": "4aea916e45e963af22ab3ca44eef795b84793b7ac9849751c2f3c48a0ef2553e",
+   "size_bytes": 1058808
   },
   "telemetry/BOR.json": {
    "sha256": "955b3104906f5aef42849334b5a344b7811d55f16bb0972a44e4b3d8f3657747",
@@ -101,11 +101,11 @@
    "size_bytes": 29975
   },
   "telemetry/COL.json": {
-   "sha256": "9f66b46fdde23d3c20993717869722a6b80bb05a0842843762bd02d08ca39247",
+   "sha256": "776fae8212ffd30593b702bf119d89f852737c26c59f35fb4493861b269e2d66",
    "size_bytes": 1060712
   },
   "telemetry/GAS.json": {
-   "sha256": "b6c2541368f942f3f57d83ccb10b679290d2aea305ed1404ab20e2dbc4329b0e",
+   "sha256": "713da1b7731b6427fb2b19bb42bcd5d2cecd31a7c91bb6bf79f2bef013981a8a",
    "size_bytes": 1061162
   },
   "telemetry/HAD.json": {
@@ -113,8 +113,8 @@
    "size_bytes": 1074539
   },
   "telemetry/HAM.json": {
-   "sha256": "ead43c0ba36055aa9d86bd92c6a6a3c100f5f7bee330eeff8899c278335f2160",
-   "size_bytes": 1072801
+   "sha256": "aa8696735c0649ea9b182bc26be4936ec5e8fe52903e92310dd1e63835f802fb",
+   "size_bytes": 1072802
   },
   "telemetry/HUL.json": {
    "sha256": "6f40b5124da756adff5a8bb8e695638227aa0cf7983da921b6997ffaaf9f3213",
@@ -125,40 +125,40 @@
    "size_bytes": 1058252
   },
   "telemetry/LEC.json": {
-   "sha256": "83ce76462c5b40f601c720cfa11436798211a07f66244094db5faa54b43b932f",
+   "sha256": "f250eef4498458a45b63784b7cb17071b629f7ea74d9f1c4ed081cb224a29c7a",
    "size_bytes": 1077351
   },
   "telemetry/LIN.json": {
-   "sha256": "317f597d34e7258e9c20e3ceb09c3a079b6954af39bfeb50a5b8b3a427ec4c47",
-   "size_bytes": 1057042
+   "sha256": "a48c332bdd3c051a913b925c0988e0fd84ee1350ea3a547770593945f73304d5",
+   "size_bytes": 1057043
   },
   "telemetry/NOR.json": {
    "sha256": "ffc7e80e1db33a685fb4f6d7e98ea1e236715c74354477e79876625a687d630c",
    "size_bytes": 1076880
   },
   "telemetry/OCO.json": {
-   "sha256": "09994286a1723fe955b0541ece0c3eb0588c0eb2b43b3371ab524424c16e820c",
-   "size_bytes": 1043853
+   "sha256": "95d6297fb7c2519f02fc9344af47a78ae1aff7baeac4175f5f41e27711535718",
+   "size_bytes": 1043856
   },
   "telemetry/PER.json": {
    "sha256": "da27485a7b46495a344c3e8a20c1441f9253aedfc0ac7b895b9531a09adb70cd",
    "size_bytes": 60220
   },
   "telemetry/PIA.json": {
-   "sha256": "953d40bc2331b8fae676e65776971e36d668a4d3b781a1c19b6a3c7696c4f287",
+   "sha256": "f0a687673ed7b702c3f2f42ccc2b40d67ed278c4044587fc3828b9ebe11808b0",
    "size_bytes": 1066386
   },
   "telemetry/RUS.json": {
-   "sha256": "9421c9b08d55f7bad1d949a19a38a7aebcf152f1b07401b1749912647b95ee5b",
-   "size_bytes": 1077521
+   "sha256": "ce3b210c6616024c03be3fcfd9fb51f1e0d1fb96784d9b62a5d0cb5636a517f2",
+   "size_bytes": 1077524
   },
   "telemetry/SAI.json": {
-   "sha256": "3b336c073acc02a1ee481e9dc89295470869085b275f098e6d6989fb7e581378",
-   "size_bytes": 363625
+   "sha256": "1e9bdeb8ed8bba48607f578d92178896438662329c731975a75a924e32ee305a",
+   "size_bytes": 363627
   },
   "telemetry/STR.json": {
-   "sha256": "306254f0fe02839e47acbfa8c9afcd366c96cc2c9646bf089319c0d542a1454b",
-   "size_bytes": 680445
+   "sha256": "f0f069588ae96d9b9a0fbdee8c866455ecbf56266708207fa91ad6b960c39dd5",
+   "size_bytes": 680451
   },
   "telemetry/VER.json": {
    "sha256": "07add2d22046818ad6eac3287ea17062f2cc3bad59f78c9bd6b9933a036c5616",
@@ -173,5 +173,5 @@
    "size_bytes": 19770
   }
  },
- "generation": "f59bc2285ce841454f8471d58efd67ac0c03a33588a269cce1a2ab39fbc1d3ce"
+ "generation": "790346cc3bb9f5eee95234096694abd50e3180cbf1443ab11378786ff50bae90"
 }

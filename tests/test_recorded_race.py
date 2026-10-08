@@ -45,7 +45,9 @@ from backend.app.analysis.advanced import calculate_car_performance, calculate_t
 from backend.app.analysis.position_replay import build_position_replay
 from f1data import layout, normalize
 from f1data.analyses import LapRows, position_replay, sample_rows
+from f1data.archive import read_raw_response
 from f1data.artifacts import build_artifacts
+from f1data.carfeed import CAR_FEED
 from f1data.classification import merge_into_session
 from f1data.coverage import apply_classification, evaluate_coverage, measure_coverage, sent_by_f1
 from f1data.extras import CIRCUIT_INFO, PIT_STOP_SERIES, parse_pit_stop_series
@@ -95,7 +97,13 @@ def austria(tmp_path_factory):
     store = archive_store()
     snapshot, extras = restore(store, AUSTRIA, base)
     return SimpleNamespace(
-        store=store, snapshot=snapshot, extras=extras, base=base, session=load_offline(snapshot, base)
+        store=store,
+        snapshot=snapshot,
+        extras=extras,
+        base=base,
+        session=load_offline(snapshot, base),
+        # F1's car feed as it was sent, which a build reads beside the cache.
+        car_feed=read_raw_response(store, snapshot, CAR_FEED),
     )
 
 
@@ -443,7 +451,9 @@ def build_without(austria, tmp_path, bar, driver_number=None, damage=None):
     official = recorded_classification(AUSTRIA)
     measurement = apply_classification(measure_coverage(session, "R", austria.extras), official.laps_by_number)
     merge_into_session(session, official)
-    return build_artifacts(session, austria.snapshot.identity, official, austria.extras, measurement)
+    return build_artifacts(
+        session, austria.snapshot.identity, official, austria.extras, measurement, austria.car_feed
+    )
 
 
 # FastF1 makes a session's laps from these four together, and none without any one of them.
@@ -549,7 +559,7 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     measurement = apply_classification(measure_coverage(session, "R", extras), official.laps_by_number)
     merge_into_session(session, official)
 
-    files = build_artifacts(session, austria.snapshot.identity, official, extras, measurement)
+    files = build_artifacts(session, austria.snapshot.identity, official, extras, measurement, austria.car_feed)
 
     changed = sorted(path for path in files if files[path] != generation.files[path])
     FEED_TABLE.append((f"extra/{PIT_STOP_SERIES}", code, f"NEITHER: complete, and {', '.join(changed)} change"))

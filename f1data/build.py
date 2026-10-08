@@ -30,11 +30,13 @@ from urllib.parse import urlsplit
 
 from f1data import layout
 from f1data.artifacts import build_artifacts
+from f1data.carfeed import CAR_FEED
 from f1data.archive import (
     Snapshot,
     list_snapshots,
     partial_publication_time,
     read_extras,
+    read_raw_response,
     restore_snapshot,
     select_snapshot,
     write_remeasurement,
@@ -306,6 +308,7 @@ class Builder:
         with tempfile.TemporaryDirectory(prefix="f1data-build-") as scratch:
             cache_dir = restore_snapshot(self._store, snapshot, Path(scratch) / "cache")
             extras = read_extras(self._store, snapshot)
+            car_feed = read_raw_response(self._store, snapshot, CAR_FEED)
             with fastf1_cache(cache_dir), no_requests_at_all() as guard:
                 # Made from the calendar row that gather read. Asking FastF1
                 # for the session by year and round would read the calendar
@@ -390,7 +393,7 @@ class Builder:
                 # result, is what the pointer will say of this generation, so
                 # it is what the generation says of itself.
                 files = build_artifacts(
-                    session, snapshot.identity, context.classification, extras, snapshot.coverage
+                    session, snapshot.identity, context.classification, extras, snapshot.coverage, car_feed
                 )
         wanted_of_f1 = [url for url in guard.forbidden if _host(url) in F1_ARCHIVE_HOSTS]
         if wanted_of_f1:
