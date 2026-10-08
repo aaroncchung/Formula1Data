@@ -381,7 +381,16 @@ test("a lap's distance is read as the furthest the car had got, so it never goes
   // The same for a lap it is compared with: a place a tenth of a metre back
   // is not looked for on the way in.
   const a = lap(3, [[0, 0, 200], [1_000, 100, 200], [2_000, 200, 200], [3_000, 300, 200]]);
-  const b = lap(2, [[0, 0, 200], [1_000, 100, 60], [9_000, 99.9, 0], [10_000, 200, 200], [11_000, 300, 200]]);
+  const b = lap(2, [
+    [0, 0, 200],
+    [1_000, 100, 60],
+    [3_000, 100, 0],
+    [5_000, 100, 0],
+    [7_000, 100, 0],
+    [9_000, 99.9, 0],
+    [10_000, 200, 200],
+    [11_000, 300, 200]
+  ]);
   assert.deepEqual(compare(a, b).delta_time_ms, [0, 0, 8_000, 8_000]);
 });
 
@@ -617,4 +626,118 @@ test("an empty lap compares to nothing, without failing", () => {
 
   assert.deepEqual(compare(empty, other).distance_m, []);
   assert.deepEqual(compare(other, empty).speed_b, [null, null]);
+});
+
+// ---------------------------------------------------------------------------
+// The twenty-third review: which clock the delta is on, and a hole of lap B
+// that falls between two of lap A's samples
+// ---------------------------------------------------------------------------
+
+const timed = (driver, number, lapTimeMs) => ({ ...meta(driver, number), lap_time_ms: lapTimeMs });
+
+test("the delta at the line is the difference between the lap times when each lap's telemetry runs for its lap time", () => {
+  const a = lap(3, [[0, 0, 200], [40_000, 2_500, 200], [80_000, 5_000, 200]]);
+  const b = lap(2, [[0, 0, 200], [40_500, 2_500, 200], [81_000, 5_000, 200]]);
+
+  const comparison = compareLaps({ meta: timed("RUS", 3, 80_000), lap: a }, { meta: timed("VER", 2, 81_000), lap: b }, 300);
+
+  assert.equal(comparison.delta_time_ms.at(-1), 81_000 - 80_000);
+  // Nothing to say of either clock.
+  assert.equal(comparison.caveats.length, 3);
+});
+
+// The 2026 Australian GP. A first lap's time is the classification's, from
+// the start signal; its telemetry is on the session clock. Albon is timed at
+// 1:39.376 and Bearman at 1:39.765, 0.389 s apart, and their telemetry ends
+// 0.455 s apart. The page showed the second beside the first and said nothing.
+test("a first lap is timed on another clock than its telemetry, and the comparison says which the delta is on", () => {
+  const albon = lap(1, [[0, 0, 0], [50_000, 2_600, 200], [99_612, 5_278, 200]]);
+  const bearman = lap(1, [[0, 0, 0], [50_000, 2_500, 200], [100_067, 5_278, 200]]);
+
+  const comparison = compareLaps({ meta: timed("ALB", 1, 99_376), lap: albon }, { meta: timed("BEA", 1, 99_765), lap: bearman }, 300);
+
+  // The one clock both cars are on.
+  assert.equal(comparison.delta_time_ms.at(-1), 455);
+  assert.equal(comparison.caveats.length, 4);
+  const note = comparison.caveats[3];
+  assert.match(note, /ALB's lap 1 is timed at 1:39\.376 and its telemetry runs for 1:39\.612/);
+  assert.match(note, /BEA's lap 1 is timed at 1:39\.765 and its telemetry runs for 1:40\.067/);
+  assert.match(note, /a first lap is timed by the classification from the start signal/);
+  assert.match(note, /The time delta is between the telemetry of the two laps, so at the line it is not the difference between their lap times\.$/);
+});
+
+test("only a lap whose telemetry does not run for its lap time is named, and a lap with no time is not", () => {
+  const first = lap(1, [[0, 0, 0], [50_000, 2_600, 200], [99_612, 5_278, 200]]);
+  const second = lap(2, [[0, 0, 200], [40_000, 2_500, 200], [87_780, 5_278, 200]]);
+
+  const { caveats } = compareLaps({ meta: timed("ALB", 1, 99_376), lap: first }, { meta: timed("ALB", 2, 87_780), lap: second }, 300);
+
+  assert.match(caveats[3], /^ALB's lap 1 is timed at/);
+  assert.doesNotMatch(caveats[3], /lap 2/);
+  // No lap time, as for a first lap with no classification yet: nothing to be apart from.
+  assert.equal(compareLaps({ meta: timed("ALB", 1, null), lap: first }, { meta: timed("ALB", 2, 87_780), lap: second }, 300).caveats.length, 3);
+});
+
+// The 2026 Dutch GP, Lindblad's lap 5: timed at 1:27.335, with telemetry for
+// the last 31.641 s of it.
+test("a later lap whose telemetry does not cover its lap time is said to be that", () => {
+  const short = lap(5, [[0, 0, 200], [15_000, 900, 200], [31_641, 1_800, 80]]);
+  const whole = lap(6, [[0, 0, 200], [45_000, 2_100, 200], [89_772, 4_259, 200]]);
+
+  const { caveats } = compareLaps({ meta: timed("LIN", 5, 87_335), lap: short }, { meta: timed("LIN", 6, 89_772), lap: whole }, 300);
+
+  assert.match(caveats[3], /LIN's lap 5 is timed at 1:27\.335 and its telemetry runs for 0:31\.641: the timing and the session clock do not agree on where this lap began\./);
+});
+
+/** A lap of 1,000 m sampled every 250 ms, with nothing between 500 m and 510 m for three seconds. */
+function lapWithAHoleAt500() {
+  return lap(2, [
+    [0, 0, 150],
+    [250, 125, 150],
+    [500, 250, 150],
+    [750, 375, 150],
+    [1_000, 500, 150],
+    [4_000, 510, 150],
+    [4_250, 635, 150],
+    [4_500, 760, 150],
+    [4_750, 885, 150],
+    [5_000, 1_000, 150]
+  ]);
+}
+
+// A's samples are at 480 m and 520 m, either side of B's hole. B reads well
+// at both, and a chart given the two rows drew B straight across the hole.
+test("a hole of lap B between two of A's samples breaks B's line there, and not A's", () => {
+  const a = lap(3, [[0, 0, 200], [1_000, 480, 200], [2_000, 520, 220], [3_000, 1_000, 200]]);
+
+  const comparison = compare(a, lapWithAHoleAt500());
+
+  // One more row than A has samples, between the two either side of the hole.
+  assert.deepEqual(comparison.distance_m, [0, 480, 500, 520, 1_000]);
+  assert.deepEqual(comparison.speed_b, [150, 150, null, 150, 150]);
+  assert.equal(comparison.gear_b[2], null);
+  assert.equal(comparison.delta_time_ms[2], null);
+  assert.equal(comparison.delta_speed_kph[2], null);
+  // A has no hole: it is read half-way between its two samples, where its line passes anyway.
+  assert.deepEqual(comparison.speed_a, [200, 200, 210, 220, 200]);
+  assert.equal(comparison.gear_a[2], 7);
+  // Either side, B is where it was: 960 ms to 480 m, and 4,020 ms to 520 m.
+  assert.deepEqual([comparison.delta_time_ms[1], comparison.delta_time_ms[3]], [-40, 2_020]);
+});
+
+test("a hole of lap B is marked once, whether A's samples straddle it, land in it or stop at its edges", () => {
+  const b = lapWithAHoleAt500();
+  const rows = (places) => compare(lap(3, places.map((place, index) => [index * 1_000, place, 200])), b);
+
+  // At the two samples either side of the hole exactly.
+  assert.deepEqual(rows([0, 500, 510, 1_000]).speed_b, [150, 150, null, 150, 150]);
+  // Inside it: that row has nothing of B already, and no other is added.
+  assert.deepEqual(rows([0, 480, 505, 520, 1_000]).speed_b, [150, 150, null, 150, 150]);
+  // Nowhere near it: one row for the hole, between the samples either side of it.
+  assert.deepEqual(rows([0, 100, 200, 300, 1_000]).speed_b, [150, 150, 150, 150, null, 150]);
+  // And a lap with a hole laid over itself has one row for it, not two.
+  const itself = compare(b, b);
+  assert.equal(itself.distance_m.length, b.time_ms.length + 1);
+  assert.equal(itself.speed_a.filter((speed) => speed === null).length, 1);
+  assert.equal(itself.delta_time_ms.every((delta) => delta === 0 || delta === null), true);
 });

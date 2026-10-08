@@ -32,7 +32,7 @@ def test_changing_a_coverage_bar_needs_a_new_pipeline_version():
         )
     )
     recorded_bars = "8c2dd541e136"
-    recorded_pipeline_version = 11
+    recorded_pipeline_version = 12
 
     assert (hashlib.sha256(bars.encode()).hexdigest()[:12], layout.PIPELINE_VERSION) == (
         recorded_bars,

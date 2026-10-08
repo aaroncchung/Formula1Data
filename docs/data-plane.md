@@ -118,7 +118,12 @@ What holds for all of them:
   file in which they are not is not published. The schema cannot say so; the
   models check it.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
-  with no compound stays with the set it is numbered with.
+  with no compound stays with the set it is numbered with. F1 gives a car a
+  new stint number when it goes through the pit lane, whether or not its
+  tyres are changed; where its tyre data has the car on the same compound,
+  one lap older, the lap stays in the stint it was in, and the numbers after
+  it close up. So `stint` in `laps.json` is F1's number less the passages
+  before it.
 - A pit stop is the timing's entry to the pit lane with F1's own figures
   beside it, matched by driver and lap. F1's feed sends a stop once and then
   only what changes, so a stop is followed by its driver and its place in
@@ -131,6 +136,17 @@ What holds for all of them:
   the report's own, and is left out otherwise. A car in the pit lane while the
   session was red-flagged is marked `under_red_flag`, and the strategy
   analysis leaves its wait out of the pit-lane figures.
+- Not every entry to the pit lane is a pit stop: a car serves a drive-through
+  penalty, or the field follows the safety car down the pit lane. Each entry
+  says whether the car went out on another set of tyres (`tyres_changed`,
+  from the stints; null where F1's tyre data does not say). An entry is a
+  stop when F1's pit-stop feed gives it a stationary time or its tyres were
+  changed. It is taken for a passage only when both feeds say so: no
+  stationary time, and the same tyres afterwards. The pit-lane figures of the
+  strategy analysis are of the stops the pit-stop feed reports and no other
+  entry; its pit loss and its pace change across a driver's first stop leave
+  out the passages. F1's tyre data can lag (by eight laps in the 2025 Miami
+  GP), which is why it is never taken alone as word that a car did not stop.
 - A driver is found by car number in every feed and named by F1's three
   letters, from the timing, the driver list or the classification. A driver
   none of them names is published under the car number as text. FastF1

@@ -241,8 +241,10 @@ def test_the_austrian_race_in_figures(generation):
     assert strategy["pit_loss_estimate_ms"] == 21_282.0
     assert (strategy["pit_loss"]["qualifying_stop_count"], strategy["pit_loss"]["stop_count"]) == (33, 44)
     assert strategy["pit_loss"]["spread_ms"] == 834.7
+    # Over the 36 stops F1's pit-stop feed reports. Over all 41 entries with a
+    # time it was 21,574, and its slowest, 28,879, a stop the feed leaves out.
     assert strategy["pit_lane_time"] == {
-        "median_ms": 21_574.0, "fastest_ms": 21_042, "slowest_ms": 28_879, "timed_stop_count": 41, "stop_count": 44,
+        "median_ms": 21_563.0, "fastest_ms": 21_042, "slowest_ms": 25_533, "timed_stop_count": 36, "stop_count": 44,
     }
     assert strategy["compound_usage"] == {"HARD": 24, "MEDIUM": 31, "SOFT": 8}
     assert "pit_stops" not in strategy and "race_control_overlays" not in strategy
@@ -552,7 +554,10 @@ def test_one_drivers_stops_missing_from_f1s_pit_stop_feed_is_the_removal_no_bar_
     changed = sorted(path for path in files if files[path] != generation.files[path])
     FEED_TABLE.append((f"extra/{PIT_STOP_SERIES}", code, f"NEITHER: complete, and {', '.join(changed)} change"))
     assert evaluate_coverage(measurement) == []
-    assert changed == ["coverage.json", "pit-stops.json"]
+    # The pit-lane figures are of the stops the feed reports, so they move too.
+    assert changed == ["analysis/strategy.json", "coverage.json", "pit-stops.json"]
+    lane, whole = (read(built, "analysis/strategy.json")["pit_lane_time"] for built in (files, generation.files))
+    assert (lane["timed_stop_count"], whole["timed_stop_count"]) == (33, 36)
     stops = [stop for stop in read(files, "pit-stops.json") if stop["driver_code"] == code]
     assert len(stops) == 3 and all(stop["stationary_ms"] is None and stop["duration_ms"] for stop in stops)
     assert read(files, "coverage.json")["pit_stops_in_series"] == 33

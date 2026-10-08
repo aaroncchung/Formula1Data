@@ -1620,7 +1620,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Which of the driver's sets of tyres the lap was run on, counted as F1 counts them but for one thing: F1 gives a new number to a car that went through the pit lane and kept its tyres, and such a lap keeps the number of the set it is still on."
         },
         "track_status": {
           "anyOf": [
@@ -1933,6 +1934,7 @@
           "description": "The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres."
         },
         "stop_lap": {
+          "description": "The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping.",
           "type": "integer"
         }
       },
@@ -2098,7 +2100,7 @@
     },
     "PitLaneTime": {
       "additionalProperties": false,
-      "description": "Pit-lane transit times from the timing, summarised.",
+      "description": "Pit-lane transit times from the timing, summarised over the stops F1's pit-stop feed reports.",
       "properties": {
         "fastest_ms": {
           "anyOf": [
@@ -2135,10 +2137,11 @@
           "description": "Milliseconds."
         },
         "stop_count": {
+          "description": "Every entry to the pit lane, a stop or not.",
           "type": "integer"
         },
         "timed_stop_count": {
-          "description": "The stops the three figures are of: those with a transit time that were not a wait through a red flag.",
+          "description": "The stops the three figures are of: the entries to the pit lane that F1's pit-stop feed gives a stationary time for, that have a transit time, and that were not a wait through a red flag.",
           "type": "integer"
         }
       },
@@ -2198,6 +2201,7 @@
           "description": "Milliseconds."
         },
         "stop_count": {
+          "description": "Every entry to the pit lane, a stop or not.",
           "type": "integer"
         },
         "stops": {
@@ -2224,6 +2228,7 @@
       "description": "Why a stop is left out of the pit-loss estimate.",
       "enum": [
         "no_lap_number",
+        "no_stop",
         "missing_lap_time",
         "first_lap",
         "back_to_back_stops",
@@ -2290,6 +2295,17 @@
           ],
           "description": "Milliseconds the car stood still, from F1's pit-stop feed."
         },
+        "tyres_changed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether the car went out on another set of tyres than it came in on, by F1's tyre data. False for a car that kept its tyres: a drive-through penalty, a penalty served in the pit box, a passage behind the safety car. Null where the tyre data does not say: it names no compound for the lap the car came in on or the one after, or the car did not go out again. The tyre data can lag a stop by some laps, so false beside a stationary time is still a stop."
+        },
         "under_red_flag": {
           "description": "Whether the session was red-flagged while the car was in the pit lane. The duration is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its pit-lane figures.",
           "type": "boolean"
@@ -2303,6 +2319,7 @@
         "under_red_flag",
         "stationary_ms",
         "pit_lane_ms",
+        "tyres_changed",
         "sources"
       ],
       "title": "PitStop",
@@ -2358,7 +2375,7 @@
       "type": "object"
     },
     "PitStops": {
-      "description": "pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them.",
+      "description": "pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them. Not every entry is a pit stop. One is known to be a stop when F1's pit-stop feed gives it a stationary time or its tyres were changed, and is taken not to be when the feed gives it none and the tyre data says the car kept its tyres.",
       "items": {
         "$ref": "#/$defs/PitStop"
       },

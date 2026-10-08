@@ -92,7 +92,7 @@ def session_artifacts(
     drivers = normalize.drivers(session, codes)
     laps = normalize.laps(session, codes)
     stints = normalize.stints(laps)
-    pit_stops = normalize.pit_stops(session, extras, codes)
+    pit_stops = normalize.pit_stops(session, extras, codes, stints)
     weather = normalize.weather(session, identity.session_type, extras)
     race_control = normalize.race_control(session)
     corners = normalize.circuit_corners(extras, telemetry, laps)

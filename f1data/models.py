@@ -161,6 +161,7 @@ class PitLossExclusion(str, Enum):
     """Why a stop is left out of the pit-loss estimate."""
 
     NO_LAP_NUMBER = "no_lap_number"
+    NO_STOP = "no_stop"
     MISSING_LAP_TIME = "missing_lap_time"
     FIRST_LAP = "first_lap"
     BACK_TO_BACK_STOPS = "back_to_back_stops"
@@ -270,7 +271,11 @@ class Lap(Model):
         description="Laps the set had done at the end of this lap. Null for a set that went on used: F1 "
         "does not report its age."
     )
-    stint: int | None
+    stint: int | None = Field(
+        description="Which of the driver's sets of tyres the lap was run on, counted as F1 counts them "
+        "but for one thing: F1 gives a new number to a car that went through the pit lane and kept its "
+        "tyres, and such a lap keeps the number of the set it is still on."
+    )
     position: int | None = Field(description="Position at the end of the lap.")
     is_pit_in_lap: bool
     is_pit_out_lap: bool
@@ -371,11 +376,24 @@ class PitStop(Model):
         description="Milliseconds the car stood still, from F1's pit-stop feed."
     )
     pit_lane_ms: int | None = Field(description="Milliseconds in the pit lane, from F1's pit-stop feed.")
+    tyres_changed: bool | None = Field(
+        description="Whether the car went out on another set of tyres than it came in on, by F1's tyre "
+        "data. False for a car that kept its tyres: a drive-through penalty, a penalty served in the pit "
+        "box, a passage behind the safety car. Null where the tyre data does not say: it names no "
+        "compound for the lap the car came in on or the one after, or the car did not go out again. "
+        "The tyre data can lag a stop by some laps, so false beside a stationary time is still a stop."
+    )
     sources: PitStopSources
 
 
 class PitStops(RootModel[list[PitStop]]):
-    """``pit-stops.json``: every entry to the pit lane, with F1's own figures where it gives them."""
+    """``pit-stops.json``: every entry to the pit lane, with F1's own figures where it gives them.
+
+    Not every entry is a pit stop. One is known to be a stop when F1's pit-stop
+    feed gives it a stationary time or its tyres were changed, and is taken
+    not to be when the feed gives it none and the tyre data says the car kept
+    its tyres.
+    """
 
 
 class WeatherSample(Model):
@@ -751,7 +769,7 @@ class PitLoss(Model):
     estimate_ms: Decimal1 | None
     spread_ms: Decimal1 | None
     qualifying_stop_count: int
-    stop_count: int
+    stop_count: int = Field(description="Every entry to the pit lane, a stop or not.")
     minimum_stop_count: int
     baseline_window_laps: int
     excluded_stop_counts: dict[PitLossExclusion, int]
@@ -759,21 +777,25 @@ class PitLoss(Model):
 
 
 class PitLaneTime(Model):
-    """Pit-lane transit times from the timing, summarised."""
+    """Pit-lane transit times from the timing, summarised over the stops F1's pit-stop feed reports."""
 
     median_ms: Decimal1 | None
     fastest_ms: int | None
     slowest_ms: int | None
     timed_stop_count: int = Field(
-        description="The stops the three figures are of: those with a transit time that were not a wait "
-        "through a red flag."
+        description="The stops the three figures are of: the entries to the pit lane that F1's pit-stop "
+        "feed gives a stationary time for, that have a transit time, and that were not a wait through a "
+        "red flag."
     )
-    stop_count: int
+    stop_count: int = Field(description="Every entry to the pit lane, a stop or not.")
 
 
 class PaceChangeAcrossStop(Model):
     driver_code: str
-    stop_lap: int
+    stop_lap: int = Field(
+        description="The lap the driver first came in on, leaving out any entry to the pit lane the car "
+        "went through without stopping."
+    )
     first_clean_lap_gain_ms: int | None = Field(
         description="The lap before the stop minus the lap after it, in milliseconds. Positive is quicker "
         "on the new tyres."

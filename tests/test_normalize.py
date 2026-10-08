@@ -324,6 +324,8 @@ def test_a_pit_stop_carries_both_of_f1s_figures_beside_the_timings_and_says_whic
             "under_red_flag": False,
             "stationary_ms": 2_400,
             "pit_lane_ms": 19_900,
+            # Asked of the stop list alone, with no stints to say.
+            "tyres_changed": None,
             "sources": {"duration_ms": "timing", "stationary_ms": "pit_stop_series", "pit_lane_ms": "pit_stop_series"},
         }
     ]

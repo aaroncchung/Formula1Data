@@ -206,11 +206,19 @@ def test_a_lap_whose_car_data_stops_before_the_lap_does_has_no_telemetry():
 
 
 def tyres(session, code: str, per_lap: list[tuple[int, str | None]]):
-    """``session`` with one driver's stint number and compound set lap by lap."""
+    """``session`` with one driver's stint number and compound set lap by lap.
+
+    The age of the tyres starts again at each new number, as it does for a
+    set that goes on new.
+    """
+    age, before = 0, None
     for lap_number, (stint, compound) in enumerate(per_lap, start=1):
+        age = age + 1 if stint == before else 1
+        before = stint
         mine = (session.laps["Driver"] == code) & (session.laps["LapNumber"] == lap_number)
         session.laps.loc[mine, "Stint"] = float(stint)
         session.laps.loc[mine, "Compound"] = compound
+        session.laps.loc[mine, "TyreLife"] = float(age)
     return session
 
 

@@ -4,7 +4,9 @@ import { formatElapsed, formatSessionClock } from "@/lib/durations";
 import { formatMs } from "@/lib/format";
 import type { PaceChangeAcrossStop, PitStop, Strategy } from "@/lib/published/types";
 import {
+  otherEntriesNote,
   paceChange,
+  pitEntryCounts,
   pitLaneSummary,
   pitLossExclusionLabel,
   pitLossSummary,
@@ -25,7 +27,8 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
   const usage = Object.entries(strategy?.compound_usage ?? {}).sort((a, b) => b[1] - a[1]);
   const estimates = strategy?.undercut_overcut ?? [];
   const stops = pitStopLog(strategy, pitStops);
-  const drivers = new Set(stops.map((stop) => stop.driver_code)).size;
+  const counts = pitEntryCounts(pitStops);
+  const drivers = counts.driversWhoStopped;
   const caveats = strategy?.caveats ?? [];
 
   return (
@@ -37,7 +40,11 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StrategyMetric label="Pit stops" value={stops.length} detail={`${drivers} ${drivers === 1 ? "driver" : "drivers"}`} />
+        <StrategyMetric
+          label="Pit stops"
+          value={counts.stops}
+          detail={[`${drivers} ${drivers === 1 ? "driver" : "drivers"}`, otherEntriesNote(counts)].filter(Boolean).join(" · ")}
+        />
         <StrategyMetric label="Compounds used" value={usage.length || "--"} detail={usage.map(([compound]) => compound).join(" · ") || "Not available"} />
         <StationaryMetric summary={stationarySummary(pitStops)} />
         <PitLaneMetric summary={pitLaneSummary(strategy, pitStops)} />
@@ -80,7 +87,7 @@ function StationaryMetric({ summary }: { summary: StationarySummary }) {
     <StrategyMetric
       label={label}
       value={seconds(summary.median_ms)}
-      detail={`Car standing still · fastest ${seconds(fastest.stationary_ms)}, ${fastest.driver_code} on lap ${fastest.lap_number} · F1 reports a stop for ${summary.timedStopCount} of ${summary.stopCount} entries to the pit lane${unreportedNote(summary)}`}
+      detail={`Car standing still · fastest ${seconds(fastest.stationary_ms)}, ${fastest.driver_code} on lap ${fastest.lap_number} · F1's pit-stop feed times ${summary.timedStopCount} of the ${summary.stopCount} stops${unreportedNote(summary)}`}
     />
   );
 }
@@ -89,27 +96,20 @@ function StationaryMetric({ summary }: { summary: StationarySummary }) {
 function PitLaneMetric({ summary }: { summary: PitLaneSummary }) {
   const label = "Entry to exit (median)";
   if (summary.median_ms === null) {
-    return <StrategyMetric label={label} value="Not recorded" detail="No stop has both a pit-entry and a pit-exit time" />;
+    return <StrategyMetric label={label} value="Not recorded" detail="F1's pit-stop feed reports no stop that has both a pit-entry and a pit-exit time" />;
   }
   return (
     <StrategyMetric
       label={label}
       value={seconds(summary.median_ms)}
-      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · ${summary.timedStopCount} of ${summary.stopCount} entries timed, whether or not the car stopped${redFlagNote(summary.redFlagCount)}`}
+      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · over the ${summary.timedStopCount} ${summary.timedStopCount === 1 ? "stop" : "stops"} F1's pit-stop feed reports, of ${summary.stopCount} entries to the pit lane${redFlagNote(summary.redFlagCount)}`}
     />
   );
 }
 
-/**
- * What an entry with no stop reported may be. The timing has every entry to
- * the pit lane, and F1's pit-stop feed the stops: in the 2025 Canadian GP the
- * whole field followed the safety car down the pit lane on lap 67, and 49 of
- * the 82 entries of that race are that.
- */
+/** F1's pit-stop feed does not cover every stop: the tyre data shows the ones it leaves out. */
 function unreportedNote(summary: StationarySummary): string {
-  return summary.timedStopCount < summary.stopCount
-    ? " · the rest are drive-throughs, passages behind the safety car, or stops its feed left out"
-    : "";
+  return summary.timedStopCount < summary.stopCount ? " · the rest are stops its feed left out" : "";
 }
 
 /** Why some entries to the pit lane are in none of the figures. */
@@ -129,7 +129,7 @@ function PitLossMetric({ summary }: { summary: PitLossSummary }) {
         <StrategyMetric
           label={label}
           value={seconds(summary.estimate_ms)}
-          detail={`Against staying out · median of ${summary.qualifyingStopCount} of ${summary.stopCount} stops${
+          detail={`Against staying out · median of ${summary.qualifyingStopCount} of ${summary.stopCount} entries to the pit lane${
             summary.spread_ms === null ? "" : ` · spread ${seconds(summary.spread_ms)}`
           }`}
         />
@@ -139,7 +139,7 @@ function PitLossMetric({ summary }: { summary: PitLossSummary }) {
         <StrategyMetric
           label={label}
           value="Not estimated"
-          detail={`${summary.qualifyingStopCount} of ${summary.stopCount} stops qualify; ${summary.minimumStopCount} are needed`}
+          detail={`${summary.qualifyingStopCount} of ${summary.stopCount} entries to the pit lane qualify; ${summary.minimumStopCount} are needed`}
         />
       );
     case "no_stops":
@@ -156,6 +156,7 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
   const hasPitLoss = stops.some((stop) => stop.pitLoss !== null);
   const reported = stops.filter((stop) => stop.stationary_ms !== null).length;
   const redFlagged = stops.filter((stop) => stop.under_red_flag).length;
+  const passages = stops.filter((stop) => stop.kind === "passage").length;
   return (
     <div>
       <div className="mb-3">
@@ -163,10 +164,13 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
         <p className="mt-1 text-sm text-slate-500">
           Every entry to the pit lane.{" "}
           {hasFeed
-            ? `Stationary and pit-lane times are F1's own figures, which its pit-stop feed gives for ${reported} of these ${stops.length} stops. `
+            ? `Stationary and pit-lane times are F1's own figures, which its pit-stop feed gives for ${reported} of these ${stops.length} entries. `
             : stops.length
-              ? "F1's pit-stop feed reports none of these stops, so there are no stationary times. "
+              ? "F1's pit-stop feed reports none of these entries, so there are no stationary times. "
               : ""}
+          {passages > 0
+            ? `${passages} of them ${passages === 1 ? "is a car" : "are cars"} that went through without stopping, a drive-through penalty or a passage behind the safety car: F1 reports no stop, and its tyre data has the car on the same tyres afterwards. `
+            : ""}
           Entry to exit is the time between the timing&apos;s pit-entry and pit-exit, stationary time included.
           {redFlagged > 0
             ? ` ${redFlagged} of these ${redFlagged === 1 ? "was a car" : "were cars"} in the pit lane when the session was red-flagged: what is timed there is the wait for the restart, and it is in none of the figures above.`
@@ -183,11 +187,12 @@ function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
           { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
           {
             key: "lap",
-            header: "Stop lap",
+            header: "Lap in",
             align: "right",
             render: (row) => (
               <>
                 {row.under_red_flag ? <RedFlagMark /> : null}
+                {row.kind === "passage" ? <NoStopMark /> : null}
                 {row.lap_number}
               </>
             )
@@ -221,6 +226,18 @@ function RedFlagMark() {
   );
 }
 
+/** Beside the lap of a car that went through the pit lane and did not stop, so its quick time is not read as a stop's. */
+function NoStopMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-line bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"
+      title="F1 reports no stop, and its tyre data has the car on the same tyres afterwards: a drive-through penalty or a passage behind the safety car."
+    >
+      No stop
+    </span>
+  );
+}
+
 /** A figure from F1's pit-stop feed, or a dash for a stop the feed does not report. */
 function FeedTime({ ms }: { ms: number | null }) {
   return ms === null ? (
@@ -248,8 +265,8 @@ function PaceChangeTable({ estimates }: { estimates: ReadonlyArray<PaceChangeAcr
       <div className="mb-3">
         <h3 className="font-bold text-white">Pace change across the first stop</h3>
         <p className="mt-1 text-sm text-slate-500">
-          The driver&apos;s last clean lap before the stop against the first one after it. Quicker means quicker on
-          the new tyres. Not adjusted for fuel, traffic or track evolution.
+          The driver&apos;s last clean lap before their first change of tyres against the first one after it. Quicker
+          means quicker on the new tyres. Not adjusted for fuel, traffic or track evolution.
         </p>
       </div>
       <DataTable

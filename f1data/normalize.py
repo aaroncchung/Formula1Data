@@ -236,14 +236,65 @@ def laps(session: Any, codes: dict[str, str] | None = None) -> list[Lap]:
         )
     if not rows:
         raise SessionDataError("The session's timing names no driver and lap")
-    return rows
+    return _numbered_by_set(rows)
+
+
+def _numbered_by_set(rows: list[Lap]) -> list[Lap]:
+    """The laps with their stints numbered by the set of tyres the car was on.
+
+    F1 numbers the sets a driver uses, and gives a new number as well to a
+    car that went through the pit lane and changed nothing: a drive-through
+    penalty, or the field following the safety car past an accident on the
+    straight. In the 2025 Canadian GP that was three times in the last four
+    laps, and Verstappen's three stints came out as six. The same feed says
+    what happened: under the new number the tyres are the compound they were,
+    and one lap older than on the lap before. Such a lap keeps the number of
+    the set it is still on, and the numbers after it close up.
+
+    Nothing else is read into F1's numbers. F1 gives no age for a set that
+    went on used, so a car that drives through on one keeps the new number.
+    """
+    by_driver: dict[str, list[int]] = {}
+    for index, lap in enumerate(rows):
+        by_driver.setdefault(lap.driver_code, []).append(index)
+    numbered = list(rows)
+    for indices in by_driver.values():
+        # How far F1's numbers have run ahead of the sets the driver has used.
+        ahead = 0
+        before: Lap | None = None
+        for index in sorted(indices, key=lambda at: rows[at].lap_number):
+            lap = rows[index]
+            if (
+                before is not None
+                and lap.stint is not None
+                and before.stint is not None
+                and lap.stint != before.stint
+                and _still_on_the_set(before, lap)
+            ):
+                ahead += lap.stint - before.stint
+            if ahead and lap.stint is not None:
+                numbered[index] = lap.model_copy(update={"stint": lap.stint - ahead})
+            before = lap
+    return numbered
+
+
+def _still_on_the_set(before: Lap, after: Lap) -> bool:
+    """Whether F1's tyre data has a lap on the set of the lap before it."""
+    return (
+        after.lap_number == before.lap_number + 1
+        and before.compound is not None
+        and after.compound == before.compound
+        and before.tyre_age is not None
+        and after.tyre_age == before.tyre_age + 1
+    )
 
 
 def stints(lap_rows: list[Lap]) -> list[Stint]:
     """Each run of laps on one set of tyres, driver by driver in the order the timing shows them.
 
     A run is consecutive laps: no two runs of a driver share a lap. F1 numbers
-    the sets a driver uses, and a new number starts a new run. So does a
+    the sets a driver uses (and a lap's number here is of its set, see
+    ``_numbered_by_set``), and a new number starts a new run. So does a
     compound that changes to another under one number, which is F1 correcting
     itself. A lap with no compound does not: under the same number it is the
     same set of tyres, and F1 often names a set's compound only some laps
@@ -460,8 +511,15 @@ def _provisional_results(session: Any, codes: dict[str, str]) -> list[Result]:
 # --- pit stops -----------------------------------------------------------------
 
 
-def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> list[PitStop]:
+def pit_stops(
+    session: Any, extras: dict[str, bytes], codes: dict[str, str], stints: Iterable[Stint] = ()
+) -> list[PitStop]:
     """Every entry to the pit lane the timing shows, with F1's own figures beside it.
+
+    Not every entry is a pit stop. In the 2025 Canadian GP the field followed
+    the safety car down the pit lane three times, and 49 of that race's 82
+    entries are that. Each entry says whether the car changed tyres, from the
+    session's ``stints``, so that whatever counts or times stops can tell.
 
     The timing gives the pit-lane transit time: the gap between the pit-entry
     time on one lap and the pit-exit time on the next. F1's pit-stop feed
@@ -524,6 +582,7 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
         reported[(code, lap_number)] = stop
 
     red_flags = _red_flag_periods(session)
+    set_of_lap = _set_of_each_lap(stints)
     rows: list[PitStop] = []
     for code, stops in timed.items():
         for number, (came_in, duration) in stops.items():
@@ -532,11 +591,42 @@ def pit_stops(session: Any, extras: dict[str, bytes], codes: dict[str, str]) -> 
                 for start, end in red_flags
             )
             rows.append(
-                _pit_stop(code, number, came_in, duration, reported.pop((code, number), None), waited)
+                _pit_stop(
+                    code,
+                    number,
+                    came_in,
+                    duration,
+                    reported.pop((code, number), None),
+                    waited,
+                    _tyres_changed(set_of_lap, code, number),
+                )
             )
     for (code, number), stop in sorted(reported.items()):
-        rows.append(_pit_stop(code, number, None, None, stop, False))
+        rows.append(_pit_stop(code, number, None, None, stop, False, _tyres_changed(set_of_lap, code, number)))
     return rows
+
+
+def _set_of_each_lap(stints: Iterable[Stint]) -> dict[tuple[str, int], int]:
+    """Which of the session's stints each lap of each driver is in.
+
+    A stint is the laps run on one set of tyres. One F1 names no compound for
+    is left out: with no tyre data, nothing says what the car was on.
+    """
+    sets: dict[tuple[str, int], int] = {}
+    for index, stint in enumerate(stints):
+        if stint.compound is None:
+            continue
+        for number in range(stint.start_lap, stint.end_lap + 1):
+            sets[(stint.driver_code, number)] = index
+    return sets
+
+
+def _tyres_changed(set_of_lap: dict[tuple[str, int], int], code: str, lap_number: int) -> bool | None:
+    """Whether a car that came in on a lap went out on another set, or ``None`` where the tyre data does not say."""
+    came_in_on, went_out_on = set_of_lap.get((code, lap_number)), set_of_lap.get((code, lap_number + 1))
+    if came_in_on is None or went_out_on is None:
+        return None
+    return came_in_on != went_out_on
 
 
 def _left(came_in: int, duration: int | None) -> int:
@@ -615,6 +705,7 @@ def _pit_stop(
     duration: int | None,
     reported: dict[str, Any] | None,
     under_red_flag: bool,
+    tyres_changed: bool | None,
 ) -> PitStop:
     stationary = reported.get("stationary_ms") if reported else None
     pit_lane = reported.get("pit_lane_ms") if reported else None
@@ -626,6 +717,7 @@ def _pit_stop(
         under_red_flag=under_red_flag,
         stationary_ms=stationary,
         pit_lane_ms=pit_lane,
+        tyres_changed=tyres_changed,
         sources=PitStopSources(
             duration_ms="timing" if duration is not None else None,
             stationary_ms="pit_stop_series" if stationary is not None else None,

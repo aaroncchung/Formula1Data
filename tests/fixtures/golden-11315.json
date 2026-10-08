@@ -21,8 +21,8 @@
    "size_bytes": 16398
   },
   "analysis/strategy.json": {
-   "sha256": "05b151cfcbfe0b3304498c12c510da7faa6a10d92385dad0f87c277f5df56e93",
-   "size_bytes": 14509
+   "sha256": "f7d22d2e2e873b27503476eaa9db71d99d8ca7a7dfe809a6cda773298cd59472",
+   "size_bytes": 14921
   },
   "analysis/team-mate-comparison.json": {
    "sha256": "36066df2808cbec61628f0fbc7fb33527a6f0f6be451b520cfdf9b0ef2ad3be0",
@@ -53,8 +53,8 @@
    "size_bytes": 369529
   },
   "pit-stops.json": {
-   "sha256": "9a1c5f0509decc099790dac051658b916ee78c64d6c83fc62a92d9d11eb68857",
-   "size_bytes": 10637
+   "sha256": "55378b94f880191ba669dbdab5543fbfca2954da9c74b2e0c8f9fc1ac847982d",
+   "size_bytes": 11561
   },
   "position-replay.json": {
    "sha256": "2a6c26da7b05d4caa3645ce2c918aef4b2f11828d33f0994095bd8aa954d44eb",
@@ -173,5 +173,5 @@
    "size_bytes": 19770
   }
  },
- "generation": "62edde20812f2b5d04a7075f31a53cac277c4ce110000f99123383b052c4ca08"
+ "generation": "84da8398934776b139075354797ae9552819481742d02716b6fde6043c8a6497"
 }

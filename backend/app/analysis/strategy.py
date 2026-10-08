@@ -27,6 +27,7 @@ PACE_CHANGE_WINDOW_LAPS = 3
 
 _PIT_LOSS_EXCLUSIONS = {
     "no_lap_number": "no lap number",
+    "no_stop": "the car going through without stopping",
     "missing_lap_time": "no in-lap or out-lap time",
     "first_lap": "pitted on the standing-start lap",
     "back_to_back_stops": "stops on consecutive laps",
@@ -64,9 +65,14 @@ def calculate_strategy(
         # dict.get(key, default) only substitutes the default when the key is
         # absent, so a present-but-null lap number used to reach min() and
         # int() unguarded. Drop stops with no usable lap number instead.
+        #
+        # And an entry to the pit lane the car went through without stopping
+        # is not a stop to compare tyres across. In the 2025 Australian GP the
+        # field followed the safety car down the pit lane on laps 2 to 4, and
+        # each driver's first stop was taken to be lap 2.
         stop_laps = sorted(
             number
-            for number in (lap_number(stop) for stop in stops)
+            for number in (lap_number(stop) for stop in stops if not _went_through(stop))
             if number is not None
         )
         if not stop_laps:
@@ -91,17 +97,37 @@ def calculate_strategy(
         "caveats": [
             _pit_loss_caveat(pit_loss),
             "Pit-lane time is the transit from pit entry to pit exit, where FastF1 provides "
-            "adjacent pit-in/out timestamps. It includes the stationary time and has no "
-            "on-track baseline in it, so it is not pit loss.",
+            "adjacent pit-in/out timestamps, over the stops F1's pit-stop feed reports: a car "
+            "can go down the pit lane without stopping, and the timing alone does not say "
+            "which did. It includes the stationary time and has no on-track baseline in it, "
+            "so it is not pit loss.",
             "Pace change across a stop is the driver's last clean green-flag lap before the "
             "in-lap minus the first one after the out-lap, each within "
-            f"{PACE_CHANGE_WINDOW_LAPS} laps of the first stop; positive is quicker on the new "
-            "tyres. Pit, deleted, inaccurate, yellow-flag and neutralised laps are never used, "
-            "and no value is given when either lap is missing.",
+            f"{PACE_CHANGE_WINDOW_LAPS} laps of the driver's first stop; positive is quicker on "
+            "the new tyres. Pit, deleted, inaccurate, yellow-flag and neutralised laps are never "
+            "used, and no value is given when either lap is missing.",
+            "A car that went down the pit lane without stopping, on a drive-through penalty or "
+            "behind the safety car, made no stop: F1's pit-stop feed reports none, and its tyre "
+            "data has the car on the same set afterwards. Such an entry is in neither figure.",
             "Pace change is descriptive: it is not adjusted for traffic, fuel or track "
             "evolution, and it is not a causal model of an undercut or overcut on a rival.",
         ],
     }
+
+
+def _went_through(stop: dict[str, Any]) -> bool:
+    """Whether a car went down the pit lane without stopping.
+
+    A drive-through penalty, or the field led down the pit lane by the safety
+    car. Both of F1's feeds have to say so: its pit-stop feed gives the entry
+    no stationary time, and its tyre data has the car on the same set
+    afterwards (``tyres_changed`` in the stop list). Either alone is not
+    enough. The pit-stop feed leaves out about one stop in eleven. And the
+    tyre data can lag: in the 2025 Miami GP it has no change of tyres at
+    twelve stops the pit-stop feed times, and shows each of them eight laps
+    later. Where either does not say, the entry is taken for a stop.
+    """
+    return stop.get("stationary_ms") is None and stop.get("tyres_changed") is False
 
 
 def _pit_loss(
@@ -159,6 +185,10 @@ def _stop_pit_loss(
     out_lap = laps_by_key.get((driver, in_lap_number + 1), {})
     in_time, out_time = in_lap.get("lap_time_ms"), out_lap.get("lap_time_ms")
     row.update({"in_lap_ms": in_time, "out_lap_ms": out_time})
+    # What that cost is not what a pit stop costs. Colapinto's drive-through
+    # penalty was in the median of the 2026 Dutch GP, priced at 13.0 s.
+    if _went_through(stop):
+        return {**row, "excluded_reason": "no_stop"}
     # A car that retires in the pits has no out-lap.
     if in_time is None or out_time is None:
         return {**row, "excluded_reason": "missing_lap_time"}
@@ -195,13 +225,13 @@ def _pit_loss_caveat(pit_loss: dict[str, Any]) -> str:
     )
     used, total = pit_loss["qualifying_stop_count"], pit_loss["stop_count"]
     if pit_loss["estimate_ms"] is not None:
-        text = f"Pit loss is the median across {used} of {total} stops of: {method}."
+        text = f"Pit loss is the median across {used} of {total} entries to the pit lane of: {method}."
     elif not total:
         text = "No pit-loss estimate: no pit stops were recorded."
     else:
         text = (
-            f"No pit-loss estimate: {used} of {total} stops qualified and at least "
-            f"{PIT_LOSS_MIN_STOPS} are needed. A qualifying stop gives {method}."
+            f"No pit-loss estimate: {used} of {total} entries to the pit lane qualified and at "
+            f"least {PIT_LOSS_MIN_STOPS} are needed. A qualifying stop gives {method}."
         )
     left_out = [
         f"{count} for {_PIT_LOSS_EXCLUSIONS[reason]}"
@@ -211,7 +241,16 @@ def _pit_loss_caveat(pit_loss: dict[str, Any]) -> str:
 
 
 def _pit_lane_time(pit_stops: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarise pit-lane transit times as what they are.
+    """Summarise the pit-lane transit times of the stops F1's pit-stop feed reports.
+
+    The timing has every entry to the pit lane, and not every entry is a stop.
+    In the 2025 Canadian GP the field followed the safety car down the pit
+    lane three times, and 49 of that race's 82 entries are that: the median
+    over all of them was 18.3 s, of cars that never stopped. The fastest of
+    the 2026 Dutch GP was a drive-through penalty. Nothing in the timing
+    tells such an entry from a stop reliably (a quick stop and a slow passage
+    took the same 14.8 s in the 2025 Australian GP), so the figures are of
+    the entries F1 itself gives a stationary time for.
 
     The median is used so a car held in the lane does not define the figure;
     the slowest time is still reported, labelled as the slowest. A car that
@@ -221,7 +260,9 @@ def _pit_lane_time(pit_stops: list[dict[str, Any]]) -> dict[str, Any]:
     durations = [
         float(stop["duration_ms"])
         for stop in pit_stops
-        if stop.get("duration_ms") is not None and not stop.get("under_red_flag")
+        if stop.get("duration_ms") is not None
+        and stop.get("stationary_ms") is not None
+        and not stop.get("under_red_flag")
     ]
     return {
         "median_ms": round(median(durations), 1) if durations else None,

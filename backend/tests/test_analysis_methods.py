@@ -56,7 +56,7 @@ class PitLossTests(unittest.TestCase):
         self.assertEqual(result["pit_loss_estimate_ms"], 21_000)
         self.assertEqual(result["pit_loss"]["estimate_ms"], 21_000)
         self.assertEqual(result["pit_loss"]["qualifying_stop_count"], 3)
-        self.assertIn("median across 3 of 3 stops", result["caveats"][0])
+        self.assertIn("median across 3 of 3 entries to the pit lane", result["caveats"][0])
 
     def test_pit_lane_time_is_reported_separately_and_never_becomes_pit_loss(self):
         laps, stops = [], []
@@ -64,8 +64,8 @@ class PitLossTests(unittest.TestCase):
         # lane times is how a committed race came to report 410,846 ms.
         for driver, lane in (("AAA", 22_000), ("BBB", 22_500), ("CCC", 400_000)):
             laps += _stint_with_stop(driver, stop_lap=8, baseline=90_000, loss=21_000)
-            stops.append(_stop(driver, 8, lane))
-        stops.append(_stop("DDD", 3, None))
+            stops.append(_stop(driver, 8, lane, stationary_ms=2_500))
+        stops.append(_stop("DDD", 3, None, stationary_ms=2_500))
 
         result = calculate_strategy("2026-01-r", [], stops, laps, [])
 
@@ -108,7 +108,9 @@ class PitLossTests(unittest.TestCase):
         self.assertIsNone(result["pit_loss"]["estimate_ms"])
         self.assertEqual(result["pit_loss"]["qualifying_stop_count"], 2)
         self.assertEqual(result["pit_loss"]["excluded_stop_counts"], {"not_green": 3})
-        self.assertIn("No pit-loss estimate: 2 of 5 stops qualified", result["caveats"][0])
+        self.assertIn(
+            "No pit-loss estimate: 2 of 5 entries to the pit lane qualified", result["caveats"][0]
+        )
         self.assertIn("3 for a yellow flag, safety car, VSC or red flag", result["caveats"][0])
 
     def test_stops_with_no_usable_lap_times_are_left_out(self):
@@ -174,6 +176,116 @@ class PitLossTests(unittest.TestCase):
         self.assertEqual(stop["excluded_reason"], "too_few_baseline_laps")
         self.assertEqual(stop["baseline_lap_count"], 2)
         self.assertIsNone(stop["pit_loss_ms"])
+
+    def test_pit_lane_time_is_of_the_stops_f1_reports_and_no_other_entry(self):
+        """The 2026 Dutch GP's fastest was a drive-through penalty, at 12.1 s.
+
+        And the median of the 2025 Canadian GP was 18.3 s over 82 entries, 49
+        of them the field following the safety car down the pit lane.
+        """
+        laps, stops = [], []
+        for driver, lane in (("AAA", 22_000), ("BBB", 23_000), ("CCC", 24_000)):
+            laps += _stint_with_stop(driver, stop_lap=8, baseline=90_000, loss=21_000)
+            stops.append(_stop(driver, 8, lane, stationary_ms=2_500))
+        # A drive-through, quicker than any stop, and two cars held in the
+        # lane with no stop reported: none is a figure of a pit stop.
+        stops.append(_stop("AAA", 12, 12_100))
+        stops.append(_stop("BBB", 12, 60_000))
+        stops.append(_stop("CCC", 12, 18_000))
+
+        result = calculate_strategy("2026-01-r", [], stops, laps, [])
+
+        self.assertEqual(
+            result["pit_lane_time"],
+            {
+                "median_ms": 23_000,
+                "fastest_ms": 22_000,
+                "slowest_ms": 24_000,
+                "timed_stop_count": 3,
+                "stop_count": 6,
+            },
+        )
+        self.assertIn("over the stops F1's pit-stop feed reports", result["caveats"][1])
+
+    def test_a_session_f1_reports_no_stop_of_has_no_pit_lane_figures(self):
+        laps = _stint_with_stop("AAA", stop_lap=8, baseline=90_000, loss=21_000)
+
+        result = calculate_strategy("2026-01-r", [], [_stop("AAA", 8, 22_000)], laps, [])
+
+        self.assertEqual(
+            result["pit_lane_time"],
+            {
+                "median_ms": None,
+                "fastest_ms": None,
+                "slowest_ms": None,
+                "timed_stop_count": 0,
+                "stop_count": 1,
+            },
+        )
+
+    def test_a_car_that_went_through_without_stopping_is_not_priced_as_a_stop(self):
+        """A drive-through penalty was in the pit-loss median of the 2026 Dutch GP, priced at 13.0 s."""
+        laps, stops = [], []
+        for driver, loss in (("AAA", 20_000), ("BBB", 21_000), ("CCC", 22_000)):
+            laps += _stint_with_stop(driver, stop_lap=8, baseline=90_000, loss=loss, last_lap=22)
+            stops.append(_stop(driver, 8, 22_000, stationary_ms=2_500, tyres_changed=True))
+        # Each then drives through the pit lane on lap 15, under green, at a
+        # cost of 14 s, and goes out on the tyres it came in on.
+        for driver in ("AAA", "BBB", "CCC"):
+            _lap_of(laps, driver, 15).update(lap_time_ms=93_500, is_pit_in_lap=True, is_accurate=False)
+            _lap_of(laps, driver, 16).update(lap_time_ms=100_500, is_pit_out_lap=True, is_accurate=False)
+            stops.append(_stop(driver, 15, 12_100, tyres_changed=False))
+
+        result = calculate_strategy("2026-01-r", [], stops, laps, [])
+        reasons = {
+            (row["driver_code"], row["lap_number"]): row["excluded_reason"]
+            for row in result["pit_loss"]["stops"]
+        }
+
+        self.assertEqual(
+            reasons,
+            {
+                ("AAA", 8): None,
+                ("BBB", 8): None,
+                ("CCC", 8): None,
+                ("AAA", 15): "no_stop",
+                ("BBB", 15): "no_stop",
+                ("CCC", 15): "no_stop",
+            },
+        )
+        # With the three drive-throughs priced as stops it was the median of
+        # 14, 14, 14, 20, 21 and 22 s: 17 s, which is the cost of neither.
+        self.assertEqual(result["pit_loss_estimate_ms"], 21_000)
+        self.assertEqual(result["pit_loss"]["excluded_stop_counts"], {"no_stop": 3})
+        self.assertIn(
+            "Left out: 3 for the car going through without stopping.", result["caveats"][0]
+        )
+
+    def test_a_stop_f1_times_is_a_stop_whatever_the_tyre_data_says(self):
+        """The 2025 Miami GP: the tyre data has no change at twelve stops, and shows each eight laps late."""
+        laps, stops = [], []
+        for driver, loss in (("AAA", 20_000), ("BBB", 21_000), ("CCC", 22_000)):
+            laps += _stint_with_stop(driver, stop_lap=8, baseline=90_000, loss=loss)
+            stops.append(_stop(driver, 8, 22_000, stationary_ms=2_500, tyres_changed=False))
+
+        result = calculate_strategy("2026-01-r", [], stops, laps, [])
+
+        self.assertEqual(result["pit_loss"]["qualifying_stop_count"], 3)
+        self.assertEqual(result["pit_loss"]["excluded_stop_counts"], {})
+        self.assertEqual([row["stop_lap"] for row in result["undercut_overcut"]], [8, 8, 8])
+
+    def test_an_entry_the_tyre_data_says_nothing_of_is_taken_for_a_stop(self):
+        laps, stops = [], []
+        for driver, loss in (("AAA", 20_000), ("BBB", 21_000), ("CCC", 22_000)):
+            laps += _stint_with_stop(driver, stop_lap=8, baseline=90_000, loss=loss)
+            # F1 sent no tyre data for the car, and that is not word that it
+            # kept its tyres.
+            stops.append(_stop(driver, 8, 22_000, tyres_changed=None))
+
+        result = calculate_strategy("2026-01-r", [], stops, laps, [])
+
+        self.assertEqual(result["pit_loss"]["qualifying_stop_count"], 3)
+        self.assertEqual([row["stop_lap"] for row in result["undercut_overcut"]], [8, 8, 8])
 
     def test_no_stops_is_an_explicit_empty_result(self):
         result = calculate_strategy("2026-01-q", [], [], [], [])
@@ -256,6 +368,45 @@ class PaceChangeAcrossStopTests(unittest.TestCase):
 
         self.assertEqual(row["stop_lap"], 10)
         self.assertIsNone(row["first_clean_lap_gain_ms"])
+
+    def test_the_first_stop_is_the_first_the_car_changed_tyres_at(self):
+        """In the 2025 Australian GP the field followed the safety car down the pit lane on laps 2 to 4.
+
+        Each driver's first stop was taken to be lap 2, which had no clean lap
+        before it, and the stop they did make was never compared across.
+        """
+        laps = [
+            _lap("AAA", 2, 120_000, pit_in=True, track_status="4"),
+            _lap("AAA", 3, 120_000, pit_out=True, pit_in=True, track_status="4"),
+            _lap("AAA", 4, 120_000, pit_out=True, track_status="4"),
+            _lap("AAA", 5, 92_500),
+            _lap("AAA", 6, 92_000),
+            _lap("AAA", 7, 95_000, pit_in=True),
+            _lap("AAA", 8, 108_000, pit_out=True),
+            _lap("AAA", 9, 90_500),
+        ]
+        stops = [
+            _stop("AAA", 2, 14_000, tyres_changed=False),
+            _stop("AAA", 3, 14_500, tyres_changed=False),
+            _stop("AAA", 7, 22_000, stationary_ms=2_400, tyres_changed=True),
+        ]
+
+        row = _pace_change(laps, stops)
+
+        self.assertEqual(row["stop_lap"], 7)
+        self.assertEqual(row["first_clean_lap_gain_ms"], 1_500)
+        self.assertEqual((row["before_lap_number"], row["after_lap_number"]), (6, 9))
+
+    def test_a_driver_who_only_drove_through_has_no_stop_to_compare_across(self):
+        laps = [_lap("AAA", number, 92_000) for number in range(2, 12)]
+        _lap_of(laps, "AAA", 6)["is_pit_in_lap"] = True
+        _lap_of(laps, "AAA", 7)["is_pit_out_lap"] = True
+
+        result = calculate_strategy(
+            "2026-01-r", [], [_stop("AAA", 6, 12_100, tyres_changed=False)], laps, []
+        )
+
+        self.assertEqual(result["undercut_overcut"], [])
 
     def test_the_method_is_stated_in_the_caveats(self):
         result = calculate_strategy("2026-01-r", [], [], [], [])
@@ -667,8 +818,21 @@ def _lap_of(laps: list[dict[str, object]], driver: str, lap_number: int) -> dict
     )
 
 
-def _stop(driver: str, lap_number: int | None, duration_ms: int | None) -> dict[str, object]:
-    return {"driver_code": driver, "lap_number": lap_number, "duration_ms": duration_ms}
+def _stop(
+    driver: str,
+    lap_number: int | None,
+    duration_ms: int | None,
+    stationary_ms: int | None = None,
+    tyres_changed: bool | None = True,
+) -> dict[str, object]:
+    """An entry to the pit lane. ``stationary_ms`` is there for one F1 reports a stop for."""
+    return {
+        "driver_code": driver,
+        "lap_number": lap_number,
+        "duration_ms": duration_ms,
+        "stationary_ms": stationary_ms,
+        "tyres_changed": tyres_changed,
+    }
 
 
 def _stint_with_stop(

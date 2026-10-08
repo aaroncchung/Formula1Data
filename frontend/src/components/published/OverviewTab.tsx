@@ -11,6 +11,7 @@ import { teamColorByDriver } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
 import { fastestLapByDriver } from "@/lib/lap-summary";
 import { readOverview, type SessionOverview } from "@/lib/published/artifacts";
+import { pitEntryCounts } from "@/lib/strategy-view";
 
 export function OverviewTab(props: TabProps) {
   return (
@@ -23,13 +24,19 @@ export function OverviewTab(props: TabProps) {
 function Overview({ summary, drivers, laps, racePace, stints, pitStops }: SessionOverview) {
   const colors = teamColorByDriver(drivers);
   const where = [summary.circuit, summary.country].filter(Boolean).join(", ");
+  // Not every entry to the pit lane is a pit stop: a car can drive through.
+  const pitCounts = pitEntryCounts(pitStops);
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Drivers" value={summary.driver_count} detail="in the session" tone="aqua" />
         <MetricCard label="Laps" value={summary.lap_count} detail="across all drivers" tone="red" />
         <MetricCard label="Stints" value={stints.length} detail="runs on one set of tyres" tone="amber" />
-        <MetricCard label="Pit stops" value={pitStops.length} detail="detected" />
+        <MetricCard
+          label="Pit stops"
+          value={pitCounts.stops}
+          detail={pitCounts.stops === pitCounts.entries ? "detected" : `of ${pitCounts.entries} entries to the pit lane`}
+        />
       </div>
       {where || summary.weather_summary ? (
         <p className="text-sm text-slate-400">

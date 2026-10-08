@@ -69,7 +69,12 @@ FORMAT_VERSION = 2
 #  10  a lap's distance never goes backwards
 #  11  the car-performance figures say that they leave out the samples at
 #      which a car stands still, which they always did
-PIPELINE_VERSION = 11
+#  12  a car that goes through the pit lane and keeps its tyres is still on
+#      the stint it was on; an entry to the pit lane says whether the tyres
+#      were changed; the pit-lane figures are of the stops F1's pit-stop feed
+#      reports, and pit loss and the pace change across a stop leave out an
+#      entry the car came out of on the tyres it went in on
+PIPELINE_VERSION = 12
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

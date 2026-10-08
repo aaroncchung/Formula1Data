@@ -19,6 +19,12 @@
  * stop list too (`under_red_flag`). What it has there is a wait for the
  * restart, 26 minutes in the 2026 Dutch GP, and not the length of a pit stop.
  * It is listed as that, and kept out of every figure that summarises stops.
+ *
+ * And the stop list is every entry to the pit lane, of which not every one is
+ * a pit stop. In the 2025 Canadian GP the field followed the safety car down
+ * the pit lane three times in the last four laps: 49 of that race's 82
+ * entries, which this page counted as pit stops. `pitEntryKind` says what an
+ * entry was, and only a stop is counted as one.
  */
 
 import type { PaceChangeAcrossStop, PitLossExclusion, PitStop, Strategy } from "./published/types.ts";
@@ -63,11 +69,84 @@ export function pitLossSummary(strategy: Strategy | null): PitLossSummary {
   };
 }
 
+/**
+ * What an entry to the pit lane was, as far as F1's feeds say.
+ *
+ * - `stop`: F1's pit-stop feed gives it a stationary time, or its tyre data
+ *   has the car on another set afterwards. Either is word that the car
+ *   stopped; the feed leaves out about one stop in eleven.
+ * - `passage`: neither, and the tyre data has the car on the same set
+ *   afterwards. A drive-through penalty, or the field led down the pit lane
+ *   by the safety car.
+ * - `red_flag_wait`: the session was red-flagged while the car was there.
+ * - `not_known`: none of that can be said. The car did not come out again, or
+ *   F1 sent no tyre data for it.
+ */
+export type PitEntryKind = "stop" | "passage" | "red_flag_wait" | "not_known";
+
+export function pitEntryKind(entry: Pick<PitStop, "under_red_flag" | "stationary_ms" | "tyres_changed">): PitEntryKind {
+  if (entry.under_red_flag) {
+    return "red_flag_wait";
+  }
+  if (entry.stationary_ms !== null || entry.tyres_changed === true) {
+    return "stop";
+  }
+  // Compared with false and not tested for truth: a generation from before
+  // the stop list said anything of the tyres has nothing here, which is not
+  // word that the car kept them.
+  return entry.tyres_changed === false ? "passage" : "not_known";
+}
+
+export type PitEntryCounts = {
+  /** Every entry to the pit lane. The four below add up to it. */
+  entries: number;
+  stops: number;
+  passages: number;
+  redFlagWaits: number;
+  notKnown: number;
+  /** How many drivers made at least one stop. */
+  driversWhoStopped: number;
+};
+
+export function pitEntryCounts(entries: ReadonlyArray<PitStop>): PitEntryCounts {
+  const counts: PitEntryCounts = { entries: entries.length, stops: 0, passages: 0, redFlagWaits: 0, notKnown: 0, driversWhoStopped: 0 };
+  const stopped = new Set<string>();
+  for (const entry of entries) {
+    const kind = pitEntryKind(entry);
+    if (kind === "stop") {
+      counts.stops += 1;
+      stopped.add(entry.driver_code);
+    } else if (kind === "passage") {
+      counts.passages += 1;
+    } else if (kind === "red_flag_wait") {
+      counts.redFlagWaits += 1;
+    } else {
+      counts.notKnown += 1;
+    }
+  }
+  counts.driversWhoStopped = stopped.size;
+  return counts;
+}
+
+/** The entries to the pit lane that were not pit stops, in words, or nothing when every one was. */
+export function otherEntriesNote(counts: PitEntryCounts): string {
+  const parts = [
+    counts.passages > 0 ? `${counts.passages} went through without stopping` : "",
+    counts.redFlagWaits > 0 ? `${counts.redFlagWaits} waited through a red flag` : "",
+    counts.notKnown > 0 ? `${counts.notKnown} F1's data does not say enough of` : ""
+  ].filter(Boolean);
+  const others = counts.entries - counts.stops;
+  return others > 0 ? `${others} other ${others === 1 ? "entry" : "entries"} to the pit lane: ${parts.join(", ")}` : "";
+}
+
 export type PitLaneSummary = {
   median_ms: number | null;
   fastest_ms: number | null;
   slowest_ms: number | null;
-  /** The stops the three figures are of: those with a time that were not a wait through a red flag. */
+  /**
+   * The stops the three figures are of: those F1's pit-stop feed reports,
+   * that have a time and were not a wait through a red flag.
+   */
   timedStopCount: number;
   /** Every entry to the pit lane. */
   stopCount: number;
@@ -78,8 +157,10 @@ export type PitLaneSummary = {
 /**
  * Entry-to-exit times in summary. Taken from the strategy analysis when the
  * generation has one, and otherwise worked out from the stops the same way:
- * the median, so that one car held in the lane does not set the figure, and
- * without the cars that sat out a red flag there.
+ * over the stops F1's pit-stop feed reports, since the time a car took to
+ * drive through is not the time of a stop; the median, so that one car held
+ * in the lane does not set the figure; and without the cars that sat out a
+ * red flag there.
  */
 export function pitLaneSummary(strategy: Strategy | null, stops: ReadonlyArray<PitStop>): PitLaneSummary {
   const redFlagCount = stops.filter((stop) => stop.under_red_flag).length;
@@ -94,7 +175,9 @@ export function pitLaneSummary(strategy: Strategy | null, stops: ReadonlyArray<P
       redFlagCount
     };
   }
-  const durations = measured(stops.filter((stop) => !stop.under_red_flag).map((stop) => stop.duration_ms));
+  const durations = measured(
+    stops.filter((stop) => !stop.under_red_flag && stop.stationary_ms !== null).map((stop) => stop.duration_ms)
+  );
   return {
     median_ms: median(durations),
     fastest_ms: durations.length ? durations[0] : null,
@@ -111,7 +194,7 @@ export type StationarySummary = {
   fastest: { driver_code: string; lap_number: number; stationary_ms: number } | null;
   /** Stops F1's pit-stop feed gives a stationary time for, not counting waits through a red flag. */
   timedStopCount: number;
-  /** Every entry to the pit lane that was not a wait through a red flag. */
+  /** Every stop: those, and the ones the feed leaves out that F1's tyre data shows. */
   stopCount: number;
 };
 
@@ -129,7 +212,7 @@ export function stationarySummary(stops: ReadonlyArray<PitStop>): StationarySumm
     }
   }
   const times = measured(racing.map((stop) => stop.stationary_ms));
-  return { median_ms: median(times), fastest, timedStopCount: times.length, stopCount: racing.length };
+  return { median_ms: median(times), fastest, timedStopCount: times.length, stopCount: pitEntryCounts(stops).stops };
 }
 
 export type StopPitLoss =
@@ -153,6 +236,8 @@ export type PitStopLogRow = {
    * are then a wait for the restart, and are shown as one and not as a stop's.
    */
   under_red_flag: boolean;
+  /** What the entry was: a stop, or a car going through, or waiting. */
+  kind: PitEntryKind;
   /** Null when the generation has no strategy analysis, or the analysis does not mention the stop. */
   pitLoss: StopPitLoss | null;
 };
@@ -179,6 +264,7 @@ export function pitStopLog(strategy: Strategy | null, pitStops: ReadonlyArray<Pi
     pit_lane_ms: stop.pit_lane_ms,
     duration_ms: stop.duration_ms,
     under_red_flag: stop.under_red_flag,
+    kind: pitEntryKind(stop),
     pitLoss: lossByStop.get(stopKey(stop.driver_code, stop.lap_number)) ?? null
   }));
 }
@@ -187,6 +273,7 @@ export function pitStopLog(strategy: Strategy | null, pitStops: ReadonlyArray<Pi
 // reason the format gains has no entry here and stops this compiling.
 const PIT_LOSS_EXCLUSIONS: Readonly<Record<PitLossExclusion, string>> = {
   no_lap_number: "no lap number",
+  no_stop: "went through without stopping",
   missing_lap_time: "no in-lap or out-lap time",
   first_lap: "stopped on lap 1",
   back_to_back_stops: "stops on consecutive laps",

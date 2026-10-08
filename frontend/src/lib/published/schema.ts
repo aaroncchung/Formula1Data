@@ -39,6 +39,7 @@ export type Compound =
  */
 export type PitLossExclusion =
   | "no_lap_number"
+  | "no_stop"
   | "missing_lap_time"
   | "first_lap"
   | "back_to_back_stops"
@@ -145,7 +146,7 @@ export type LapTimes1 = LapTimeSeries[];
  */
 export type Laps1 = Lap[];
 /**
- * pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them.
+ * pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them. Not every entry is a pit stop. One is known to be a stop when F1's pit-stop feed gives it a stationary time or its tyres were changed, and is taken not to be when the feed gives it none and the tyre data says the car kept its tyres.
  *
  * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
  * via the `definition` "PitStops".
@@ -543,7 +544,7 @@ export interface Strategy {
   undercut_overcut: PaceChangeAcrossStop[];
 }
 /**
- * Pit-lane transit times from the timing, summarised.
+ * Pit-lane transit times from the timing, summarised over the stops F1's pit-stop feed reports.
  *
  * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
  * via the `definition` "PitLaneTime".
@@ -561,9 +562,12 @@ export interface PitLaneTime {
    * Milliseconds.
    */
   slowest_ms: number | null;
+  /**
+   * Every entry to the pit lane, a stop or not.
+   */
   stop_count: number;
   /**
-   * The stops the three figures are of: those with a transit time that were not a wait through a red flag.
+   * The stops the three figures are of: the entries to the pit lane that F1's pit-stop feed gives a stationary time for, that have a transit time, and that were not a wait through a red flag.
    */
   timed_stop_count: number;
 }
@@ -586,6 +590,9 @@ export interface PitLoss {
    * Milliseconds.
    */
   spread_ms: number | null;
+  /**
+   * Every entry to the pit lane, a stop or not.
+   */
   stop_count: number;
   stops: StopPitLoss[];
 }
@@ -636,6 +643,9 @@ export interface PaceChangeAcrossStop {
    * The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres.
    */
   first_clean_lap_gain_ms: number | null;
+  /**
+   * The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping.
+   */
   stop_lap: number;
 }
 /**
@@ -1027,6 +1037,9 @@ export interface Lap {
    * Milliseconds.
    */
   sector_3_ms: number | null;
+  /**
+   * Which of the driver's sets of tyres the lap was run on, counted as F1 counts them but for one thing: F1 gives a new number to a car that went through the pit lane and kept its tyres, and such a lap keeps the number of the set it is still on.
+   */
   stint: number | null;
   /**
    * Every track status code seen during the lap, run together: 1 clear, 2 yellow, 4 safety car, 5 red flag, 6 virtual safety car, 7 virtual safety car ending.
@@ -1111,6 +1124,10 @@ export interface PitStop {
    * Milliseconds the car stood still, from F1's pit-stop feed.
    */
   stationary_ms: number | null;
+  /**
+   * Whether the car went out on another set of tyres than it came in on, by F1's tyre data. False for a car that kept its tyres: a drive-through penalty, a penalty served in the pit box, a passage behind the safety car. Null where the tyre data does not say: it names no compound for the lap the car came in on or the one after, or the car did not go out again. The tyre data can lag a stop by some laps, so false beside a stationary time is still a stop.
+   */
+  tyres_changed: boolean | null;
   /**
    * Whether the session was red-flagged while the car was in the pit lane. The duration is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its pit-lane figures.
    */

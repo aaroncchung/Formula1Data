@@ -16,7 +16,19 @@
  * Antonelli crosses it, and a lap that was 0.109 s slower would be drawn as
  * finishing 0.12 s ahead. So B's distances are scaled to A's lap length, the
  * two laps start and end together, and the time delta at the line is the
- * difference between the two lap times.
+ * difference between the times the two laps' telemetry runs for.
+ *
+ * That is the difference between the two lap times for every lap whose
+ * telemetry runs for its lap time, which is not quite all of them. A first
+ * lap's time is the classification's, counted from the start signal, and its
+ * telemetry is on the session clock, from the moment F1's feed has the
+ * session start: the two are a quarter of a second apart in most races and
+ * more than a second in some, and not by the same amount for every car. In
+ * the 2026 Australian GP Albon's first lap is timed at 1:39.376 and Bearman's
+ * at 1:39.765, 0.389 s apart, and their telemetry ends 0.455 s apart. The
+ * telemetry is the one clock both cars are on, so the delta is left on it,
+ * and the comparison says so of any lap whose telemetry does not run for its
+ * lap time (`clockNote`).
  *
  * A place is not always one moment. A car in its pit box has dozens of
  * samples at one distance, and the published distance can even step back a
@@ -35,13 +47,16 @@
  *
  * Nothing is made up where a lap has no data. A lap can have a hole, a
  * stretch the car's data did not arrive for; nothing is interpolated across
- * one, and the charts break there. The publisher leaves a lap out altogether
+ * one, and the charts break there: a row with nothing for that lap is put
+ * between the rows either side of the hole, since a chart joins whatever two
+ * rows it is given. The publisher leaves a lap out altogether
  * when a hole in it is longer than five seconds, so the ones met here are a
  * few seconds at most. B has no value before its first sample. And a channel
  * that has no entry for a sample has no value there: a brake that is not
  * known to be on is not drawn as off.
  */
 
+import { formatMs } from "./format.ts";
 import type { Compound, TelemetryLap } from "./published/types.ts";
 
 /** A lap in a comparison: whose it is, and what the session says of it. */
@@ -58,7 +73,7 @@ export type TrackPoint = { readonly x: number; readonly y: number };
 /**
  * Every array has one entry for each entry of `distance_m`. An entry is null
  * where that lap has nothing there: outside lap B's samples, inside a hole of
- * either lap, in the row that marks a hole of lap A, and where the lap's
+ * either lap, in the row that marks a hole of either lap, and where the lap's
  * channel has no entry for the sample.
  */
 export type TelemetryComparison = {
@@ -200,10 +215,14 @@ export function compareLaps(
   const lengthA = samplesA.distance[lastSample] ?? 0;
   const lengthB = samplesB.distance[lastOfB] ?? 0;
   const scale = lengthA > 0 && lengthB > 0 ? lengthB / lengthA : 1;
+  const holesOfB = holesOf(samplesB);
   const rows: Array<{ distance: number; a: Reading | null; b: Reading | null }> = [];
+  // What B read at A's sample before this one.
+  let before: Reading | null = null;
   samplesA.distance.forEach((distance, index) => {
     const previous = index - 1;
-    if (index > 0 && samplesA.time[index] - samplesA.time[previous] > samplesA.holeMs) {
+    const holeOfA = index > 0 && samplesA.time[index] - samplesA.time[previous] > samplesA.holeMs;
+    if (holeOfA) {
       // A row with nothing in it, part-way across the hole, so that a chart
       // stops lap A's line at one side and starts it again at the other.
       rows.push({ distance: (samplesA.published[previous] + samplesA.published[index]) / 2, a: null, b: null });
@@ -222,6 +241,19 @@ export function compareLaps(
           ? readingAt(b.lap, lastOfB)
           : null
         : readB(place, standingMs(samplesA, index));
+    if (!holeOfA && before !== null && ofB !== null && holesOfB.some((hole) => before!.time_ms <= hole.from && ofB.time_ms >= hole.to)) {
+      // A hole of B that falls between two of A's samples: B reads well at
+      // both, and a chart given the two rows would draw B straight across
+      // what its data did not arrive for. A row with nothing for B goes
+      // between them. A has no hole here, so it is read half-way, where its
+      // own line passes anyway.
+      rows.push({
+        distance: (samplesA.published[previous] + samplesA.published[index]) / 2,
+        a: readingBetween(samplesA, previous, 0.5),
+        b: null
+      });
+    }
+    before = ofB;
     // The chart's axis is lap A's distance as it is published.
     rows.push({ distance: samplesA.published[index], a: readingAt(a.lap, index), b: ofB });
   });
@@ -254,9 +286,53 @@ export function compareLaps(
     caveats: [
       `The laps are laid over each other by the share of the lap covered. A lap's distance is its own car's speed added up, ${lengthLabel(lengthA)} for ${a.meta.driver_code} and ${lengthLabel(lengthB)} for ${b.meta.driver_code} here, so ${b.meta.driver_code}'s is scaled to ${a.meta.driver_code}'s.`,
       `${b.meta.driver_code}'s lap is read where ${a.meta.driver_code}'s samples are: speed, throttle, engine speed and time are interpolated between its two nearest samples, and gear, brake and DRS are taken from the nearer one.`,
-      `A lap is published with at most ${maxSamples} samples, so a change that lasts less than the step between two of them can be missed.`
+      `A lap is published with at most ${maxSamples} samples, so a change that lasts less than the step between two of them can be missed.`,
+      ...clockNote([
+        { meta: a.meta, samples: samplesA },
+        { meta: b.meta, samples: samplesB }
+      ])
     ]
   };
+}
+
+/** The stretches of a lap its data did not arrive for, as the times of the samples either side. */
+function holesOf(samples: Samples): Array<{ from: number; to: number }> {
+  const holes: Array<{ from: number; to: number }> = [];
+  for (let index = 1; index < samples.count; index += 1) {
+    if (samples.time[index] - samples.time[index - 1] > samples.holeMs) {
+      holes.push({ from: samples.time[index - 1], to: samples.time[index] });
+    }
+  }
+  return holes;
+}
+
+/**
+ * What to say when the telemetry of a compared lap does not run for the
+ * lap's time, as one caveat, or nothing when both do.
+ *
+ * The delta is between the two laps' telemetry. Beside a lap whose time is
+ * from another clock, the delta at the line is not the difference between
+ * the two lap times a reader has in front of them, and the page has to say
+ * which it is showing.
+ */
+function clockNote(laps: ReadonlyArray<{ meta: ComparedLap; samples: Samples }>): string[] {
+  const apart = laps.flatMap(({ meta, samples }) => {
+    const runsFor = samples.count > 0 ? samples.time[samples.count - 1] : null;
+    if (meta.lap_time_ms === null || runsFor === null || Math.round(runsFor) === Math.round(meta.lap_time_ms)) {
+      return [];
+    }
+    const why =
+      meta.lap_number === 1
+        ? "a first lap is timed by the classification from the start signal, and its telemetry is on the session clock"
+        : "the timing and the session clock do not agree on where this lap began";
+    return [
+      `${meta.driver_code}'s lap ${meta.lap_number} is timed at ${formatMs(meta.lap_time_ms)} and its telemetry runs for ${formatMs(runsFor)}: ${why}.`
+    ];
+  });
+  if (apart.length === 0) {
+    return [];
+  }
+  return [`${apart.join(" ")} The time delta is between the telemetry of the two laps, so at the line it is not the difference between their lap times.`];
 }
 
 /** The line a lap drove, from the samples that have a position. */

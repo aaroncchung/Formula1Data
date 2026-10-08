@@ -1,6 +1,7 @@
 import { groupByDriver } from "@/lib/chart-utils";
 import { formatElapsed } from "@/lib/durations";
 import type { PitStop } from "@/lib/published/types";
+import { pitEntryKind } from "@/lib/strategy-view";
 
 /**
  * `lastLap` is the last lap of the session, when the caller knows it. The
@@ -22,9 +23,14 @@ export function PitStopTimeline({ stops, lastLap = 0 }: { stops: ReadonlyArray<P
             {driverStops.map((stop, index) => (
               <div
                 key={`${stop.driver_code}-${stop.lap_number}-${index}`}
-                className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-carbon ${
-                  // A car waiting out a red flag in the pit lane is marked apart from a car making a stop.
-                  stop.under_red_flag ? "bg-redline shadow-[0_0_0_3px_rgba(243,61,61,0.15)]" : "bg-aqua shadow-[0_0_0_3px_rgba(45,224,200,0.15)]"
+                className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${
+                  // A car waiting out a red flag in the pit lane, and a car that
+                  // went through without stopping, are marked apart from a car making a stop.
+                  stop.under_red_flag
+                    ? "border-carbon bg-redline shadow-[0_0_0_3px_rgba(243,61,61,0.15)]"
+                    : pitEntryKind(stop) === "passage"
+                      ? "border-slate-500 bg-carbon"
+                      : "border-carbon bg-aqua shadow-[0_0_0_3px_rgba(45,224,200,0.15)]"
                 }`}
                 style={{ left: `${Math.max(1, (stop.lap_number / maxLap) * 100)}%` }}
                 title={stopTitle(stop)}
@@ -37,6 +43,7 @@ export function PitStopTimeline({ stops, lastLap = 0 }: { stops: ReadonlyArray<P
       <p className="text-xs text-slate-500">
         A marker is the lap a car came into the pits on. Hover for how long it stood still and how long it was in the pit lane, where those were recorded.
         {stops.some((stop) => stop.under_red_flag) ? " A red marker is a car that was in the pit lane when the session was red-flagged." : ""}
+        {stops.some((stop) => pitEntryKind(stop) === "passage") ? " A hollow marker is a car that went through the pit lane without stopping." : ""}
       </p>
     </div>
   );
@@ -53,6 +60,9 @@ function stopTitle(stop: PitStop): string {
         : `waited ${formatElapsed(stop.duration_ms)} in the pit lane through a red flag`
     );
     return parts.join(" · ");
+  }
+  if (pitEntryKind(stop) === "passage") {
+    parts.push("went through without stopping");
   }
   if (stop.stationary_ms !== null) {
     parts.push(`stationary ${formatElapsed(stop.stationary_ms)}`);
