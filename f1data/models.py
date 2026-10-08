@@ -161,6 +161,7 @@ class PitLossExclusion(str, Enum):
     """Why a stop is left out of the pit-loss estimate."""
 
     NO_LAP_NUMBER = "no_lap_number"
+    RED_FLAG_WAIT = "red_flag_wait"
     NO_STOP = "no_stop"
     MISSING_LAP_TIME = "missing_lap_time"
     FIRST_LAP = "first_lap"
@@ -794,7 +795,7 @@ class PaceChangeAcrossStop(Model):
     driver_code: str
     stop_lap: int = Field(
         description="The lap the driver first came in on, leaving out any entry to the pit lane the car "
-        "went through without stopping."
+        "went through without stopping or waited in through a red flag."
     )
     first_clean_lap_gain_ms: int | None = Field(
         description="The lap before the stop minus the lap after it, in milliseconds. Positive is quicker "

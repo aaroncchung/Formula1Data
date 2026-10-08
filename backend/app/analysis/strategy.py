@@ -27,6 +27,7 @@ PACE_CHANGE_WINDOW_LAPS = 3
 
 _PIT_LOSS_EXCLUSIONS = {
     "no_lap_number": "no lap number",
+    "red_flag_wait": "the car waiting in the pit lane through a red flag",
     "no_stop": "the car going through without stopping",
     "missing_lap_time": "no in-lap or out-lap time",
     "first_lap": "pitted on the standing-start lap",
@@ -66,13 +67,14 @@ def calculate_strategy(
         # absent, so a present-but-null lap number used to reach min() and
         # int() unguarded. Drop stops with no usable lap number instead.
         #
-        # And an entry to the pit lane the car went through without stopping
-        # is not a stop to compare tyres across. In the 2025 Australian GP the
-        # field followed the safety car down the pit lane on laps 2 to 4, and
-        # each driver's first stop was taken to be lap 2.
+        # And an entry to the pit lane that was no pit stop is not a stop to
+        # compare tyres across. In the 2025 Australian GP the field followed
+        # the safety car down the pit lane on laps 2 to 4, and each driver's
+        # first stop was taken to be lap 2. In the 2026 Dutch GP it was the
+        # wait through the red flag on lap 2, tyres changed or not.
         stop_laps = sorted(
             number
-            for number in (lap_number(stop) for stop in stops if not _went_through(stop))
+            for number in (lap_number(stop) for stop in stops if _not_a_stop(stop) is None)
             if number is not None
         )
         if not stop_laps:
@@ -108,26 +110,42 @@ def calculate_strategy(
             "used, and no value is given when either lap is missing.",
             "A car that went down the pit lane without stopping, on a drive-through penalty or "
             "behind the safety car, made no stop: F1's pit-stop feed reports none, and its tyre "
-            "data has the car on the same set afterwards. Such an entry is in neither figure.",
+            "data has the car on the same set afterwards. Nor did a car that waited in the pit "
+            "lane through a red flag. Neither entry is in either figure.",
             "Pace change is descriptive: it is not adjusted for traffic, fuel or track "
             "evolution, and it is not a causal model of an undercut or overcut on a rival.",
         ],
     }
 
 
-def _went_through(stop: dict[str, Any]) -> bool:
-    """Whether a car went down the pit lane without stopping.
+def _not_a_stop(stop: dict[str, Any]) -> str | None:
+    """Why an entry to the pit lane was no pit stop, or ``None`` for one that is taken for a stop.
 
-    A drive-through penalty, or the field led down the pit lane by the safety
-    car. Both of F1's feeds have to say so: its pit-stop feed gives the entry
-    no stationary time, and its tyre data has the car on the same set
-    afterwards (``tyres_changed`` in the stop list). Either alone is not
-    enough. The pit-stop feed leaves out about one stop in eleven. And the
-    tyre data can lag: in the 2025 Miami GP it has no change of tyres at
-    twelve stops the pit-stop feed times, and shows each of them eight laps
-    later. Where either does not say, the entry is taken for a stop.
+    The site reads the stop list the same way (``pitEntryKind`` in
+    frontend/src/lib/strategy-view.ts), and in the same order, so that what
+    the page counts as a stop is what the figures beside it are of.
+
+    ``red_flag_wait``: the session was red-flagged while the car was in the
+    pit lane. That is a wait for the restart whatever was done to the car
+    meanwhile: tyres may be changed under a red flag, and three cars of the
+    2025 Sao Paulo sprint waited 22 minutes on the ones they had.
+
+    ``no_stop``: the car went down the pit lane without stopping, on a
+    drive-through penalty or behind the safety car. Both of F1's feeds have
+    to say so: its pit-stop feed gives the entry no stationary time, and its
+    tyre data has the car on the same set afterwards (``tyres_changed`` in
+    the stop list). Either alone is not enough. The pit-stop feed leaves out
+    about one stop in eleven. And the tyre data can lag: in the 2025 Miami GP
+    it has no change of tyres at twelve stops the pit-stop feed times, and
+    shows each of them eight laps later.
+
+    Where the feeds do not say, the entry is taken for a stop.
     """
-    return stop.get("stationary_ms") is None and stop.get("tyres_changed") is False
+    if stop.get("under_red_flag"):
+        return "red_flag_wait"
+    if stop.get("stationary_ms") is None and stop.get("tyres_changed") is False:
+        return "no_stop"
+    return None
 
 
 def _pit_loss(
@@ -187,8 +205,9 @@ def _stop_pit_loss(
     row.update({"in_lap_ms": in_time, "out_lap_ms": out_time})
     # What that cost is not what a pit stop costs. Colapinto's drive-through
     # penalty was in the median of the 2026 Dutch GP, priced at 13.0 s.
-    if _went_through(stop):
-        return {**row, "excluded_reason": "no_stop"}
+    not_a_stop = _not_a_stop(stop)
+    if not_a_stop is not None:
+        return {**row, "excluded_reason": not_a_stop}
     # A car that retires in the pits has no out-lap.
     if in_time is None or out_time is None:
         return {**row, "excluded_reason": "missing_lap_time"}

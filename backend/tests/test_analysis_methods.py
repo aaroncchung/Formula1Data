@@ -274,6 +274,31 @@ class PitLossTests(unittest.TestCase):
         self.assertEqual(result["pit_loss"]["excluded_stop_counts"], {})
         self.assertEqual([row["stop_lap"] for row in result["undercut_overcut"]], [8, 8, 8])
 
+    def test_a_wait_through_a_red_flag_is_a_wait_whatever_was_done_to_the_car(self):
+        """The 2026 Dutch GP was red-flagged on lap 2 with the field in the pit lane, and tyres were changed.
+
+        Norris's first stop was taken to be that wait, and his stop on lap 21
+        was never compared across. And in the 2025 Sao Paulo sprint three
+        cars that waited 22 minutes on the tyres they had were counted as
+        going through without stopping.
+        """
+        for changed in (True, False):
+            with self.subTest(tyres_changed=changed):
+                laps = _stint_with_stop("AAA", stop_lap=8, baseline=90_000, loss=21_000)
+                wait = {**_stop("AAA", 3, 1_560_000, tyres_changed=changed), "under_red_flag": True}
+                stops = [wait, _stop("AAA", 8, 22_000, stationary_ms=2_500)]
+
+                result = calculate_strategy("2026-01-r", [], stops, laps, [])
+                reasons = {row["lap_number"]: row["excluded_reason"] for row in result["pit_loss"]["stops"]}
+
+                self.assertEqual(reasons, {3: "red_flag_wait", 8: None})
+                self.assertEqual(result["pit_loss"]["excluded_stop_counts"], {"red_flag_wait": 1})
+                self.assertIn(
+                    "Left out: 1 for the car waiting in the pit lane through a red flag.",
+                    result["caveats"][0],
+                )
+                self.assertEqual([row["stop_lap"] for row in result["undercut_overcut"]], [8])
+
     def test_an_entry_the_tyre_data_says_nothing_of_is_taken_for_a_stop(self):
         laps, stops = [], []
         for driver, loss in (("AAA", 20_000), ("BBB", 21_000), ("CCC", 22_000)):

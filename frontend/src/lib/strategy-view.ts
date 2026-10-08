@@ -139,6 +139,29 @@ export function otherEntriesNote(counts: PitEntryCounts): string {
   return others > 0 ? `${others} other ${others === 1 ? "entry" : "entries"} to the pit lane: ${parts.join(", ")}` : "";
 }
 
+export type CompoundUsage = {
+  /** Stints by compound, most used first, for the compounds F1 named. */
+  named: Array<[string, number]>;
+  /** Stints F1 named no compound for. Not a compound: it could be any of the ones above. */
+  unnamedStints: number;
+};
+
+// The key the strategy analysis counts stints with no compound under.
+const UNNAMED_COMPOUND = "UNKNOWN";
+
+/**
+ * The compounds a session was run on. The analysis counts the stints F1 named
+ * no compound for under their own key, which is not a compound: the 2025
+ * Miami GP was run on two, and with that key counted the page said three.
+ */
+export function compoundUsage(strategy: Strategy | null): CompoundUsage {
+  const usage = Object.entries(strategy?.compound_usage ?? {});
+  return {
+    named: usage.filter(([compound]) => compound !== UNNAMED_COMPOUND).sort((a, b) => b[1] - a[1]),
+    unnamedStints: usage.find(([compound]) => compound === UNNAMED_COMPOUND)?.[1] ?? 0
+  };
+}
+
 export type PitLaneSummary = {
   median_ms: number | null;
   fastest_ms: number | null;
@@ -273,6 +296,7 @@ export function pitStopLog(strategy: Strategy | null, pitStops: ReadonlyArray<Pi
 // reason the format gains has no entry here and stops this compiling.
 const PIT_LOSS_EXCLUSIONS: Readonly<Record<PitLossExclusion, string>> = {
   no_lap_number: "no lap number",
+  red_flag_wait: "waited through a red flag",
   no_stop: "went through without stopping",
   missing_lap_time: "no in-lap or out-lap time",
   first_lap: "stopped on lap 1",

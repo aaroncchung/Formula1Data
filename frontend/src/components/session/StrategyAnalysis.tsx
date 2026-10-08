@@ -4,6 +4,7 @@ import { formatElapsed, formatSessionClock } from "@/lib/durations";
 import { formatMs } from "@/lib/format";
 import type { PaceChangeAcrossStop, PitStop, Strategy } from "@/lib/published/types";
 import {
+  compoundUsage,
   otherEntriesNote,
   paceChange,
   pitEntryCounts,
@@ -24,7 +25,7 @@ import {
  * stops are then shown from the stop list alone.
  */
 export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | null; pitStops: ReadonlyArray<PitStop> }) {
-  const usage = Object.entries(strategy?.compound_usage ?? {}).sort((a, b) => b[1] - a[1]);
+  const { named: usage, unnamedStints } = compoundUsage(strategy);
   const estimates = strategy?.undercut_overcut ?? [];
   const stops = pitStopLog(strategy, pitStops);
   const counts = pitEntryCounts(pitStops);
@@ -45,7 +46,11 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
           value={counts.stops}
           detail={[`${drivers} ${drivers === 1 ? "driver" : "drivers"}`, otherEntriesNote(counts)].filter(Boolean).join(" · ")}
         />
-        <StrategyMetric label="Compounds used" value={usage.length || "--"} detail={usage.map(([compound]) => compound).join(" · ") || "Not available"} />
+        <StrategyMetric
+          label="Compounds used"
+          value={usage.length || "--"}
+          detail={[usage.map(([compound]) => compound).join(" · ") || "Not available", unnamedNote(unnamedStints)].filter(Boolean).join(" · ")}
+        />
         <StationaryMetric summary={stationarySummary(pitStops)} />
         <PitLaneMetric summary={pitLaneSummary(strategy, pitStops)} />
         <PitLossMetric summary={pitLossSummary(strategy)} />
@@ -53,7 +58,7 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
 
       {usage.length ? (
         <section className="rounded-md border border-line/70 bg-carbon/35 p-4">
-          <div className="eyebrow">Compound usage</div>
+          <div className="eyebrow">Compound usage{unnamedStints > 0 ? ` · ${unnamedNote(unnamedStints)}` : ""}</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {usage.map(([compound, count]) => (
               <div key={compound} className="flex items-center justify-between rounded-md border border-line/70 bg-white/[0.025] p-3">
@@ -74,6 +79,11 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | 
       {caveats.length ? <p className="rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400">{caveats.join(" ")}</p> : null}
     </div>
   );
+}
+
+/** Stints F1 named no compound for, which are not another compound. */
+function unnamedNote(stints: number): string {
+  return stints > 0 ? `F1 named no compound for ${stints} ${stints === 1 ? "stint" : "stints"}` : "";
 }
 
 /** How long the cars stood still, which is what is usually meant by the length of a pit stop. */

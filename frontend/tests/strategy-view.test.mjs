@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  compoundUsage,
   otherEntriesNote,
   paceChange,
   pitEntryCounts,
@@ -387,8 +388,31 @@ test("a stop only F1's feed reports has no entry time on the session clock", () 
 test("each reason a stop is left out of the estimate is worded", () => {
   assert.equal(pitLossExclusionLabel("not_green"), "not under green");
   assert.equal(pitLossExclusionLabel("no_stop"), "went through without stopping");
+  assert.equal(pitLossExclusionLabel("red_flag_wait"), "waited through a red flag");
   assert.equal(pitLossExclusionLabel("first_lap"), "stopped on lap 1");
   assert.equal(pitLossExclusionLabel("too_few_baseline_laps"), "too few clean laps around it");
+});
+
+// ---------------------------------------------------------------------------
+// Compounds
+// ---------------------------------------------------------------------------
+
+// The 2025 Miami GP was run on two compounds. F1 named none for fifteen
+// stints, which the analysis counts under a key of their own, and the page
+// counted the key: "Compounds used: 3".
+test("stints F1 named no compound for are not another compound", () => {
+  const miami = strategy({ compound_usage: { MEDIUM: 19, UNKNOWN: 15, HARD: 19 } });
+
+  assert.deepEqual(compoundUsage(miami), { named: [["MEDIUM", 19], ["HARD", 19]], unnamedStints: 15 });
+});
+
+test("compounds are listed most used first, and a session with none unnamed says so", () => {
+  assert.deepEqual(compoundUsage(strategy({ compound_usage: { SOFT: 8, MEDIUM: 31, HARD: 24 } })), {
+    named: [["MEDIUM", 31], ["HARD", 24], ["SOFT", 8]],
+    unnamedStints: 0
+  });
+  assert.deepEqual(compoundUsage(strategy({ compound_usage: { UNKNOWN: 20 } })), { named: [], unnamedStints: 20 });
+  assert.deepEqual(compoundUsage(null), { named: [], unnamedStints: 0 });
 });
 
 // ---------------------------------------------------------------------------

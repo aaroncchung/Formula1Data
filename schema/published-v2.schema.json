@@ -1934,7 +1934,7 @@
           "description": "The lap before the stop minus the lap after it, in milliseconds. Positive is quicker on the new tyres."
         },
         "stop_lap": {
-          "description": "The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping.",
+          "description": "The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping or waited in through a red flag.",
           "type": "integer"
         }
       },
@@ -2228,6 +2228,7 @@
       "description": "Why a stop is left out of the pit-loss estimate.",
       "enum": [
         "no_lap_number",
+        "red_flag_wait",
         "no_stop",
         "missing_lap_time",
         "first_lap",

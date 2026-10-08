@@ -253,16 +253,23 @@ def _numbered_by_set(rows: list[Lap]) -> list[Lap]:
 
     Nothing else is read into F1's numbers. F1 gives no age for a set that
     went on used, so a car that drives through on one keeps the new number.
+    And a driver whose numbers from F1 ever go back down keeps them all as
+    they are: taking the passages out of numbers that are not a count would
+    give two sets one number. No archived session has such a driver.
     """
     by_driver: dict[str, list[int]] = {}
     for index, lap in enumerate(rows):
         by_driver.setdefault(lap.driver_code, []).append(index)
     numbered = list(rows)
     for indices in by_driver.values():
+        in_order = sorted(indices, key=lambda at: rows[at].lap_number)
+        from_f1 = [rows[index].stint for index in in_order if rows[index].stint is not None]
+        if any(later < earlier for earlier, later in zip(from_f1, from_f1[1:])):
+            continue
         # How far F1's numbers have run ahead of the sets the driver has used.
         ahead = 0
         before: Lap | None = None
-        for index in sorted(indices, key=lambda at: rows[at].lap_number):
+        for index in in_order:
             lap = rows[index]
             if (
                 before is not None

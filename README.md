@@ -147,7 +147,12 @@ the committed `frontend/.env.production`.
   is not a race or a sprint.
 - The fetch needs a network that F1's archive answers. Without the scheduled
   task running on such a machine, nothing new arrives.
-- A pit stop is an entry to the pit lane in the timing, with F1's own figures
-  for it where F1 sent them. A drive-through penalty is therefore a pit stop.
+- The stop list is every entry to the pit lane in the timing, with F1's own
+  figures for it where F1 sent them. Not every entry is a pit stop: a car
+  that serves a drive-through penalty, or follows the safety car down the pit
+  lane, is listed and marked as having gone through, when F1's pit-stop feed
+  reports no stop and its tyre data has the car on the same tyres afterwards.
+  The pit-stop feed leaves out about one stop in eleven, and the pit-lane
+  figures are of the stops it reports.
 - Tyre degradation, pit loss, undercuts and the pace prediction are estimates
   from a model, not measurements.

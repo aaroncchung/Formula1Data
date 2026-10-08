@@ -39,6 +39,7 @@ export type Compound =
  */
 export type PitLossExclusion =
   | "no_lap_number"
+  | "red_flag_wait"
   | "no_stop"
   | "missing_lap_time"
   | "first_lap"
@@ -644,7 +645,7 @@ export interface PaceChangeAcrossStop {
    */
   first_clean_lap_gain_ms: number | null;
   /**
-   * The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping.
+   * The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping or waited in through a red flag.
    */
   stop_lap: number;
 }

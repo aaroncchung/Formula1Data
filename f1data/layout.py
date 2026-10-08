@@ -74,7 +74,10 @@ FORMAT_VERSION = 2
 #      were changed; the pit-lane figures are of the stops F1's pit-stop feed
 #      reports, and pit loss and the pace change across a stop leave out an
 #      entry the car came out of on the tyres it went in on
-PIPELINE_VERSION = 12
+#  13  a wait in the pit lane through a red flag is neither a stop nor a
+#      passage in the strategy analysis, as on the site: it is nobody's first
+#      stop, and is left out of pit loss as a wait
+PIPELINE_VERSION = 13
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

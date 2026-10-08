@@ -660,10 +660,28 @@ test("a first lap is timed on another clock than its telemetry, and the comparis
   assert.equal(comparison.delta_time_ms.at(-1), 455);
   assert.equal(comparison.caveats.length, 4);
   const note = comparison.caveats[3];
+  assert.match(note, /^The time delta is between the telemetry of the two laps: at the line it is \+0\.455 s, and the two lap times are \+0\.389 s apart\./);
   assert.match(note, /ALB's lap 1 is timed at 1:39\.376 and its telemetry runs for 1:39\.612/);
   assert.match(note, /BEA's lap 1 is timed at 1:39\.765 and its telemetry runs for 1:40\.067/);
   assert.match(note, /a first lap is timed by the classification from the start signal/);
-  assert.match(note, /The time delta is between the telemetry of the two laps, so at the line it is not the difference between their lap times\.$/);
+});
+
+// The same race: Albon's and Alonso's first laps are each timed 0.236 s short
+// of their telemetry, so the delta at the line is the difference between
+// their lap times, 1.105 s. The note was written lap by lap, and said of this
+// pair that it was not. Most pairs of first laps of one race are like this.
+test("two laps whose clocks are out by the same amount end the difference of their lap times apart, and nothing is said", () => {
+  const albon = lap(1, [[0, 0, 0], [50_000, 2_600, 200], [99_612, 5_278, 200]]);
+  const alonso = lap(1, [[0, 0, 0], [50_000, 2_650, 200], [98_507, 5_278, 200]]);
+
+  const comparison = compareLaps({ meta: timed("ALB", 1, 99_376), lap: albon }, { meta: timed("ALO", 1, 98_271), lap: alonso }, 300);
+
+  assert.equal(comparison.delta_time_ms.at(-1), 98_271 - 99_376);
+  assert.equal(comparison.caveats.length, 3);
+  // And a lap laid over itself is level with itself at the line, whatever its clock.
+  const itself = compareLaps({ meta: timed("ALB", 1, 99_376), lap: albon }, { meta: timed("ALB", 1, 99_376), lap: albon }, 300);
+  assert.equal(itself.delta_time_ms.at(-1), 0);
+  assert.equal(itself.caveats.length, 3);
 });
 
 test("only a lap whose telemetry does not run for its lap time is named, and a lap with no time is not", () => {
@@ -672,10 +690,13 @@ test("only a lap whose telemetry does not run for its lap time is named, and a l
 
   const { caveats } = compareLaps({ meta: timed("ALB", 1, 99_376), lap: first }, { meta: timed("ALB", 2, 87_780), lap: second }, 300);
 
-  assert.match(caveats[3], /^ALB's lap 1 is timed at/);
+  // The second lap is 11.832 s quicker by the telemetry and 11.596 s by the lap times.
+  assert.match(caveats[3], /at the line it is -11\.832 s, and the two lap times are -11\.596 s apart\. ALB's lap 1 is timed at/);
   assert.doesNotMatch(caveats[3], /lap 2/);
-  // No lap time, as for a first lap with no classification yet: nothing to be apart from.
+  // No lap time, as for a first lap with no classification yet: there is no
+  // difference between lap times for the delta to be unlike.
   assert.equal(compareLaps({ meta: timed("ALB", 1, null), lap: first }, { meta: timed("ALB", 2, 87_780), lap: second }, 300).caveats.length, 3);
+  assert.equal(compareLaps({ meta: timed("ALB", 2, 87_780), lap: second }, { meta: timed("ALB", 1, null), lap: first }, 300).caveats.length, 3);
 });
 
 // The 2026 Dutch GP, Lindblad's lap 5: timed at 1:27.335, with telemetry for

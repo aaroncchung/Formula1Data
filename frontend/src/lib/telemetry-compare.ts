@@ -27,8 +27,10 @@
  * the 2026 Australian GP Albon's first lap is timed at 1:39.376 and Bearman's
  * at 1:39.765, 0.389 s apart, and their telemetry ends 0.455 s apart. The
  * telemetry is the one clock both cars are on, so the delta is left on it,
- * and the comparison says so of any lap whose telemetry does not run for its
- * lap time (`clockNote`).
+ * and where the delta at the line is then not the difference between the two
+ * lap times, the comparison says so and gives both (`clockNote`). Two first
+ * laps whose clocks are out by the same amount, as most of one race's are,
+ * still end the difference of their lap times apart, and nothing is said.
  *
  * A place is not always one moment. A car in its pit box has dozens of
  * samples at one distance, and the published distance can even step back a
@@ -287,10 +289,7 @@ export function compareLaps(
       `The laps are laid over each other by the share of the lap covered. A lap's distance is its own car's speed added up, ${lengthLabel(lengthA)} for ${a.meta.driver_code} and ${lengthLabel(lengthB)} for ${b.meta.driver_code} here, so ${b.meta.driver_code}'s is scaled to ${a.meta.driver_code}'s.`,
       `${b.meta.driver_code}'s lap is read where ${a.meta.driver_code}'s samples are: speed, throttle, engine speed and time are interpolated between its two nearest samples, and gear, brake and DRS are taken from the nearer one.`,
       `A lap is published with at most ${maxSamples} samples, so a change that lasts less than the step between two of them can be missed.`,
-      ...clockNote([
-        { meta: a.meta, samples: samplesA },
-        { meta: b.meta, samples: samplesB }
-      ])
+      ...clockNote({ meta: a.meta, samples: samplesA }, { meta: b.meta, samples: samplesB })
     ]
   };
 }
@@ -306,33 +305,51 @@ function holesOf(samples: Samples): Array<{ from: number; to: number }> {
   return holes;
 }
 
+type ClockedLap = { meta: ComparedLap; samples: Samples };
+
 /**
- * What to say when the telemetry of a compared lap does not run for the
- * lap's time, as one caveat, or nothing when both do.
+ * What to say when the delta at the line is not the difference between the
+ * two lap times a reader has in front of them, as one caveat, or nothing
+ * when it is, or when either lap has no time to be apart from.
  *
- * The delta is between the two laps' telemetry. Beside a lap whose time is
- * from another clock, the delta at the line is not the difference between
- * the two lap times a reader has in front of them, and the page has to say
- * which it is showing.
+ * The delta is between the two laps' telemetry. It ends the difference of
+ * the lap times apart whenever each lap's telemetry runs for its lap time,
+ * and also when both are out by the same amount: said of every lap that is
+ * out, it was said of pairs for which it is not so, and of a lap laid over
+ * itself. So it goes by the two differences, and names the lap or laps that
+ * make them differ.
  */
-function clockNote(laps: ReadonlyArray<{ meta: ComparedLap; samples: Samples }>): string[] {
-  const apart = laps.flatMap(({ meta, samples }) => {
-    const runsFor = samples.count > 0 ? samples.time[samples.count - 1] : null;
-    if (meta.lap_time_ms === null || runsFor === null || Math.round(runsFor) === Math.round(meta.lap_time_ms)) {
+function clockNote(a: ClockedLap, b: ClockedLap): string[] {
+  const runsFor = ({ samples }: ClockedLap) => (samples.count > 0 ? samples.time[samples.count - 1] : null);
+  const [endOfA, endOfB] = [runsFor(a), runsFor(b)];
+  if (a.meta.lap_time_ms === null || b.meta.lap_time_ms === null || endOfA === null || endOfB === null) {
+    return [];
+  }
+  const atTheLine = Math.round(endOfB - endOfA);
+  const lapTimesApart = Math.round(b.meta.lap_time_ms - a.meta.lap_time_ms);
+  if (atTheLine === lapTimesApart) {
+    return [];
+  }
+  const apart = [a, b].flatMap((lap) => {
+    const { meta } = lap;
+    const end = runsFor(lap);
+    if (meta.lap_time_ms === null || end === null || Math.round(end) === Math.round(meta.lap_time_ms)) {
       return [];
     }
     const why =
       meta.lap_number === 1
         ? "a first lap is timed by the classification from the start signal, and its telemetry is on the session clock"
         : "the timing and the session clock do not agree on where this lap began";
-    return [
-      `${meta.driver_code}'s lap ${meta.lap_number} is timed at ${formatMs(meta.lap_time_ms)} and its telemetry runs for ${formatMs(runsFor)}: ${why}.`
-    ];
+    return [`${meta.driver_code}'s lap ${meta.lap_number} is timed at ${formatMs(meta.lap_time_ms)} and its telemetry runs for ${formatMs(end)}: ${why}.`];
   });
-  if (apart.length === 0) {
-    return [];
-  }
-  return [`${apart.join(" ")} The time delta is between the telemetry of the two laps, so at the line it is not the difference between their lap times.`];
+  return [
+    `The time delta is between the telemetry of the two laps: at the line it is ${seconds(atTheLine)}, and the two lap times are ${seconds(lapTimesApart)} apart. ${apart.join(" ")}`
+  ];
+}
+
+/** A difference in seconds to the thousandth, with its sign: `+0.455 s`. */
+function seconds(ms: number): string {
+  return `${ms > 0 ? "+" : ms < 0 ? "-" : ""}${(Math.abs(ms) / 1000).toFixed(3)} s`;
 }
 
 /** The line a lap drove, from the samples that have a position. */
