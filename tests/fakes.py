@@ -62,10 +62,20 @@ def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = Non
 
     session_end = RACE_START + laps_per_driver * LAP_SECONDS
     times = pd.to_timedelta(np.arange(0.0, session_end + 60.0, SAMPLE_INTERVAL), unit="s")
+    # No two samples running are the same, as no two of a moving car are: a
+    # feed that sends the sample before again is a fault the coverage counts.
+    step = np.arange(len(times)) % 40
     car = pd.DataFrame(
-        {"SessionTime": times, "Speed": 200.0, "Throttle": 80.0, "Brake": False, "nGear": 6, "RPM": 11000.0}
+        {
+            "SessionTime": times,
+            "Speed": 200.0 + step,
+            "Throttle": 80.0,
+            "Brake": False,
+            "nGear": 6,
+            "RPM": 11000.0 + 25.0 * step,
+        }
     )
-    position = pd.DataFrame({"SessionTime": times, "X": 1200.0, "Y": -340.0})
+    position = pd.DataFrame({"SessionTime": times, "X": 1200.0 + 10.0 * step, "Y": -340.0 - 10.0 * step})
 
     results = pd.DataFrame(
         {

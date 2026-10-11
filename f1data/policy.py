@@ -83,6 +83,13 @@ SPOOL_NEEDS_FREE_BYTES = 2 * 1024**3
 # this long has missed two turns of a six-hour schedule.
 RUN_IS_OVERDUE_AFTER = timedelta(hours=13)
 
+# A run that ends with something failed says so in the same place, and counts
+# the runs that have done so one after another. One is said and let pass: F1
+# refuses a fetch now and then, and the next run makes it good. This many
+# running, which on a six-hour schedule is the same two turns, is a job that
+# is failing, and is reported like one that has stopped.
+THE_JOB_IS_FAILING_AFTER_RUNS = 2
+
 # A fetch is stamped by the machine that made it. A stamp further ahead of
 # this machine's clock than this was written by a clock that was wrong, and
 # says nothing about when the fetch was made.

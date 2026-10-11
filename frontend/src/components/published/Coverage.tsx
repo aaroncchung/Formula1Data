@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
+import { driversWithRepeatingFeeds } from "@/lib/published/coverage";
 import type { PointerCoverage } from "@/lib/published/types";
 
 /**
@@ -26,6 +27,7 @@ export function CoverageShortfalls({ coverage }: { coverage: PointerCoverage }) 
   if (coverage.complete) {
     return null;
   }
+  const repeating = driversWithRepeatingFeeds(coverage);
   return (
     <section className="mb-5 rounded border border-amber/40 bg-amber/10 p-5" aria-label="Data coverage">
       <div className="flex items-start gap-3">
@@ -36,6 +38,13 @@ export function CoverageShortfalls({ coverage }: { coverage: PointerCoverage }) 
             Not everything F1 publishes for this session arrived in full when it was fetched. Figures that depend on
             what is listed here may be missing or wrong.
           </p>
+          {repeating.length > 0 ? (
+            <p className="mt-3 text-sm font-semibold text-white">
+              F1&apos;s car or position feed repeated itself for {repeating.join(", ")}. Telemetry, lap comparisons,
+              the track map and corner figures for {repeating.length === 1 ? "that driver" : "those drivers"} are not
+              reliable in this session.
+            </p>
+          ) : null}
           {coverage.shortfalls.length === 0 ? (
             <p className="mt-3 text-sm text-slate-400">The publication does not say what fell short.</p>
           ) : (

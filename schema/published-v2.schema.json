@@ -800,6 +800,8 @@
         "race_control",
         "car_data",
         "position",
+        "car_data_repeats",
+        "position_repeats",
         "pit_stop_series",
         "circuit_info",
         "classification",
@@ -937,6 +939,17 @@
           "description": "Timed laps whose car data runs from start to end with no long hole.",
           "type": "integer"
         },
+        "car_repeating_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Timed laps on which more than a quarter of the car samples sent while the car was moving have the speed and the engine speed of the sample before. The car data of such a lap arrived and is counted in car_laps, and is not to be relied on. Null when it was not counted."
+        },
         "classified_laps": {
           "anyOf": [
             {
@@ -965,6 +978,17 @@
           "description": "The same for position data.",
           "type": "integer"
         },
+        "position_repeating_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The same for position data: samples with the place of the sample before."
+        },
         "timing_laps": {
           "description": "Laps F1 timed.",
           "type": "integer"
@@ -988,7 +1012,9 @@
         "car_laps",
         "position_laps",
         "tyre_laps",
-        "tyre_age_laps"
+        "tyre_age_laps",
+        "car_repeating_laps",
+        "position_repeating_laps"
       ],
       "title": "DriverCoverage",
       "type": "object"

@@ -569,6 +569,7 @@ def test_coverage_is_published_as_measured_with_what_the_session_is_short_of():
     assert coverage["drivers"][1] == {
         "driver_code": "BBB", "number": "2", "in_driver_list": True, "classified_laps": 12, "timing_laps": 12,
         "generated_laps": 0, "car_laps": 12, "position_laps": 0, "tyre_laps": 12, "tyre_age_laps": 12,
+        "car_repeating_laps": 0, "position_repeating_laps": 0,
     }
     assert coverage["drivers"][2]["generated_laps"] == 1
 

@@ -100,13 +100,28 @@ jobs:
       # The fetch stage runs on a machine at home, since F1 refuses this one,
       # and a job that stops running there says nothing anywhere. When this
       # workflow is started by a schedule it asks when that job last finished
-      # and fails if that is too long ago, so that it is noticed here. One
-      # part asks; the others would only say the same.
+      # and fails if that is too long ago, if its last two runs both failed,
+      # or if it has never run at all, so that it is noticed here. One part
+      # asks; the others would only say the same.
+      #
+      # A job that was never installed has never run, and that fails like the
+      # rest: it is the case most in need of being noticed. For the days
+      # between this workflow reaching the default branch and the job's first
+      # run, set the repository variable F1DATA_FETCH_JOB_NOT_YET_RUN to
+      # "true", and remove it once `last-run` has something to read. While it
+      # is set every scheduled run carries a warning saying so.
       - name: Check that the fetch job is running
         if: github.event_name == 'schedule' && matrix.part == 0
-        # Until that job has run for the first time there is nothing to be
-        # overdue, and "never" passes.
-        run: python -m f1data last-run --allow-never
+        env:
+          NOT_YET_RUN: ${{ vars.F1DATA_FETCH_JOB_NOT_YET_RUN }}
+        run: |
+          arguments=()
+          if [ "$NOT_YET_RUN" = "true" ]; then
+            echo "::warning title=The fetch job has never run, and that is being let pass::F1DATA_FETCH_JOB_NOT_YET_RUN is set. Remove it once the job has run for the first time."
+            arguments+=(--allow-never)
+          fi
+          python -m f1data last-run "${arguments[@]}" | tee last-run-output.txt
+          grep -E '^DEGRADED' last-run-output.txt | sed 's/^/::warning title=The fetch job::/' || true
 
       - name: Summarise
         if: always()

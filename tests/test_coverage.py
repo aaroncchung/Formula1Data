@@ -42,6 +42,8 @@ def test_a_whole_session_meets_every_bar():
         "position_laps": 10,
         "tyre_laps": 10,
         "tyre_age_laps": 10,
+        "car_repeating_laps": 0,
+        "position_repeating_laps": 0,
     }
     assert weakest_share(measurement) == 1.0
 

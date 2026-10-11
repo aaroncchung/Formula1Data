@@ -54,6 +54,7 @@ from f1data.policy import (
     NOT_ANSWERING_AFTER,
     REQUEST_TIMEOUT_SECONDS,
     RUN_IS_OVERDUE_AFTER,
+    THE_JOB_IS_FAILING_AFTER_RUNS,
     SPOOL_NEEDS_FREE_BYTES,
 )
 from f1data.schedule import ScheduledSession, load_schedule
@@ -205,7 +206,8 @@ def main(argv: list[str] | None = None) -> None:
 
     last = subparsers.add_parser(
         "last-run",
-        help="Say when the whole job last finished on the machine that fetches. Fails if that is too long ago.",
+        help="Say when the whole job last finished on the machine that fetches, and how. Fails if that is "
+        "too long ago, if it never has, or if its last runs all failed.",
     )
     _add_store_argument(last)
     last.add_argument(
@@ -215,9 +217,17 @@ def main(argv: list[str] | None = None) -> None:
         help="How long ago the last run may have finished. Defaults to two turns of a six-hour schedule.",
     )
     last.add_argument(
+        "--max-failed-runs",
+        type=int,
+        default=THE_JOB_IS_FAILING_AFTER_RUNS,
+        help="How many runs in a row may have failed before the job is said to be failing. Defaults to two: "
+        "one failed run is said and let pass.",
+    )
+    last.add_argument(
         "--allow-never",
         action="store_true",
-        help="Do not fail when no run has ever been written down: for a check that is in place before the job is.",
+        help="Do not fail when no run has ever been written down. Only for the days between a check being put "
+        "in place and the job's first run: a job that is never installed looks the same.",
     )
     last.set_defaults(func=run_last_run)
 
@@ -976,15 +986,31 @@ def _note_the_run(spec: str | None, started: datetime, finished: datetime, statu
 
     A run that fails says so in its log and its exit code. A run that does
     not happen says nothing anywhere, and this is what `last-run` reads.
+
+    The log is on the machine that fetches, where nobody is looking, so the
+    record also counts the runs that have failed one after another: a job
+    that runs on time and fails every time is no better than one that does
+    not run.
     """
     try:
-        _store(spec).put(
+        store = _store(spec)
+        failed_runs = 0
+        if status:
+            try:
+                before = store.get(layout.LAST_RUN_KEY)
+                failed_runs = _failed_runs(json.loads(before.data)) if before is not None else 0
+            except Exception:
+                # Whatever is there is not a record. The count starts here.
+                failed_runs = 0
+            failed_runs += 1
+        store.put(
             layout.LAST_RUN_KEY,
             dump_json(
                 {
                     "started_at": format_utc(started),
                     "finished_at": format_utc(finished),
                     "exit_code": status,
+                    "failed_runs": failed_runs,
                     "host": platform.node(),
                 }
             ),
@@ -993,25 +1019,56 @@ def _note_the_run(spec: str | None, started: datetime, finished: datetime, statu
         print(f"Could not write down that the run ended: {type(exc).__name__}: {exc}")
 
 
+def _failed_runs(record: Any) -> int:
+    """How many runs a record says have failed one after another, its own included.
+
+    Raises for a record that does not say how its run ended. One written
+    before the count was kept says only that: a run that failed is one.
+    """
+    code = record["exit_code"]
+    if isinstance(code, bool) or not isinstance(code, int):
+        raise ValueError(f"not an exit code: {code!r}")
+    if code == 0:
+        return 0
+    counted = record.get("failed_runs")
+    if isinstance(counted, bool) or not isinstance(counted, int) or counted < 1:
+        return 1
+    return counted
+
+
 def run_last_run(args: argparse.Namespace) -> int:
     found = _store(args.store).get(layout.LAST_RUN_KEY)
     if found is None:
         print("No run of the whole job has been written down in this store.")
-        return 0 if args.allow_never else 1
+        if args.allow_never:
+            print("That is let pass, as asked. A job that was never installed looks the same.")
+            return 0
+        return 1
     try:
         record = json.loads(found.data)
         finished = parse_utc(record["finished_at"])
+        failed_runs = _failed_runs(record)
     except Exception as exc:
         print(f"The record of the last run cannot be read: {type(exc).__name__}: {exc}")
         return 1
     hours = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
     print(
         f"The last run finished at {record['finished_at']} on {record.get('host') or 'an unnamed machine'}, "
-        f"{hours:.1f} hours ago, with exit code {record.get('exit_code')}."
+        f"{hours:.1f} hours ago, with exit code {record['exit_code']}."
     )
     if hours > args.max_age_hours:
         print(f"That is more than {args.max_age_hours:g} hours: the job is not running.")
         return 1
+    if failed_runs >= max(1, args.max_failed_runs):
+        print(
+            f"FAILING: the last {failed_runs} run(s) failed, one after another. "
+            "The log on that machine says what of."
+        )
+        return 1
+    if failed_runs:
+        # A fetch F1 refused once fails a run, and the next run makes it
+        # good. That is said, and is not yet a job that does not work.
+        print(f"DEGRADED: that run failed. {args.max_failed_runs} in a row is a job that is failing.")
     return 0
 
 

@@ -143,6 +143,8 @@ class CoverageBar(str, Enum):
     RACE_CONTROL = "race_control"
     CAR_DATA = "car_data"
     POSITION = "position"
+    CAR_DATA_REPEATS = "car_data_repeats"
+    POSITION_REPEATS = "position_repeats"
     PIT_STOP_SERIES = "pit_stop_series"
     CIRCUIT_INFO = "circuit_info"
     CLASSIFICATION = "classification"
@@ -530,6 +532,14 @@ class DriverCoverage(Model):
     position_laps: int = Field(description="The same for position data.")
     tyre_laps: int = Field(description="Timed laps with a compound and a stint.")
     tyre_age_laps: int = Field(description="Timed laps with a tyre age as well.")
+    car_repeating_laps: int | None = Field(
+        description="Timed laps on which more than a quarter of the car samples sent while the car was moving "
+        "have the speed and the engine speed of the sample before. The car data of such a lap arrived and is "
+        "counted in car_laps, and is not to be relied on. Null when it was not counted."
+    )
+    position_repeating_laps: int | None = Field(
+        description="The same for position data: samples with the place of the sample before."
+    )
 
 
 class Coverage(Model):

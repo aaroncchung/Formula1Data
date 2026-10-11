@@ -1011,6 +1011,8 @@ def coverage(measurement: dict[str, Any], codes: dict[str, str] | None = None) -
                 position_laps=_int(driver.get("position_laps")) or 0,
                 tyre_laps=_int(driver.get("tyre_laps")) or 0,
                 tyre_age_laps=_int(driver.get("tyre_age_laps")) or 0,
+                car_repeating_laps=_int(driver.get("car_repeating_laps")),
+                position_repeating_laps=_int(driver.get("position_repeating_laps")),
             )
             for code, driver in sorted(measured.items(), key=lambda item: named[item[0]])
         ],

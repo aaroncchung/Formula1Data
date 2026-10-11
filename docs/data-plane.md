@@ -239,7 +239,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | Command | What it does |
 | --- | --- |
 | `run` | The whole job: `build`, then `fetch-due`, then `build` again if anything was fetched. What a schedule runs |
-| `last-run` | Say when `run` last finished on the machine that fetches. Exits 1 when that is more than 13 hours ago, or was never |
+| `last-run` | Say when `run` last finished on the machine that fetches, and how. Exits 1 when that is more than 13 hours ago, when it never has, or when its last two runs both failed. `--max-failed-runs N` for another count; `--allow-never` to let "never" pass |
 | `fetch-due` | See through what is in the spool, then fetch every finished race and sprint the archive does not hold in full, of this year, last year and any year with a session still short. `--dry-run` to see the plan, `--limit N` to start at most N new fetches |
 | `fetch --year Y --event E --session S` | Fetch one session as a new snapshot. Any session is archived; only a race or a sprint is ever built. `S` is given to FastF1 as it is written: a name such as `Sprint Shootout`, or `R`, `S`, `Q`, `SQ`, `SS`, `FP1` to `FP3` |
 | `build` | Build and publish every archived race and sprint that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
@@ -508,11 +508,24 @@ the task yet, and it has not run on a schedule.
   session that is waiting in the spool.
 - **A run that did not happen** writes nothing, so it is looked for from
   outside: `python -m f1data last-run` reads `archive/runs/last.json` from the
-  bucket and exits 1 when the last run finished more than 13 hours ago. Run it
-  from any machine that can read the bucket. The publish workflow runs it
-  every six hours once that workflow is on the default branch, which is where
-  GitHub runs schedules from, so that a job that has stopped turns a workflow
-  red; until the job has run for the first time it lets "never" pass.
+  bucket and exits 1 when the last run finished more than 13 hours ago, or
+  when no run has ever been written down. Run it from any machine that can
+  read the bucket. The publish workflow runs it every six hours once that
+  workflow is on the default branch, which is where GitHub runs schedules
+  from, so that a job that has stopped, or was never installed, turns a
+  workflow red.
+- **A run that happens and fails** is in the log, on a machine nobody is
+  looking at. The record of a run says how it ended and how many runs have
+  failed one after another, and `last-run` reads that too. One failed run is
+  said (`DEGRADED`, and a warning on the workflow run) and let pass: F1
+  refuses a fetch now and then, and the next run makes it good. Two running,
+  which is the same two turns of the schedule, exit 1 (`FAILING`).
+- **Before the job's first run** there is nothing for `last-run` to read, and
+  the scheduled workflow fails. That is meant: a job that was never installed
+  looks exactly like that. For the days between the workflow reaching the
+  default branch and the first run, set the repository variable
+  `F1DATA_FETCH_JOB_NOT_YET_RUN` to `true`, which lets "never" pass with a
+  warning on every scheduled run, and remove it once the job has run.
 - **The task itself:** `Get-ScheduledTaskInfo -TaskName "Formula1Data run"`
   gives the last run time and result. Task Scheduler's history says why a
   start was skipped, if history is enabled (it is off by default: "Enable All
@@ -532,6 +545,18 @@ with the snapshot (`f1data/coverage.py`). A race or sprint is complete when:
 - for each driver, 95% of those laps have car data, position data, and a tyre
   compound and stint. A lap counts for car or position data only if its samples
   run from the start of the lap to its end with no hole longer than 5 seconds;
+- for each driver, no more laps repeat themselves than may be missing (5%).
+  F1's car and position feeds can arrive on time and send the sample before
+  again, as they do for most of the 2026 Hungarian GP: nothing is missing,
+  and the speed stands still and the car stops on the map and jumps. A car
+  sample repeats when it has the speed and the engine speed of the one
+  before, a position sample when it has the place of the one before, and only
+  samples of a car going faster than 30 km/h are counted, since a car in its
+  pit box repeats itself truthfully. A lap repeats itself when more than a
+  quarter of those samples do. The two bars are `car_data_repeats` and
+  `position_repeats`, and the session's page names the drivers and says that
+  their telemetry, lap comparisons, track map and corner figures are not
+  reliable;
 - a race whose timing shows pit stops has F1's pit-stop feed, and the circuit's
   corner positions arrived.
 
@@ -558,6 +583,12 @@ record says it writes the figures it measured beside the snapshot, as
 Every reader of the archive is given a corrected snapshot with the corrected
 figures, so the fetch stage, the choice of snapshot and the build always judge
 the same thing.
+
+A figure that was not counted when a snapshot was fetched, and can be counted
+from its feeds, reaches the record the same way. The laps that repeat
+themselves are such a figure: no session is fetched again for them. Until a
+build has counted them the record says nothing of them, and they are not held
+against it.
 
 A build also checks that the feeds it loaded are of the session its calendar
 entry describes: the same kind of session, started within three days of the

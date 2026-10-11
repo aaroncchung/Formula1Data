@@ -32,7 +32,10 @@ from f1data.loaded import driver_codes, present
 # The number goes up when a fetch starts collecting something it did not
 # before, because only another fetch can supply it. A figure that can be
 # worked out from what is already archived is added without a new number, and
-# read as optional: ``circuit_corners`` is one.
+# read as optional: ``circuit_corners`` is one, and the laps on which a feed
+# repeats itself are two more. A build counts those from the feeds it has
+# loaded and writes them beside the snapshot before it publishes anything
+# (``write_remeasurement`` in f1data/archive.py).
 MEASUREMENT_VERSION = 2
 
 # A lap's telemetry is usable when its samples reach from the start of the lap
@@ -40,6 +43,31 @@ MEASUREMENT_VERSION = 2
 # about every 0.24 s; the longest hole inside any lap of the 2026 Austrian GP
 # (1,339 laps, session key 11315) was 1.64 s.
 MAX_SAMPLE_GAP_SECONDS = 5.0
+
+# A feed can arrive on time and say nothing: the sample before, sent again.
+# From lap 7 of the 2026 Hungarian GP the car feed does that most of the time
+# for nearly every car, and from lap 15 the position feed does; the samples
+# are a quarter of a second apart as they should be, so no hole is seen. The
+# speed stands still, the lap measures anywhere from 1,745 to 5,214 m, and
+# the car stands still on the map and then jumps.
+#
+# A car sample repeats when it has the engine speed and the road speed of the
+# sample before; a position sample when it has the place of the one before.
+# Only samples of a car that is moving are counted, since one standing in its
+# pit box repeats itself truthfully. Counted so over the nine races of 2026
+# from Australia to Britain (10,406 laps): on a lap where nothing is wrong
+# fewer than one car sample in a hundred repeats, and the worst lap of the
+# Monaco, Canadian and Austrian races has 5, 12 and 11 in a hundred. Japan
+# has 167 laps over a quarter and China 132.
+MOVING_ABOVE_KPH = 30.0
+# A lap repeats itself when more than this share of its moving samples do.
+MAX_REPEATED_SHARE_OF_A_LAP = 0.25
+# A lap with fewer moving samples than this is not judged either way: a lap
+# spent stopped under a red flag, or one the feed has almost nothing of,
+# which is the other bars' to say.
+MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP = 10
+CAR_REPEATS_BAR = "car_data_repeats"
+POSITION_REPEATS_BAR = "position_repeats"
 
 CAR_CHANNELS = ("Speed", "Throttle", "Brake", "nGear", "RPM")
 POSITION_CHANNELS = ("X", "Y")
@@ -96,6 +124,8 @@ _DRIVER_COUNTS = (
     "position_laps",
     "tyre_laps",
     "tyre_age_laps",
+    "car_repeating_laps",
+    "position_repeating_laps",
 )
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
@@ -136,6 +166,9 @@ def measure_coverage(
     for number, code in driver_codes(results, laps).items():
         driver_laps = _driver_laps(laps, number)
         timed = driver_laps[~_generated(driver_laps)] if len(driver_laps) else driver_laps
+        car_repeating, position_repeating = _repeating_laps(
+            timed, car_data.get(number), position_data.get(number)
+        )
         drivers[code] = {
             "number": number,
             "in_driver_list": _in_driver_list(results, number),
@@ -148,6 +181,8 @@ def measure_coverage(
             ),
             "tyre_laps": _tyre_laps(timed),
             "tyre_age_laps": _tyre_laps(timed, with_age=True),
+            "car_repeating_laps": car_repeating,
+            "position_repeating_laps": position_repeating,
         }
 
     session_info = _safe_attr(session, "session_info") or {}
@@ -266,6 +301,25 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
                 shortfalls.append(
                     Shortfall(bar, code, f"{usable} of {expected} expected laps usable")
                 )
+        # The same tolerance from the other side: as many laps may repeat
+        # themselves as may be missing. A count that is absent was never
+        # taken, by a fetch from before it was counted, and says nothing: the
+        # build that reads such a snapshot counts it before it publishes.
+        allowed = expected - math.ceil(MIN_CAR_LAP_SHARE * expected)
+        for bar, key, feed, what in (
+            (CAR_REPEATS_BAR, "car_repeating_laps", "car feed", "speed, pedals and gear"),
+            (POSITION_REPEATS_BAR, "position_repeating_laps", "position feed", "place on the track"),
+        ):
+            repeating = driver.get(key)
+            if repeating is not None and int(repeating) > allowed:
+                shortfalls.append(
+                    Shortfall(
+                        bar,
+                        code,
+                        f"F1's {feed} repeats itself on {int(repeating)} of {expected} expected laps, "
+                        f"whose {what} cannot be relied on",
+                    )
+                )
     return shortfalls
 
 
@@ -339,6 +393,8 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
                 "position_laps": 0,
                 "tyre_laps": 0,
                 "tyre_age_laps": 0,
+                "car_repeating_laps": 0,
+                "position_repeating_laps": 0,
             }
     return {**measurement, "drivers": drivers}
 
@@ -455,6 +511,67 @@ def _usable_laps(laps: pd.DataFrame, telemetry: Any, channels: tuple[str, ...], 
     starts = _seconds(laps["LapStartTime"])
     ends = _seconds(laps["Time"])
     return sum(1 for start, end in zip(starts, ends) if lap_is_usable(times, start, end))
+
+
+def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any) -> tuple[int, int]:
+    """How many of ``laps`` the car feed repeats itself on, and how many the position feed.
+
+    Whether the car is moving is the car feed's to say for both: a position
+    sample is the car's at the speed of the car sample before it. Without a
+    car feed neither is counted, and the bar on car data says what is wrong.
+    """
+    if car is None or len(laps) == 0 or len(car) == 0:
+        return 0, 0
+    if any(channel not in car.columns for channel in CAR_CHANNELS) or "SessionTime" not in car.columns:
+        return 0, 0
+    times, (speed, engine) = _in_order(car, _car_valid(car), ("Speed", "RPM"))
+    moving = speed > MOVING_ABOVE_KPH
+    starts, ends = _seconds(laps["LapStartTime"]), _seconds(laps["Time"])
+    car_laps = _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends)
+
+    if position is None or len(position) == 0 or len(times) == 0:
+        return car_laps, 0
+    if any(channel not in position.columns for channel in POSITION_CHANNELS) or "SessionTime" not in position.columns:
+        return car_laps, 0
+    placed_at, (x, y) = _in_order(position, _position_valid(position), POSITION_CHANNELS)
+    before = np.clip(np.searchsorted(times, placed_at, side="right") - 1, 0, len(times) - 1)
+    return car_laps, _laps_that_repeat(placed_at, moving[before], _same_as_before(x, y), starts, ends)
+
+
+def _in_order(
+    telemetry: pd.DataFrame, valid: np.ndarray, channels: tuple[str, ...]
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    """The session times of the valid samples that have one, in order, and ``channels`` beside them."""
+    times = _seconds(telemetry["SessionTime"])
+    keep = valid & np.isfinite(times)
+    order = np.argsort(times[keep], kind="stable")
+    return times[keep][order], [
+        pd.to_numeric(telemetry[channel], errors="coerce").to_numpy(dtype=float)[keep][order]
+        for channel in channels
+    ]
+
+
+def _same_as_before(first: np.ndarray, second: np.ndarray) -> np.ndarray:
+    same = np.zeros(len(first), dtype=bool)
+    same[1:] = (first[1:] == first[:-1]) & (second[1:] == second[:-1])
+    return same
+
+
+def _laps_that_repeat(
+    times: np.ndarray, moving: np.ndarray, repeats: np.ndarray, starts: np.ndarray, ends: np.ndarray
+) -> int:
+    count = 0
+    for start, end in zip(starts, ends):
+        if not (np.isfinite(start) and np.isfinite(end)) or end <= start:
+            continue
+        first = int(np.searchsorted(times, start, side="left"))
+        last = int(np.searchsorted(times, end, side="right"))
+        judged = int(moving[first:last].sum())
+        if judged < MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP:
+            continue
+        repeated = int((repeats[first:last] & moving[first:last]).sum())
+        count += repeated > MAX_REPEATED_SHARE_OF_A_LAP * judged
+    return count
 
 
 def sent_by_f1(telemetry: pd.DataFrame) -> np.ndarray:

@@ -111,7 +111,10 @@ FORMAT_VERSION = 2
 #      well as at one; a braking is a corner's when the car is still
 #      slowing from it in the corner's stretch, which does not turn on
 #      which side of a line one sample falls
-PIPELINE_VERSION = 23
+#  24  the laps on which F1's car feed or position feed repeats itself are
+#      counted, and a driver with more of them than may be missing leaves the
+#      session partial
+PIPELINE_VERSION = 24
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

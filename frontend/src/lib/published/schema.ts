@@ -82,6 +82,8 @@ export type CoverageBar =
   | "race_control"
   | "car_data"
   | "position"
+  | "car_data_repeats"
+  | "position_repeats"
   | "pit_stop_series"
   | "circuit_info"
   | "classification"
@@ -925,6 +927,10 @@ export interface DriverCoverage {
    */
   car_laps: number;
   /**
+   * Timed laps on which more than a quarter of the car samples sent while the car was moving have the speed and the engine speed of the sample before. The car data of such a lap arrived and is counted in car_laps, and is not to be relied on. Null when it was not counted.
+   */
+  car_repeating_laps: number | null;
+  /**
    * Laps in the classification. Null when there is none.
    */
   classified_laps: number | null;
@@ -939,6 +945,10 @@ export interface DriverCoverage {
    * The same for position data.
    */
   position_laps: number;
+  /**
+   * The same for position data: samples with the place of the sample before.
+   */
+  position_repeating_laps: number | null;
   /**
    * Laps F1 timed.
    */

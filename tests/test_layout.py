@@ -29,10 +29,13 @@ def test_changing_a_coverage_bar_needs_a_new_pipeline_version():
             sorted(coverage.FEED_FILE_BY_BAR),
             sorted(coverage.RACE_LIKE_SESSION_TYPES),
             coverage.MEASUREMENT_VERSION,
+            coverage.MOVING_ABOVE_KPH,
+            coverage.MAX_REPEATED_SHARE_OF_A_LAP,
+            coverage.MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP,
         )
     )
-    recorded_bars = "8c2dd541e136"
-    recorded_pipeline_version = 23
+    recorded_bars = "5ceaa38191a1"
+    recorded_pipeline_version = 24
 
     assert (hashlib.sha256(bars.encode()).hexdigest()[:12], layout.PIPELINE_VERSION) == (
         recorded_bars,
