@@ -45,8 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Only what these tests read. The build takes its analyses from
-      # backend/app/analysis, and the schema of the published layout is
-      # checked against the models.
+      # backend/app/analysis, the schema of the published layout is checked
+      # against the models, and one test reads how the publish workflow
+      # checks on the fetch job.
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -55,6 +56,7 @@ jobs:
             tests
             backend/app
             schema
+            .github/workflows
 
       - name: Set up Python
         uses: actions/setup-python@v5
