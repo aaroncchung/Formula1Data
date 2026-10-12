@@ -185,7 +185,7 @@ def test_a_build_counts_the_laps_to_rely_on_for_a_snapshot_whose_record_does_not
         ("car_data", "AAA")
     ]
     corrected = correction(world.store, written)
-    assert corrected["pipeline_version"] == layout.PIPELINE_VERSION == 26
+    assert corrected["pipeline_version"] == layout.PIPELINE_VERSION
     assert car_figures(corrected["coverage"]) == (37, 2, 37)
     (listed,) = list_snapshots(world.store)
     assert weakest_share(listed.judged_against(EVERYONE).coverage) == 37 / 40

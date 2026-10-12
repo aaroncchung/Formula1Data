@@ -574,6 +574,12 @@ with the snapshot (`f1data/coverage.py`). A race or sprint is complete when:
   `position_repeats`, and the session's page names the drivers and says that
   their telemetry, lap comparisons, track map and corner figures are not
   reliable;
+- for each driver, 95% of those laps have car data, and position data, that
+  can be relied on: no hole in them and not repeating themselves. The two
+  tolerances above are not one each to spend. Two laps of forty missing and
+  two others repeating meet both, with 36 laps to rely on where 38 is the
+  bar; the driver is then short on `car_data` or `position`, and the pointer
+  says how many laps of each kind;
 - a race whose timing shows pit stops has F1's pit-stop feed, and the circuit's
   corner positions arrived.
 
@@ -606,9 +612,15 @@ from its feeds, reaches the record the same way. The laps that repeat
 themselves are such a figure: no session is fetched again for them. Until a
 build has counted them the record says nothing of them, and they are not held
 against it. The laps a feed can be relied on for, those with no hole in them
-that do not repeat themselves, are another: the choice between two snapshots
-reads them, and a record without them has every lap that repeats taken off
-its usable ones.
+that do not repeat themselves, are another: the bar on them and the choice
+between two snapshots read them. A record without them is not held to the
+bar, and for the choice has every lap that repeats taken off its usable ones,
+which is too few where a lap is bad both ways. So that the choice is not made
+on that guess, a build counts these figures for every snapshot of the session
+whose record lacks them, not only for the one it took, before it makes
+anything of that one, and then decides again. A snapshot is loaded for this
+once; one that will not load is left as its record has it, with a warning,
+and does not stop the build of the one that was taken.
 
 A build also checks that the feeds it loaded are of the session its calendar
 entry describes: the same kind of session, started within three days of the

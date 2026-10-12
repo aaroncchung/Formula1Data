@@ -36,7 +36,8 @@ from f1data.loaded import driver_codes, present
 # repeats itself are two more, and the laps a feed can be relied on for are
 # another two. A build counts those from the feeds it has
 # loaded and writes them beside the snapshot before it publishes anything
-# (``write_remeasurement`` in f1data/archive.py).
+# (``write_remeasurement`` in f1data/archive.py), for the snapshot it took
+# and for every other of the session whose record lacks them.
 MEASUREMENT_VERSION = 2
 
 # A lap's telemetry is usable when its samples reach from the start of the lap
@@ -145,6 +146,14 @@ _DRIVER_COUNTS = (
     "position_laps",
     "tyre_laps",
     "tyre_age_laps",
+    "car_repeating_laps",
+    "position_repeating_laps",
+    "car_reliable_laps",
+    "position_reliable_laps",
+)
+
+# The counts among those that a fetch did not always take, and a build does.
+_COUNTED_BY_A_BUILD = (
     "car_repeating_laps",
     "position_repeating_laps",
     "car_reliable_laps",
@@ -319,6 +328,7 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
 
         if expected <= 0:
             continue
+        short: set[str] = set()
         for bar, key, minimum in (
             ("car_data", "car_laps", MIN_CAR_LAP_SHARE),
             ("position", "position_laps", MIN_POSITION_LAP_SHARE),
@@ -326,6 +336,7 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
         ):
             usable = int(driver.get(key) or 0)
             if usable < math.ceil(minimum * expected):
+                short.add(bar)
                 shortfalls.append(
                     Shortfall(bar, code, f"{usable} of {expected} expected laps usable")
                 )
@@ -340,6 +351,7 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
         ):
             repeating = driver.get(key)
             if repeating is not None and int(repeating) > allowed:
+                short.add(bar)
                 shortfalls.append(
                     Shortfall(
                         bar,
@@ -348,7 +360,47 @@ def evaluate_coverage(measurement: dict[str, Any]) -> list[Shortfall]:
                         f"whose {what} cannot be relied on",
                     )
                 )
+        # The two tolerances are not one each to spend. A feed with as many
+        # laps missing as may be, and as many others repeating as may, passes
+        # both bars above with twice as many laps as either allows that
+        # cannot be relied on. The laps that can be are held to the share the
+        # usable ones are, under the feed's own bar, where neither bar above
+        # has said the feed is short already: said twice, one feed short
+        # would count as two in the order of snapshots. Absent, the count
+        # says nothing, like the one above.
+        for bar, repeats, feed, minimum in (
+            ("car_data", CAR_REPEATS_BAR, "car", MIN_CAR_LAP_SHARE),
+            ("position", POSITION_REPEATS_BAR, "position", MIN_POSITION_LAP_SHARE),
+        ):
+            reliable = driver.get(f"{feed}_reliable_laps")
+            if reliable is None or short & {bar, repeats}:
+                continue
+            if int(reliable) < math.ceil(minimum * expected):
+                usable = int(driver.get(f"{feed}_laps") or 0)
+                shortfalls.append(
+                    Shortfall(
+                        bar,
+                        code,
+                        f"{int(reliable)} of {expected} expected laps can be relied on: {usable} are usable, "
+                        f"and F1's {feed} feed repeats itself on {usable - int(reliable)} of those",
+                    )
+                )
     return shortfalls
+
+
+def counted_in_full(measurement: dict[str, Any]) -> bool:
+    """Whether the record has every count a build works out from the feeds, for every driver.
+
+    The laps a feed repeats itself on and the laps it can be relied on for
+    were not counted by the first fetches. A record without them is judged
+    without them, which is a guess: nothing held against it for the first,
+    every lap that repeats taken off for the second.
+    """
+    return all(
+        driver.get(key) is not None
+        for driver in measurement.get("drivers", {}).values()
+        for key in _COUNTED_BY_A_BUILD
+    )
 
 
 def is_measurement(measurement: Any) -> bool:
@@ -505,7 +557,9 @@ def _lap_counts(measurement: dict[str, Any]) -> list[tuple[int, int]]:
     repeat and not how many are both, so every lap that repeats is taken off
     the usable ones: too few for a lap with a hole in it as well, never too
     many. A count of laps that repeat that is absent was never taken and
-    takes nothing off.
+    takes nothing off. Too few can still pick the wrong one of two snapshots,
+    so a build counts them for every snapshot of a session before it takes
+    one (``Builder.build``).
     """
     race_like = measurement.get("session_type") in RACE_LIKE_SESSION_TYPES
     counts: list[tuple[int, int]] = []

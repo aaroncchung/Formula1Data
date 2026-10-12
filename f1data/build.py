@@ -50,7 +50,7 @@ from f1data.classification import (
     is_result_of,
     merge_into_session,
 )
-from f1data.coverage import feed_figures, measure_coverage
+from f1data.coverage import counted_in_full, feed_figures, measure_coverage
 from f1data.fetch import F1_ARCHIVE_HOSTS, fastf1_cache
 from f1data.httplog import HttpRecorder
 from f1data.identity import SessionIdentity, archived_start_time, format_utc, identity_from_fastf1
@@ -80,6 +80,9 @@ class BuildContext:
 
     scheduled: ScheduledSession
     classification: Classification | None
+    # The session's other snapshots whose record lacks a count a build works
+    # out from the feeds. They were ranked on a guess at it.
+    uncounted: tuple[Snapshot, ...] = ()
 
 
 @contextmanager
@@ -117,6 +120,9 @@ class Builder:
         self._recheck = recheck
         # How many times running Jolpica has not answered in this run.
         self._unanswered = 0
+        # The snapshots this run has loaded to count what their record lacks,
+        # whatever came of it. None is loaded for that twice in a run.
+        self._counted: set[str] = set()
 
     def schedule(self, year: int) -> list[ScheduledSession]:
         """The calendar as it stands now, read from its source on every call.
@@ -270,10 +276,22 @@ class Builder:
         shortfalls = snapshot.shortfalls()
         if shortfalls and self._now() < publishable_from:
             return Hold(_not_yet(shortfalls, publishable_from))
+        # A record from before a count was taken is ranked on a guess at it,
+        # and the guess can put the better snapshot second. Only the snapshot
+        # that is taken is measured by its build, so the one passed over
+        # would stay passed over. The build counts these first.
+        uncounted = tuple(
+            rival
+            for rival in snapshots
+            if rival.snapshot_id != snapshot.snapshot_id
+            and rival.snapshot_id not in self._counted
+            and rival.measured_in_full
+            and not counted_in_full(rival.coverage)
+        )
         return Inputs(
             snapshot=snapshot,
             classification_fingerprint=classification.fingerprint if classification else None,
-            context=BuildContext(scheduled=scheduled, classification=classification),
+            context=BuildContext(scheduled=scheduled, classification=classification, uncounted=uncounted),
             also=also,
         )
 
@@ -296,60 +314,32 @@ class Builder:
         """The generation's files, and the snapshot they were built from.
 
         Raises ``DecideAgain`` when the snapshot's feeds are not what its
-        record says, after correcting the record.
+        record says, after correcting the record, and when the record of
+        another snapshot of the session lacked a count and now has it.
         """
         snapshot = inputs.snapshot
         context: BuildContext = inputs.context
-        event = context.scheduled.event
-        if event is None:
+        if context.scheduled.event is None:
             raise BuildError(
                 f"The calendar entry for session {snapshot.session_key} carries no FastF1 event to build from"
+            )
+        # Before anything is made of the snapshot that was taken: it was
+        # taken over these on a guess at what they hold.
+        if [rival for rival in context.uncounted if self._count(rival, context)] and counted_in_full(
+            snapshot.coverage
+        ):
+            # Its own record is whole, so nothing below would send the
+            # decision back. One whose record is not is sent back below, once
+            # it has been counted as well.
+            raise DecideAgain(
+                f"counted what the record of another snapshot of session {snapshot.session_key} lacked"
             )
         with tempfile.TemporaryDirectory(prefix="f1data-build-") as scratch:
             cache_dir = restore_snapshot(self._store, snapshot, Path(scratch) / "cache")
             extras = read_extras(self._store, snapshot)
             car_feed = read_raw_response(self._store, snapshot, CAR_FEED)
             with fastf1_cache(cache_dir), no_requests_at_all() as guard:
-                # Made from the calendar row that gather read. Asking FastF1
-                # for the session by year and round would read the calendar
-                # again, and after a change it answers with whichever race
-                # holds that round now.
-                session = event.get_session(context.scheduled.session_name)
-                # The row also says whether F1's API covers the session, and
-                # FastF1 loads no feed at all when it says not. The snapshot
-                # holds the feeds, so it did. Without this a row that is
-                # wrong on the point would make a full archive measure empty.
-                session.f1_api_support = True
-                # FastF1 derives this path from the event's name and date.
-                # The snapshot's own path is the one its feeds are filed
-                # under, whatever the calendar says today.
-                session.api_path = f"/static/{snapshot.identity.archive_path}"
-                session.load(laps=True, telemetry=True, weather=True, messages=True)
-
-                loaded = identity_from_fastf1(session)
-                if loaded.session_key != snapshot.session_key:
-                    raise BuildError(
-                        f"Snapshot {snapshot.snapshot_id} holds session {loaded.session_key}, "
-                        f"not {snapshot.session_key}"
-                    )
-                # The calendar entry, and with it the round and the result,
-                # was found by the start time in the snapshot's marker. The
-                # feeds say for themselves what kind of session they are of
-                # and when it started. If that is not the session the entry
-                # describes, the marker has sent this build to another race.
-                archived_start = archived_start_time(session)
-                if (
-                    loaded.session_type != context.scheduled.session_type
-                    or archived_start is None
-                    or context.scheduled.start_time is None
-                    or abs(archived_start - context.scheduled.start_time) > SAME_MEETING_TOLERANCE
-                ):
-                    raise BuildError(
-                        f"Snapshot {snapshot.snapshot_id} holds a {loaded.session_type} session that "
-                        f"started at {format_utc(archived_start) if archived_start else 'no stated time'}, "
-                        f"not the {context.scheduled.session_type} of {context.scheduled.meeting_name} "
-                        f"at {context.scheduled.start_time_utc} that its marker led to"
-                    )
+                session = self._load(snapshot, context)
                 # Measured as a fetch would measure it, before anything from
                 # today is put in. The feeds are the archive's, so this is
                 # what the snapshot's record should say of them.
@@ -368,14 +358,7 @@ class Builder:
                             f"snapshot {snapshot.snapshot_id} was measured by pipeline version "
                             f"{snapshot.corrected_by}, and this version measures it differently: {differences}"
                         )
-                    try:
-                        write_remeasurement(self._store, snapshot, measured, now=self._now())
-                    except PreconditionFailed:
-                        # Another build has written one since this snapshot
-                        # was listed. It is read before anything replaces it.
-                        raise DecideAgain(
-                            f"another build corrected the record of snapshot {snapshot.snapshot_id} first"
-                        ) from None
+                    self._correct(snapshot, measured)
                     _logger.warning(
                         "Snapshot %s of session %s does not hold what its record says; "
                         "the record is corrected: %s",
@@ -406,6 +389,102 @@ class Builder:
         # The record and the feeds agree, so the snapshot as gather judged it
         # is what this generation was built from.
         return files, snapshot
+
+    def _load(self, snapshot: Snapshot, context: BuildContext) -> Any:
+        """The snapshot's feeds as FastF1 loads them, checked to be of the session gathered for.
+
+        Called with the snapshot restored as FastF1's cache and every request
+        refused.
+        """
+        # Made from the calendar row that gather read. Asking FastF1
+        # for the session by year and round would read the calendar
+        # again, and after a change it answers with whichever race
+        # holds that round now.
+        session = context.scheduled.event.get_session(context.scheduled.session_name)
+        # The row also says whether F1's API covers the session, and
+        # FastF1 loads no feed at all when it says not. The snapshot
+        # holds the feeds, so it did. Without this a row that is
+        # wrong on the point would make a full archive measure empty.
+        session.f1_api_support = True
+        # FastF1 derives this path from the event's name and date.
+        # The snapshot's own path is the one its feeds are filed
+        # under, whatever the calendar says today.
+        session.api_path = f"/static/{snapshot.identity.archive_path}"
+        session.load(laps=True, telemetry=True, weather=True, messages=True)
+
+        loaded = identity_from_fastf1(session)
+        if loaded.session_key != snapshot.session_key:
+            raise BuildError(
+                f"Snapshot {snapshot.snapshot_id} holds session {loaded.session_key}, "
+                f"not {snapshot.session_key}"
+            )
+        # The calendar entry, and with it the round and the result,
+        # was found by the start time in the snapshot's marker. The
+        # feeds say for themselves what kind of session they are of
+        # and when it started. If that is not the session the entry
+        # describes, the marker has sent this build to another race.
+        archived_start = archived_start_time(session)
+        if (
+            loaded.session_type != context.scheduled.session_type
+            or archived_start is None
+            or context.scheduled.start_time is None
+            or abs(archived_start - context.scheduled.start_time) > SAME_MEETING_TOLERANCE
+        ):
+            raise BuildError(
+                f"Snapshot {snapshot.snapshot_id} holds a {loaded.session_type} session that "
+                f"started at {format_utc(archived_start) if archived_start else 'no stated time'}, "
+                f"not the {context.scheduled.session_type} of {context.scheduled.meeting_name} "
+                f"at {context.scheduled.start_time_utc} that its marker led to"
+            )
+        return session
+
+    def _correct(self, snapshot: Snapshot, measured: dict[str, Any]) -> None:
+        """Write what the snapshot's feeds measure as beside it, for every reader of the archive."""
+        try:
+            write_remeasurement(self._store, snapshot, measured, now=self._now())
+        except PreconditionFailed:
+            # Another build has written one since this snapshot
+            # was listed. It is read before anything replaces it.
+            raise DecideAgain(
+                f"another build corrected the record of snapshot {snapshot.snapshot_id} first"
+            ) from None
+
+    def _count(self, rival: Snapshot, context: BuildContext) -> bool:
+        """Count what the record of a snapshot that was not taken lacks. Whether its record was put right.
+
+        Nothing is built from it, so nothing it does wrong stops the build of
+        the one that was taken: a snapshot that will not load is left judged
+        by its record as it stands, and said so.
+        """
+        self._counted.add(rival.snapshot_id)
+        if (rival.corrected_by or 0) > layout.PIPELINE_VERSION:
+            # Measured by a newer version, which is right about it.
+            return False
+        try:
+            with tempfile.TemporaryDirectory(prefix="f1data-build-") as scratch:
+                cache_dir = restore_snapshot(self._store, rival, Path(scratch) / "cache")
+                extras = read_extras(self._store, rival)
+                with fastf1_cache(cache_dir), no_requests_at_all():
+                    session = self._load(rival, context)
+                    measured = measure_coverage(session, rival.identity.session_type, extras)
+        except Exception as exc:  # noqa: BLE001 - whatever a snapshot that cannot be read raises
+            _logger.warning(
+                "Snapshot %s of session %s could not be loaded to count what its record lacks, "
+                "and is judged by the record as it stands: %s",
+                rival.snapshot_id,
+                rival.session_key,
+                exc,
+            )
+            return False
+        if feed_figures(measured) == feed_figures(rival.coverage):
+            return False
+        self._correct(rival, measured)
+        _logger.info(
+            "Snapshot %s of session %s, which was not the one taken, has the counts its record lacked",
+            rival.snapshot_id,
+            rival.session_key,
+        )
+        return True
 
 
 def _host(url: str) -> str:
