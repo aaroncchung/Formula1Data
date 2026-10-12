@@ -1,0 +1,66 @@
+name: R2 store contract
+
+# Runs the store contract (tests/test_store.py) against the real bucket through
+# R2's S3 API. The publisher this replaces was tested only against a fake and
+# never completed a real run (docs/architecture-review-findings.md, AR-04), and
+# the plan's conditional writes had been checked against Cloudflare's
+# documentation only. The tests write under contract-tests/<random>/, which the
+# Worker does not serve, and delete what they wrote.
+on:
+  workflow_dispatch:
+  # workflow_dispatch only works once this file is on the default branch. Until
+  # then a push that touches the store runs it from the rewrite branch.
+  push:
+    branches:
+      - rewrite/data-plane
+    paths:
+      - .github/workflows/r2-contract.yml
+      - f1data/store.py
+      - f1data/config.py
+      - tests/test_store.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r2-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Store contract against R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      F1DATA_TEST_R2: "1"
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Either an R2 key pair, or the Cloudflare API token, which doubles as
+      # one (f1data/config.py). The key pair wins when both are set.
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            f1data
+            tests
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      # -k r2 selects the real-bucket parameter; -rs would show a skip, and with
+      # F1DATA_TEST_R2=1 a missing credential is an error, not a skip.
+      - name: Run the contract against the bucket
+        run: python -m pytest tests/test_store.py -k r2 -v -rs

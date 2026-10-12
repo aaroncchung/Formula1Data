@@ -13,14 +13,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Generate offline sample artifacts
-        run: python -m pipeline generate --sample
-
+      # Nothing is generated first: every page loads its data in the browser
+      # from the published layout, and the build reads no data at all.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

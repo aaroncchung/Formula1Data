@@ -1,0 +1,5 @@
+# This repo is developed with core.autocrlf=true. Files that are compared byte
+# for byte, or hashed, have to check out identically on every platform.
+worker/tests/fixtures/*.json text eol=lf
+tests/fixtures/** text eol=lf
+schema/** text eol=lf

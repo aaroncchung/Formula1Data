@@ -1,30 +1,65 @@
 import { DataTable } from "@/components/data-table/DataTable";
 import { CompoundBadge, DriverBadge } from "@/components/session/Badges";
-import { formatDelta, formatMs } from "@/lib/format";
-import type { PitStop, StrategyResult } from "@/types/domain";
+import { formatElapsed, formatSessionClock } from "@/lib/durations";
+import { formatMs } from "@/lib/format";
+import type { PaceChangeAcrossStop, PitStop, Strategy } from "@/lib/published/types";
+import {
+  compoundUsage,
+  otherEntriesNote,
+  paceChange,
+  pitEntryCounts,
+  pitLaneSummary,
+  pitLossExclusionLabel,
+  pitLossSummary,
+  pitStopLog,
+  stationarySummary,
+  stopKeptItsTyres,
+  type PitLaneSummary,
+  type PitLossSummary,
+  type PitStopLogRow,
+  type StationarySummary
+} from "@/lib/strategy-view";
 
-export function StrategyAnalysis({ strategy, pitStops }: { strategy: StrategyResult | null; pitStops: PitStop[] }) {
-  const usage = Object.entries(strategy?.compound_usage || {}).sort((a, b) => b[1] - a[1]);
-  const estimates = strategy?.undercut_overcut || [];
-  const stops = strategy?.pit_stops?.length ? strategy.pit_stops : pitStops;
-  const drivers = new Set(stops.map((stop) => stop.driver_code)).size;
-  const recordedDurations = stops.filter((stop) => stop.duration_ms != null);
-  const fastestStop = recordedDurations.length
-    ? recordedDurations.reduce((best, stop) => Number(stop.duration_ms) < Number(best.duration_ms) ? stop : best)
-    : null;
+/**
+ * Compound usage, the pit stops and the pace change across each driver's
+ * first stop. `strategy` is null for a session without the analysis; the pit
+ * stops are then shown from the stop list alone.
+ */
+export function StrategyAnalysis({ strategy, pitStops }: { strategy: Strategy | null; pitStops: ReadonlyArray<PitStop> }) {
+  const { named: usage, unnamedStints } = compoundUsage(strategy);
+  const estimates = strategy?.undercut_overcut ?? [];
+  const stops = pitStopLog(strategy, pitStops);
+  const counts = pitEntryCounts(pitStops);
+  const drivers = counts.driversWhoStopped;
+  const caveats = strategy?.caveats ?? [];
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StrategyMetric label="Pit events" value={stops.length} detail={`${drivers} drivers`} />
-        <StrategyMetric label="Compounds used" value={usage.length || "--"} detail={usage.map(([compound]) => compound).join(" · ") || "Not available"} />
-        <StrategyMetric label="Fastest pit-lane time" value={fastestStop ? formatMs(fastestStop.duration_ms) : "Not recorded"} detail={fastestStop?.driver_code || "Pit-in/out timing unavailable"} />
-        <StrategyMetric label="Estimated pit loss" value={formatMs(strategy?.pit_loss_estimate_ms)} detail="Model estimate" />
+      {strategy ? null : (
+        <p className="rounded-md border border-line/70 bg-carbon/35 p-3 text-sm text-slate-400">
+          This session has no strategy analysis, so compound usage, pit loss and the pace change across a stop are not
+          shown. The pit stops below come from the stop list.
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StrategyMetric
+          label="Pit stops"
+          value={counts.stops}
+          detail={[`${drivers} ${drivers === 1 ? "driver" : "drivers"}`, otherEntriesNote(counts)].filter(Boolean).join(" · ")}
+        />
+        <StrategyMetric
+          label="Compounds used"
+          value={usage.length || "--"}
+          detail={[usage.map(([compound]) => compound).join(" · ") || "Not available", unnamedNote(unnamedStints)].filter(Boolean).join(" · ")}
+        />
+        <StationaryMetric summary={stationarySummary(pitStops)} />
+        <PitLaneMetric summary={pitLaneSummary(strategy, pitStops)} />
+        <PitLossMetric summary={pitLossSummary(strategy)} />
       </div>
 
       {usage.length ? (
         <section className="rounded-md border border-line/70 bg-carbon/35 p-4">
-          <div className="eyebrow">Compound usage</div>
+          <div className="eyebrow">Compound usage{unnamedStints > 0 ? ` · ${unnamedNote(unnamedStints)}` : ""}</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             {usage.map(([compound, count]) => (
               <div key={compound} className="flex items-center justify-between rounded-md border border-line/70 bg-white/[0.025] p-3">
@@ -39,43 +74,270 @@ export function StrategyAnalysis({ strategy, pitStops }: { strategy: StrategyRes
         </section>
       ) : null}
 
-      <div>
-        <div className="mb-3">
-          <h3 className="font-bold text-white">Pit stop log</h3>
-          <p className="mt-1 text-sm text-slate-500">Every detected pit-in event. Recorded time is total pit-lane transit from pit-in to pit-out, not stationary service time.</p>
-        </div>
-        <DataTable
-          rows={stops}
-          emptyText="No pit events detected."
-          columns={[
-            { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
-            { key: "lap", header: "Stop lap", align: "right", render: (row) => row.lap_number },
-            { key: "duration", header: "Pit-lane time", align: "right", render: (row) => row.duration_ms == null ? <span className="text-slate-600">Not recorded</span> : formatMs(row.duration_ms) },
-            { key: "time", header: "Local time", align: "right", render: (row) => row.local_time || <span className="text-slate-600">--</span> }
-          ]}
-        />
-      </div>
+      <PitStopLog stops={stops} />
+      {estimates.length ? <PaceChangeTable estimates={estimates} pitStops={pitStops} /> : null}
 
-      {estimates.length ? (
-        <div>
-          <div className="mb-3">
-            <h3 className="font-bold text-white">Post-stop pace change</h3>
-            <p className="mt-1 text-sm text-slate-500">First clean lap after the stop compared with the driver&apos;s surrounding laps; negative is quicker.</p>
-          </div>
-          <DataTable
-            rows={estimates}
-            columns={[
-              { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
-              { key: "lap", header: "Stop lap", align: "right", render: (row) => row.stop_lap },
-              { key: "gain", header: "Pace change", align: "right", render: (row) => <span className={Number(row.first_clean_lap_gain_ms) < 0 ? "text-aqua" : "text-amber"}>{formatDelta(row.first_clean_lap_gain_ms)}</span> }
-            ]}
-          />
-        </div>
-      ) : null}
-
-      {strategy?.caveats.length ? <p className="rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400">{strategy.caveats.join(" ")}</p> : null}
+      {caveats.length ? <p className="rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400">{caveats.join(" ")}</p> : null}
     </div>
   );
+}
+
+/** Stints F1 named no compound for, which are not another compound. */
+function unnamedNote(stints: number): string {
+  return stints > 0 ? `F1 named no compound for ${stints} ${stints === 1 ? "stint" : "stints"}` : "";
+}
+
+/** How long the cars stood still, which is what is usually meant by the length of a pit stop. */
+function StationaryMetric({ summary }: { summary: StationarySummary }) {
+  const label = "Stationary time (median)";
+  if (summary.median_ms === null || summary.fastest === null) {
+    return <StrategyMetric label={label} value="Not reported" detail="F1's pit-stop feed has no stop of this session" />;
+  }
+  const { fastest } = summary;
+  return (
+    <StrategyMetric
+      label={label}
+      value={seconds(summary.median_ms)}
+      detail={`Car standing still · fastest ${seconds(fastest.stationary_ms)}, ${fastest.driver_code} on lap ${fastest.lap_number} · F1's pit-stop feed times ${summary.timedStopCount} of the ${summary.stopCount} stops${unreportedNote(summary)}`}
+    />
+  );
+}
+
+/** Pit entry to pit exit, labelled as that: the stationary time is inside it. */
+function PitLaneMetric({ summary }: { summary: PitLaneSummary }) {
+  const label = "Entry to exit (median)";
+  if (summary.median_ms === null) {
+    return <StrategyMetric label={label} value="Not recorded" detail="F1's pit-stop feed reports no stop that has both a pit-entry and a pit-exit time" />;
+  }
+  return (
+    <StrategyMetric
+      label={label}
+      value={seconds(summary.median_ms)}
+      detail={`Through the pit lane · fastest ${seconds(summary.fastest_ms)}, slowest ${seconds(summary.slowest_ms)} · over the ${summary.timedStopCount} ${summary.timedStopCount === 1 ? "stop" : "stops"} F1's pit-stop feed reports, of ${summary.stopCount} entries to the pit lane${redFlagNote(summary.redFlagCount)}`}
+    />
+  );
+}
+
+/** F1's pit-stop feed does not cover every stop: the tyre data shows the ones it leaves out. */
+function unreportedNote(summary: StationarySummary): string {
+  return summary.timedStopCount < summary.stopCount ? " · the rest are stops its feed left out" : "";
+}
+
+/** Why some entries to the pit lane are in none of the figures. */
+function redFlagNote(count: number): string {
+  if (count === 0) {
+    return "";
+  }
+  return ` · ${count} ${count === 1 ? "was a wait" : "were waits"} through a red flag, left out`;
+}
+
+/** What a stop costs against staying out. A different quantity from pit-lane time, and often absent. */
+function PitLossMetric({ summary }: { summary: PitLossSummary }) {
+  const label = "Pit loss (estimate)";
+  switch (summary.status) {
+    case "estimated":
+      return (
+        <StrategyMetric
+          label={label}
+          value={seconds(summary.estimate_ms)}
+          detail={`Against staying out · median of ${summary.qualifyingStopCount} of ${summary.stopCount} entries to the pit lane${
+            summary.spread_ms === null ? "" : ` · spread ${seconds(summary.spread_ms)}`
+          }`}
+        />
+      );
+    case "too_few_stops":
+      return (
+        <StrategyMetric
+          label={label}
+          value="Not estimated"
+          detail={`${summary.qualifyingStopCount} of ${summary.stopCount} entries to the pit lane qualify; ${summary.minimumStopCount} are needed`}
+        />
+      );
+    case "no_stops":
+      return <StrategyMetric label={label} value="Not estimated" detail="No pit stops were recorded" />;
+    case "not_published":
+      return <StrategyMetric label={label} value="Not published" detail="This session's data has no pit-loss estimate" />;
+  }
+}
+
+function PitStopLog({ stops }: { stops: PitStopLogRow[] }) {
+  // A column nothing would fill is left out: F1's feed can be missing for a
+  // whole session, and so can the strategy analysis.
+  const hasFeed = stops.some((stop) => stop.stationary_ms !== null || stop.pit_lane_ms !== null);
+  const hasPitLoss = stops.some((stop) => stop.pitLoss !== null);
+  const reported = stops.filter((stop) => stop.stationary_ms !== null).length;
+  const redFlagged = stops.filter((stop) => stop.under_red_flag).length;
+  const passages = stops.filter((stop) => stop.kind === "passage").length;
+  return (
+    <div>
+      <div className="mb-3">
+        <h3 className="font-bold text-white">Pit stop log</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Every entry to the pit lane.{" "}
+          {hasFeed
+            ? `Stationary and pit-lane times are F1's own figures, which its pit-stop feed gives for ${reported} of these ${stops.length} entries. `
+            : stops.length
+              ? "F1's pit-stop feed reports none of these entries, so there are no stationary times. "
+              : ""}
+          {passages > 0
+            ? `${passages} of them ${passages === 1 ? "is a car" : "are cars"} that went through without stopping, a drive-through penalty or a passage behind the safety car: F1 reports no stop, and its tyre data has the car on the same tyres afterwards. `
+            : ""}
+          Entry to exit is the time between the timing&apos;s pit-entry and pit-exit, stationary time included.
+          {redFlagged > 0
+            ? ` ${redFlagged} of these ${redFlagged === 1 ? "was a car" : "were cars"} in the pit lane when the session was red-flagged: what is timed there is the wait for the restart, and it is in none of the figures above.`
+            : ""}
+          {hasPitLoss
+            ? " Pit loss is what the stop cost against staying out: in-lap plus out-lap, minus two laps at the driver's pace around the stop."
+            : ""}
+        </p>
+      </div>
+      <DataTable
+        rows={stops}
+        emptyText="No pit stops detected."
+        columns={[
+          { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
+          {
+            key: "lap",
+            header: "Lap in",
+            align: "right",
+            render: (row) => (
+              <>
+                {row.under_red_flag ? <RedFlagMark /> : null}
+                {row.kind === "passage" ? <NoStopMark /> : null}
+                {row.lap_number}
+              </>
+            )
+          },
+          { key: "entry", header: "Pit entry (session clock)", align: "right", render: (row) => <span className="font-mono">{formatSessionClock(row.entry_time_ms)}</span> },
+          ...(hasFeed
+            ? [
+                { key: "stationary", header: "Stationary", align: "right" as const, render: (row: PitStopLogRow) => <FeedTime ms={row.stationary_ms} /> },
+                { key: "lane", header: "Pit lane", align: "right" as const, render: (row: PitStopLogRow) => <FeedTime ms={row.pit_lane_ms} /> }
+              ]
+            : []),
+          { key: "duration", header: "Entry to exit", align: "right", render: (row) => row.duration_ms === null ? <span className="text-slate-600" title="The car did not come back out of the pit lane">Not recorded</span> : seconds(row.duration_ms) },
+          ...(hasPitLoss
+            ? [{ key: "loss", header: "Pit loss", align: "right" as const, render: (row: PitStopLogRow) => <StopPitLossCell stop={row} /> }]
+            : [])
+        ]}
+      />
+    </div>
+  );
+}
+
+/** Beside the lap of a car that sat out a red flag in the pit lane, so its long times are read as the wait they are. */
+function RedFlagMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-redline/40 bg-redline/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-redline"
+      title="The session was red-flagged while this car was in the pit lane. Its times are a wait for the restart, not a pit stop."
+    >
+      Red flag
+    </span>
+  );
+}
+
+/** Beside the lap of a car that went through the pit lane and did not stop, so its quick time is not read as a stop's. */
+function NoStopMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-line bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"
+      title="F1 reports no stop, and its tyre data has the car on the same tyres afterwards: a drive-through penalty or a passage behind the safety car."
+    >
+      No stop
+    </span>
+  );
+}
+
+/** A figure from F1's pit-stop feed, or a dash for a stop the feed does not report. */
+function FeedTime({ ms }: { ms: number | null }) {
+  return ms === null ? (
+    <span className="text-slate-600" title="F1's pit-stop feed does not report this stop">
+      --
+    </span>
+  ) : (
+    <span className="font-mono">{seconds(ms)}</span>
+  );
+}
+
+function StopPitLossCell({ stop }: { stop: PitStopLogRow }) {
+  if (stop.pitLoss === null) {
+    return <span className="text-slate-600">--</span>;
+  }
+  if (stop.pitLoss.status === "estimated") {
+    return <>{seconds(stop.pitLoss.pit_loss_ms)}</>;
+  }
+  return <span className="text-xs text-slate-500">Not estimated: {pitLossExclusionLabel(stop.pitLoss.reason)}</span>;
+}
+
+function PaceChangeTable({ estimates, pitStops }: { estimates: ReadonlyArray<PaceChangeAcrossStop>; pitStops: ReadonlyArray<PitStop> }) {
+  const sameTyres = estimates.some((estimate) => stopKeptItsTyres(estimate, pitStops));
+  return (
+    <div>
+      <div className="mb-3">
+        <h3 className="font-bold text-white">Pace change across the first stop</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          The driver&apos;s last clean lap before their first stop against the first one after it. Quicker means
+          quicker after the stop, which is nearly always on other tyres.
+          {sameTyres ? " A stop marked \"same tyres\" is one F1's tyre data has the car on the same set after: a penalty served or a repair." : ""}{" "}
+          Not adjusted for fuel, traffic or track evolution.
+        </p>
+      </div>
+      <DataTable
+        rows={estimates}
+        columns={[
+          { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} /> },
+          {
+            key: "lap",
+            header: "Stop lap",
+            align: "right",
+            render: (row) => (
+              <>
+                {stopKeptItsTyres(row, pitStops) ? <SameTyresMark /> : null}
+                {row.stop_lap}
+              </>
+            )
+          },
+          { key: "before", header: "Lap before", align: "right", render: (row) => <ComparedLap lap={row.before_lap_number} time={row.before_lap_ms} /> },
+          { key: "after", header: "Lap after", align: "right", render: (row) => <ComparedLap lap={row.after_lap_number} time={row.after_lap_ms} /> },
+          { key: "change", header: "Pace change", align: "right", render: (row) => <PaceChangeCell estimate={row} /> }
+        ]}
+      />
+    </div>
+  );
+}
+
+/** Beside a stop the car left on the tyres it came in on, so the pace after it is not read as new tyres'. */
+function SameTyresMark() {
+  return (
+    <span
+      className="mr-2 rounded border border-line bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400"
+      title="F1's tyre data has the car on the same set of tyres after this stop."
+    >
+      Same tyres
+    </span>
+  );
+}
+
+function ComparedLap({ lap, time }: { lap: number | null; time: number | null }) {
+  if (lap === null) {
+    return <span className="text-slate-600">--</span>;
+  }
+  return (
+    <span className="font-mono">
+      <span className="text-slate-500">L{lap}</span> {formatMs(time)}
+    </span>
+  );
+}
+
+function PaceChangeCell({ estimate }: { estimate: PaceChangeAcrossStop }) {
+  const change = paceChange(estimate);
+  if (change.direction === "none") {
+    // The row says why it has no value; a bare dash would hide that there is a reason.
+    return <span className="inline-block max-w-xs text-left text-xs text-slate-500">{estimate.caveat || "No value"}</span>;
+  }
+  const tone = change.direction === "quicker" ? "text-aqua" : change.direction === "slower" ? "text-amber" : "text-slate-300";
+  return <span className={`font-mono ${tone}`}>{change.text}</span>;
 }
 
 function StrategyMetric({ label, value, detail }: { label: string; value: string | number; detail: string }) {
@@ -83,7 +345,11 @@ function StrategyMetric({ label, value, detail }: { label: string; value: string
     <div className="rounded-md border border-line/70 bg-carbon/45 p-3">
       <div className="eyebrow">{label}</div>
       <div className="mt-2 text-xl font-black text-white">{value}</div>
-      <div className="mt-1 truncate text-xs text-slate-500" title={detail}>{detail}</div>
+      <div className="mt-1 text-xs leading-4 text-slate-500">{detail}</div>
     </div>
   );
+}
+
+function seconds(ms: number | null): string {
+  return formatElapsed(ms);
 }

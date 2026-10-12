@@ -10,8 +10,6 @@ import {
   Flag,
   Gauge,
   LineChart,
-  Radio,
-  Settings,
   Trophy,
   Users
 } from "lucide-react";
@@ -19,6 +17,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { APP_NAME, NAV_ITEMS } from "@/lib/constants";
+import { isUnderPath } from "@/lib/routes";
 
 const iconMap = {
   Dashboard: Gauge,
@@ -28,9 +27,7 @@ const iconMap = {
   Standings: Trophy,
   Drivers: Users,
   Teams: Car,
-  Circuits: CircuitBoard,
-  Live: Radio,
-  Settings: Settings
+  Circuits: CircuitBoard
 };
 
 export function Sidebar() {
@@ -51,8 +48,7 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 px-3 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = iconMap[item.label as keyof typeof iconMap] || BarChart3;
-          const active =
-            item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = isUnderPath(pathname, [item.href, ...(item.under ?? [])]);
           return (
             <Link
               key={item.href}
@@ -71,7 +67,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="border-t border-line/70 px-5 py-4 text-xs text-slate-500">
-        Analysis runs locally and reads compact static artifacts. No paid service required.
+        Pages load published race data in your browser. No paid service required.
       </div>
     </aside>
   );

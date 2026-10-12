@@ -2,10 +2,11 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import { formatDelta, formatMs } from "@/lib/format";
-import type { RacePaceRow } from "@/types/domain";
+import type { RacePaceRow } from "@/lib/published/types";
 
-export function RacePaceChart({ rows }: { rows: RacePaceRow[] }) {
+export function RacePaceChart({ rows }: { rows: ReadonlyArray<RacePaceRow> }) {
   const data = rows.map((row) => ({
     driver: row.driver_code,
     median: row.median_lap_ms,
@@ -19,7 +20,7 @@ export function RacePaceChart({ rows }: { rows: RacePaceRow[] }) {
           <XAxis dataKey="driver" stroke="#94a3b8" />
           <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
           <Tooltip
-            contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
+            contentStyle={CHART_TOOLTIP_STYLE}
             formatter={(value, name) =>
               name === "gap" ? formatDelta(Number(value)) : formatMs(Number(value))
             }
