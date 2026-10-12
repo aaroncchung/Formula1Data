@@ -605,7 +605,10 @@ A figure that was not counted when a snapshot was fetched, and can be counted
 from its feeds, reaches the record the same way. The laps that repeat
 themselves are such a figure: no session is fetched again for them. Until a
 build has counted them the record says nothing of them, and they are not held
-against it.
+against it. The laps a feed can be relied on for, those with no hole in them
+that do not repeat themselves, are another: the choice between two snapshots
+reads them, and a record without them has every lap that repeats taken off
+its usable ones.
 
 A build also checks that the feeds it loaded are of the session its calendar
 entry describes: the same kind of session, started within three days of the

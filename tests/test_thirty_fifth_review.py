@@ -268,6 +268,11 @@ def test_as_many_laps_may_repeat_themselves_as_may_be_missing():
     assert shortfalls(measure(beyond)) == {(CAR_REPEATS_BAR, "AAA")}
 
 
+# The laps a feed repeats itself on, and the laps it can be relied on for, which
+# the thirty-ninth review had counted: a fetch from before this round has neither.
+COUNTED_SINCE = ("car_repeating_laps", "position_repeating_laps", "car_reliable_laps", "position_reliable_laps")
+
+
 def before_repeats_were_counted(measurement: dict) -> dict:
     """A measurement as a fetch recorded it before this round."""
     return {
@@ -276,7 +281,7 @@ def before_repeats_were_counted(measurement: dict) -> dict:
             code: {
                 key: value
                 for key, value in driver.items()
-                if key not in ("car_repeating_laps", "position_repeating_laps")
+                if key not in COUNTED_SINCE
             }
             for code, driver in measurement["drivers"].items()
         },

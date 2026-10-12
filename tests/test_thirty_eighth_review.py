@@ -18,7 +18,12 @@ from f1data.archive import select_snapshot
 from f1data.coverage import CAR_REPEATS_BAR, POSITION_REPEATS_BAR, repeating_laps, weakest_share
 from tests.fakes import LAP_SECONDS, RACE_START, make_session
 from tests.test_publish import snapshot
-from tests.test_thirty_fifth_review import car_feed_repeats, position_feed_repeats, shortfalls
+from tests.test_thirty_fifth_review import (
+    before_repeats_were_counted,
+    car_feed_repeats,
+    position_feed_repeats,
+    shortfalls,
+)
 
 EARLIER, LATER = "20261005T200000Z-aaaaaaaa", "20261006T200000Z-bbbbbbbb"
 
@@ -105,17 +110,7 @@ def test_a_record_from_before_the_laps_were_counted_takes_nothing_off():
     """A count that is absent was never taken. The build that reads such a
     snapshot counts it and decides again."""
     counted = snapshot(session=repeats(car={"1": range(3, 11)})).coverage
-    never = {
-        **counted,
-        "drivers": {
-            code: {
-                key: value
-                for key, value in driver.items()
-                if key not in ("car_repeating_laps", "position_repeating_laps")
-            }
-            for code, driver in counted["drivers"].items()
-        },
-    }
+    never = before_repeats_were_counted(counted)
 
     assert (weakest_share(counted), repeating_laps(counted)) == (0.2, 8)
     assert (weakest_share(never), repeating_laps(never)) == (1.0, 0)

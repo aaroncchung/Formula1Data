@@ -117,7 +117,11 @@ FORMAT_VERSION = 2
 #  25  whether a car is moving, when a feed that repeats itself is counted,
 #      is also the position feed's to say and the timing's: a car feed that
 #      stops at no speed is not a car that is standing
-PIPELINE_VERSION = 25
+#  26  nothing a session publishes: a measurement counts the laps a feed can
+#      be relied on for, those with no hole in them that do not repeat
+#      themselves, which the choice between two snapshots reads; a build of
+#      this version writes them into the record, one of the last does not
+PIPELINE_VERSION = 26
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

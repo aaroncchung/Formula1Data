@@ -32,8 +32,9 @@ from f1data.loaded import driver_codes, present
 # The number goes up when a fetch starts collecting something it did not
 # before, because only another fetch can supply it. A figure that can be
 # worked out from what is already archived is added without a new number, and
-# read as optional: ``circuit_corners`` is one, and the laps on which a feed
-# repeats itself are two more. A build counts those from the feeds it has
+# read as optional: ``circuit_corners`` is one, the laps on which a feed
+# repeats itself are two more, and the laps a feed can be relied on for are
+# another two. A build counts those from the feeds it has
 # loaded and writes them beside the snapshot before it publishes anything
 # (``write_remeasurement`` in f1data/archive.py).
 MEASUREMENT_VERSION = 2
@@ -146,6 +147,8 @@ _DRIVER_COUNTS = (
     "tyre_age_laps",
     "car_repeating_laps",
     "position_repeating_laps",
+    "car_reliable_laps",
+    "position_reliable_laps",
 )
 
 RACE_LIKE_SESSION_TYPES = frozenset({"R", "S"})
@@ -187,6 +190,8 @@ def measure_coverage(
     for number, code in driver_codes(results, laps).items():
         driver_laps = _driver_laps(laps, number)
         timed = driver_laps[~_generated(driver_laps)] if len(driver_laps) else driver_laps
+        car_usable = _usable_laps(timed, car_data.get(number), CAR_CHANNELS, _car_valid)
+        position_usable = _usable_laps(timed, position_data.get(number), POSITION_CHANNELS, _position_valid)
         car_repeating, position_repeating = _repeating_laps(
             timed, car_data.get(number), position_data.get(number), fastest_lap
         )
@@ -196,14 +201,16 @@ def measure_coverage(
             "classified_laps": _classified_laps(results, number),
             "timing_laps": int(len(timed)),
             "generated_laps": int(len(driver_laps) - len(timed)),
-            "car_laps": _usable_laps(timed, car_data.get(number), CAR_CHANNELS, _car_valid),
-            "position_laps": _usable_laps(
-                timed, position_data.get(number), POSITION_CHANNELS, _position_valid
-            ),
+            "car_laps": int(car_usable.sum()),
+            "position_laps": int(position_usable.sum()),
             "tyre_laps": _tyre_laps(timed),
             "tyre_age_laps": _tyre_laps(timed, with_age=True),
-            "car_repeating_laps": car_repeating,
-            "position_repeating_laps": position_repeating,
+            "car_repeating_laps": int(car_repeating.sum()),
+            "position_repeating_laps": int(position_repeating.sum()),
+            # A lap can have a hole in it and repeat itself too. It is one
+            # lap that cannot be relied on, and is counted here as one.
+            "car_reliable_laps": int((car_usable & ~car_repeating).sum()),
+            "position_reliable_laps": int((position_usable & ~position_repeating).sum()),
         }
 
     session_info = _safe_attr(session, "session_info") or {}
@@ -416,6 +423,8 @@ def apply_classification(measurement: dict[str, Any], classified_laps: dict[str,
                 "tyre_age_laps": 0,
                 "car_repeating_laps": 0,
                 "position_repeating_laps": 0,
+                "car_reliable_laps": 0,
+                "position_reliable_laps": 0,
             }
     return {**measurement, "drivers": drivers}
 
@@ -486,40 +495,60 @@ def refetch_could_help(shortfalls: list[Shortfall]) -> bool:
     return any(shortfall.bar != CLASSIFICATION_BAR for shortfall in shortfalls)
 
 
-def weakest_share(measurement: dict[str, Any]) -> float:
-    """Lowest usable share for any driver on any per-lap feed, between 0 and 1.
-
-    Used to order two snapshots that both fall short (section 6, rule 6).
+def _lap_counts(measurement: dict[str, Any]) -> list[tuple[int, int]]:
+    """For each driver and each per-lap feed, the laps that can be relied on and the laps expected.
 
     A lap a feed repeats itself on arrived on time and is counted among the
-    feed's laps, and is not usable: it is taken off them here. A count of
-    such laps that is absent was never taken and takes nothing off.
+    feed's usable laps, and cannot be relied on. ``car_reliable_laps`` and
+    ``position_reliable_laps`` are the usable laps without those. A record
+    from before they were counted has the usable laps and the laps that
+    repeat and not how many are both, so every lap that repeats is taken off
+    the usable ones: too few for a lap with a hole in it as well, never too
+    many. A count of laps that repeat that is absent was never taken and
+    takes nothing off.
     """
     race_like = measurement.get("session_type") in RACE_LIKE_SESSION_TYPES
-    lowest = 1.0
+    counts: list[tuple[int, int]] = []
     for driver in measurement.get("drivers", {}).values():
         timing = int(driver.get("timing_laps") or 0)
         classified = driver.get("classified_laps")
         expected = int(classified) if race_like and classified is not None else timing
         if expected <= 0:
             continue
-        shares = [min(1.0, timing / expected)]
-        for key, repeating in (
-            ("car_laps", "car_repeating_laps"),
-            ("position_laps", "position_repeating_laps"),
-            ("tyre_laps", None),
-        ):
-            usable = int(driver.get(key) or 0) - int(driver.get(repeating) or 0 if repeating else 0)
-            shares.append(min(1.0, max(usable, 0) / expected))
-        lowest = min(lowest, *shares)
-    return lowest
+        laps = [timing, int(driver.get("tyre_laps") or 0)]
+        for feed in ("car", "position"):
+            reliable = driver.get(f"{feed}_reliable_laps")
+            if reliable is None:
+                reliable = int(driver.get(f"{feed}_laps") or 0) - int(driver.get(f"{feed}_repeating_laps") or 0)
+            laps.append(int(reliable))
+        counts.extend((min(max(count, 0), expected), expected) for count in laps)
+    return counts
+
+
+def weakest_share(measurement: dict[str, Any]) -> float:
+    """Lowest share of laps to be relied on for any driver on any per-lap feed, between 0 and 1.
+
+    Used to order two snapshots that both fall short (section 6, rule 6).
+    """
+    return min((laps / expected for laps, expected in _lap_counts(measurement)), default=1.0)
+
+
+def overall_share(measurement: dict[str, Any]) -> float:
+    """The share of laps to be relied on over every driver and every per-lap feed, between 0 and 1.
+
+    Used to order two snapshots the weakest share cannot tell apart: it is
+    one driver's on one feed, and says nothing of how the rest fared.
+    """
+    counts = _lap_counts(measurement)
+    expected = sum(expected for _, expected in counts)
+    return sum(laps for laps, _ in counts) / expected if expected else 1.0
 
 
 def repeating_laps(measurement: dict[str, Any]) -> int:
     """The laps on which F1's car feed or position feed repeats itself, over every driver.
 
-    Used to order two snapshots the weakest share cannot tell apart: it is
-    one driver's on one feed, and says nothing of how the rest fared.
+    Used to order two snapshots with as many laps to be relied on: a lap
+    that is missing says so, and one that repeats itself does not.
     """
     return sum(
         int(driver.get(key) or 0)
@@ -541,21 +570,25 @@ def lap_is_usable(sample_times: np.ndarray, lap_start: float, lap_end: float) ->
     return bool(np.diff(edges).max() <= MAX_SAMPLE_GAP_SECONDS)
 
 
-def _usable_laps(laps: pd.DataFrame, telemetry: Any, channels: tuple[str, ...], valid: Any) -> int:
+def _usable_laps(laps: pd.DataFrame, telemetry: Any, channels: tuple[str, ...], valid: Any) -> np.ndarray:
+    """Which of ``laps`` the feed covers without a long hole, lap by lap."""
+    none = np.zeros(len(laps), dtype=bool)
     if telemetry is None or len(laps) == 0 or len(telemetry) == 0:
-        return 0
+        return none
     if any(channel not in telemetry.columns for channel in channels) or "SessionTime" not in telemetry.columns:
-        return 0
+        return none
     mask = valid(telemetry)
     times = _seconds(telemetry["SessionTime"])[mask]
     times = np.sort(times[np.isfinite(times)])
     starts = _seconds(laps["LapStartTime"])
     ends = _seconds(laps["Time"])
-    return sum(1 for start, end in zip(starts, ends) if lap_is_usable(times, start, end))
+    return np.array([lap_is_usable(times, start, end) for start, end in zip(starts, ends)], dtype=bool)
 
 
-def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any, fastest_lap: float) -> tuple[int, int]:
-    """How many of ``laps`` the car feed repeats itself on, and how many the position feed.
+def _repeating_laps(
+    laps: pd.DataFrame, car: Any, position: Any, fastest_lap: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Which of ``laps`` the car feed repeats itself on, and which the position feed, lap by lap.
 
     A sample is counted when the car is moving. The car feed says so with its
     speed, for both: a position sample is the car's at the speed of the car
@@ -564,19 +597,20 @@ def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any, fastest_lap: fl
     took beyond ``fastest_lap`` seconds. Without a car feed neither is
     counted, and the bar on car data says what is wrong.
     """
+    none = np.zeros(len(laps), dtype=bool)
     if car is None or len(laps) == 0 or len(car) == 0:
-        return 0, 0
+        return none, none
     if any(channel not in car.columns for channel in CAR_CHANNELS) or "SessionTime" not in car.columns:
-        return 0, 0
+        return none, none
     times, (speed, engine) = _in_order(car, _car_valid(car), ("Speed", "RPM"))
     moving = speed > MOVING_ABOVE_KPH
     starts, ends = _seconds(laps["LapStartTime"]), _seconds(laps["Time"])
     rooms = ends - starts - fastest_lap
 
     if position is None or len(position) == 0 or len(times) == 0:
-        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), 0
+        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), none
     if any(channel not in position.columns for channel in POSITION_CHANNELS) or "SessionTime" not in position.columns:
-        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), 0
+        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), none
     placed_at, (x, y) = _in_order(position, _position_valid(position), POSITION_CHANNELS)
     car_laps = _laps_that_repeat(
         times, moving | _seen_to_move(times, placed_at, x, y), _same_as_before(speed, engine), starts, ends, rooms
@@ -638,9 +672,9 @@ def _laps_that_repeat(
     starts: np.ndarray,
     ends: np.ndarray,
     rooms: np.ndarray,
-) -> int:
-    count = 0
-    for start, end, room in zip(starts, ends, rooms):
+) -> np.ndarray:
+    found = np.zeros(len(starts), dtype=bool)
+    for lap, (start, end, room) in enumerate(zip(starts, ends, rooms)):
         if not (np.isfinite(start) and np.isfinite(end)) or end <= start:
             continue
         first = int(np.searchsorted(times, start, side="left"))
@@ -656,8 +690,8 @@ def _laps_that_repeat(
             repeated += not_stood * float((same & ~going).sum())
         if judged < MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP:
             continue
-        count += bool(repeated > MAX_REPEATED_SHARE_OF_A_LAP * judged)
-    return count
+        found[lap] = repeated > MAX_REPEATED_SHARE_OF_A_LAP * judged
+    return found
 
 
 def _share_not_stood(times: np.ndarray, going: np.ndarray, start: float, room: float) -> float:
