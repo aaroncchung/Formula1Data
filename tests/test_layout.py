@@ -32,10 +32,12 @@ def test_changing_a_coverage_bar_needs_a_new_pipeline_version():
             coverage.MOVING_ABOVE_KPH,
             coverage.MAX_REPEATED_SHARE_OF_A_LAP,
             coverage.MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP,
+            coverage.MAX_SECONDS_BETWEEN_PLACES,
+            coverage.STANDING_MARGIN_SECONDS,
         )
     )
-    recorded_bars = "5ceaa38191a1"
-    recorded_pipeline_version = 24
+    recorded_bars = "9e25d20319f9"
+    recorded_pipeline_version = 25
 
     assert (hashlib.sha256(bars.encode()).hexdigest()[:12], layout.PIPELINE_VERSION) == (
         recorded_bars,

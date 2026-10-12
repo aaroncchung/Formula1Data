@@ -64,6 +64,7 @@ def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = Non
     times = pd.to_timedelta(np.arange(0.0, session_end + 60.0, SAMPLE_INTERVAL), unit="s")
     # No two samples running are the same, as no two of a moving car are: a
     # feed that sends the sample before again is a fault the coverage counts.
+    # The places are 14 m apart, which at four a second is the car's speed.
     step = np.arange(len(times)) % 40
     car = pd.DataFrame(
         {
@@ -75,7 +76,7 @@ def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = Non
             "RPM": 11000.0 + 25.0 * step,
         }
     )
-    position = pd.DataFrame({"SessionTime": times, "X": 1200.0 + 10.0 * step, "Y": -340.0 - 10.0 * step})
+    position = pd.DataFrame({"SessionTime": times, "X": 1200.0 + 100.0 * step, "Y": -340.0 - 100.0 * step})
 
     results = pd.DataFrame(
         {
@@ -98,6 +99,16 @@ def make_session(laps_per_driver: int = 10, drivers: dict[str, str] | None = Non
         total_laps=laps_per_driver,
         session_info={"Key": 11315, "Meeting": {"Key": 1288}},
     )
+
+
+def run_laps_together(session: SimpleNamespace, number: str, first: int, last: int) -> None:
+    """Make one lap of a driver's laps ``first`` to ``last``: a lap that took as long as all of them."""
+    laps = session.laps
+    mine = laps["DriverNumber"] == number
+    ends = laps.loc[mine & (laps["LapNumber"] == last), "Time"].iloc[0]
+    laps.loc[mine & (laps["LapNumber"] == first), "Time"] = ends
+    session.laps = laps[~(mine & (laps["LapNumber"] > first) & (laps["LapNumber"] <= last))].reset_index(drop=True)
+    session.results.loc[number, "Laps"] -= last - first
 
 
 def thin_to_one_sample_per_lap(session: SimpleNamespace, feed: str) -> None:

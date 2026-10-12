@@ -66,6 +66,26 @@ MAX_REPEATED_SHARE_OF_A_LAP = 0.25
 # spent stopped under a red flag, or one the feed has almost nothing of,
 # which is the other bars' to say.
 MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP = 10
+# Whether a car is moving is not the car feed's alone to say. A car feed that
+# sends a speed of nought again and again has the car standing, and was
+# believed: none of those samples was counted, for the car feed or for the
+# position feed beside it. Two things can say otherwise.
+#
+# The position feed, where it has the car at two places close enough in time
+# and far enough apart.
+MAX_SECONDS_BETWEEN_PLACES = 1.0
+# And the timing, which neither feed can take with it. A lap has room for
+# standing in what it took beyond the fastest lap of the session, since no car
+# gets round in less; the time a feed has the car standing beyond that room,
+# and this much more for the walking pace of a pit box, was not stood. Over
+# the same nine races no lap has a car standing for longer than the lap had
+# room for, this margin left out. The nearest is a first lap with 2.1 s to
+# spare; the lap of the Monaco GP that the red flag is in, 2,264 s long with
+# the car standing for 2,137 of them, has 54 s.
+#
+# What neither sees: both feeds stopped together for less time than the lap
+# had room for, as on a lap behind the safety car.
+STANDING_MARGIN_SECONDS = 5.0
 CAR_REPEATS_BAR = "car_data_repeats"
 POSITION_REPEATS_BAR = "position_repeats"
 
@@ -162,12 +182,13 @@ def measure_coverage(
     car_data = _mapping(session, "car_data")
     position_data = _mapping(session, "pos_data")
 
+    fastest_lap = _fastest_lap_seconds(laps[~_generated(laps)] if len(laps) else laps)
     drivers: dict[str, dict[str, Any]] = {}
     for number, code in driver_codes(results, laps).items():
         driver_laps = _driver_laps(laps, number)
         timed = driver_laps[~_generated(driver_laps)] if len(driver_laps) else driver_laps
         car_repeating, position_repeating = _repeating_laps(
-            timed, car_data.get(number), position_data.get(number)
+            timed, car_data.get(number), position_data.get(number), fastest_lap
         )
         drivers[code] = {
             "number": number,
@@ -513,12 +534,15 @@ def _usable_laps(laps: pd.DataFrame, telemetry: Any, channels: tuple[str, ...], 
     return sum(1 for start, end in zip(starts, ends) if lap_is_usable(times, start, end))
 
 
-def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any) -> tuple[int, int]:
+def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any, fastest_lap: float) -> tuple[int, int]:
     """How many of ``laps`` the car feed repeats itself on, and how many the position feed.
 
-    Whether the car is moving is the car feed's to say for both: a position
-    sample is the car's at the speed of the car sample before it. Without a
-    car feed neither is counted, and the bar on car data says what is wrong.
+    A sample is counted when the car is moving. The car feed says so with its
+    speed, for both: a position sample is the car's at the speed of the car
+    sample before it. Where the car feed has the car standing, the position
+    feed may have it moving, and a lap has only so long to stand in: what it
+    took beyond ``fastest_lap`` seconds. Without a car feed neither is
+    counted, and the bar on car data says what is wrong.
     """
     if car is None or len(laps) == 0 or len(car) == 0:
         return 0, 0
@@ -527,15 +551,27 @@ def _repeating_laps(laps: pd.DataFrame, car: Any, position: Any) -> tuple[int, i
     times, (speed, engine) = _in_order(car, _car_valid(car), ("Speed", "RPM"))
     moving = speed > MOVING_ABOVE_KPH
     starts, ends = _seconds(laps["LapStartTime"]), _seconds(laps["Time"])
-    car_laps = _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends)
+    rooms = ends - starts - fastest_lap
 
     if position is None or len(position) == 0 or len(times) == 0:
-        return car_laps, 0
+        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), 0
     if any(channel not in position.columns for channel in POSITION_CHANNELS) or "SessionTime" not in position.columns:
-        return car_laps, 0
+        return _laps_that_repeat(times, moving, _same_as_before(speed, engine), starts, ends, rooms), 0
     placed_at, (x, y) = _in_order(position, _position_valid(position), POSITION_CHANNELS)
+    car_laps = _laps_that_repeat(
+        times, moving | _seen_to_move(times, placed_at, x, y), _same_as_before(speed, engine), starts, ends, rooms
+    )
     before = np.clip(np.searchsorted(times, placed_at, side="right") - 1, 0, len(times) - 1)
-    return car_laps, _laps_that_repeat(placed_at, moving[before], _same_as_before(x, y), starts, ends)
+    return car_laps, _laps_that_repeat(placed_at, moving[before], _same_as_before(x, y), starts, ends, rooms)
+
+
+def _fastest_lap_seconds(laps: pd.DataFrame) -> float:
+    """The quickest lap any driver was timed on, or NaN where no lap has both its ends."""
+    if len(laps) == 0 or not {"LapStartTime", "Time"} <= set(laps.columns):
+        return math.nan
+    taken = _seconds(laps["Time"]) - _seconds(laps["LapStartTime"])
+    taken = taken[np.isfinite(taken) & (taken > 0)]
+    return float(taken.min()) if len(taken) else math.nan
 
 
 def _in_order(
@@ -557,21 +593,65 @@ def _same_as_before(first: np.ndarray, second: np.ndarray) -> np.ndarray:
     return same
 
 
+def _seen_to_move(times: np.ndarray, placed_at: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """At which of ``times`` the position feed has the car moving.
+
+    From the place before the time to the place at or after it, where the
+    feed has both and they are not far apart in time. F1 gives a place in
+    tenths of a metre.
+    """
+    if len(placed_at) < 2:
+        return np.zeros(len(times), dtype=bool)
+    after = np.searchsorted(placed_at, times, side="left")
+    between = (after > 0) & (after < len(placed_at))
+    after = np.clip(after, 1, len(placed_at) - 1)
+    seconds = placed_at[after] - placed_at[after - 1]
+    metres = np.hypot(x[after] - x[after - 1], y[after] - y[after - 1]) / 10.0
+    near = (seconds > 0) & (seconds <= MAX_SECONDS_BETWEEN_PLACES)
+    return between & near & (metres * 3.6 > MOVING_ABOVE_KPH * seconds)
+
+
 def _laps_that_repeat(
-    times: np.ndarray, moving: np.ndarray, repeats: np.ndarray, starts: np.ndarray, ends: np.ndarray
+    times: np.ndarray,
+    moving: np.ndarray,
+    repeats: np.ndarray,
+    starts: np.ndarray,
+    ends: np.ndarray,
+    rooms: np.ndarray,
 ) -> int:
     count = 0
-    for start, end in zip(starts, ends):
+    for start, end, room in zip(starts, ends, rooms):
         if not (np.isfinite(start) and np.isfinite(end)) or end <= start:
             continue
         first = int(np.searchsorted(times, start, side="left"))
         last = int(np.searchsorted(times, end, side="right"))
-        judged = int(moving[first:last].sum())
+        going, same = moving[first:last], repeats[first:last]
+        judged = float(going.sum())
+        repeated = float((same & going).sum())
+        # A car that was not standing was moving, and what the feed sent of
+        # it then is judged like the rest.
+        not_stood = _share_not_stood(times[first:last], going, start, room)
+        if not_stood:
+            judged += not_stood * float((~going).sum())
+            repeated += not_stood * float((same & ~going).sum())
         if judged < MIN_MOVING_SAMPLES_TO_JUDGE_A_LAP:
             continue
-        repeated = int((repeats[first:last] & moving[first:last]).sum())
-        count += repeated > MAX_REPEATED_SHARE_OF_A_LAP * judged
+        count += bool(repeated > MAX_REPEATED_SHARE_OF_A_LAP * judged)
     return count
+
+
+def _share_not_stood(times: np.ndarray, going: np.ndarray, start: float, room: float) -> float:
+    """The share of the time a feed has a car standing in a lap that the lap had no room for.
+
+    ``room`` is what the lap took beyond the fastest lap of the session. A
+    hole in the feed is standing only for as long as a hole may be.
+    """
+    if not np.isfinite(room):
+        return 0.0
+    since = np.minimum(np.diff(times, prepend=start), MAX_SAMPLE_GAP_SECONDS)
+    standing = float(since[~going].sum())
+    could = max(float(room), 0.0) + STANDING_MARGIN_SECONDS
+    return (standing - could) / standing if standing > could else 0.0
 
 
 def sent_by_f1(telemetry: pd.DataFrame) -> np.ndarray:

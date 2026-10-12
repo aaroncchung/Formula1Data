@@ -90,7 +90,8 @@ RUN_IS_OVERDUE_AFTER = timedelta(hours=13)
 # is failing, and is reported like one that has stopped.
 THE_JOB_IS_FAILING_AFTER_RUNS = 2
 
-# A fetch is stamped by the machine that made it. A stamp further ahead of
-# this machine's clock than this was written by a clock that was wrong, and
-# says nothing about when the fetch was made.
+# A fetch is stamped by the machine that made it, and so is the record of a
+# run. A stamp further ahead of this machine's clock than this was written by
+# a clock that was wrong, and says nothing about when the fetch was made or
+# the run ended.
 CLOCK_TOLERANCE = timedelta(hours=1)

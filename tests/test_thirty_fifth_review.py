@@ -39,7 +39,7 @@ from f1data.coverage import (
 from f1data.policy import THE_JOB_IS_FAILING_AFTER_RUNS
 from f1data.publish import publish_session, read_pointer
 from tests.building import Archive
-from tests.fakes import LAP_SECONDS, RACE_START, make_session, measure
+from tests.fakes import LAP_SECONDS, RACE_START, make_session, measure, run_laps_together
 from tests.test_archive import fetched_session
 from tests.test_fifteenth_review import job  # noqa: F401  (a fixture)
 from tests.test_fifth_review import WINDOW_CLOSED, correction
@@ -239,13 +239,15 @@ def test_a_lap_repeats_itself_when_more_than_a_quarter_of_it_does(share, repeati
 
 def test_a_car_that_is_standing_still_repeats_itself_truthfully():
     """A lap waited out in the pit lane under a red flag: every sample is the
-    one before, and every one of them is right."""
+    one before, and every one of them is right. The lap takes the wait and
+    the drive round: one that took no longer than a lap at speed had no wait
+    in it (the thirty-sixth review)."""
     session = make_session()
-    for feed in (session.car_data, session.pos_data):
-        feed["1"] = feed["1"].copy()
+    run_laps_together(session, "1", 6, 8)
     car, position = session.car_data["1"], session.pos_data["1"]
-    car.loc[lap_rows(car, 6), ["Speed", "RPM"]] = [0.0, 4000.0]
-    position_feed_repeats(session, "1", laps=[6])
+    car.loc[lap_rows(car, 6, share=2.0), ["Speed", "RPM"]] = [0.0, 4000.0]
+    waiting = lap_rows(position, 6, share=2.0)
+    position.loc[waiting, ["X", "Y"]] = position.loc[waiting, ["X", "Y"]].iloc[0].to_list()
 
     measurement = measure(session)
 

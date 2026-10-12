@@ -114,7 +114,10 @@ FORMAT_VERSION = 2
 #  24  the laps on which F1's car feed or position feed repeats itself are
 #      counted, and a driver with more of them than may be missing leaves the
 #      session partial
-PIPELINE_VERSION = 24
+#  25  whether a car is moving, when a feed that repeats itself is counted,
+#      is also the position feed's to say and the timing's: a car feed that
+#      stops at no speed is not a car that is standing
+PIPELINE_VERSION = 25
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

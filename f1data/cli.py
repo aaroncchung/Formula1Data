@@ -49,6 +49,7 @@ from f1data.fetch import (
 )
 from f1data.httplog import request_timeouts
 from f1data.policy import (
+    CLOCK_TOLERANCE,
     FETCH_STAGE_BUDGET,
     IN_SCOPE_SESSION_TYPES,
     NOT_ANSWERING_AFTER,
@@ -207,7 +208,7 @@ def main(argv: list[str] | None = None) -> None:
     last = subparsers.add_parser(
         "last-run",
         help="Say when the whole job last finished on the machine that fetches, and how. Fails if that is "
-        "too long ago, if it never has, or if its last runs all failed.",
+        "too long ago or yet to come, if it never has, or if its last runs all failed.",
     )
     _add_store_argument(last)
     last.add_argument(
@@ -1052,6 +1053,15 @@ def run_last_run(args: argparse.Namespace) -> int:
         print(f"The record of the last run cannot be read: {type(exc).__name__}: {exc}")
         return 1
     hours = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
+    if hours < -CLOCK_TOLERANCE.total_seconds() / 3600:
+        # Read as recent, it would vouch for the job until that time came
+        # round, however long ago the job stopped.
+        print(
+            f"The last run is written down as finished at {record['finished_at']} on "
+            f"{record.get('host') or 'an unnamed machine'}, {-hours:.1f} hours from now. The clock that wrote "
+            "that was wrong, and it says nothing of when the job last ran."
+        )
+        return 1
     print(
         f"The last run finished at {record['finished_at']} on {record.get('host') or 'an unnamed machine'}, "
         f"{hours:.1f} hours ago, with exit code {record['exit_code']}."
