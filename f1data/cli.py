@@ -79,7 +79,7 @@ from f1data.spool import (
     sweep_locks,
 )
 from f1data.spool import read as read_spool
-from f1data.store import JSON_CONTENT_TYPE, ObjectStore, file_etag
+from f1data.store import JSON_CONTENT_TYPE, ObjectStore, PreconditionFailed, file_etag
 
 # After this many fetches of one session have failed one after the other, a
 # run says so at its end, apart from the line it prints for each.
@@ -982,6 +982,12 @@ def run_job(args: argparse.Namespace) -> int:
     return status
 
 
+# Two runs can end together: the schedule's and one started by hand. Each
+# writes the record over the one it read and no other, and one that loses
+# reads again. This many times and no more.
+NOTE_ATTEMPTS = 5
+
+
 def _note_the_run(spec: str | None, started: datetime, finished: datetime, status: int) -> None:
     """Write down that a run of the whole job ended, where something else can see that one has not.
 
@@ -992,32 +998,75 @@ def _note_the_run(spec: str | None, started: datetime, finished: datetime, statu
     record also counts the runs that have failed one after another: a job
     that runs on time and fails every time is no better than one that does
     not run.
+
+    Two runs that end together both count from the record they read. Written
+    over whatever is there, the second would lose the first's failure, so the
+    record is written only over the one that was read.
     """
     try:
         store = _store(spec)
-        failed_runs = 0
-        if status:
+        for _ in range(NOTE_ATTEMPTS):
+            before = store.get(layout.LAST_RUN_KEY)
+            record = _record_after(
+                None if before is None else before.data, started, finished, status, datetime.now(timezone.utc)
+            )
+            if record is None:
+                return
             try:
-                before = store.get(layout.LAST_RUN_KEY)
-                failed_runs = _failed_runs(json.loads(before.data)) if before is not None else 0
-            except Exception:
-                # Whatever is there is not a record. The count starts here.
-                failed_runs = 0
-            failed_runs += 1
-        store.put(
-            layout.LAST_RUN_KEY,
-            dump_json(
-                {
-                    "started_at": format_utc(started),
-                    "finished_at": format_utc(finished),
-                    "exit_code": status,
-                    "failed_runs": failed_runs,
-                    "host": platform.node(),
-                }
-            ),
-        )
+                if before is None:
+                    store.put(layout.LAST_RUN_KEY, dump_json(record), if_absent=True)
+                else:
+                    store.put(layout.LAST_RUN_KEY, dump_json(record), if_match=before.etag)
+            except PreconditionFailed:
+                # Another run wrote its own in between. This one is counted from that.
+                continue
+            return
+        print(f"Could not write down that the run ended: another run wrote its own, {NOTE_ATTEMPTS} times running.")
     except Exception as exc:
         print(f"Could not write down that the run ended: {type(exc).__name__}: {exc}")
+
+
+def _record_after(
+    before: bytes | None, started: datetime, finished: datetime, status: int, now: datetime
+) -> dict[str, Any] | None:
+    """The record once this run is written into what is there. ``None`` when that changes nothing.
+
+    The record is of the run that ended last. A run that ended before the one
+    written down, and is only now writing, leaves that one's times and its
+    exit code alone: its own failure is one more in a row with a failure that
+    followed it, and nothing to a success that did. Its own success is not
+    taken off the failures that followed it either, though some counted there
+    may have come before it: a count too high is looked at, and one too low
+    is not.
+    """
+    mine = {
+        "started_at": format_utc(started),
+        "finished_at": format_utc(finished),
+        "exit_code": status,
+        "failed_runs": 1 if status else 0,
+        "host": platform.node(),
+    }
+    try:
+        theirs = json.loads(before) if before is not None else None
+        failed_before = _failed_runs(theirs) if theirs is not None else 0
+    except Exception:
+        # Whatever is there is not a record. The count starts here.
+        return mine
+    if theirs is None:
+        return mine
+    try:
+        they_finished = parse_utc(theirs["finished_at"])
+    except Exception:
+        they_finished = None
+    # A record stamped further ahead than a clock may be is not of a later
+    # run. Left standing, it would be the last thing ever written.
+    if they_finished is not None and parse_utc(mine["finished_at"]) < they_finished <= now + CLOCK_TOLERANCE:
+        if status and failed_before:
+            return {**theirs, "failed_runs": failed_before + 1}
+        return None
+    if status:
+        mine["failed_runs"] = failed_before + 1
+    return mine
 
 
 def _failed_runs(record: Any) -> int:

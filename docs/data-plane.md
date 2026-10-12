@@ -523,6 +523,13 @@ the task yet, and it has not run on a schedule.
   said (`DEGRADED`, and a warning on the workflow run) and let pass: F1
   refuses a fetch now and then, and the next run makes it good. Two running,
   which is the same two turns of the schedule, exit 1 (`FAILING`).
+- **Two runs that end together**, the schedule's and one started by hand,
+  both count from the record they read. Each writes the record only over the
+  one it read, and the one that loses reads again, so two that fail are two
+  failures. The record is of the run that ended last: a run that ended
+  before the one written down leaves its times and exit code alone, and adds
+  its own failure to a failure that followed it. Its success takes nothing
+  off, so after such a pair the count can be one too high until a run works.
 - **Before the job's first run** there is nothing for `last-run` to read, and
   the scheduled workflow fails. That is meant: a job that was never installed
   looks exactly like that. For the days between the workflow reaching the
