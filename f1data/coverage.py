@@ -490,6 +490,10 @@ def weakest_share(measurement: dict[str, Any]) -> float:
     """Lowest usable share for any driver on any per-lap feed, between 0 and 1.
 
     Used to order two snapshots that both fall short (section 6, rule 6).
+
+    A lap a feed repeats itself on arrived on time and is counted among the
+    feed's laps, and is not usable: it is taken off them here. A count of
+    such laps that is absent was never taken and takes nothing off.
     """
     race_like = measurement.get("session_type") in RACE_LIKE_SESSION_TYPES
     lowest = 1.0
@@ -500,12 +504,28 @@ def weakest_share(measurement: dict[str, Any]) -> float:
         if expected <= 0:
             continue
         shares = [min(1.0, timing / expected)]
-        shares += [
-            min(1.0, int(driver.get(key) or 0) / expected)
-            for key in ("car_laps", "position_laps", "tyre_laps")
-        ]
+        for key, repeating in (
+            ("car_laps", "car_repeating_laps"),
+            ("position_laps", "position_repeating_laps"),
+            ("tyre_laps", None),
+        ):
+            usable = int(driver.get(key) or 0) - int(driver.get(repeating) or 0 if repeating else 0)
+            shares.append(min(1.0, max(usable, 0) / expected))
         lowest = min(lowest, *shares)
     return lowest
+
+
+def repeating_laps(measurement: dict[str, Any]) -> int:
+    """The laps on which F1's car feed or position feed repeats itself, over every driver.
+
+    Used to order two snapshots the weakest share cannot tell apart: it is
+    one driver's on one feed, and says nothing of how the rest fared.
+    """
+    return sum(
+        int(driver.get(key) or 0)
+        for driver in measurement.get("drivers", {}).values()
+        for key in ("car_repeating_laps", "position_repeating_laps")
+    )
 
 
 def lap_is_usable(sample_times: np.ndarray, lap_start: float, lap_end: float) -> bool:

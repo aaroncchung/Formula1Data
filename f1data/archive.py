@@ -47,6 +47,7 @@ from f1data.coverage import (
     f1_does_not_hold,
     feed_figures,
     is_measurement,
+    repeating_laps,
     weakest_share,
 )
 from f1data.extras import CIRCUIT_INFO, circuit_corner_count
@@ -130,20 +131,22 @@ class Snapshot:
         """Whether the fetch collected everything today's bars ask about."""
         return self.coverage.get("measurement_version") == MEASUREMENT_VERSION
 
-    def rank(self) -> tuple[bool, bool, int, float, str]:
+    def rank(self) -> tuple[bool, bool, int, float, int, str]:
         """Higher is better. The order in which build picks a snapshot (rule 6).
 
         A snapshot that meets every bar beats one that does not. Among those
         that fall short, one that was measured in full beats one from before a
         feed was collected, whose shortfalls cannot be counted. Then fewer
-        shortfalls wins, then the higher weakest share. Only then does the
-        later fetch win, so a retry that does worse changes nothing.
+        shortfalls wins, then the higher weakest share, then fewer laps on
+        which a feed repeats itself. Only then does the later fetch win, so a
+        retry that does worse changes nothing.
         """
         return (
             self.complete,
             self.measured_in_full,
             -len(self.shortfalls()),
             weakest_share(self.coverage),
+            -repeating_laps(self.coverage),
             self.fetched_at,
         )
 
@@ -396,6 +399,7 @@ def _is_measurement(coverage: Any) -> bool:
     try:
         evaluate_coverage(coverage)
         weakest_share(coverage)
+        repeating_laps(coverage)
         feed_figures(coverage)
         apply_classification(coverage, {})
     except Exception:
