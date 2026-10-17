@@ -1,7 +1,10 @@
 import { EmptyState } from "@/components/dashboard/EmptyState";
+import { ErrorState } from "@/components/dashboard/ErrorState";
 import { LoadingState } from "@/components/dashboard/LoadingState";
-import { failureDetail } from "@/components/published/failure-copy";
+import { drawFailureDetail, drawFailureTitle, failureDetail } from "@/components/published/failure-copy";
 import { LoadFailure } from "@/components/published/LoadFailure";
+import { RenderBoundary } from "@/components/published/RenderBoundary";
+import { RetryButton } from "@/components/published/RetryButton";
 import type { Artifact } from "@/components/published/usePublishedArtifact";
 
 type ArtifactPanelProps<T> = {
@@ -27,7 +30,27 @@ type ArtifactPanelProps<T> = {
 export function ArtifactPanel<T>({ tab, name, artifact, onRetry, children }: ArtifactPanelProps<T>) {
   const body = (
     <>
-      {artifact.status === "ready" ? children(artifact.data) : null}
+      {/* A throw while drawing what was read is kept here too: it takes
+          this panel, and not the tabs, the heading or the navigation around
+          it. Trying again reads it again and draws it again. */}
+      {artifact.status === "ready" ? (
+        <RenderBoundary
+          resetKey={artifact.data}
+          fallback={(error, retry) => (
+            <div className="space-y-3">
+              <ErrorState title={drawFailureTitle(name)} detail={drawFailureDetail(error)} />
+              <RetryButton
+                onClick={() => {
+                  retry();
+                  onRetry();
+                }}
+              />
+            </div>
+          )}
+        >
+          <Drawn data={artifact.data} draw={children} />
+        </RenderBoundary>
+      ) : null}
       {artifact.status === "loading" ? <LoadingState label={`Loading ${name}`} /> : null}
       {artifact.status === "failed" ? <ArtifactFailure name={name} artifact={artifact} onRetry={onRetry} /> : null}
     </>
@@ -40,6 +63,11 @@ export function ArtifactPanel<T>({ tab, name, artifact, onRetry, children }: Art
       {body}
     </div>
   );
+}
+
+/** What was read, drawn inside the boundary: called in the panel's own render, a throw would pass it by. */
+function Drawn<T>({ data, draw }: { data: T; draw: (data: T) => React.ReactNode }) {
+  return <>{draw(data)}</>;
 }
 
 function ArtifactFailure<T>({

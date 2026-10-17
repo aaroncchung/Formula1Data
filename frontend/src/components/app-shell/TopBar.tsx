@@ -6,6 +6,8 @@ import { Suspense, useEffect, useState } from "react";
 
 import { GlobalSessionPicker, SessionPickerFallback } from "@/components/app-shell/GlobalSessionPicker";
 import { Sidebar } from "@/components/app-shell/Sidebar";
+import { RenderBoundary } from "@/components/published/RenderBoundary";
+import { RetryButton } from "@/components/published/RetryButton";
 
 export function TopBar() {
   const pathname = usePathname();
@@ -46,10 +48,21 @@ export function TopBar() {
         </div>
         {/* The picker reads the query string to start on the session the page
             is about. The bar is part of every page, and Next refuses to export
-            a page that reads the query outside a Suspense boundary. */}
-        <Suspense fallback={<SessionPickerFallback />}>
-          <GlobalSessionPicker />
-        </Suspense>
+            a page that reads the query outside a Suspense boundary. A throw in
+            it is kept to it: it is in the root layout, and the next boundary
+            up would take the navigation and the page with it. */}
+        <RenderBoundary
+          fallback={(_error, retry) => (
+            <div className="flex items-center gap-3 text-sm text-slate-400" role="alert">
+              The session picker could not be shown.
+              <RetryButton onClick={retry} />
+            </div>
+          )}
+        >
+          <Suspense fallback={<SessionPickerFallback />}>
+            <GlobalSessionPicker />
+          </Suspense>
+        </RenderBoundary>
       </div>
       {open ? (
         <div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={close}>

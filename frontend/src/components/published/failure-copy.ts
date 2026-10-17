@@ -51,3 +51,18 @@ export function failureDetail(failure: PublishedFailure): string {
       return failure.message;
   }
 }
+
+/**
+ * The heading for a part of a page whose data was read and could not be
+ * drawn: a fault in the site, not a state of the data. `name` is what the
+ * part shows, as it reads in a sentence; without one it is the whole page.
+ */
+export function drawFailureTitle(name?: string): string {
+  return name ? `The ${name} could not be shown` : "This page could not be shown";
+}
+
+/** What was thrown while drawing. */
+export function drawFailureDetail(error: unknown): string {
+  const message = error instanceof Error && error.message ? error.message : String(error);
+  return `It failed while being drawn: ${message.replace(/\.$/, "")}.`;
+}
