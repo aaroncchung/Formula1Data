@@ -122,7 +122,7 @@ def test_it_is_published_as_partial_and_says_what_is_short(tmp_path, monkeypatch
 
     assert outcome.action == "published"
     pointer = read_pointer(world.store, AUSTRIA)[0]
-    assert not pointer.complete and pointer.pipeline_version == layout.PIPELINE_VERSION == 27
+    assert not pointer.complete and pointer.pipeline_version == layout.PIPELINE_VERSION >= 27
     assert [(item["bar"], item["driver"]) for item in pointer.shortfalls] == [("car_data", "AAA")]
 
 

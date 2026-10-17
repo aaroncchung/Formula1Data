@@ -125,7 +125,16 @@ FORMAT_VERSION = 2
 #      usable laps are: laps missing and other laps repeating, each within
 #      its own tolerance, no longer pass together; a build counts what the
 #      record of every snapshot of a session lacks before it takes one
-PIPELINE_VERSION = 27
+#  28  car performance and the corner table are of a whole clean lap, and
+#      a driver with none is named and left out of the team's figures;
+#      tyres are fitted stint by stint, and a lap with no tyre data is in
+#      no row; an ideal lap is of clean laps; race pace ranks a driver
+#      with half the clean laps of the most and at least five; a team
+#      whose driver has no clean lap has a row; inferred corners keep two
+#      brakings apart; a race published with a result keeps it while
+#      Jolpica answers with none; a pointer's shortfalls are named as the
+#      generation names its drivers
+PIPELINE_VERSION = 28
 
 ARCHIVE_PREFIX = "archive/"
 # Notes of fetches that failed, by calendar entry. Not part of the archive:

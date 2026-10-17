@@ -12,7 +12,7 @@ from tests.sample_bucket import write_sample
 
 # What the sample race publishes (tests/sample_bucket.py), and the pipeline
 # version it was recorded at. The test below tells what to set it to.
-RECORDED_OUTPUT = (27, "71b51d9c09c90ac169ea0e00dfab2ffdf27f45542777905dc455291a4ac73160")
+RECORDED_OUTPUT = (28, "d760ef249f84e4040f6b9e67f8b558ec7c9193d723dc7935aafcfb0a9cc1f8cd")
 
 
 def published_output(monkeypatch, pipeline_version: int) -> str:
@@ -84,7 +84,7 @@ def test_changing_a_coverage_bar_needs_a_new_pipeline_version():
         )
     )
     recorded_bars = "9e25d20319f9"
-    recorded_pipeline_version = 27
+    recorded_pipeline_version = 28
 
     assert (hashlib.sha256(bars.encode()).hexdigest()[:12], layout.PIPELINE_VERSION) == (
         recorded_bars,
