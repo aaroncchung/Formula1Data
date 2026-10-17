@@ -17,15 +17,22 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 
 from f1data import spool
 from f1data.archive import list_snapshots
 from f1data.cli import main
+from f1data.due import plan_fetches
+from f1data.identity import format_utc
+from f1data.policy import RETRY_INTERVAL, RETRY_SLACK, RETRY_WINDOW, SLOW_RETRY_INTERVAL
 from f1data.store import DirectoryStore
 from tests.spooling import left_whole
+from tests.test_due import RACE_START, fetched_at, planned, without_position
 from tests.test_fifteenth_review import EIGHTH, job  # noqa: F401  (a fixture)
+from tests.test_publish import schedule_2026, snapshot
 from tests.test_sixteenth_review import STORE
 
 LONG_AGO = time.time() - 2 * 3600
@@ -122,3 +129,63 @@ def test_copying_from_a_store_with_nothing_to_copy_fails(tmp_path):
     destination.mkdir()
 
     assert copy_archive(source, destination) == f"{source} holds no snapshot and nothing else to copy, so nothing was copied."
+
+
+# --- 2: a short session is fetched again on every run of a six-hour schedule ---------
+
+AUSTRIA_ONLY = [entry for entry in schedule_2026() if entry.round == 8]
+
+
+def runs_that_fetch(builds, waits, fetch=timedelta(minutes=4)) -> list[int]:
+    """Which runs of a task started every six hours fetch a session that stays short.
+
+    A run builds first (``builds``, in minutes), and its fetch stage reads the
+    clock then. It reaches the session after ``waits`` minutes of other work,
+    and the fetch is stamped when it ends.
+    """
+    template = snapshot(session=without_position())
+    first_run = RACE_START + timedelta(hours=5)
+    snapshots, fetched = [], []
+    for run, (build, wait) in enumerate(zip(builds, waits)):
+        planned_at = first_run + run * RETRY_INTERVAL + timedelta(minutes=build)
+        if plan_fetches(AUSTRIA_ONLY, snapshots, planned_at):
+            ended = planned_at + timedelta(minutes=wait) + fetch
+            stamp = f"{ended:%Y%m%dT%H%M%S}Z-{run:08x}"
+            snapshots.append(replace(template, snapshot_id=stamp, fetched_at=format_utc(ended)))
+            fetched.append(run)
+    return fetched
+
+
+def test_every_run_of_a_six_hour_schedule_fetches_a_short_session_again():
+    """The finding. The interval was timed from the end of the last fetch, and
+    the run six hours on read the clock after its build: a run found the
+    session due only if its build took longer than the last run's build and
+    fetch together. Five fetches in the 48 hours, where nine were meant."""
+    one_minute = runs_that_fetch(builds=[1] * 10, waits=[0] * 10)
+    assert one_minute == list(range(9))
+
+    # Builds of different lengths, and the session reached part of the way
+    # into a fetch stage.
+    varied = runs_that_fetch(builds=[8, 1, 6, 2, 9, 1, 7, 3, 5, 2], waits=[0, 20, 5, 30, 0, 15, 10, 25, 0, 0])
+    assert varied == list(range(9))
+
+
+def test_a_retry_is_not_due_much_before_its_interval():
+    """The slack is for runs that start an interval apart, not a retry at every run started by hand."""
+    first_fetch = RACE_START + timedelta(hours=5)
+    short = snapshot(snapshot_id=fetched_at(first_fetch), session=without_position())
+
+    assert planned(AUSTRIA_ONLY, [short], first_fetch + RETRY_INTERVAL - RETRY_SLACK - timedelta(minutes=1)) == []
+    assert planned(AUSTRIA_ONLY, [short], first_fetch + RETRY_INTERVAL - RETRY_SLACK) == [(8, "R")]
+
+
+def test_the_weekly_retry_has_the_same_slack():
+    """A weekly task, or the six-hourly one, reaches the weekly retry on the run that is a week on."""
+    first_fetch = RACE_START + timedelta(hours=5)
+    short = snapshot(snapshot_id=fetched_at(first_fetch), session=without_position())
+    later = first_fetch + RETRY_WINDOW + timedelta(days=1)
+    again = snapshot(snapshot_id=fetched_at(later), session=without_position())
+
+    a_week_on = later + SLOW_RETRY_INTERVAL - timedelta(minutes=30)
+    assert planned(AUSTRIA_ONLY, [short, again], a_week_on) == [(8, "R")]
+    assert planned(AUSTRIA_ONLY, [short, again], a_week_on - RETRY_SLACK) == []

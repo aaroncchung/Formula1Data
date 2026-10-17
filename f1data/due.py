@@ -33,6 +33,7 @@ from f1data.policy import (
     DEFAULT_AVAILABLE_AFTER,
     IN_SCOPE_SESSION_TYPES,
     RETRY_INTERVAL,
+    RETRY_SLACK,
     RETRY_WINDOW,
     SLOW_RETRY_INTERVAL,
 )
@@ -165,7 +166,9 @@ def plan_fetches(
                 if latest.missing_only_what_f1_does_not_hold():
                     continue
                 interval = SLOW_RETRY_INTERVAL
-            if now < max(fetched) + interval:
+            # The last fetch is stamped when it ended, part of the way
+            # into the run before, and the runs are an interval apart.
+            if now < max(fetched) + interval - RETRY_SLACK:
                 continue
         short = sorted({shortfall.bar for shortfall in best.shortfalls()})
         plans.append(

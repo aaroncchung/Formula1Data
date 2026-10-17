@@ -28,6 +28,14 @@ RETRY_WINDOW = timedelta(hours=48)
 # rule 3 lets fetching stop only for a session that is complete. The exception
 # is a feed F1 has answered that it does not hold.
 SLOW_RETRY_INTERVAL = timedelta(days=7)
+# A retry is due this much before either interval is up. Runs start six hours
+# apart, and a fetch is stamped when it ended: after its run's build, its turn
+# in the fetch stage and the fetch itself. Timed to the minute, the run six
+# hours on found the session due only if its own build took longer than all of
+# those, and a short session was fetched every twelve hours. A session reached
+# late in a fetch stage that has used most of its hour can still wait one run
+# more.
+RETRY_SLACK = timedelta(hours=1)
 
 # How long after a session its classification is still asked for on every run.
 # Penalties and corrections land in the days after a race (AR-15); asking

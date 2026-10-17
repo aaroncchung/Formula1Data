@@ -389,7 +389,12 @@ anything in the archive, the run builds again.
 Retries are timed from when a session was last fetched, by the stamp of the
 machine that fetched it. A stamp more than an hour ahead of this machine's
 clock, or more than an hour before the session started, is not believed, and a
-session with no believable stamp is fetched again at once.
+session with no believable stamp is fetched again at once. A fetch is stamped
+when it ended, part of the way into its run, and the next run starts an
+interval after that run did, so a retry is due an hour before its interval is
+up (`RETRY_SLACK` in `f1data/policy.py`). Without that, the run six hours on
+found a session due only when its own build took longer than the last run's
+build and fetch together, and a short session was fetched every twelve hours.
 
 ## Credentials
 
@@ -460,7 +465,9 @@ Fetching has to run on a machine F1 answers, which rules out hosted runners
 credentials above in `.env`, `python -m f1data run` is the whole job, and it is
 safe to run as often as you like: it fetches only what is due and builds only
 what changed. Every six hours is what the retry interval asks for, and is
-plenty for the 48-hour bar.
+plenty for the 48-hour bar: a session that is short is fetched on every run,
+nine times in its 48 hours counting the first. A run started by hand in
+between does not fetch it again before five hours have passed.
 
 On Windows, from an elevated PowerShell, with the two paths set to yours:
 
@@ -594,7 +601,9 @@ with the snapshot (`f1data/coverage.py`). A race or sprint is complete when:
   corner positions arrived.
 
 A session short of a bar is fetched again every 6 hours for 48 hours after its
-first fetch, each time from an empty cache as a new snapshot. Build picks the
+first fetch, each time from an empty cache as a new snapshot: on every run of
+a six-hour schedule, since a retry is due an hour before its six hours are up.
+Build picks the
 best snapshot by a fixed order. If the session is still short when the 48 hours
 are up it is published as partial, and its pointer names what is short. After
 that it is fetched weekly, unless what is missing is a feed F1 answered that it

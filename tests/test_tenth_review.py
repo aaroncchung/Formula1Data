@@ -29,7 +29,7 @@ from f1data.archive import (
 from f1data.build import BuildError, Builder
 from f1data.coverage import is_measurement
 from f1data.identity import archived_start_time
-from f1data.policy import RETRY_INTERVAL, RETRY_WINDOW
+from f1data.policy import RETRY_INTERVAL, RETRY_SLACK, RETRY_WINDOW
 from f1data.publish import Hold, publish_session, read_pointer
 from f1data.store import MemoryStore
 from tests.building import FIRST_FETCH, Archive
@@ -233,7 +233,7 @@ def test_a_fetch_stamped_before_its_session_does_not_close_the_retry_window(tmp_
     assert plausible_fetch_time(fresh, now) == FIRST_FETCH
     assert partial_publication_time([stamped_early, fresh], now=now) == FIRST_FETCH + RETRY_WINDOW
     assert planned([stamped_early, fresh], FIRST_FETCH + RETRY_INTERVAL) == [8]
-    assert planned([stamped_early, fresh], FIRST_FETCH + RETRY_INTERVAL - timedelta(hours=1)) == []
+    assert planned([stamped_early, fresh], FIRST_FETCH + RETRY_INTERVAL - RETRY_SLACK - timedelta(minutes=1)) == []
 
     world = Archive(monkeypatch, EVERYONE)
     world.snapshot(tmp_path / "early", recorded=damaged, moment=FIRST_FETCH - timedelta(days=365))
