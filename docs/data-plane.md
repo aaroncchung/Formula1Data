@@ -588,6 +588,9 @@ the task yet, and it has not run on a schedule.
   before the one written down leaves its times and exit code alone, and adds
   its own failure to a failure that followed it. Its success takes nothing
   off, so after such a pair the count can be one too high until a run works.
+  A record names its run and the runs it has counted, so a write that went
+  through, lost its answer and was sent again by the store's client is not a
+  second failure.
 - **Before the job's first run** there is nothing for `last-run` to read, and
   the scheduled workflow fails. That is meant: a job that was never installed
   looks exactly like that. For the days between the workflow reaching the

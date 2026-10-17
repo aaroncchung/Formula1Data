@@ -100,7 +100,9 @@ def test_a_run_that_ended_first_and_writes_last_leaves_the_later_run_written_dow
 
     cli_module._note_the_run("x", now - timedelta(hours=2), now - timedelta(minutes=20), earlier)
 
-    assert record_of(job) == {**written, "failed_runs": failed_runs}
+    # The record also names the runs it has counted (tests/test_pr_review_ops.py).
+    rest = {name: value for name, value in record_of(job).items() if name != "counted"}
+    assert rest == {**written, "failed_runs": failed_runs}
     assert (record_of(job)["finished_at"], record_of(job)["exit_code"]) == (stamp(now - timedelta(minutes=10)), later)
 
 

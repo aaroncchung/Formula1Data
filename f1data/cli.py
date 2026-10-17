@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import platform
+import secrets
 import shutil
 import sys
 import tempfile
@@ -1077,13 +1078,20 @@ def _note_the_run(spec: str | None, started: datetime, finished: datetime, statu
     Two runs that end together both count from the record they read. Written
     over whatever is there, the second would lose the first's failure, so the
     record is written only over the one that was read.
+
+    And a write can go through with its answer lost on the way back. The
+    store's client sends it again, and that is refused, since the record is
+    no longer the one that was read; read again, it is this run's own. So a
+    run is named in the record, and one that finds its name there has been
+    written down.
     """
+    run_id = secrets.token_hex(8)
     try:
         store = _store(spec)
         for _ in range(NOTE_ATTEMPTS):
             before = store.get(layout.LAST_RUN_KEY)
             record = _record_after(
-                None if before is None else before.data, started, finished, status, datetime.now(timezone.utc)
+                None if before is None else before.data, started, finished, status, datetime.now(timezone.utc), run_id
             )
             if record is None:
                 return
@@ -1101,8 +1109,12 @@ def _note_the_run(spec: str | None, started: datetime, finished: datetime, statu
         print(f"Could not write down that the run ended: {type(exc).__name__}: {exc}")
 
 
+# How many runs before it a record names, as counted in it already.
+_RUNS_NAMED = 10
+
+
 def _record_after(
-    before: bytes | None, started: datetime, finished: datetime, status: int, now: datetime
+    before: bytes | None, started: datetime, finished: datetime, status: int, now: datetime, run_id: str
 ) -> dict[str, Any] | None:
     """The record once this run is written into what is there. ``None`` when that changes nothing.
 
@@ -1113,13 +1125,17 @@ def _record_after(
     taken off the failures that followed it either, though some counted there
     may have come before it: a count too high is looked at, and one too low
     is not.
+
+    A record names its run (``run_id``) and the runs before it that it has
+    counted (``counted``), the latest few. A run it names is not counted again.
     """
-    mine = {
+    mine: dict[str, Any] = {
         "started_at": format_utc(started),
         "finished_at": format_utc(finished),
         "exit_code": status,
         "failed_runs": 1 if status else 0,
         "host": platform.node(),
+        "run_id": run_id,
     }
     try:
         theirs = json.loads(before) if before is not None else None
@@ -1129,6 +1145,15 @@ def _record_after(
         return mine
     if theirs is None:
         return mine
+    counted = theirs.get("counted") if isinstance(theirs.get("counted"), list) else []
+    counted = [name for name in counted if isinstance(name, str)]
+    if isinstance(theirs.get("run_id"), str):
+        named = [*counted, theirs["run_id"]]
+    else:
+        named = counted
+    if run_id in named:
+        # Written down already, by a write whose answer did not come back.
+        return None
     try:
         they_finished = parse_utc(theirs["finished_at"])
     except Exception:
@@ -1137,10 +1162,11 @@ def _record_after(
     # run. Left standing, it would be the last thing ever written.
     if they_finished is not None and parse_utc(mine["finished_at"]) < they_finished <= now + CLOCK_TOLERANCE:
         if status and failed_before:
-            return {**theirs, "failed_runs": failed_before + 1}
+            return {**theirs, "failed_runs": failed_before + 1, "counted": [*counted, run_id][-_RUNS_NAMED:]}
         return None
     if status:
         mine["failed_runs"] = failed_before + 1
+    mine["counted"] = named[-_RUNS_NAMED:]
     return mine
 
 

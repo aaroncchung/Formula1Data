@@ -38,7 +38,7 @@ from f1data.fetch import fastf1_limit_reached
 from f1data.httplog import HttpRecorder
 from f1data.identity import format_utc
 from f1data.policy import RETRY_INTERVAL, RETRY_SLACK, RETRY_WINDOW, SLOW_RETRY_INTERVAL
-from f1data.store import DirectoryStore, MemoryStore
+from f1data.store import DirectoryStore, MemoryStore, PreconditionFailed
 from tests.spooling import left_whole
 from tests.test_archive import fetched_session
 from tests.test_due import RACE_START, fetched_at, planned, without_position
@@ -498,3 +498,60 @@ def test_the_cloudflare_token_is_given_only_where_the_key_pair_is_not(name):
         "${{ (secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '') "
         "&& secrets.CLOUDFLARE_API_TOKEN || '' }}"
     )
+
+
+# --- 6: a run is counted once in the record of runs -------------------------------------
+
+
+class LostAnswers(MemoryStore):
+    """A write of the record that goes through and whose answer is lost. The
+    client sends it again (botocore's standard mode retries a read timeout or
+    a dropped connection), and that gets 412: the record is no longer the one
+    the write was guarded by."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lose_next = False
+
+    def put(self, key, data, **kwargs):  # type: ignore[override]
+        etag = super().put(key, data, **kwargs)
+        if self.lose_next and key == layout.LAST_RUN_KEY:
+            self.lose_next = False
+            raise PreconditionFailed(key)
+        return etag
+
+
+def last_run(store) -> dict:
+    return json.loads(store.get(layout.LAST_RUN_KEY).data)
+
+
+def test_a_failed_run_whose_write_was_sent_twice_is_one_failure(monkeypatch):
+    """The finding. The run read the record again, found its own there, and
+    counted itself a second time: one failure after a success said FAILING."""
+    store = LostAnswers()
+    monkeypatch.setattr(cli_module, "_store", lambda spec: store)
+    now = datetime.now(timezone.utc)
+    cli_module._note_the_run("r2", now - timedelta(hours=7), now - timedelta(hours=6, minutes=30), 0)
+
+    store.lose_next = True
+    cli_module._note_the_run("r2", now - timedelta(hours=1), now - timedelta(minutes=30), 1)
+
+    record = last_run(store)
+    assert (record["exit_code"], record["failed_runs"]) == (1, 1)
+    # The record names the run before it as counted, besides its own.
+    assert len(record["counted"]) == 1 and record["counted"][0] != record["run_id"]
+
+
+def test_a_run_that_ended_first_and_writes_last_is_counted_once_too(monkeypatch):
+    store = LostAnswers()
+    monkeypatch.setattr(cli_module, "_store", lambda spec: store)
+    now = datetime.now(timezone.utc)
+    cli_module._note_the_run("r2", now - timedelta(hours=1), now - timedelta(minutes=10), 1)
+    later = last_run(store)
+
+    store.lose_next = True
+    cli_module._note_the_run("r2", now - timedelta(hours=2), now - timedelta(minutes=20), 1)
+
+    record = last_run(store)
+    assert record["failed_runs"] == 2 and record["run_id"] == later["run_id"]
+    assert record["finished_at"] == later["finished_at"] and len(record["counted"]) == 1
