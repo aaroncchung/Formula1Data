@@ -361,17 +361,17 @@ it is still going, or its run ended under it, and the note cannot tell
 which. A fetch the run stopped for FastF1's limit on requests (below) is
 noted as stopped, and counts neither way. A note the store will not take is
 said in the log (`Could not note`), and the stage carries on: nothing a
-session is made of is in a note. For each entry a run counts the
-fetches that have not succeeded since the last that did, in the order their
-words reached the note, and names the entry at three in a line that begins
+session is made of is in a note. For each entry a run counts the fetches
+that have not succeeded since the last that did, in the order their words
+reached the note, and names the entry at three in a line that begins
 `ATTENTION`. One that started before that success and never ended is
 counted for six hours from its start, while it may still be going, and not
-after. A note keeps the twelve latest fetches
-of its entry. New fetches are taken in the order of when each session was last
-tried, whether that fetch failed or arrived: the ones never tried first, then
-the one tried longest ago. So the fetches a run starts reach every session
-that is due before they reach any a second time, however the run is cut
-short: by `--limit`, by its time, or because nothing answers.
+after. A note keeps the twelve latest fetches of its entry. New fetches are
+taken in the order of when each session was last tried, whether that fetch
+failed or arrived: the ones never tried first, then the one tried longest
+ago. So the fetches a run starts reach every session that is due before
+they reach any a second time, however the run is cut short: by `--limit`, by
+its time, by FastF1's limit, or because nothing answers.
 
 Every request has a time limit. One that is made without a limit of its own,
 as FastF1's to F1 are, is given 30 seconds to connect and two minutes without
@@ -655,13 +655,12 @@ with the snapshot (`f1data/coverage.py`). A race or sprint is complete when:
 A session short of a bar is fetched again every 6 hours for 48 hours after its
 first fetch, each time from an empty cache as a new snapshot: on every run of
 a six-hour schedule, since a retry is due an hour before its six hours are up.
-Build picks the
-best snapshot by a fixed order. If the session is still short when the 48 hours
-are up it is published as partial, and its pointer names what is short. After
-that it is fetched weekly, unless what is missing is a feed F1 answered that it
-does not hold: one that is absent outright, from a fetch F1 was otherwise
-answering. A feed that arrived and is short is always fetched again. The limits
-are in `f1data/policy.py`.
+Build picks the best snapshot by a fixed order. If the session is still short
+when the 48 hours are up it is published as partial, and its pointer names
+what is short. After that it is fetched weekly, unless what is missing is a
+feed F1 answered that it does not hold: one that is absent outright, from a
+fetch F1 was otherwise answering. A feed that arrived and is short is always
+fetched again. The limits are in `f1data/policy.py`.
 
 A snapshot is judged against the classification of the day, which is the whole
 answer: a driver it leaves out has no result and no laps to account for. An

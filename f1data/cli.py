@@ -45,8 +45,8 @@ from f1data.fetch import (
     F1_ARCHIVE_HOSTS,
     FetchError,
     f1_is_answering,
-    fastf1_limit_reached,
     fastf1_cache,
+    fastf1_limit_reached,
     fetch_session,
     read_back,
 )

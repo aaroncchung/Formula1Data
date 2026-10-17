@@ -11,6 +11,11 @@ and a store that is not ``r2`` was a directory made on the first write. The
 one check on the job at home was skipped whenever the build before it
 failed, and GitHub turns a schedule off after sixty days of a quiet
 repository.
+
+Smaller, and fixed with them: a failed run whose record was written twice
+counted twice; one note of a fetch the store refused ended the fetch stage;
+a session F1 served that waits for another store was only counted; and the
+Cloudflare API token was handed to workflows that had an R2 key pair.
 """
 
 from __future__ import annotations
