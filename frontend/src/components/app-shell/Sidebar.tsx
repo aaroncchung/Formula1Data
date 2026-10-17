@@ -30,7 +30,8 @@ const iconMap = {
   Circuits: CircuitBoard
 };
 
-export function Sidebar() {
+/** `onNavigate` is called when a link is followed, for the drawer that holds the sidebar on a phone. */
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
     <aside className="flex h-full flex-col">
@@ -53,6 +54,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={clsx(
                 "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition",
                 active

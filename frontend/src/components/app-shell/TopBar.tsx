@@ -1,14 +1,34 @@
 "use client";
 
 import { Menu } from "lucide-react";
-import Link from "next/link";
-import { Suspense, useState } from "react";
+import { usePathname } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { GlobalSessionPicker, SessionPickerFallback } from "@/components/app-shell/GlobalSessionPicker";
 import { Sidebar } from "@/components/app-shell/Sidebar";
 
 export function TopBar() {
-  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  // The page the drawer was opened on. The bar outlives the page under it, so
+  // the drawer is open only on that page: once the reader is on another, by a
+  // link in the drawer or by going back, it is closed.
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn !== null && openOn === pathname;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenOn(null);
+      }
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
+  const close = () => setOpenOn(null);
 
   return (
     <header className="sticky top-0 z-20 border-b border-line/80 bg-carbon/90 backdrop-blur">
@@ -16,8 +36,9 @@ export function TopBar() {
         <div className="flex shrink-0 items-center gap-3">
           <button
             className="grid h-9 w-9 place-items-center rounded border border-line bg-panel text-slate-200 lg:hidden"
-            onClick={() => setOpen(true)}
+            onClick={() => setOpenOn(pathname)}
             aria-label="Open navigation"
+            aria-expanded={open}
             type="button"
           >
             <Menu size={18} />
@@ -31,14 +52,21 @@ export function TopBar() {
         </Suspense>
       </div>
       {open ? (
-        <div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={() => setOpen(false)}>
-          <div className="h-full w-72 bg-carbon" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/60 lg:hidden" onClick={close}>
+          <div
+            className="h-full w-72 bg-carbon"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex justify-end border-b border-line p-3">
-              <Link className="rounded border border-line px-3 py-1 text-sm text-slate-300" href="/" onClick={() => setOpen(false)}>
+              <button type="button" className="rounded border border-line px-3 py-1 text-sm text-slate-300" onClick={close}>
                 Close
-              </Link>
+              </button>
             </div>
-            <Sidebar />
+            {/* A link to the page already open changes no path, and closes the drawer all the same. */}
+            <Sidebar onNavigate={close} />
           </div>
         </div>
       ) : null}
