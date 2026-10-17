@@ -38,7 +38,7 @@ export function GlobalSessionPicker() {
   const years = useMemo(() => (index ? pickerYears(index) : []), [index]);
   // The one thing held is a session key. The season and the event shown are
   // read back from the calendar for it, so nothing here keeps a round.
-  const chosenKey = choice?.location === location ? choice.key : index ? pickerKeyForQuery(index, query) : null;
+  const chosenKey = choice?.location === location ? choice.key : index ? pickerKeyForQuery(index, query, pathname) : null;
   const selection = pickerSelection(years, chosenKey);
 
   return (

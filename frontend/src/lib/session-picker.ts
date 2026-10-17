@@ -12,7 +12,7 @@ import { publishedSessions } from "./calendar.ts";
 import type { PublishedSession } from "./calendar.ts";
 import { findSession, isPublished, parseSessionAddress } from "./published/lookup.ts";
 import type { IndexMeeting, PublishedIndex } from "./published/types.ts";
-import { roundParam, yearParam } from "./routes.ts";
+import { MEETING_PATH, isUnderPath, meetingChoice, roundParam, yearParam } from "./routes.ts";
 import type { Query } from "./routes.ts";
 
 export type PickerSession = {
@@ -92,9 +92,23 @@ export function pickerSelection(years: ReadonlyArray<PickerYear>, key: number | 
  * The session the current page is about, if its address names one that is
  * published. The picker starts there, so that it shows where the reader is
  * and not merely the latest race.
+ *
+ * `pathname` is the page's path. On a meeting's page `?key=` is F1's key for
+ * the meeting, read as the page reads it, and the picker starts on the
+ * meeting's latest published session: read as a session's key, `/meeting?key=1288`
+ * named no session and the picker showed the latest race.
  */
-export function pickerKeyForQuery(index: PublishedIndex, query: Query): number | null {
+export function pickerKeyForQuery(index: PublishedIndex, query: Query, pathname = ""): number | null {
   const years = pickerYears(index);
+  if (isUnderPath(pathname, [MEETING_PATH])) {
+    const choice = meetingChoice(query);
+    if (choice.kind === "named" && choice.address.kind === "key") {
+      const { meetingKey } = choice.address;
+      const event = years.flatMap((year) => year.events).find((item) => item.meeting?.meeting_key === meetingKey);
+      return event?.key ?? null;
+    }
+    // A meeting by year and round is found by the round, below.
+  }
   // Read as the session page reads its own address, so the picker and the
   // page under it cannot disagree about which session a URL names: a key
   // wins over a round given beside it.

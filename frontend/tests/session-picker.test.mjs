@@ -145,3 +145,20 @@ test("the published fixture gives the picker one season, one event and one sessi
   );
   assert.equal(pickerKeyForQuery(fixtureIndex(), query("year=2026&round=8&session=R")), 11315);
 });
+
+// On /meeting the key is the meeting's (routes.ts). The picker read
+// `/meeting?key=1288` as a session key, found none, and showed the latest race.
+test("on a meeting's page the key is the meeting's, and the picker starts on its latest session", () => {
+  const index = sampleIndex();
+
+  assert.equal(pickerKeyForQuery(index, query("key=1288"), "/meeting/"), 11315);
+  assert.equal(pickerKeyForQuery(index, query("key=1287"), "/meeting"), 11300);
+  // A meeting the picker does not offer, and a session's key, name no meeting here.
+  assert.equal(pickerKeyForQuery(index, query("key=1289"), "/meeting/"), null);
+  assert.equal(pickerKeyForQuery(index, query("key=11314"), "/meeting/"), null);
+  // By year and round as before.
+  assert.equal(pickerKeyForQuery(index, query("year=2026&round=7"), "/meeting/"), 11300);
+  // Anywhere else a key is a session's.
+  assert.equal(pickerKeyForQuery(index, query("key=1288"), "/session/"), null);
+  assert.equal(pickerKeyForQuery(index, query("key=11314"), "/strategy/"), 11314);
+});

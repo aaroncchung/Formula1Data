@@ -40,7 +40,7 @@ export const DRIVERS_PATH = "/drivers";
 export const TEAMS_PATH = "/teams";
 
 const SEASON_PATH = "/season";
-const MEETING_PATH = "/meeting";
+export const MEETING_PATH = "/meeting";
 
 export function seasonHref(year: number): string {
   return `${SEASON_PATH}?year=${year}`;
