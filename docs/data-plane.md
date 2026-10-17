@@ -354,7 +354,9 @@ is noted as having succeeded whether or not it has reached the archive yet.
 A fetch that started and of which nothing more is noted has not succeeded:
 it is still going, or its run ended under it, and the note cannot tell
 which. A fetch the run stopped for FastF1's limit on requests (below) is
-noted as stopped, and counts neither way. For each entry a run counts the
+noted as stopped, and counts neither way. A note the store will not take is
+said in the log (`Could not note`), and the stage carries on: nothing a
+session is made of is in a note. For each entry a run counts the
 fetches that have not succeeded since the last that did, in the order their
 words reached the note, and names the entry at three in a line that begins
 `ATTENTION`. One that started before that success and never ended is

@@ -608,7 +608,9 @@ def _see_the_spool_through(
             # mark; said twice, it is said once.
             begun = found.started if isinstance(found, Spooled) else found
             if begun is not None and begun.start_time_utc is not None:
-                note_fetch_succeeded(
+                _noted(
+                    f"{label}: that it was fetched",
+                    note_fetch_succeeded,
                     store,
                     begun.year,
                     begun.session_type,
@@ -817,7 +819,9 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                 entry = (session.year, session.session_type, session.start_time_utc or "")
                 # Before the fetch, so that a run that ends in the middle of
                 # it has still said that it tried.
-                attempt = note_fetch_started(store, *entry, datetime.now(timezone.utc))
+                attempt = _noted(
+                    "that the fetch started", note_fetch_started, store, *entry, datetime.now(timezone.utc)
+                )
                 try:
                     snapshot = _fetch_and_archive(
                         store,
@@ -832,7 +836,15 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                 except _NoRoom as exc:
                     # The room went between the look and the fetch.
                     failed += 1
-                    note_failed_fetch(store, *entry, f"no room: {exc}", datetime.now(timezone.utc), attempt)
+                    _noted(
+                        "that it failed",
+                        note_failed_fetch,
+                        store,
+                        *entry,
+                        f"no room: {exc}",
+                        datetime.now(timezone.utc),
+                        attempt,
+                    )
                     print(f"  Stopping: {exc}. {left} session(s) left.")
                     break
                 except (_NotArchived, _NotKept) as exc:
@@ -841,7 +853,8 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                     # through what is in the spool.
                     not_archived += 1
                     failed_in_a_row = 0
-                    note_fetch_succeeded(store, *entry, datetime.now(timezone.utc), attempt)
+                    now_noted = datetime.now(timezone.utc)
+                    _noted("that it was fetched", note_fetch_succeeded, store, *entry, now_noted, attempt)
                     print(f"  FETCHED, NOT ARCHIVED: {exc}. The next run sees it through before it fetches anything.")
                 except Exception as exc:
                     if fastf1_limit_reached(exc):
@@ -853,8 +866,14 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                         # its own. What it fetched is removed, as for any fetch
                         # F1 had not served in full.
                         limit_reached = True
-                        note_fetch_stopped(
-                            store, *entry, f"{type(exc).__name__}: {exc}", datetime.now(timezone.utc), attempt
+                        _noted(
+                            "that it was stopped",
+                            note_fetch_stopped,
+                            store,
+                            *entry,
+                            f"{type(exc).__name__}: {exc}",
+                            datetime.now(timezone.utc),
+                            attempt,
                         )
                         print(
                             f"  Stopping: FastF1 makes at most 500 requests an hour in one process and refused "
@@ -869,8 +888,14 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                     failed += 1
                     failed_in_a_row += 1
                     print(f"  FAILED: {type(exc).__name__}: {exc}")
-                    note_failed_fetch(
-                        store, *entry, f"{type(exc).__name__}: {exc}", datetime.now(timezone.utc), attempt
+                    _noted(
+                        "that it failed",
+                        note_failed_fetch,
+                        store,
+                        *entry,
+                        f"{type(exc).__name__}: {exc}",
+                        datetime.now(timezone.utc),
+                        attempt,
                     )
                     if failed_in_a_row >= _ASK_AFTER_FAILURES_IN_A_ROW:
                         # This year's index and last year's: one of the two
@@ -890,16 +915,38 @@ def _fetch_due(args: argparse.Namespace) -> _FetchStage:
                 else:
                     failed_in_a_row = 0
                     archived += 1
-                    note_fetch_succeeded(store, *entry, datetime.now(timezone.utc), attempt)
+                    now_noted = datetime.now(timezone.utc)
+                    _noted("that it was fetched", note_fetch_succeeded, store, *entry, now_noted, attempt)
                     _print_snapshot(snapshot)
     if not args.dry_run:
         _say_what_keeps_failing(store, schedule, now)
     return _FetchStage(1 if failed or not_archived else 0, archived, limit_reached)
 
 
+def _noted(what: str, note: Callable[..., Any], *args: Any) -> Any:
+    """Write a note of a fetch (``archive/attempts/``), and carry on if the store will not take it.
+
+    A note is the stage's memory of what it tried: which session goes first
+    next time, and which keeps failing. Nothing a session is made of is in
+    it, and the fetch it is of is in the spool or the archive whatever the
+    note says. One write the store refused used to end the whole stage, the
+    fetches still to come with it.
+    """
+    try:
+        return note(*args)
+    except Exception as exc:
+        print(f"  Could not note {what}, and carried on: {type(exc).__name__}: {exc}")
+        return None
+
+
 def _say_what_keeps_failing(store: ObjectStore, schedule: list[ScheduledSession], now: datetime) -> None:
     """Name the sessions whose fetch has failed several times running, where an operator will see it."""
-    failing = failing_fetches(store, datetime.now(timezone.utc))
+    try:
+        failing = failing_fetches(store, datetime.now(timezone.utc))
+    except Exception as exc:
+        # Read once the stage is over: what it did is done, and is reported.
+        print(f"Could not read which sessions keep failing to fetch: {type(exc).__name__}: {exc}")
+        return
     for session in schedule:
         count, error = failing.get(
             layout.attempt_key(session.year, session.session_type, session.start_time_utc or ""), (0, "")

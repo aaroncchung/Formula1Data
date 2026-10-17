@@ -44,7 +44,7 @@ from tests.test_archive import fetched_session
 from tests.test_due import RACE_START, fetched_at, planned, without_position
 from tests.test_extras import ARCHIVE_PATH
 from tests.test_fifteenth_review import EIGHTH, SEVENTH, SIXTH, job, three_races  # noqa: F401  (fixtures)
-from tests.test_publish import schedule_2026, snapshot
+from tests.test_publish import AUSTRIA, schedule_2026, snapshot
 from tests.test_seventh_review import CALENDAR
 from tests.test_sixteenth_review import STORE
 
@@ -555,3 +555,29 @@ def test_a_run_that_ended_first_and_writes_last_is_counted_once_too(monkeypatch)
     record = last_run(store)
     assert record["failed_runs"] == 2 and record["run_id"] == later["run_id"]
     assert record["finished_at"] == later["finished_at"] and len(record["counted"]) == 1
+
+
+# --- 7: a note the store will not take does not end the fetch stage --------------------
+
+
+def test_a_note_the_store_refuses_does_not_stop_the_fetches(three_races, monkeypatch):
+    """Every note of a fetch was written outside the fetch's own handling of
+    what went wrong, so one write the bucket refused ended the stage, and the
+    fetches still to come with it."""
+    store = three_races.store
+    whole = left_whole(three_races.spool, 2026, EIGHTH, "R", STORE, start_time_utc=CALENDAR[2].start_time_utc)
+
+    def put(key, data, **kwargs):
+        if key.startswith(layout.ATTEMPTS_PREFIX):
+            raise ConnectionError(f"connection reset while writing {key}")
+        return DirectoryStore.put(store._store, key, data, **kwargs)
+
+    monkeypatch.setattr(store, "put", put, raising=False)
+
+    output, code = three_races.run()
+
+    assert not whole.exists() and three_races.fetched == [SIXTH, SEVENTH]
+    assert len(list_snapshots(store)) == 3 and code == 0
+    assert f"Could not note 2026 Austrian Grand Prix Race (session {AUSTRIA}): that it was fetched, and carried on" in output
+    assert output.count("Could not note that the fetch started, and carried on: ConnectionError") == 2
+    assert list(store.list(layout.ATTEMPTS_PREFIX)) == []
