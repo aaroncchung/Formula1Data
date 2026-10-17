@@ -52,6 +52,10 @@ class PointerError(RuntimeError):
     """A pointer exists but cannot be trusted. Never treated as "not published"."""
 
 
+class CalendarUnavailable(RuntimeError):
+    """The calendar of a season with sessions published in it did not load, so the index cannot be derived."""
+
+
 @dataclass(frozen=True)
 class Inputs:
     """What a build of one session would be made from, as of now."""
@@ -464,7 +468,7 @@ def publish_session(
             complete=candidate.complete,
             shortfalls=candidate.shortfalls,
             published_at=format_utc(now()),
-            previous_generation=pointer.generation if pointer is not None else None,
+            previous_generation=_previous(pointer, candidate.generation),
             also=inputs.also,
             record=candidate.record,
         )
@@ -480,6 +484,22 @@ def publish_session(
         session_key,
         reason=f"not settled after {max_attempts} attempts: {unsettled}",
     )
+
+
+def _previous(pointer: Pointer | None, generation: str) -> str | None:
+    """The generation a page could still be reading once the pointer names ``generation``.
+
+    Never ``generation`` itself. A rebuild for an input that does not reach
+    the files, such as a change to the calendar row, is the generation
+    already published, and the one before it is still the one before. A
+    pointer written before this was so can name its own generation there;
+    that is dropped.
+    """
+    if pointer is None:
+        return None
+    if pointer.generation == generation:
+        return pointer.previous_generation if pointer.previous_generation != generation else None
+    return pointer.generation
 
 
 def derive_index(
@@ -598,12 +618,17 @@ def publish_index(
     to read it as it stands when called, on every call. A copy from earlier in
     the run would let this write put an older calendar over the newer one
     another publisher had just derived from, again with no conflict.
+
+    Each season's calendar is read by itself. One asked for in ``seasons``
+    with nothing published in it is left out of the index when it will not
+    load, as next year's will not before its calendar is out. One with a
+    session published in it raises ``CalendarUnavailable``: without it the
+    index would move those sessions out of their meetings.
     """
     for _ in range(max_attempts):
         current = store.get(layout.index_key())
         pointers = read_published(store)
-        years = sorted({pointer.identity.year for pointer in pointers} | set(seasons or []))
-        schedules = {year: load_schedule(year) for year in years}
+        schedules = _schedules(load_schedule, pointers, seasons or [])
         payload = dump_json(derive_index(pointers, schedules))
         if current is not None and current.data == payload:
             return "current"
@@ -614,6 +639,32 @@ def publish_index(
             continue
         return "published"
     return "conflict"
+
+
+def _schedules(
+    load_schedule: Callable[..., list[ScheduledSession]], pointers: list[Pointer], seasons: list[int]
+) -> dict[int, list[ScheduledSession]]:
+    """The calendar of every season with a session published in it, and of each one asked for that loads."""
+    published = {pointer.identity.year for pointer in pointers}
+    schedules = {}
+    for year in sorted(published | set(seasons)):
+        try:
+            schedules[year] = load_schedule(year)
+        except Exception as exc:
+            if year in published:
+                raise CalendarUnavailable(
+                    f"The calendar of {year} did not load, and sessions of {year} are published: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            _logger.warning(
+                "The calendar of %s did not load, and nothing of %s is published; "
+                "it is left out of the index: %s: %s",
+                year,
+                year,
+                type(exc).__name__,
+                exc,
+            )
+    return schedules
 
 
 def _conditional_put(store: ObjectStore, key: str, data: bytes, etag: str | None) -> None:

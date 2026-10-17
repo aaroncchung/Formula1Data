@@ -907,10 +907,17 @@ def run_build(args: argparse.Namespace) -> int:
                 print(f"session {session_key}: {outcome.action}{detail}{generation}")
                 if outcome.action == "conflict":
                     failed += 1
-            index = publish_index(store, builder.schedule, seasons=args.season)
-            print(f"index ({layout.index_key()}): {index}")
-            if index == "conflict":
+            try:
+                index = publish_index(store, builder.schedule, seasons=args.season)
+            except Exception as exc:
+                # The index stays as it was, and the standings do not depend on it.
                 failed += 1
+                logging.getLogger(__name__).exception("The index failed")
+                print(f"index ({layout.index_key()}): FAILED: {type(exc).__name__}: {exc}")
+            else:
+                print(f"index ({layout.index_key()}): {index}")
+                if index == "conflict":
+                    failed += 1
 
             seasons = set(args.season or []) | {pointer.identity.year for pointer in read_published(store)}
             for year in sorted(seasons):

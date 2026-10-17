@@ -665,7 +665,9 @@ through the session's identity, which is in the manifest and the pointer and
 whose start time is the calendar's. So a session is built again when its
 calendar entry changes, and when the change does not reach its files the
 build is the same generation, named as it is by its content, under a pointer
-that records the new entry.
+that records the new entry. That pointer's `previous_generation` is the one
+the pointer before it had: a pointer never names its own generation as the
+one before.
 
 Those are looked up once, after the pointer is read, on every attempt, and the
 calendar again before the index is written: a publisher never decides from
@@ -679,6 +681,14 @@ A session more than 30 days old is looked up in the calendar on every run, but
 Jolpica is asked for its classification on two days in every thirty, after a
 lost write, and whenever `build --recheck` is given. One published without a
 result is asked about on every run until Jolpica has one.
+
+The index is derived from every pointer, with the calendar of each season a
+session is published in and of each season `--season` names. Each calendar is
+read by itself. One that will not load for a season with nothing published,
+as next year's will not before FastF1 has it (the publish workflow names the
+year it runs in), is left out of the index with a warning. One that will not
+load for a season with sessions published stops the index, which stays as it
+was; the build still publishes the standings, and exits 1.
 
 ## Workflows
 
