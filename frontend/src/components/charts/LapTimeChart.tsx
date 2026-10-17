@@ -35,6 +35,9 @@ export function LapTimeChart({ series, drivers }: { series: ReadonlyArray<LapTim
             <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(value) => formatMs(Number(value))} />
             {visibleDrivers(codes, selection.hidden).map((code) => {
               const style = driverStyle(styles, code);
+              // Nulls are not joined: a lap with no time has no point, and a
+              // line across it would be a time nobody set. The 2026 Monaco GP
+              // has such laps for half the field, around its red flag.
               return (
                 <Line
                   key={code}
@@ -44,7 +47,6 @@ export function LapTimeChart({ series, drivers }: { series: ReadonlyArray<LapTim
                   stroke={style.color}
                   strokeDasharray={style.dash}
                   strokeWidth={2}
-                  connectNulls
                   isAnimationActive={false}
                 />
               );
