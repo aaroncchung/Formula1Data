@@ -4,11 +4,11 @@ name: Upload a directory store's archive
 #
 # The fetch stage has to run on a machine F1 answers (AR-13), and that machine
 # cannot write to R2 yet. Until it can, a fetch is archived into a directory
-# store on that machine (`python -m f1data fetch --store <dir>`), the store's
-# archive/ folder is packed into store.tar and attached to a draft release, and
-# this workflow copies it into the bucket with the credentials the repository
-# has. Snapshots are written once under names of their own, so copying is
-# additive and safe to repeat.
+# store on that machine (`python -m f1data fetch --store <dir>`, the directory
+# made first), the store's archive/ folder is packed into store.tar and
+# attached to a draft release, and this workflow copies it into the bucket with
+# the credentials the repository has. Snapshots are written once under names of
+# their own, so copying is additive and safe to repeat.
 #
 # The store is not the spool (F1DATA_SPOOL), where a fetch waits until the store
 # it was fetched for has it. Packing the spool uploads nothing: copy-archive

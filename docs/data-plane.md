@@ -237,8 +237,8 @@ again by adding `F1DATA_WRITE_FIXTURES=1`.
 ## Commands
 
 All of them are `python -m f1data <command>`, from the repository root, with
-`pip install -r requirements.txt`. `--store` is a directory or `r2`, and
-defaults to the `F1DATA_STORE` environment variable.
+`pip install -r requirements.txt`. `--store` is a directory that exists or
+`r2`, and defaults to the `F1DATA_STORE` environment variable.
 
 | Command | What it does |
 | --- | --- |
@@ -437,9 +437,19 @@ Worker needs `CLOUDFLARE_API_TOKEN` in any case, with permission to deploy
 Workers: an R2 key pair cannot do that.
 
 `.env` is read from the directory a command is run in, before anything else,
-as UTF-8 lines of `NAME=value`. A variable already set in the environment is
-left as it is. The scheduled task below sets its working directory to the
-repository for this reason.
+as UTF-8 lines of `NAME=value`, with or without the byte order mark Windows
+PowerShell 5.1 writes. A value in quotes is what is between them; one that
+is not ends where a `#` follows a space or a tab, so `F1DATA_STORE=r2  # the
+bucket` is `r2`. A variable already set in the environment is left as it
+is. The scheduled task below sets its working directory to the repository
+for this reason. `.env.example` lists every variable the data plane reads.
+
+A store is `r2` or a directory that exists. Any other name is refused, and a
+directory store has to be made before it is first named: it used to be made
+on the first write, so that a name meant to be `r2` became a new, empty
+store that the job archived into and published from without a word.
+`copy-archive` alone makes the directory it is told to copy into, and says
+so.
 
 ## Setting up a machine
 

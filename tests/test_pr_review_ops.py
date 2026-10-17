@@ -20,6 +20,7 @@ import os
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -27,8 +28,9 @@ from fastf1.exceptions import RateLimitExceededError
 
 from f1data import cli as cli_module
 from f1data import layout, spool
-from f1data.archive import failed_fetches, failing_fetches, list_snapshots
+from f1data.archive import failed_fetches, failing_fetches, list_snapshots, write_snapshot
 from f1data.cli import main
+from f1data.config import ConfigError, load_env_file, open_store
 from f1data.due import plan_fetches
 from f1data.extras import fetch_extras
 from f1data.fetch import fastf1_limit_reached
@@ -37,6 +39,7 @@ from f1data.identity import format_utc
 from f1data.policy import RETRY_INTERVAL, RETRY_SLACK, RETRY_WINDOW, SLOW_RETRY_INTERVAL
 from f1data.store import DirectoryStore, MemoryStore
 from tests.spooling import left_whole
+from tests.test_archive import fetched_session
 from tests.test_due import RACE_START, fetched_at, planned, without_position
 from tests.test_extras import ARCHIVE_PATH
 from tests.test_fifteenth_review import EIGHTH, SEVENTH, SIXTH, job, three_races  # noqa: F401  (fixtures)
@@ -327,3 +330,108 @@ def test_a_feed_fetched_beside_the_session_does_not_swallow_the_limit():
         raise ConnectionError("connection reset")
 
     assert fetch_extras(SimpleNamespace(Cache=SimpleNamespace(requests_get=reset)), None, ARCHIVE_PATH) == {}
+
+
+# --- 4: .env names the store it was written to name -----------------------------------
+
+R2_NAMES = ("R2_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY")
+
+
+def read_env(tmp_path, data: bytes) -> dict[str, str]:
+    (tmp_path / ".env").write_bytes(data)
+    environ: dict[str, str] = {}
+    load_env_file(tmp_path / ".env", environ)
+    return environ
+
+
+def test_an_env_file_that_powershell_wrote_names_the_store(tmp_path):
+    """Windows PowerShell 5.1 writes UTF-8 with a byte order mark. Read as
+    part of the first name, it made the store `\\ufeffF1DATA_STORE`, which
+    nothing asks for."""
+    written = "F1DATA_STORE=r2\r\nR2_BUCKET=formula-1-data-artifacts\r\n".encode("utf-8-sig")
+    assert written.startswith(b"\xef\xbb\xbf")
+
+    assert read_env(tmp_path, written) == {"F1DATA_STORE": "r2", "R2_BUCKET": "formula-1-data-artifacts"}
+
+
+def test_a_comment_after_a_value_is_not_part_of_it(tmp_path):
+    written = (
+        "F1DATA_STORE=r2   # the bucket\n"
+        "R2_BUCKET=formula-1-data-artifacts\t# from the dashboard\n"
+        'QUOTED="a # b"  # the quotes hold the value\n'
+        "SINGLE='c d'\n"
+        "JOINED=e#f\n"
+        "NOTHING= # yet\n"
+    )
+
+    assert read_env(tmp_path, written.encode("utf-8")) == {
+        "F1DATA_STORE": "r2",
+        "R2_BUCKET": "formula-1-data-artifacts",
+        "QUOTED": "a # b",
+        "SINGLE": "c d",
+        "JOINED": "e#f",
+        "NOTHING": "",
+    }
+
+
+def test_a_store_that_is_neither_r2_nor_a_directory_is_refused(tmp_path, monkeypatch, capsys):
+    """`F1DATA_STORE=r2  # bucket` was a directory store called `r2  # bucket`,
+    made on the first write: every fetch archived there, every build
+    published there, and nothing said so."""
+    monkeypatch.chdir(tmp_path)
+    for name in R2_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(ConfigError, match="is neither r2 nor a directory that exists"):
+        open_store("r2  # bucket")
+    with pytest.raises(SystemExit) as finished:
+        main(["last-run", "--store", "r2  # bucket"])
+    assert "'r2  # bucket' is neither r2 nor a directory that exists" in str(finished.value.code)
+    with pytest.raises(SystemExit) as finished:
+        main(["build", "--store", str(tmp_path / "not-made")])
+    assert "make the directory first" in str(finished.value.code)
+    assert list(tmp_path.iterdir()) == []
+
+    # A directory that exists is a store, as it was.
+    (tmp_path / "made").mkdir()
+    assert isinstance(open_store(str(tmp_path / "made")), DirectoryStore)
+
+
+def test_the_store_named_with_a_comment_in_env_is_the_bucket(tmp_path, monkeypatch):
+    """The whole of it, through the command line. With no R2 settings it stops
+    at asking for them, which is where a run against the bucket starts."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("F1DATA_STORE", "set, so that removing it is undone after the test")
+    monkeypatch.delenv("F1DATA_STORE")
+    for name in R2_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_bytes("F1DATA_STORE=r2  # the bucket\r\n".encode("utf-8-sig"))
+
+    with pytest.raises(SystemExit) as finished:
+        main(["last-run"])
+
+    assert finished.value.code == "Set R2_ACCOUNT_ID and R2_BUCKET to use the R2 store."
+    assert os.environ["F1DATA_STORE"] == "r2" and list(tmp_path.iterdir()) == [tmp_path / ".env"]
+
+
+def test_a_copy_still_makes_the_directory_it_is_told_to_copy_into(tmp_path, capsys):
+    """The one place a new directory store is meant: the destination of a copy, named as such."""
+    source = DirectoryStore(tmp_path / "source")
+    write_snapshot(source, fetched_session(tmp_path / "fetched"))
+    destination = tmp_path / "backup"
+
+    with pytest.raises(SystemExit) as finished:
+        main(["copy-archive", "--from", str(tmp_path / "source"), "--to", str(destination)])
+
+    assert finished.value.code == 0 and f"Made {destination.resolve()} to copy into." in capsys.readouterr().out
+    assert len(list_snapshots(DirectoryStore(destination))) == 1
+
+
+def test_the_example_env_file_names_every_variable_the_data_plane_reads():
+    example = Path(__file__).resolve().parents[1] / ".env.example"
+    text = example.read_text(encoding="utf-8")
+    for name in ("F1DATA_STORE", "F1DATA_SPOOL", *R2_NAMES, "CLOUDFLARE_API_TOKEN"):
+        assert f"{name}=" in text, name
+    environ: dict[str, str] = {}
+    load_env_file(example, environ)
+    assert environ["F1DATA_STORE"] == "r2" and environ["R2_BUCKET"] == "formula-1-data-artifacts"

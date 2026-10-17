@@ -1,7 +1,7 @@
 """Open the store a command was asked for, from the environment.
 
-``--store`` takes a directory path, or ``r2`` for the bucket. R2 is reached
-through its S3 API with:
+``--store`` takes a directory that exists, or ``r2`` for the bucket. R2 is
+reached through its S3 API with:
 
     R2_BUCKET                 bucket name
     R2_ACCOUNT_ID             or CLOUDFLARE_ACCOUNT_ID
@@ -18,11 +18,15 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from f1data.store import DirectoryStore, ObjectStore, S3Store
+
+# Where a comment begins in a value that is not quoted.
+_INLINE_COMMENT = re.compile(r"\s#")
 
 _TOKEN_VERIFY_URLS = (
     "https://api.cloudflare.com/client/v4/user/tokens/verify",
@@ -47,10 +51,17 @@ class R2Settings:
 
 
 def load_env_file(path: Path, environ: dict[str, str] | None = None) -> None:
-    """Read ``KEY=VALUE`` lines into the environment without replacing what is set."""
+    """Read ``KEY=VALUE`` lines into the environment without replacing what is set.
+
+    A value in quotes is what is between them. One that is not ends where a
+    ``#`` follows a space or a tab: what comes after is a comment. The file
+    may begin with a byte order mark, which Windows PowerShell 5.1 writes
+    with ``Out-File`` and ``Set-Content -Encoding utf8``: read as part of
+    the first name, it made ``F1DATA_STORE`` a name nothing asks for.
+    """
     environ = os.environ if environ is None else environ
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
     except FileNotFoundError:
         return
     for line in lines:
@@ -59,11 +70,22 @@ def load_env_file(path: Path, environ: dict[str, str] | None = None) -> None:
             continue
         name, _, value = line.partition("=")
         name = name.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
+        value = _value(value)
         if name and name not in environ:
             environ[name] = value
+
+
+def _value(written: str) -> str:
+    """A value as ``.env`` gives it, from what follows the ``=``: between its quotes, or up to a comment."""
+    quoted = written.strip()
+    if quoted[:1] in ("'", '"'):
+        end = quoted.find(quoted[0], 1)
+        if end > 0:
+            return quoted[1:end]
+    # Looked for before the spaces after the `=` are taken off: in
+    # `NAME= # none yet` the comment is all there is.
+    comment = _INLINE_COMMENT.search(written)
+    return (written[: comment.start()] if comment else written).strip()
 
 
 def r2_settings(environ: Mapping[str, str] | None = None) -> R2Settings:
@@ -88,9 +110,20 @@ def r2_settings(environ: Mapping[str, str] | None = None) -> R2Settings:
 
 
 def open_store(spec: str, environ: Mapping[str, str] | None = None, prefix: str = "") -> ObjectStore:
-    """``r2`` for the bucket in the environment, anything else is a directory."""
+    """``r2`` for the bucket in the environment, or a directory that exists.
+
+    A directory store is made on its first write, so any other name used to
+    be a store: ``r2  # the bucket``, from a ``.env`` that a comment had been
+    added to, archived every fetch into a new directory of that name, and
+    every build published there. A directory store has to be made first.
+    """
     if spec.strip().lower() == "r2":
         return open_r2_store(r2_settings(environ), prefix=prefix)
+    if not Path(spec).is_dir():
+        raise ConfigError(
+            f"The store {spec!r} is neither r2 nor a directory that exists. For a new directory store, make "
+            "the directory first."
+        )
     return DirectoryStore(Path(spec))
 
 

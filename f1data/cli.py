@@ -1208,7 +1208,7 @@ def run_last_run(args: argparse.Namespace) -> int:
 
 def run_copy_archive(args: argparse.Namespace) -> int:
     _refuse_a_spool(args.source)
-    source, destination = _store(args.source), _store(args.destination)
+    source = _store(args.source)
     items = sorted(source.list(layout.ARCHIVE_PREFIX), key=lambda item: item.key)
     # A snapshot is copied; what a build has since written about it is not.
     # A correction belongs to the store whose builds measured the snapshot,
@@ -1238,6 +1238,7 @@ def run_copy_archive(args: argparse.Namespace) -> int:
         # Copying nothing and saying so with exit 0 would let a directory that
         # was meant to be copied be thrown away as uploaded.
         raise SystemExit(f"{args.source} holds no snapshot and nothing else to copy, so nothing was copied.")
+    destination = _store(_made(args.destination))
     copied = skipped = not_whole = 0
     with tempfile.TemporaryDirectory(prefix="f1data-copy-") as scratch:
         local, theirs = Path(scratch) / "object", Path(scratch) / "theirs"
@@ -1291,6 +1292,19 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     if not_whole:
         print(f"Left {not_whole} snapshot(s) that are not whole at the source. Copy again when they are.")
     return 1 if not_whole else 0
+
+
+def _made(spec: str) -> str:
+    """The destination of a copy, its directory made if it is not there yet: it was named to be the copy.
+
+    Only here. Any other command refuses a directory store that is not there
+    (``open_store``), since a name that was meant to be ``r2`` would
+    otherwise be a new store.
+    """
+    if spec.strip().lower() != "r2" and not Path(spec).exists():
+        Path(spec).mkdir(parents=True)
+        print(f"Made {Path(spec).resolve()} to copy into.")
+    return spec
 
 
 def _refuse_a_spool(spec: str | None) -> None:
@@ -1461,7 +1475,8 @@ def _add_store_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--store",
         default=os.environ.get("F1DATA_STORE"),
-        help="Where the archive and published data live: a directory, or r2. Defaults to F1DATA_STORE.",
+        help="Where the archive and published data live: a directory that exists, or r2. "
+        "Defaults to F1DATA_STORE.",
     )
 
 

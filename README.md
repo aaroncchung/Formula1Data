@@ -112,9 +112,10 @@ python -m f1data run                     # the whole job: build, fetch what is d
 python -m f1data build                   # build and publish what the archive holds
 ```
 
-Each needs a store: `--store <directory>` for one on disk, or `--store r2`
-with the credentials in `.env`. The versions are pinned because a snapshot in
-the archive is FastF1's cache as that version of FastF1 wrote it.
+Each needs a store: `--store <directory>` for one on disk, made first, or
+`--store r2` with the credentials in `.env` (`.env.example` lists them). The
+versions are pinned because a snapshot in the archive is FastF1's cache as
+that version of FastF1 wrote it.
 
 ## Tests
 

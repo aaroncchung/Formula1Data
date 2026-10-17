@@ -407,6 +407,7 @@ def test_a_store_named_only_in_the_environment_file_is_found(tmp_path, monkeypat
     monkeypatch.setenv("F1DATA_STORE", "set, so that removing it is undone after the test")
     monkeypatch.delenv("F1DATA_STORE")
     monkeypatch.chdir(tmp_path)
+    (tmp_path / "store").mkdir()
     (tmp_path / ".env").write_text(f"F1DATA_STORE={(tmp_path / 'store').as_posix()}\n", encoding="utf-8")
 
     with pytest.raises(SystemExit) as finished:

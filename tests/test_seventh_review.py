@@ -66,6 +66,8 @@ def fetch_due(tmp_path, monkeypatch, capsys, f1_answers) -> tuple[list[int], str
     answering = f1_answers if callable(f1_answers) else (lambda years: f1_answers)
     monkeypatch.setattr(cli_module, "f1_is_answering", answering)
     capsys.readouterr()
+    # A directory store has to be there to be one (tests/test_pr_review_ops.py).
+    (tmp_path / "store").mkdir(exist_ok=True)
     with pytest.raises(SystemExit) as finished:
         main(["fetch-due", "--store", str(tmp_path / "store"), "--season", "2026"])
     return attempted, capsys.readouterr().out, finished.value.code
