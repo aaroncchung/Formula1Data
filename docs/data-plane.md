@@ -247,7 +247,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves |
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
 | `schema` | Write the published format's JSON Schema from the models. `--check` to fail when the committed file is out of date |
-
+| `prune` | Say which generations no pointer names and nothing has written for 30 days, with their objects and bytes; `--delete` to remove them, `--keep-days N` for another period. See "Removing old generations" |
 
 Every command is safe to repeat. A snapshot and a generation are written once
 under a name of their own. A pointer, the index and the standings are written
@@ -690,6 +690,49 @@ year it runs in), is left out of the index with a warning. One that will not
 load for a season with sessions published stops the index, which stays as it
 was; the build still publishes the standings, and exits 1.
 
+## Removing old generations
+
+A generation is never changed, so each publication that changes a session's
+files leaves the one before in the bucket, and a new pipeline version
+publishes every session again, at up to 21 MB each. `python -m f1data prune`
+says which generations can go, with how many objects and bytes, and with
+`--delete` removes them. Nothing runs it on a schedule. It goes by these
+rules (`f1data/prune.py`):
+
+- Every pointer is read first. If any cannot be read, nothing is removed.
+- The generation a pointer names is kept, and its `previous_generation`: a
+  page that read the pointer just before the last publication reads that
+  one. A pointer to a session that is not a race or a sprint, which the build
+  otherwise passes over, keeps its generations too.
+- Any generation with an object written in the last 30 days is kept,
+  whatever names it (`--keep-days N`, at least 1). A page reads the
+  generation it opened for as long as it stays open; the Worker serves a
+  generation's files as immutable, so a browser keeps those it has read; and
+  a build uploads a generation before its pointer names it. The time is the
+  store's listing's: `LastModified` in R2, a file's modification time in a
+  directory.
+- Only objects where a generation's files go, `v2/generations/<session
+  key>/<generation>/`, are removed. Never a pointer, the index, the
+  standings, the archive, another format's prefix, or any other key under
+  `v2/generations/`, which is counted and left.
+
+A generation's manifest is removed before its files, so one that is part
+removed is an upload that never finished, and a build of the same files
+uploads them again. A page that finds its generation gone reads the pointer
+again and opens the generation it names now; it does so once for each load,
+and after that says the session's data was removed.
+
+What the rules cannot see is a build that points a session at a generation
+older than the period while `prune` runs, which it does when it builds the
+same files again and finds them in place. Each session's pointer is read
+again just before its generations are removed, and a generation it names then
+is left. One it names only once it has been removed is named in a line that
+begins `ATTENTION`, and the command exits 1; the session's pointer then names
+files that are not there, and the build takes it for current. Remove that
+pointer and build the session (`build --session-key K`): with no pointer the
+build uploads the generation's files again. Run `prune` when no build is
+running.
+
 ## Workflows
 
 | Workflow | Runs | Purpose |
@@ -721,7 +764,8 @@ there is another command's alias):
 4. `curl -si $B/archive/sessions/<key>/` and any `archive/` path is a 404. The
    archive is never served.
 5. After a second publication of the same session, the first generation's paths
-   still answer 200. Nothing is pruned.
+   still answer 200. Only `prune` removes a generation, and not the one a
+   pointer names as the one before.
 6. The page `/session?key=<key>` shows the session, and so does
    `/session?year=<year>&round=<round>&session=<type>`. Opening a tab requests
    only that tab's artifacts: the position replay and the telemetry laps are

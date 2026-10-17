@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import threading
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -99,6 +100,36 @@ def test_list_returns_only_the_prefix(store):
     listed = sorted((item.key, item.size) for item in store.list("v1/pointers/"))
 
     assert listed == [("v1/pointers/11315.json", 2), ("v1/pointers/11361.json", 4)]
+
+
+def test_a_listing_says_when_each_object_was_written(store):
+    """What `prune` goes by (f1data/prune.py). A minute either way for a bucket's clock."""
+    before = datetime.now(timezone.utc) - timedelta(minutes=1)
+    store.put("v1/generations/1/a/summary.json", b"{}")
+
+    (listed,) = store.list("v1/generations/")
+
+    assert before <= listed.modified <= datetime.now(timezone.utc) + timedelta(minutes=1)
+
+
+def test_delete_removes_one_object_and_nothing_else(store):
+    store.put("v1/generations/1/a/summary.json", b"{}")
+    store.put("v1/generations/1/a/telemetry/AAA.json", b"[]")
+    store.put("v1/pointers/1.json", b"{}")
+
+    store.delete("v1/generations/1/a/telemetry/AAA.json")
+    # Nothing there: nothing happens.
+    store.delete("v1/generations/1/a/telemetry/AAA.json")
+
+    assert store.get("v1/generations/1/a/telemetry/AAA.json") is None
+    assert sorted(item.key for item in store.list("v1/")) == [
+        "v1/generations/1/a/summary.json",
+        "v1/pointers/1.json",
+    ]
+    # A directory store took away the directory the object was in, and
+    # writing there again makes it again.
+    store.put("v1/generations/1/a/telemetry/AAA.json", b"[1]")
+    assert store.get("v1/generations/1/a/telemetry/AAA.json").data == b"[1]"
 
 
 def test_files_go_up_and_come_back(store, tmp_path):

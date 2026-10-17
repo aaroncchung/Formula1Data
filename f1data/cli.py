@@ -58,6 +58,7 @@ from f1data.policy import (
     THE_JOB_IS_FAILING_AFTER_RUNS,
     SPOOL_NEEDS_FREE_BYTES,
 )
+from f1data.prune import KEEP_FOR, LEAST_KEEP_FOR
 from f1data.schedule import ScheduledSession, load_schedule
 from f1data.spool import (
     CACHE_DIRECTORY,
@@ -257,6 +258,22 @@ def main(argv: list[str] | None = None) -> None:
         "--check", action="store_true", help="Write nothing; fail if the committed file is out of date."
     )
     schema.set_defaults(func=run_schema)
+
+    prune = subparsers.add_parser(
+        "prune",
+        help="Say which generations no pointer names and nothing has written for the retention period, "
+        "and with --delete remove them. Never a pointer, the index, the standings or the archive.",
+    )
+    _add_store_argument(prune)
+    prune.add_argument(
+        "--keep-days",
+        type=_keep_days,
+        default=KEEP_FOR.days,
+        help=f"Keep a generation written in this many days, whatever names it. Defaults to {KEEP_FOR.days}; "
+        f"at least {LEAST_KEEP_FOR.days}.",
+    )
+    prune.add_argument("--delete", action="store_true", help="Remove them. Without it nothing is removed.")
+    prune.set_defaults(func=run_prune)
 
     args = parser.parse_args(argv)
     _write_utf8()
@@ -1259,6 +1276,82 @@ def run_schema(args: argparse.Namespace) -> int:
     changed = write_schema(SCHEMA_PATH)
     print(f"{'Wrote' if changed else 'Already current:'} {SCHEMA_PATH}")
     return 0
+
+
+def run_prune(args: argparse.Namespace) -> int:
+    """Say what is removable, and remove it only when told to (f1data/prune.py)."""
+    from datetime import timedelta
+
+    from f1data.prune import PruneRefused, plan_prune, remove_generations
+
+    store = _store(args.store)
+    try:
+        plan = plan_prune(store, datetime.now(timezone.utc), keep_for=timedelta(days=args.keep_days))
+    except PruneRefused as exc:
+        print(f"Nothing removed: {exc}")
+        return 1
+    listed = [generation for generation, _ in plan.kept] + plan.removable
+    print(
+        f"{plan.pointers} pointer(s) read. Under {layout.generations_prefix()}: "
+        f"{_generations_size(listed)}."
+    )
+    print(f"Kept: {_generations_size([generation for generation, _ in plan.kept])}")
+    reasons: dict[str, int] = {}
+    for _, why in plan.kept:
+        reasons[why] = reasons.get(why, 0) + 1
+    for why, count in sorted(reasons.items()):
+        print(f"  {count} {why}")
+    if plan.stray:
+        print(
+            f"Left alone: {len(plan.stray)} object(s) under {layout.generations_prefix()} "
+            "that are not where a generation's files go"
+        )
+    print(f"{'To remove' if args.delete else 'Would remove'}: {_generations_size(plan.removable)}")
+    for generation in plan.removable:
+        # A generation the store gives no time for is kept.
+        assert generation.written is not None
+        print(
+            f"  session {generation.session_key} generation {generation.generation[:12]}: "
+            f"{_size(generation.objects)}, last written {format_utc(generation.written)}"
+        )
+    if not args.delete:
+        print("Nothing removed: run again with --delete to remove these.")
+        return 0
+    removed = remove_generations(store, plan)
+    print(f"Removed: {_generations_size(removed.generations)}")
+    for generation in removed.left:
+        print(
+            f"  Left session {generation.session_key} generation {generation.generation[:12]}: "
+            "its pointer named it when read again"
+        )
+    for line in removed.attention:
+        print(f"ATTENTION: {line}")
+    if removed.stopped:
+        print(f"Stopped before the end: {removed.stopped}")
+    return 1 if removed.stopped or removed.attention else 0
+
+
+def _generations_size(generations: list[Any]) -> str:
+    objects = [item for generation in generations for item in generation.objects]
+    return f"{len(generations)} generation(s), {_size(objects)}"
+
+
+def _size(objects: Any) -> str:
+    objects = list(objects)
+    return f"{len(objects)} object(s), {sum(item.size for item in objects) / 1024**2:,.1f} MB"
+
+
+def _keep_days(value: str) -> int:
+    try:
+        days = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("give a whole number of days") from exc
+    if days < LEAST_KEEP_FOR.days:
+        raise argparse.ArgumentTypeError(
+            "a build uploads a generation before its pointer names it, "
+            f"so it is at least {LEAST_KEEP_FOR.days}"
+        )
+    return days
 
 
 def _shard(value: str) -> tuple[int, int]:

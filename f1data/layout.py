@@ -146,6 +146,7 @@ _REMEASUREMENT_KEY = re.compile(r"/remeasured(-m[0-9]+)?\.json$")
 MANIFEST_NAME = "manifest.json"
 
 _GENERATION_ID = re.compile(r"^[a-f0-9]{64}$")
+_SESSION_KEY = re.compile(r"^(0|[1-9][0-9]*)$")
 _SNAPSHOT_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$")
 
 
@@ -202,10 +203,25 @@ def session_key_from_pointer_key(key: str, format_version: int = FORMAT_VERSION)
     return int(stem) if stem.isdigit() else None
 
 
+def generations_prefix(format_version: int = FORMAT_VERSION) -> str:
+    return f"{format_prefix(format_version)}generations/"
+
+
 def generation_prefix(session_key: int, generation: str, format_version: int = FORMAT_VERSION) -> str:
     if not is_generation_id(generation):
         raise ValueError(f"Not a generation id: {generation!r}")
-    return f"{format_prefix(format_version)}generations/{int(session_key)}/{generation}/"
+    return f"{generations_prefix(format_version)}{int(session_key)}/{generation}/"
+
+
+def generation_of_key(key: str, format_version: int = FORMAT_VERSION) -> tuple[int, str] | None:
+    """The session key and generation an object's key files it under, or ``None``
+    for a key that is not where a generation's files go."""
+    prefix = generations_prefix(format_version)
+    parts = key[len(prefix):].split("/", 2) if key.startswith(prefix) else []
+    # A session key is written as generation_prefix writes it: no leading zero.
+    if len(parts) != 3 or not _SESSION_KEY.match(parts[0]) or not is_generation_id(parts[1]) or not parts[2]:
+        return None
+    return int(parts[0]), parts[1]
 
 
 def index_key(format_version: int = FORMAT_VERSION) -> str:

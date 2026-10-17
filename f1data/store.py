@@ -21,9 +21,10 @@ import re
 import secrets
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -47,6 +48,9 @@ class ObjectInfo:
     key: str
     size: int
     etag: str
+    # When the object was last written, as a listing gives it. Not part of
+    # what the object is.
+    modified: datetime | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -87,11 +91,17 @@ class ObjectStore(Protocol):
 
     def list(self, prefix: str) -> Iterator[ObjectInfo]: ...
 
+    def delete(self, key: str) -> None:
+        """Remove the object. Nothing happens when it does not exist."""
+
 
 class MemoryStore:
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self._objects: dict[str, bytes] = {}
+        self._modified: dict[str, datetime] = {}
         self._lock = threading.Lock()
+        # When a write is made. A test sets it to make objects of an age.
+        self.clock = clock
 
     def get(self, key: str) -> StoredObject | None:
         with self._lock:
@@ -115,6 +125,7 @@ class MemoryStore:
         with self._lock:
             _check_precondition(key, self._objects.get(key), if_match, if_absent)
             self._objects[key] = bytes(data)
+            self._modified[key] = self.clock()
         return _etag(data)
 
     def put_file(self, key: str, path: Path, *, content_type: str = BINARY_CONTENT_TYPE) -> None:
@@ -130,9 +141,18 @@ class MemoryStore:
 
     def list(self, prefix: str) -> Iterator[ObjectInfo]:
         with self._lock:
-            matching = sorted((key, data) for key, data in self._objects.items() if key.startswith(prefix))
-        for key, data in matching:
-            yield ObjectInfo(key, len(data), _etag(data))
+            matching = sorted(
+                (key, data, self._modified[key])
+                for key, data in self._objects.items()
+                if key.startswith(prefix)
+            )
+        for key, data, modified in matching:
+            yield ObjectInfo(key, len(data), _etag(data), modified)
+
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._objects.pop(key, None)
+            self._modified.pop(key, None)
 
 
 class DirectoryStore:
@@ -258,7 +278,22 @@ class DirectoryStore:
         for key in keys:
             if key.startswith(prefix):
                 path = self._path(key)
-                yield ObjectInfo(key, path.stat().st_size, file_etag(path))
+                stat = path.stat()
+                modified = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+                yield ObjectInfo(key, stat.st_size, file_etag(path), modified)
+
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        path.unlink(missing_ok=True)
+        # And the directories that held nothing else, as a bucket has none.
+        # One that a writer has put something in since is not empty.
+        for directory in path.parents:
+            if directory == self.root or self.root not in directory.parents:
+                break
+            try:
+                directory.rmdir()
+            except OSError:
+                break
 
 
 class S3Store:
@@ -358,11 +393,15 @@ class S3Store:
         for page in paginator.paginate(Bucket=self._bucket, Prefix=self._key(prefix)):
             for item in page.get("Contents", []):
                 yield ObjectInfo(
-                    str(item["Key"])[len(self._prefix):], int(item["Size"]), str(item["ETag"])
+                    str(item["Key"])[len(self._prefix):],
+                    int(item["Size"]),
+                    str(item["ETag"]),
+                    item.get("LastModified"),
                 )
 
     def delete(self, key: str) -> None:
-        """Only the contract tests delete, to clean up after themselves."""
+        """Only ``prune`` deletes (f1data/prune.py), and the contract tests, which clean up after
+        themselves."""
         self._client.delete_object(Bucket=self._bucket, Key=self._key(key))
 
 

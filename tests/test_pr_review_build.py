@@ -10,9 +10,10 @@ partial for want of it and is asked about on every run.
 
 The index was not derived, nor the standings published, when the calendar of
 any one season would not load, as next year's will not on the first of
-January. A pointer could name its own generation as the one before it. And
-nothing held what a build publishes to the pipeline version: that test is in
-tests/test_layout.py.
+January. A pointer could name its own generation as the one before it.
+Nothing held what a build publishes to the pipeline version: that test is in
+tests/test_layout.py. And nothing removed a generation no page reads any
+more: `prune` does, by rules that keep whatever a page may still be reading.
 """
 
 from __future__ import annotations
@@ -20,7 +21,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import timedelta
+import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -30,14 +32,21 @@ from f1data.build import Builder
 from f1data.classification import ClassificationMissing
 from f1data.coverage import CLASSIFICATION_BAR
 from f1data.policy import CLASSIFICATION_RECHECK_WINDOW
-from f1data.publish import CalendarUnavailable, publish_index, publish_session, read_pointer
+from f1data.prune import PruneRefused, plan_prune, remove_generations
+from f1data.publish import (
+    CalendarUnavailable,
+    publish_index,
+    publish_session,
+    read_pointer,
+    upload_generation,
+)
 from f1data.store import DirectoryStore, MemoryStore
 from tests import sample_bucket
 from tests.building import Archive
 from tests.fakes import make_session
 from tests.test_build_inputs import a_quiet_day, a_recheck_day
 from tests.test_fifth_review import EVERYONE, WINDOW_CLOSED
-from tests.test_publish import AUSTRIA, Publisher, pointer_of
+from tests.test_publish import AUSTRIA, Publisher, identity, pointer_of
 
 
 def jolpica_has_nothing(*args, **kwargs):
@@ -270,3 +279,256 @@ def test_a_pointer_written_naming_itself_as_the_one_before_is_put_right():
     Publisher(store, fingerprint="sha256:after-a-penalty").publish()
 
     assert pointer_of(store).previous_generation is None
+
+
+# --- 5: prune -----------------------------------------------------------------------
+
+DAY_0 = datetime(2026, 7, 1, tzinfo=timezone.utc)
+NOW = DAY_0 + timedelta(days=60)
+
+
+def files(laps: int) -> dict[str, bytes]:
+    return {"summary.json": f'{{"laps":{laps}}}\n'.encode(), "telemetry/AAA.json": b"[]\n"}
+
+
+def publish_on(store: MemoryStore, day: int, laps: int) -> str:
+    """Publish files of their own on that day."""
+    store.clock = lambda: DAY_0 + timedelta(days=day)
+    return Publisher(store, files=files(laps), fingerprint=f"sha256:{laps}").publish().generation
+
+
+def upload_on(store: MemoryStore, day: int, laps: int) -> str:
+    """Upload a generation no pointer names yet, as a build does before it writes the pointer."""
+    store.clock = lambda: DAY_0 + timedelta(days=day)
+    generation, _ = upload_generation(store, identity(), files(laps))
+    return generation
+
+
+NEVER_REMOVED = {
+    layout.index_key(): b"{}\n",
+    layout.standings_key(2026): b"{}\n",
+    "archive/sessions/11315/20260628T180000Z-aaaaaaaa/snapshot.json": b"{}\n",
+    "v2/pointers/latest.json": b"{}\n",
+    # Another format's generations, and keys under this one's that are not
+    # where a generation's files go.
+    f"v1/generations/11315/{'b' * 64}/summary.json": b"{}\n",
+    "v2/generations/11315/not-a-generation/summary.json": b"{}\n",
+    f"v2/generations/011315/{'c' * 64}/summary.json": b"{}\n",
+}
+
+
+@pytest.fixture
+def bucket():
+    """Four generations of one session, all but one old: one nothing names, the
+    two its pointer names, and one uploaded yesterday that nothing names yet."""
+    store = MemoryStore(clock=lambda: DAY_0)
+    for key, data in NEVER_REMOVED.items():
+        store.put(key, data)
+    named = {
+        "oldest": publish_on(store, 0, 70),
+        "before": publish_on(store, 10, 71),
+        "current": publish_on(store, 20, 72),
+        "in flight": upload_on(store, 59, 73),
+    }
+    return store, named
+
+
+def keys(store) -> set[str]:
+    return {item.key for item in store.list("")}
+
+
+def of(store, generation: str) -> set[str]:
+    return {item.key for item in store.list(layout.generation_prefix(AUSTRIA, generation))}
+
+
+def test_only_a_generation_no_pointer_names_and_nothing_wrote_for_thirty_days_is_removable(bucket):
+    store, named = bucket
+
+    plan = plan_prune(store, NOW)
+
+    assert [generation.generation for generation in plan.removable] == [named["oldest"]]
+    assert {generation.generation: why for generation, why in plan.kept} == {
+        named["current"]: "named by its pointer",
+        named["before"]: "named by its pointer as the one before",
+        named["in flight"]: "written in the last 30 days",
+    }
+    assert sorted(item.key for item in plan.stray) == sorted(
+        key for key in NEVER_REMOVED if key.startswith(layout.generations_prefix())
+    )
+
+
+def test_prune_removes_that_generation_and_nothing_else(bucket):
+    store, named = bucket
+    oldest = of(store, named["oldest"])
+    everything = keys(store)
+
+    removed = remove_generations(store, plan_prune(store, NOW))
+
+    assert [generation.generation for generation in removed.generations] == [named["oldest"]]
+    assert (removed.left, removed.attention, removed.stopped) == ([], [], None)
+    assert keys(store) == everything - oldest
+    for key, data in NEVER_REMOVED.items():
+        assert store.get(key).data == data
+
+
+def test_a_longer_retention_keeps_it_too(bucket):
+    store, _ = bucket
+
+    assert plan_prune(store, NOW, keep_for=timedelta(days=61)).removable == []
+
+
+def test_nothing_is_removed_when_any_pointer_cannot_be_read(bucket):
+    """Which generations that pointer keeps is not known."""
+    store, _ = bucket
+    store.put(layout.pointer_key(99999), b"not json")
+
+    with pytest.raises(PruneRefused, match="Pointer for session 99999 is not JSON"):
+        plan_prune(store, NOW)
+
+
+def test_a_pointer_that_names_something_else_as_the_one_before_stops_it_too(bucket):
+    store, _ = bucket
+    payload = json.loads(store.get(layout.pointer_key(AUSTRIA)).data)
+    store.put(layout.pointer_key(AUSTRIA), dump_json({**payload, "previous_generation": "the last one"}))
+
+    with pytest.raises(PruneRefused, match="names something that is not a generation as the one before"):
+        plan_prune(store, NOW)
+
+
+def test_the_generation_of_a_pointer_the_build_passes_over_is_kept(bucket):
+    """A pointer to a practice session, which a version before the rule could
+    write, is passed over wherever the published sessions are counted. It is
+    still a pointer, and a page may still be reading what it names."""
+    store, named = bucket
+    payload = json.loads(store.get(layout.pointer_key(AUSTRIA)).data)
+    practice = {**payload["identity"], "session_type": "FP1", "session_name": "Practice 1"}
+    manifest = {**payload["manifest"], "sha256": named["oldest"]}
+    store.put(
+        layout.pointer_key(AUSTRIA),
+        dump_json({**payload, "identity": practice, "generation": named["oldest"], "manifest": manifest}),
+    )
+
+    kept = {generation.generation: why for generation, why in plan_prune(store, NOW).kept}
+
+    assert kept[named["oldest"]] == "named by its pointer"
+
+
+def test_a_generation_its_pointer_names_by_the_time_it_is_removed_is_left(bucket):
+    """A build that builds the same files again finds them in place and points
+    at them, after the plan found them removable."""
+    store, named = bucket
+    plan = plan_prune(store, NOW)
+    payload = json.loads(store.get(layout.pointer_key(AUSTRIA)).data)
+    store.put(layout.pointer_key(AUSTRIA), dump_json({**payload, "previous_generation": named["oldest"]}))
+    oldest = of(store, named["oldest"])
+
+    removed = remove_generations(store, plan)
+
+    assert [generation.generation for generation in removed.left] == [named["oldest"]]
+    assert removed.generations == []
+    assert of(store, named["oldest"]) == oldest
+
+
+class PointsBack(MemoryStore):
+    """A store in which a build points the session at a generation while its manifest is removed."""
+
+    def __init__(self, store: MemoryStore, generation: str) -> None:
+        super().__init__(clock=store.clock)
+        self._objects, self._modified = dict(store._objects), dict(store._modified)
+        self._generation = generation
+
+    def delete(self, key: str) -> None:
+        if key == f"{layout.generation_prefix(AUSTRIA, self._generation)}{layout.MANIFEST_NAME}":
+            pointer = json.loads(self.get(layout.pointer_key(AUSTRIA)).data)
+            pointer["previous_generation"] = self._generation
+            self.put(layout.pointer_key(AUSTRIA), dump_json(pointer))
+        super().delete(key)
+
+
+def test_a_pointer_that_names_a_generation_only_once_it_is_being_removed_is_said(bucket):
+    store, named = bucket
+    plan = plan_prune(store, NOW)
+
+    removed = remove_generations(PointsBack(store, named["oldest"]), plan)
+
+    assert removed.attention == [
+        f"the pointer of session {AUSTRIA} names generation {named['oldest']}, which was removed: "
+        "a build pointed at it while this ran"
+    ]
+
+
+def test_the_manifest_goes_first(bucket):
+    store, named = bucket
+    order = []
+
+    class Watched(MemoryStore):
+        def delete(self, key):
+            order.append(key)
+            super().delete(key)
+
+    watched = Watched()
+    watched._objects, watched._modified = store._objects, store._modified
+    oldest = of(store, named["oldest"])
+
+    remove_generations(watched, plan_prune(watched, NOW))
+
+    assert order[0] == f"{layout.generation_prefix(AUSTRIA, named['oldest'])}{layout.MANIFEST_NAME}"
+    assert sorted(order) == sorted(oldest) and len(order) == 3
+
+
+def test_the_command_says_what_it_would_remove_and_removes_it_only_when_told(tmp_path, capsys):
+    """On a directory, whose files are as old as when each was written."""
+    directory = tmp_path / "bucket"
+    store = DirectoryStore(directory)
+    oldest, _ = upload_generation(store, identity(), files(70))
+    for path in (directory / "v2").rglob("*"):
+        if path.is_file():
+            os.utime(path, (DAY_0.timestamp(), DAY_0.timestamp()))
+    Publisher(store, files=files(71)).publish()
+    everything = keys(store)
+    removable = of(store, oldest)
+    size = sum(item.size for item in store.list(layout.generation_prefix(AUSTRIA, oldest)))
+
+    with pytest.raises(SystemExit) as dry:
+        cli.main(["prune", "--store", str(directory)])
+
+    assert dry.value.code == 0
+    out = capsys.readouterr().out
+    assert "1 pointer(s) read." in out
+    assert f"Would remove: 1 generation(s), 3 object(s), {size / 1024**2:,.1f} MB" in out
+    assert f"session {AUSTRIA} generation {oldest[:12]}: 3 object(s)" in out
+    assert "last written 2026-07-01T00:00:00Z" in out
+    assert "Nothing removed: run again with --delete to remove these." in out
+    assert keys(store) == everything
+
+    with pytest.raises(SystemExit) as deleting:
+        cli.main(["prune", "--store", str(directory), "--delete"])
+
+    assert deleting.value.code == 0
+    assert "Removed: 1 generation(s), 3 object(s)" in capsys.readouterr().out
+    assert keys(store) == everything - removable
+    # And the directories that held it, as a bucket has none.
+    assert not (directory / "v2" / "generations" / str(AUSTRIA) / oldest).exists()
+
+
+def test_the_command_removes_nothing_when_a_pointer_cannot_be_read(tmp_path, capsys):
+    directory = tmp_path / "bucket"
+    store = DirectoryStore(directory)
+    Publisher(store).publish()
+    store.put(layout.pointer_key(99999), b"not json")
+    everything = keys(store)
+
+    with pytest.raises(SystemExit) as refused:
+        cli.main(["prune", "--store", str(directory), "--delete"])
+
+    assert refused.value.code == 1
+    assert "Nothing removed: Pointer for session 99999 is not JSON" in capsys.readouterr().out
+    assert keys(store) == everything
+
+
+@pytest.mark.parametrize("days", ["0", "-3", "half"])
+def test_the_retention_is_a_whole_number_of_days_and_at_least_one(days, tmp_path):
+    with pytest.raises(SystemExit) as refused:
+        cli.main(["prune", "--store", str(tmp_path), "--keep-days", days])
+
+    assert refused.value.code == 2

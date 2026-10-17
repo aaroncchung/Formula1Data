@@ -5,7 +5,9 @@ here:
 
 1. A generation is immutable. It is named by the SHA-256 of its manifest, so
    the same inputs built twice land on the same keys, and a page that pinned a
-   generation keeps reading it after a later publication. Nothing is pruned.
+   generation keeps reading it after a later publication. Nothing here removes
+   one. ``prune`` (f1data/prune.py), run by hand, removes a generation no
+   pointer names that nothing has written for 30 days.
 2. The pointer and the index are written against the version that was read.
    The loser of a conditional write reads again and decides again from current
    inputs; it never resends what it built. A pointer written by a newer
