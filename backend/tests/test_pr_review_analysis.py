@@ -456,5 +456,117 @@ class TeammateRowTests(unittest.TestCase):
         self.assertIn("No row for Alpine: neither driver ran a lap for the team.", result["caveats"])
 
 
+def old_pipeline_stop(driver, lap_number, duration_ms):
+    """A stop as the old pipeline writes it: from the timing alone, with no stationary time."""
+    return {
+        "session_id": "2026-08-r",
+        "driver_code": driver,
+        "lap_number": lap_number,
+        "duration_ms": duration_ms,
+        "local_time": None,
+    }
+
+
+class OldPipelinePitLaneTests(unittest.TestCase):
+    """Finding 6: the old pipeline, which still runs on main, lost its pit-lane figures."""
+
+    def test_stops_the_old_pipeline_writes_have_pit_lane_figures_over_every_timed_entry(self):
+        """The 2026 Austrian GP's old bundle: 41 of 44 entries timed, and none counted."""
+        stops = [
+            old_pipeline_stop("AAA", 8, 22_000),
+            old_pipeline_stop("BBB", 9, 23_000),
+            old_pipeline_stop("CCC", 10, 24_000),
+            old_pipeline_stop("DDD", 11, None),
+        ]
+
+        result = calculate_strategy("2026-08-r", [], stops, [], [])
+
+        self.assertEqual(
+            result["pit_lane_time"],
+            {"median_ms": 23_000, "fastest_ms": 22_000, "slowest_ms": 24_000, "timed_stop_count": 3, "stop_count": 4},
+        )
+        text = " ".join(result["caveats"])
+        self.assertIn(
+            "over every entry to the pit lane that has one: the stop list does not say which entries F1's "
+            "pit-stop feed reports.",
+            text,
+        )
+        self.assertIn("The stop list does not say which entries to the pit lane were stops.", text)
+        self.assertNotIn("the stop list says which each was", text)
+        self.assertNotIn("Neither entry is in either figure", text)
+
+    def test_the_same_stops_in_format_2_are_of_those_f1_reports(self):
+        stops = [{**old_pipeline_stop(driver, 8, 22_000), "stationary_ms": None, "tyres_changed": None}
+                 for driver in ("AAA", "BBB")]
+        stops.append({**old_pipeline_stop("CCC", 8, 23_000), "stationary_ms": 2_400, "tyres_changed": True})
+
+        result = calculate_strategy("s", [], stops, [], [])
+
+        self.assertEqual(result["pit_lane_time"]["timed_stop_count"], 1)
+        self.assertIn("over the stops F1's pit-stop feed reports", result["caveats"][1])
+
+    def test_a_session_with_no_stops_is_not_said_to_have_a_list_that_does_not_say(self):
+        """A sprint often has no stops, and its list is then empty in either format."""
+        text = " ".join(calculate_strategy("s", [], [], [], [])["caveats"])
+
+        self.assertIn("over the stops F1's pit-stop feed reports", text)
+        self.assertNotIn("The stop list does not say", text)
+
+
+class InferredCornerTests(unittest.TestCase):
+    """Optional finding 7: inferred corners merged two brakings the car was driven on between."""
+
+    def test_two_brakings_the_car_is_driven_on_between_are_two_corners(self):
+        """Off the brake at 100 km/h, 70 m at full throttle up to 160, and on again for a corner at 70."""
+        rows, elapsed = [], 0.0
+        for place in range(0, 1001, 10):
+            if place < 300:
+                speed, braking = 300.0, False
+            elif place <= 400:
+                speed, braking = 300.0 - (place - 300) * 2.0, True
+            elif place < 470:
+                speed, braking = 100.0 + (place - 400) * 60 / 70, False
+            elif place <= 560:
+                speed, braking = 160.0 - (place - 470), True
+            else:
+                speed, braking = min(300.0, 70.0 + (place - 560) * 1.5), False
+            if place:
+                elapsed += 10 / (((speed + rows[-1]["speed_kph"]) / 2) / 3.6) * 1000
+            rows.append(
+                {"driver_code": "AAA", "lap_number": 5, "distance_m": float(place), "speed_kph": speed,
+                 "brake": braking, "throttle_pct": 0 if braking else 100, "relative_time_ms": round(elapsed),
+                 "x": None, "y": None}
+            )
+
+        result = calculate_corner_analysis("s", [lap("AAA", 5, round(elapsed))], rows)
+
+        self.assertEqual(result["corner_source"], "inferred")
+        self.assertEqual(
+            [(row["brake_start_m"], row["entry_speed_kph"], row["apex_speed_kph"])
+             for corner in result["corners"] for row in corner["drivers"]],
+            [(300.0, 300.0, 100.0), (470.0, 160.0, 70.0)],
+        )
+
+
+class FuelCorrectionTests(unittest.TestCase):
+    """Optional finding 8: the fuel correction read the session's name before its code."""
+
+    def test_the_session_code_decides_and_the_name_only_when_there_is_none(self):
+        """The sprint of 2021 was called Sprint Qualifying, which since 2024 sets a sprint's grid."""
+        laps = tyre_laps("VER", range(2, 14), stint=1)
+        cases = (
+            ({"session": "Sprint Qualifying", "type": "S"}, DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP),
+            ({"session": "Sprint Qualifying", "type": "SQ"}, 0.0),
+            ({"session": "Race", "type": "R"}, DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP),
+            # The old pipeline's summary has a name and no code.
+            ({"session": "Race"}, DEFAULT_RACE_FUEL_CORRECTION_MS_PER_LAP),
+            ({"session": "Sprint"}, DEFAULT_SPRINT_FUEL_CORRECTION_MS_PER_LAP),
+        )
+        for summary, correction in cases:
+            with self.subTest(summary=summary):
+                (row,) = calculate_fuel_adjusted_tyre_degradation("s", summary, laps)["rows"]
+                self.assertEqual(row["fuel_correction_ms_per_lap"], correction)
+
+
 if __name__ == "__main__":
     unittest.main()

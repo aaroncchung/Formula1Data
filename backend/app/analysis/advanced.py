@@ -1232,8 +1232,14 @@ def _fuel_correction(summary: dict[str, Any], session_id: str) -> float:
     This used to test whether the name contained "sprint", which is also true
     of "Sprint Qualifying" and "Sprint Shootout": qualifying sessions, run on
     a few laps of fuel, were given the 35 ms/lap sprint-race correction.
+
+    The session's code is read before its name. A name means different
+    things in different years: the sprint of 2021 was called Sprint
+    Qualifying, which since 2024 is the session that sets a sprint's grid,
+    and read by its name it was given no correction. The old pipeline's
+    summary has a name and no code.
     """
-    session_type = str(summary.get("session") or summary.get("type") or "").strip().lower()
+    session_type = str(summary.get("type") or summary.get("session") or "").strip().lower()
     if session_type in ("", "unknown"):
         # The API calls this with an empty summary. The last part of a session
         # id is the session code ("2026-08-r", "2026-08-sq"), matched whole.
@@ -1483,13 +1489,17 @@ def _brake_runs(rows: list[dict[str, Any]]) -> list[tuple[int, int]]:
 
 
 def _braking_events(driver: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The brakings of a lap, wherever they are: what corners are inferred from when the circuit's are not known."""
-    merged: list[tuple[int, int]] = []
-    for run in _brake_runs(rows):
-        if merged and rows[run[0]]["distance_m"] - rows[merged[-1][1]]["distance_m"] <= SAME_BRAKING_GAP_M:
-            merged[-1] = (merged[-1][0], run[1])
-        else:
-            merged.append(run)
+    """The brakings of a lap, wherever they are: what corners are inferred from without the circuit's.
+
+    A braking is what the official corners take one to be (``_brakings``).
+    Here the brake going on again within 80 m used to be the same braking
+    however much speed the car had gathered in between, so two corners close
+    together were inferred as one: a braking from 300 km/h to 100, 70 m at
+    full throttle up to 160, and a braking to 70 were one corner, braked for
+    from 300 km/h to 70.
+    """
+    along = [row["distance_m"] for row in rows]
+    merged = [(braking[0][0], braking[-1][1]) for braking in _brakings(rows, along)]
 
     events = []
     for position, (start_index, end_index) in enumerate(merged):

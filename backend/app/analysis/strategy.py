@@ -56,6 +56,7 @@ def calculate_strategy(
 
     pit_loss = _pit_loss(pit_stops, laps_by_key, green)
     pit_lane_time = _pit_lane_time(pit_stops)
+    reported = _says_which_f1_reports(pit_stops)
 
     by_driver: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for stop in pit_stops:
@@ -99,10 +100,16 @@ def calculate_strategy(
         "caveats": [
             _pit_loss_caveat(pit_loss),
             "Pit-lane time is the transit from pit entry to pit exit, where FastF1 provides "
-            "adjacent pit-in/out timestamps, over the stops F1's pit-stop feed reports: a car "
-            "can go down the pit lane without stopping, and the timing alone does not say "
-            "which did. It includes the stationary time and has no on-track baseline in it, "
-            "so it is not pit loss.",
+            "adjacent pit-in/out timestamps, "
+            + (
+                "over the stops F1's pit-stop feed reports: a car can go down the pit lane "
+                "without stopping, and the timing alone does not say which did."
+                if reported
+                else "over every entry to the pit lane that has one: the stop list does not say "
+                "which entries F1's pit-stop feed reports."
+            )
+            + " It includes the stationary time and has no on-track baseline in it, so it is "
+            "not pit loss.",
             "Pace change across a stop is, for the driver's first stop, their last clean "
             f"green-flag lap in the {PACE_CHANGE_WINDOW_LAPS} laps before the in-lap minus the "
             f"first one in the {PACE_CHANGE_WINDOW_LAPS} laps after the out-lap, and before "
@@ -110,11 +117,16 @@ def calculate_strategy(
             "yellow-flag and neutralised laps are never used, and no value is given when either "
             "lap is missing. A stop is nearly always a "
             "change of tyres, and not always: a penalty served or a repair made in the pit box "
-            "is a stop on the same set, and the stop list says which each was.",
+            "is a stop on the same set"
+            + (", and the stop list says which each was." if reported else "."),
             "A car that went down the pit lane without stopping, on a drive-through penalty or "
             "behind the safety car, made no stop: F1's pit-stop feed reports none, and its tyre "
             "data has the car on the same set afterwards. Nor did a car that waited in the pit "
-            "lane through a red flag. Neither entry is in either figure.",
+            "lane through a red flag. Neither entry is in either figure."
+            if reported
+            else "The stop list does not say which entries to the pit lane were stops. A car that "
+            "went down the pit lane without stopping, on a drive-through penalty or behind the "
+            "safety car, or waited in it through a red flag, is taken for a stop.",
             "Pace change is descriptive: it is not adjusted for traffic, fuel or track "
             "evolution, and it is not a causal model of an undercut or overcut on a rival.",
         ],
@@ -278,12 +290,19 @@ def _pit_lane_time(pit_stops: list[dict[str, Any]]) -> dict[str, Any]:
     the slowest time is still reported, labelled as the slowest. A car that
     sat in the lane through a red flag was not making a pit stop, and the
     twenty minutes it waited are left out.
+
+    The old pipeline, which still runs on ``main``, writes stops with no
+    stationary time at all: it does not read F1's pit-stop feed. Held to the
+    rule above its pit-lane figures were always empty (the 2026 Austrian GP:
+    41 of 44 entries timed, none counted). For such a list the figures are of
+    every timed entry, as they were before the rule, and the caveat says so.
     """
+    reported = _says_which_f1_reports(pit_stops)
     durations = [
         float(stop["duration_ms"])
         for stop in pit_stops
         if stop.get("duration_ms") is not None
-        and stop.get("stationary_ms") is not None
+        and (stop.get("stationary_ms") is not None or not reported)
         and not stop.get("under_red_flag")
     ]
     return {
@@ -293,6 +312,16 @@ def _pit_lane_time(pit_stops: list[dict[str, Any]]) -> dict[str, Any]:
         "timed_stop_count": len(durations),
         "stop_count": len(pit_stops),
     }
+
+
+def _says_which_f1_reports(pit_stops: list[dict[str, Any]]) -> bool:
+    """Whether the stop list says, entry by entry, which stops F1's pit-stop feed reports.
+
+    Format 2 gives every entry a ``stationary_ms``, null where the feed has
+    none. The old pipeline's entries have no such field. A list with no
+    entries, as a sprint's often is, has nothing it does not say.
+    """
+    return not pit_stops or any("stationary_ms" in stop for stop in pit_stops)
 
 
 def _pace_change_across_stop(
