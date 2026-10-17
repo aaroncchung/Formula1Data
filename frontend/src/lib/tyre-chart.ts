@@ -160,6 +160,16 @@ export function lapsFitted(row: Pick<TyreDegradationRow, "fit_status" | "sample_
 }
 
 /**
+ * The laps a stint's fit is of, in words for its card: "22 laps fitted". The
+ * card printed the laps the fit could use, so it said 23 where the table
+ * beside it said 22 for the same stint.
+ */
+export function lapsFittedLabel(row: Pick<TyreDegradationRow, "fit_status" | "sample_count" | "excluded_outlier_count">): string {
+  const laps = lapsFitted(row);
+  return laps === null ? "Not fitted" : `${laps} ${laps === 1 ? "lap" : "laps"} fitted`;
+}
+
+/**
  * Whether a degradation row holds a rate, and if not, why not.
  *
  * A fit the analysis did not report has to stay unreported on the page: its

@@ -21,6 +21,7 @@ import { formatMs } from "@/lib/format";
 import {
   describeTyreAgePlot,
   isTyreAgePoint,
+  lapsFittedLabel,
   reportedFitCount,
   tyreAgePlot,
   tyreFit,
@@ -134,7 +135,7 @@ function TyreFitCard({ row }: { row: TyreDegradationRow }) {
     <div className="rounded border border-line bg-white/[0.03] p-3" title={fit.status === "reported" ? undefined : fit.reason}>
       <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
       <div className="mt-1 text-xs text-slate-400">
-        {row.compound ?? "Compound not reported"} · {row.sample_count} {row.sample_count === 1 ? "lap" : "laps"}
+        {row.compound ?? "Compound not reported"} · {lapsFittedLabel(row)}
       </div>
       {fit.status === "reported" ? (
         <div className="mt-2 text-lg font-black text-aqua">

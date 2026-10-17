@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeTyreAgePlot, isTyreAgePoint, lapsFitted, tyreAgePlot, tyreFitsFor } from "../src/lib/tyre-chart.ts";
+import {
+  describeTyreAgePlot,
+  isTyreAgePoint,
+  lapsFitted,
+  lapsFittedLabel,
+  tyreAgePlot,
+  tyreFitsFor
+} from "../src/lib/tyre-chart.ts";
 
 function lap(driver, number, overrides = {}) {
   return {
@@ -229,4 +236,11 @@ test("a stint with too few laps to fit has no laps fitted, which is not nought",
   assert.equal(lapsFitted({ fit_status: "too_few_laps", sample_count: 5, excluded_outlier_count: 0 }), null);
   // Enough laps until the outliers were taken out: no fit was made of the rest.
   assert.equal(lapsFitted({ fit_status: "too_few_laps", sample_count: 9, excluded_outlier_count: 3 }), null);
+});
+
+// The same stint's card said "23 laps" above a table that said 22.
+test("a stint's card counts the laps its fit is of, as the table does", () => {
+  assert.equal(lapsFittedLabel({ fit_status: "ok", sample_count: 23, excluded_outlier_count: 1 }), "22 laps fitted");
+  assert.equal(lapsFittedLabel({ fit_status: "poor_fit", sample_count: 2, excluded_outlier_count: 1 }), "1 lap fitted");
+  assert.equal(lapsFittedLabel({ fit_status: "too_few_laps", sample_count: 5, excluded_outlier_count: 0 }), "Not fitted");
 });
