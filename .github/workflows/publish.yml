@@ -17,7 +17,8 @@ on:
   # to run. GitHub runs a schedule only from the default branch, so this does
   # nothing while the work is on a branch. What a scheduled run adds to
   # building: it asks when the fetch job last finished (see the last step but
-  # one), which is the only thing that notices that job not running at all.
+  # one), which is the only thing that notices that job not running at all,
+  # and it keeps the schedule itself from being turned off (the keepalive job).
   schedule:
     - cron: "40 */6 * * *"
   workflow_dispatch:
@@ -63,10 +64,12 @@ jobs:
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # Either an R2 key pair, or the Cloudflare API token, which doubles as
-      # one (f1data/config.py). The key pair wins when both are set.
+      # one (f1data/config.py). The token can do more than reach the bucket, so
+      # it is given only where the key pair is not set, which is also the only
+      # case in which it would be used.
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ (secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '') && secrets.CLOUDFLARE_API_TOKEN || '' }}
       SESSION_KEY: ${{ inputs.session_key }}
       PART: ${{ matrix.part }}
     steps:
@@ -102,7 +105,9 @@ jobs:
       # workflow is started by a schedule it asks when that job last finished
       # and fails if that is too long ago, if its last two runs both failed,
       # or if it has never run at all, so that it is noticed here. One part
-      # asks; the others would only say the same.
+      # asks; the others would only say the same. It asks whatever came of the
+      # build before it, after which it used to be skipped whenever the build
+      # failed. A failed build fails the job all the same.
       #
       # A job that was never installed has never run, and that fails like the
       # rest: it is the case most in need of being noticed. For the days
@@ -111,7 +116,7 @@ jobs:
       # "true", and remove it once `last-run` has something to read. While it
       # is set every scheduled run carries a warning saying so.
       - name: Check that the fetch job is running
-        if: github.event_name == 'schedule' && matrix.part == 0
+        if: ${{ !cancelled() && github.event_name == 'schedule' && matrix.part == 0 }}
         env:
           NOT_YET_RUN: ${{ vars.F1DATA_FETCH_JOB_NOT_YET_RUN }}
         run: |
@@ -129,3 +134,24 @@ jobs:
           if [ -f publish-output.txt ]; then
             { echo '```'; cat publish-output.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # GitHub turns off the schedule of a workflow in a public repository once
+  # sixty days have passed with no activity in the repository, and the job at
+  # home writes only to R2. In the off-season that would stop publishing and
+  # the one check on that job together, and nothing would say so. Enabling
+  # the workflow through the API is reported to start the sixty days again
+  # (by the keepalive-workflow action, which does this in its API mode, and
+  # by others; GitHub's documentation does not say so). Only on a schedule,
+  # and the one permission it needs is this job's alone.
+  keepalive:
+    name: Keep the schedule on
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Enable this workflow again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/enable"

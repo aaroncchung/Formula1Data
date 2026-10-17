@@ -434,7 +434,9 @@ needs them there: the variable `R2_BUCKET`, the secret
 `CLOUDFLARE_ACCOUNT_ID`, and either the secrets `R2_ACCESS_KEY_ID` and
 `R2_SECRET_ACCESS_KEY` or the secret `CLOUDFLARE_API_TOKEN`. Deploying the
 Worker needs `CLOUDFLARE_API_TOKEN` in any case, with permission to deploy
-Workers: an R2 key pair cannot do that.
+Workers: an R2 key pair cannot do that. The publish and upload workflows
+hand the token to the program only where the key pair is not set, since it
+can do more than reach the bucket.
 
 `.env` is read from the directory a command is run in, before anything else,
 as UTF-8 lines of `NAME=value`, with or without the byte order mark Windows
@@ -560,7 +562,19 @@ the task yet, and it has not run on a schedule.
   read the bucket. The publish workflow runs it every six hours once that
   workflow is on the default branch, which is where GitHub runs schedules
   from, so that a job that has stopped, or was never installed, turns a
-  workflow red.
+  workflow red. It runs whatever came of the build before it in the same
+  job, and a build that failed still fails the workflow.
+- **The schedule itself** can stop. GitHub turns off the schedules of a
+  public repository once sixty days have passed with no activity in it, and
+  the job at home writes only to R2: an off-season is quiet enough. Publishing
+  and the check above would then stop together, and nothing would say so. So
+  each scheduled run of the publish workflow also enables the workflow again
+  through GitHub's API (its `keepalive` job, which alone has `actions:
+  write`). That is reported to start the sixty days again, by the
+  keepalive-workflow action that does it and by others; GitHub's documentation
+  does not say so. If the schedule is off all the same, the workflow's page
+  under Actions says so, and "Enable workflow" there, or `gh workflow enable
+  publish.yml`, turns it on again. After a quiet spell, look.
 - **A run that happens and fails** is in the log, on a machine nobody is
   looking at. The record of a run says how it ended and how many runs have
   failed one after another, and `last-run` reads that too. One failed run is

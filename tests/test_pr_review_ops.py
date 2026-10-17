@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -435,3 +436,65 @@ def test_the_example_env_file_names_every_variable_the_data_plane_reads():
     environ: dict[str, str] = {}
     load_env_file(example, environ)
     assert environ["F1DATA_STORE"] == "r2" and environ["R2_BUCKET"] == "formula-1-data-artifacts"
+
+
+# --- 5: the one check on the job at home keeps running ---------------------------------
+
+WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+
+
+def workflow(name: str) -> str:
+    return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
+def jobs_of(text: str) -> dict[str, str]:
+    """The text of each job of a workflow, by its key."""
+    jobs: dict[str, str] = {}
+    current = None
+    for line in text[text.index("\njobs:\n") + len("\njobs:\n"):].splitlines(keepends=True):
+        found = re.fullmatch(r"  ([A-Za-z_][\w-]*):\s*", line)
+        if found:
+            current = found.group(1)
+            jobs[current] = ""
+        elif current is not None:
+            jobs[current] += line
+    return jobs
+
+
+def test_the_check_on_the_job_at_home_runs_whatever_the_build_did():
+    """It had no condition of its own on the build, so GitHub's default held:
+    a step runs only if every step before it succeeded. A build that failed
+    on a scheduled run took the check with it."""
+    text = workflow("publish.yml")
+    step = text[text.index("- name: Check that the fetch job is running"):text.index("- name: Summarise")]
+
+    (condition,) = re.findall(r"^\s+if: (.*)$", step, re.M)
+    assert condition == "${{ !cancelled() && github.event_name == 'schedule' && matrix.part == 0 }}"
+    # Nothing lets a failed build pass: a step that fails fails its job.
+    assert "continue-on-error" not in jobs_of(text)["publish"]
+
+
+def test_a_scheduled_run_keeps_the_schedule_on_with_a_permission_of_its_own():
+    """GitHub turns a public repository's schedules off after sixty days with
+    no activity, and the job at home writes to R2 alone: an off-season would
+    have stopped publishing, and the check on the job, without a word."""
+    text = workflow("publish.yml")
+    jobs = jobs_of(text)
+
+    keepalive = jobs["keepalive"]
+    assert "    if: github.event_name == 'schedule'\n" in keepalive
+    assert "    permissions:\n      actions: write\n    steps:" in keepalive
+    assert "GH_TOKEN: ${{ github.token }}" in keepalive
+    assert 'gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/enable"' in keepalive
+    # The permission is that job's alone.
+    assert re.search(r"^permissions:\n  contents: read\n\n", text, re.M)
+    assert "permissions:" not in jobs["publish"] and text.count("actions: write") == 1
+
+
+@pytest.mark.parametrize("name", ["publish.yml", "upload-archive-spool.yml"])
+def test_the_cloudflare_token_is_given_only_where_the_key_pair_is_not(name):
+    (given,) = re.findall(r"^\s+CLOUDFLARE_API_TOKEN: (.*)$", workflow(name), re.M)
+    assert given == (
+        "${{ (secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '') "
+        "&& secrets.CLOUDFLARE_API_TOKEN || '' }}"
+    )
