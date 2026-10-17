@@ -111,8 +111,8 @@ def test_what_a_stopped_fetch_leaves_is_still_swept(job):
 def test_only_the_names_a_fetch_is_given_are_a_fetchs():
     made = spool.new_fetch_path(spool.spool_root())
     assert spool.is_fetch_name(made.name)
-    for name in ("archive", "v2", "20260101T000000Z-0000ABCD", "20260101T000000Z-0000abcd.old", "x20260101T000000Z-0000abcd"):
-        assert not spool.is_fetch_name(name)
+    others = ("archive", "v2", "20260101T000000Z-0000ABCD", "20260101T000000Z-0000abcd.old", "x" + made.name)
+    assert not any(spool.is_fetch_name(name) for name in others)
 
 
 def copy_archive(source, destination) -> str:
@@ -146,7 +146,9 @@ def test_copying_from_a_store_with_nothing_to_copy_fails(tmp_path):
     source.mkdir()
     destination.mkdir()
 
-    assert copy_archive(source, destination) == f"{source} holds no snapshot and nothing else to copy, so nothing was copied."
+    message = copy_archive(source, destination)
+
+    assert message == f"{source} holds no snapshot and nothing else to copy, so nothing was copied."
 
 
 # --- 2: a short session is fetched again on every run of a six-hour schedule ---------
@@ -193,8 +195,9 @@ def test_a_retry_is_not_due_much_before_its_interval():
     first_fetch = RACE_START + timedelta(hours=5)
     short = snapshot(snapshot_id=fetched_at(first_fetch), session=without_position())
 
-    assert planned(AUSTRIA_ONLY, [short], first_fetch + RETRY_INTERVAL - RETRY_SLACK - timedelta(minutes=1)) == []
-    assert planned(AUSTRIA_ONLY, [short], first_fetch + RETRY_INTERVAL - RETRY_SLACK) == [(8, "R")]
+    due_from = first_fetch + RETRY_INTERVAL - RETRY_SLACK
+    assert planned(AUSTRIA_ONLY, [short], due_from - timedelta(minutes=1)) == []
+    assert planned(AUSTRIA_ONLY, [short], due_from) == [(8, "R")]
 
 
 def test_the_weekly_retry_has_the_same_slack():
@@ -248,7 +251,8 @@ def test_the_batch_stops_at_fastf1s_hourly_limit_and_nothing_is_counted_as_faile
     assert three_races.fetched == [SIXTH] and code == 0
     assert (
         "  Stopping: FastF1 makes at most 500 requests an hour in one process and refused more "
-        f"(RateLimitExceededError: {THE_LIMIT}). Not counted as a failed fetch. 3 session(s) left for the next run."
+        f"(RateLimitExceededError: {THE_LIMIT}). Not counted as a failed fetch. "
+        "3 session(s) left for the next run."
     ) in output
     assert "FAILED" not in output and "ATTENTION" not in output
     now = datetime.now(timezone.utc)
@@ -322,7 +326,8 @@ def test_a_feed_fetched_beside_the_session_does_not_swallow_the_limit():
 
     absent = SimpleNamespace(status_code=404, content=b"")
     circuit = SimpleNamespace(
-        session_info={"Meeting": {"Circuit": {"Key": 19, "ShortName": "Spielberg"}}}, event=SimpleNamespace(year=2026)
+        session_info={"Meeting": {"Circuit": {"Key": 19, "ShortName": "Spielberg"}}},
+        event=SimpleNamespace(year=2026),
     )
     by_mvapi = SimpleNamespace(
         Cache=SimpleNamespace(requests_get=lambda *args, **kwargs: absent),
@@ -429,7 +434,8 @@ def test_a_copy_still_makes_the_directory_it_is_told_to_copy_into(tmp_path, caps
     with pytest.raises(SystemExit) as finished:
         main(["copy-archive", "--from", str(tmp_path / "source"), "--to", str(destination)])
 
-    assert finished.value.code == 0 and f"Made {destination.resolve()} to copy into." in capsys.readouterr().out
+    assert finished.value.code == 0
+    assert f"Made {destination.resolve()} to copy into." in capsys.readouterr().out
     assert len(list_snapshots(DirectoryStore(destination))) == 1
 
 
@@ -583,7 +589,8 @@ def test_a_note_the_store_refuses_does_not_stop_the_fetches(three_races, monkeyp
 
     assert not whole.exists() and three_races.fetched == [SIXTH, SEVENTH]
     assert len(list_snapshots(store)) == 3 and code == 0
-    assert f"Could not note 2026 Austrian Grand Prix Race (session {AUSTRIA}): that it was fetched, and carried on" in output
+    served = f"2026 Austrian Grand Prix Race (session {AUSTRIA})"
+    assert f"Could not note {served}: that it was fetched, and carried on" in output
     assert output.count("Could not note that the fetch started, and carried on: ConnectionError") == 2
     assert list(store.list(layout.ATTEMPTS_PREFIX)) == []
 
