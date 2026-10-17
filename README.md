@@ -134,7 +134,7 @@ guide says how to point them at an archive ("Testing against recorded races").
 | What | Where | How |
 | --- | --- | --- |
 | The site | Cloudflare Pages, from `frontend/` (`npm ci && npm run build`, output `out`) | Pages builds each branch; `cloudflare-pages.yml` deploys by hand |
-| The read-only Worker | `formula-1-data-read` | `deploy-data-worker.yml`, by hand, and while this is a branch on a push to it that touches the Worker |
+| The read-only Worker | `formula-1-data-read` | `deploy-data-worker.yml`, by hand, and on a push to `main` that touches the Worker |
 | Published data | The R2 bucket `formula-1-data-artifacts`, under `v2/` | `publish.yml` builds from the archive; whatever fetches, by hand now and the scheduled task once it is registered, fetches into it |
 
 Nothing in the site's build needs a secret. The address of the Worker is in

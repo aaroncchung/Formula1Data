@@ -675,7 +675,7 @@ lost write, and whenever `build --recheck` is given.
 | Workflow | Runs | Purpose |
 | --- | --- | --- |
 | `publish.yml` | Every six hours and manually, once it is on the default branch; until then on a push to `rewrite/data-plane` that touches it or `f1data/layout.py`, where the pipeline version is | `build` against R2, in four parallel parts. On a schedule it also runs `last-run` |
-| `deploy-data-worker.yml` | Manually, and on a push to the rewrite branch that touches the Worker | Tests and deploys `formula-1-data-read` |
+| `deploy-data-worker.yml` | Manually, and on a push to `main` that touches the Worker | Tests and deploys `formula-1-data-read` |
 | `r2-contract.yml` | Manually, and on a push to the rewrite branch that touches the store | The store's tests against the real bucket |
 | `probe-f1-access.yml` | Manually, and on a push to the rewrite branch that touches it | Whether F1 answers a hosted runner yet |
 | `upload-archive-spool.yml` | Manually, and on a push to the rewrite branch that touches it | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |

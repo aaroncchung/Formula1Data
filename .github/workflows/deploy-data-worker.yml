@@ -5,11 +5,12 @@ name: Deploy the data Worker
 # wrangler.jsonc, which this does not touch.
 on:
   workflow_dispatch:
-  # workflow_dispatch only works once this file is on the default branch. Until
-  # then a push that touches the Worker deploys it from the rewrite branch.
+  # The site on main reads this Worker, so a push to main that touches it
+  # deploys it. Run by hand, this deploys the branch it is run from. The paths
+  # are data.mjs, every module it imports, and its configuration.
   push:
     branches:
-      - rewrite/data-plane
+      - main
     paths:
       - .github/workflows/deploy-data-worker.yml
       - wrangler.data.jsonc
