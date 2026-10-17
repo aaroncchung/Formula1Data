@@ -42,6 +42,8 @@ from f1data.store import (
 )
 
 POINTER_SCHEMA_VERSION = 1
+# A generation's account of its own coverage (f1data/models.py, Coverage).
+COVERAGE_PATH = "coverage.json"
 INDEX_SCHEMA_VERSION = 1
 MAX_POINTER_BYTES = 64 * 1024
 MAX_ATTEMPTS = 5
@@ -448,12 +450,13 @@ def publish_session(
                 )
             generation, manifest_size = upload_generation(store, inputs.snapshot.identity, files)
             judged = measured or inputs.snapshot
+            complete, shortfalls = _coverage_of(files, judged)
             candidate = Candidate(
                 inputs_key=inputs.key,
                 generation=generation,
                 manifest_size_bytes=manifest_size,
-                complete=judged.complete,
-                shortfalls=[shortfall.to_json() for shortfall in judged.shortfalls()],
+                complete=complete,
+                shortfalls=shortfalls,
                 record=judged.record_fingerprint,
             )
 
@@ -486,6 +489,26 @@ def publish_session(
         session_key,
         reason=f"not settled after {max_attempts} attempts: {unsettled}",
     )
+
+
+def _coverage_of(files: dict[str, bytes], judged: Snapshot) -> tuple[bool, list[dict[str, Any]]]:
+    """Whether the generation met the bars, and what it is short of, as its own coverage.json says.
+
+    Both are judged from the snapshot's record, which names a driver as the
+    fetch could: by car number when F1's driver list had not arrived. The
+    generation names each driver by the code the rest of it uses, and the
+    pointer says what the generation says. Files with no coverage.json, which
+    only a test's stand-in for the build makes, are judged by the record.
+    """
+    built = files.get(COVERAGE_PATH)
+    if built is None:
+        return judged.complete, [shortfall.to_json() for shortfall in judged.shortfalls()]
+    coverage = json.loads(built)
+    shortfalls = [
+        {"bar": item["bar"], "driver": item["driver"], "detail": item["detail"]}
+        for item in coverage["shortfalls"]
+    ]
+    return bool(coverage["complete"]), shortfalls
 
 
 def _previous(pointer: Pointer | None, generation: str) -> str | None:

@@ -196,6 +196,9 @@ def _published_lap(lap: LapSamples, with_drs: bool) -> TelemetryLap:
 
 def _whole(values: np.ndarray) -> list[int]:
     """To the nearest whole number. The car sends whole numbers; only merged samples have fractions."""
+    if not np.isfinite(values).all():
+        # As a whole number it would be published as -9223372036854775808.
+        raise normalize.SessionDataError("A lap's engine speed has a sample that is not a number")
     return np.rint(values).astype(np.int64).tolist()
 
 

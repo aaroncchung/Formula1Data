@@ -518,18 +518,32 @@ def _car_feed(
     columns = ("Speed", "RPM", "Throttle", "nGear", "Brake", "DRS")
     if frame is None or len(frame) == 0 or not {"Date", *columns} <= set(frame.columns):
         return None
+    discrete = {
+        "nGear": pd.to_numeric(frame["nGear"], errors="coerce"),
+        "Brake": frame["Brake"],
+        "DRS": pd.to_numeric(frame["DRS"], errors="coerce"),
+    }
     channels = {
         "Speed": frame["Speed"].to_numpy(dtype=float),
         "RPM": frame["RPM"].to_numpy(dtype=float),
         "Throttle": frame["Throttle"].to_numpy(dtype=float),
-        "nGear": pd.to_numeric(frame["nGear"], errors="coerce").fillna(0).to_numpy(dtype=np.int64),
-        "Brake": frame["Brake"].fillna(False).to_numpy(dtype=bool),
-        "DRS": pd.to_numeric(frame["DRS"], errors="coerce").fillna(0).to_numpy(dtype=np.int64),
+        # Filled only for the rows left out below.
+        "nGear": discrete["nGear"].fillna(0).to_numpy(dtype=np.int64),
+        "Brake": discrete["Brake"].fillna(False).to_numpy(dtype=bool),
+        "DRS": discrete["DRS"].fillna(0).to_numpy(dtype=np.int64),
     }
     # A sample with no speed cannot be integrated into distance, and a row
     # FastF1 padded in for a car missing from the feed is no sample at all:
     # its zeros would be published as a car standing still in mid-lap.
     usable = ~np.isnan(channels["Speed"]) & sent_by_f1(frame)
+    # FastF1 reads each channel of F1's car feed as a whole number, and passes
+    # over a sample that lacks one. Anything else in its place did not come
+    # from F1, and a 0 or "off" put there would be published as the car's.
+    for name, values in discrete.items():
+        if (values.isna().to_numpy() & usable).any():
+            from f1data.normalize import SessionDataError  # normalize imports this module
+
+            raise SessionDataError(f"Car {number}'s feed has a sample whose {name} is not a number")
     channels["ThrottleMarked"] = channels["Throttle"] > NO_PEDAL_READING
     channels["GearMarked"] = (channels["nGear"] < 0) | (channels["nGear"] > HIGHEST_GEAR)
     channels["BrakeMarked"] = _brake_marked(frame, channels["ThrottleMarked"], usable, marks, number)

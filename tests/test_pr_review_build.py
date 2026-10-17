@@ -14,6 +14,11 @@ January. A pointer could name its own generation as the one before it.
 Nothing held what a build publishes to the pipeline version: that test is in
 tests/test_layout.py. And nothing removed a generation no page reads any
 more: `prune` does, by rules that keep whatever a page may still be reading.
+
+A pointer named the drivers a session is short of as the fetch's record
+did, by car number where F1's driver list had not arrived, where coverage.json
+names them by the generation's codes. And a value that is not a number reached
+a published lap as -9223372036854775808, or as gear 0, DRS 0 or the brake off.
 """
 
 from __future__ import annotations
@@ -24,24 +29,28 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pytest
 
 from f1data import cli, layout
-from f1data.archive import dump_json
+from f1data.archive import Snapshot, dump_json
+from f1data.artifacts import build_artifacts
 from f1data.build import Builder
 from f1data.classification import ClassificationMissing
-from f1data.coverage import CLASSIFICATION_BAR
+from f1data.coverage import CLASSIFICATION_BAR, apply_classification, measure_coverage
+from f1data.normalize import SessionDataError
 from f1data.policy import CLASSIFICATION_RECHECK_WINDOW
 from f1data.prune import PruneRefused, plan_prune, remove_generations
 from f1data.publish import (
     CalendarUnavailable,
+    Inputs,
     publish_index,
     publish_session,
     read_pointer,
     upload_generation,
 )
 from f1data.store import DirectoryStore, MemoryStore
-from tests import sample_bucket
+from tests import race, sample_bucket
 from tests.building import Archive
 from tests.fakes import make_session
 from tests.test_build_inputs import a_quiet_day, a_recheck_day
@@ -532,3 +541,79 @@ def test_the_retention_is_a_whole_number_of_days_and_at_least_one(days, tmp_path
         cli.main(["prune", "--store", str(tmp_path), "--keep-days", days])
 
     assert refused.value.code == 2
+
+
+# --- 6: the pointer names a driver as the generation does ---------------------------
+
+
+def test_a_pointer_names_the_drivers_it_is_short_of_by_the_generations_codes():
+    """A record made before F1's driver list arrived names each driver by car
+    number. coverage.json names them by the codes the rest of the generation
+    uses, and the pointer named them by the record."""
+    session, found, result = race.make_race(), race.extras(), race.classification()
+    measured = apply_classification(measure_coverage(session, "R", found), result.laps_by_number)
+    drivers = {str(driver["number"]): driver for driver in measured["drivers"].values()}
+    by_number = {**measured, "drivers": drivers}
+    files = build_artifacts(session, race.IDENTITY, result, found, by_number)
+    snapshot = Snapshot(
+        snapshot_id="20260628T180000Z-5a3b1e00",
+        identity=race.IDENTITY,
+        fetched_at="2026-06-28T18:00:00Z",
+        coverage=by_number,
+    )
+    assert {shortfall.driver for shortfall in snapshot.shortfalls()} == {"1"}
+    store = MemoryStore()
+
+    publish_session(
+        store,
+        race.IDENTITY.session_key,
+        lambda key, **_: Inputs(snapshot, result.fingerprint),
+        lambda _: (files, None),
+    )
+
+    pointer = pointer_of(store, race.IDENTITY.session_key)
+    built = json.loads(files["coverage.json"])
+    assert {item["driver"] for item in pointer.shortfalls} == {"AAA"}
+    assert (pointer.complete, pointer.shortfalls) == (built["complete"], built["shortfalls"])
+
+
+# --- 7: a value that is not a number stops the build --------------------------------
+
+
+def built_race(session) -> dict[str, bytes]:
+    found = race.extras()
+    measured = measure_coverage(session, "R", found)
+    return build_artifacts(session, race.IDENTITY, race.classification(), found, measured)
+
+
+def test_a_lap_with_no_engine_speed_stops_the_build():
+    """It was published as -9223372036854775808 in every sample."""
+    session = race.make_race()
+    session.car_data["1"]["RPM"] = np.nan
+
+    with pytest.raises(SessionDataError, match="engine speed has a sample that is not a number"):
+        built_race(session)
+
+
+@pytest.mark.parametrize(
+    "channel, missing", [("nGear", np.nan), ("DRS", np.nan), ("Brake", None), ("nGear", "N")]
+)
+def test_a_sample_with_no_gear_drs_or_brake_stops_the_build(channel, missing):
+    """They were published as gear 0, DRS 0 and the brake off."""
+    session = race.make_race()
+    feed = session.car_data["2"]
+    feed[channel] = feed[channel].astype(object)
+    feed.loc[3000, channel] = missing
+
+    with pytest.raises(SessionDataError, match=f"Car 2's feed has a sample whose {channel} is not a number"):
+        built_race(session)
+
+
+def test_a_row_that_is_no_sample_may_have_nothing_in_it():
+    """A row with no speed is left out of every lap, whatever else it lacks."""
+    session = race.make_race()
+    feed = session.car_data["2"]
+    feed["nGear"] = feed["nGear"].astype(float)
+    feed.loc[3000, ["Speed", "nGear"]] = np.nan
+
+    assert "telemetry/BBB.json" in built_race(session)
