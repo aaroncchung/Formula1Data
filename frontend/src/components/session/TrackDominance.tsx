@@ -3,9 +3,10 @@ import { EmptyState } from "@/components/dashboard/EmptyState";
 import { CornerMarks } from "@/components/session/CornerMarks";
 import { circuitLayout, layoutNote, trackMap } from "@/lib/circuit-layout";
 import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
+import type { DriverStyles } from "@/lib/driver-style";
 import { minisectorTally } from "@/lib/performance-view";
 import type { Corners, Driver, TrackDominance as TrackDominanceResult } from "@/lib/published/types";
-import type { Viewport } from "@/lib/track-map";
+import type { Point, Viewport } from "@/lib/track-map";
 
 /** The dash of the second team-mate, scaled up for the thick line of the track map. */
 const TRACK_DASH = "12 7";
@@ -40,43 +41,14 @@ export function TrackDominance({
       ? []
       : [{ index: sector.index, winner: sector.winner_driver_code, midpoint: { x, y } }];
   });
-  const layout = circuitLayout(corners);
-  const map = sectors.length < 2 ? null : trackMap(sectors.map((sector) => sector.midpoint), layout, DOMINANCE_VIEWPORT, CORNER_LABEL_DISTANCE);
-  if (!map) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
-  const placed = sectors.map((sector) => map.place(sector.midpoint));
   const tally = minisectorTally(result);
   const total = result.minisectors.length;
   const excluded = result.excluded_drivers;
-  const note = layoutNote(layout);
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-      <div>
-        <svg viewBox="0 0 600 400" className="min-h-[280px] w-full rounded-md border border-line/70 bg-carbon/50 p-3" role="img" aria-label="Track dominance by driver">
-          {sectors.slice(1).map((sector, index) => {
-            const from = placed[index];
-            const to = placed[index + 1];
-            const style = driverStyle(styles, sector.winner);
-            return (
-              <line
-                key={sector.index}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke={style.color}
-                strokeWidth="10"
-                strokeLinecap={style.dash ? "butt" : "round"}
-                strokeDasharray={style.dash ? TRACK_DASH : undefined}
-              />
-            );
-          })}
-          <CornerMarks corners={map.corners} radius={CORNER_RADIUS} />
-        </svg>
-        {map.corners.length ? (
-          <p className="mt-2 text-xs text-slate-500">Numbered discs are the circuit&apos;s official corners.</p>
-        ) : null}
-        {note ? <p className="mt-2 text-xs text-slate-500">{note}</p> : null}
-      </div>
+      {/* Without positions there is no map, and the count beside it still
+          stands: who was quickest through a minisector is from its times. */}
+      <DominanceMap sectors={sectors} corners={corners} styles={styles} />
       <div className="space-y-2">
         <div className="eyebrow mb-3">Minisectors won</div>
         {tally.map((entry) => (
@@ -98,6 +70,61 @@ export function TrackDominance({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+type PlacedSector = { index: number; winner: string; midpoint: Point };
+
+/** The circuit in the winners' colours, or why it cannot be drawn. */
+function DominanceMap({
+  sectors,
+  corners,
+  styles
+}: {
+  sectors: ReadonlyArray<PlacedSector>;
+  corners: Corners | null;
+  styles: DriverStyles;
+}) {
+  const layout = circuitLayout(corners);
+  const map = sectors.length < 2 ? null : trackMap(sectors.map((sector) => sector.midpoint), layout, DOMINANCE_VIEWPORT, CORNER_LABEL_DISTANCE);
+  if (!map) {
+    return (
+      <EmptyState
+        title="Track map unavailable"
+        detail="The minisectors have no positions on the track to draw them at. Who was quickest through each is counted all the same."
+      />
+    );
+  }
+  const placed = sectors.map((sector) => map.place(sector.midpoint));
+  const note = layoutNote(layout);
+  return (
+    <div>
+      <svg viewBox="0 0 600 400" className="min-h-[280px] w-full rounded-md border border-line/70 bg-carbon/50 p-3" role="img" aria-label="Track dominance by driver">
+        {sectors.slice(1).map((sector, index) => {
+          const from = placed[index];
+          const to = placed[index + 1];
+          const style = driverStyle(styles, sector.winner);
+          return (
+            <line
+              key={sector.index}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              stroke={style.color}
+              strokeWidth="10"
+              strokeLinecap={style.dash ? "butt" : "round"}
+              strokeDasharray={style.dash ? TRACK_DASH : undefined}
+            />
+          );
+        })}
+        <CornerMarks corners={map.corners} radius={CORNER_RADIUS} />
+      </svg>
+      {map.corners.length ? (
+        <p className="mt-2 text-xs text-slate-500">Numbered discs are the circuit&apos;s official corners.</p>
+      ) : null}
+      {note ? <p className="mt-2 text-xs text-slate-500">{note}</p> : null}
     </div>
   );
 }
