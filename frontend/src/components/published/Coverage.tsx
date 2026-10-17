@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
-import { driversWithRepeatingFeeds } from "@/lib/published/coverage";
-import type { PointerCoverage } from "@/lib/published/types";
+import { driversWithRepeatingFeeds, shortfallGroups } from "@/lib/published/coverage";
+import type { PointerCoverage, Shortfall } from "@/lib/published/types";
 
 /**
  * Published and complete are separate states: a session below a coverage bar
@@ -48,12 +48,32 @@ export function CoverageShortfalls({ coverage }: { coverage: PointerCoverage }) 
           {coverage.shortfalls.length === 0 ? (
             <p className="mt-3 text-sm text-slate-400">The publication does not say what fell short.</p>
           ) : (
+            // One line for each bar, and what each driver lacks behind it: the
+            // banner is above every tab, and a session short for the whole
+            // field would otherwise list the field under every bar.
             <ul className="mt-3 space-y-1.5 text-sm text-slate-200">
-              {coverage.shortfalls.map((shortfall, index) => (
-                <li key={index} className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-mono text-amber">{shortfall.bar.replaceAll("_", " ")}</span>
-                  <span className="font-semibold text-white">{shortfall.driver ?? "Whole session"}</span>
-                  <span className="text-slate-300">{shortfall.detail}</span>
+              {shortfallGroups(coverage).map((group) => (
+                <li key={group.bar}>
+                  {group.entries.length === 1 ? (
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-mono text-amber">{group.title}</span>
+                      <ShortfallEntry shortfall={group.entries[0]} />
+                    </div>
+                  ) : (
+                    <details>
+                      <summary className="cursor-pointer">
+                        <span className="font-mono text-amber">{group.title}</span>
+                        <span className="ml-2 font-semibold text-white">{group.who}</span>
+                      </summary>
+                      <ul className="mt-1.5 space-y-1 pl-5">
+                        {group.entries.map((shortfall, index) => (
+                          <li key={index} className="flex flex-wrap items-baseline gap-x-2">
+                            <ShortfallEntry shortfall={shortfall} />
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                 </li>
               ))}
             </ul>
@@ -61,5 +81,14 @@ export function CoverageShortfalls({ coverage }: { coverage: PointerCoverage }) 
         </div>
       </div>
     </section>
+  );
+}
+
+function ShortfallEntry({ shortfall }: { shortfall: Shortfall }) {
+  return (
+    <>
+      <span className="font-semibold text-white">{shortfall.driver ?? "Whole session"}</span>
+      <span className="text-slate-300">{shortfall.detail}</span>
+    </>
   );
 }

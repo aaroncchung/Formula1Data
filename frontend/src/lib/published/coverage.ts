@@ -1,4 +1,4 @@
-import type { PointerCoverage } from "./types";
+import type { PointerCoverage, Shortfall } from "./types";
 
 /**
  * The bars that are not about something missing. F1's car or position feed
@@ -21,4 +21,39 @@ export function driversWithRepeatingFeeds(coverage: PointerCoverage): string[] {
     }
   }
   return drivers;
+}
+
+/** The shortfalls under one bar, and who fell short of it, in a few words. */
+export type ShortfallGroup = {
+  readonly bar: string;
+  /** The bar as words: "car data repeats". */
+  readonly title: string;
+  /** "22 drivers", "PER", "Whole session", or "Whole session and 2 drivers". */
+  readonly who: string;
+  /** In the pointer's order. */
+  readonly entries: ReadonlyArray<Shortfall>;
+};
+
+/**
+ * A pointer's shortfalls, one group for each bar, in the order the pointer
+ * first names each bar. A session can fall short of one bar for every driver:
+ * the 2026 Hungarian GP has 44 shortfalls under three bars, and the banner
+ * above every tab listed each of them.
+ */
+export function shortfallGroups(coverage: PointerCoverage): ShortfallGroup[] {
+  const byBar = new Map<string, Shortfall[]>();
+  for (const shortfall of coverage.shortfalls) {
+    byBar.set(shortfall.bar, [...(byBar.get(shortfall.bar) ?? []), shortfall]);
+  }
+  return [...byBar].map(([bar, entries]) => ({ bar, title: bar.replaceAll("_", " "), who: whoFellShort(entries), entries }));
+}
+
+function whoFellShort(entries: ReadonlyArray<Shortfall>): string {
+  const drivers = [...new Set(entries.flatMap((entry) => (entry.driver === null ? [] : [entry.driver])))];
+  const wholeSession = entries.some((entry) => entry.driver === null);
+  if (drivers.length === 0) {
+    return "Whole session";
+  }
+  const named = drivers.length === 1 ? (wholeSession ? "1 driver" : drivers[0]) : `${drivers.length} drivers`;
+  return wholeSession ? `Whole session and ${named}` : named;
 }
