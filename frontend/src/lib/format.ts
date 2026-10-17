@@ -15,12 +15,27 @@ export function formatMs(value?: number | null): string {
   return `${value < 0 && whole > 0 ? "-" : ""}${minutes}:${seconds}`;
 }
 
+/**
+ * A gap in seconds with its sign, `+1.234s`. Rounded to the millisecond
+ * before the sign is chosen, as `formatMs` is: a gap of 0.4 ms read
+ * "+0.000s", and one of -0.4 ms "-0.000s".
+ */
 export function formatDelta(value?: number | null): string {
-  if (value === null || value === undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
     return "--";
   }
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${(value / 1000).toFixed(3)}s`;
+  const whole = Math.round(Math.abs(value));
+  const sign = whole === 0 ? "" : value > 0 ? "+" : "-";
+  return `${sign}${(whole / 1000).toFixed(3)}s`;
+}
+
+/** A length of time in seconds with no sign in front, `1.234s`: a spread, not a gap to anything. */
+export function formatSeconds(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+  const whole = Math.round(Math.abs(value));
+  return `${value < 0 && whole > 0 ? "-" : ""}${(whole / 1000).toFixed(3)}s`;
 }
 
 export function formatNumber(value?: number | null, digits = 1): string {

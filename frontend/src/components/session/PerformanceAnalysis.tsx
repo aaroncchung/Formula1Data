@@ -6,7 +6,7 @@ import { DriverBadge } from "@/components/session/Badges";
 import { TeammateComparison } from "@/components/session/TeammateComparison";
 import { TrackDominance } from "@/components/session/TrackDominance";
 import { teamColorByDriver } from "@/lib/driver-style";
-import { formatDelta, formatMs, formatNumber } from "@/lib/format";
+import { formatDelta, formatMs, formatNumber, formatSeconds } from "@/lib/format";
 import { cornerName, cornerPlace, cornerSourceNote, noBrakePoint, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
 import type { SessionPerformance } from "@/lib/published/artifacts";
 import type { CarPerformance, CornerAnalysis, Driver, IdealLaps, PacePrediction } from "@/lib/published/types";
@@ -138,7 +138,7 @@ function PacePredictionView({ result, drivers }: { result: PacePrediction; drive
     { key: "gap", header: "Gap", align: "right", render: (row) => formatDelta(row.gap_to_best_ms) },
     { key: "runs", header: "Long runs", align: "right", render: (row) => row.stint_count },
     { key: "laps", header: "Laps", align: "right", render: (row) => row.sample_count },
-    { key: "spread", header: "Variability", align: "right", render: (row) => formatDelta(row.variability_ms) },
+    { key: "spread", header: "Variability", align: "right", render: (row) => formatSeconds(row.variability_ms) },
     { key: "confidence", header: "Confidence", render: (row) => row.confidence }
   ]} />;
 }

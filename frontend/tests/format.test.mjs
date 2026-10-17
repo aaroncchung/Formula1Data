@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatMs, sessionWhen } from "../src/lib/format.ts";
+import { formatDelta, formatMs, formatSeconds, sessionWhen } from "../src/lib/format.ts";
 
 // What an independent reading of the view modules found (2026-10-07): these
 // two had no test, and each printed something untrue for a value that is
@@ -40,4 +40,25 @@ test("a session the calendar has only a day for is given that day, wherever it i
   }
   assert.equal(sessionWhen(null), "TBC");
   assert.equal(sessionWhen("not a time"), "TBC");
+});
+
+// A gap under half a millisecond was "+0.000s" or "-0.000s": a sign with
+// nothing to sign.
+test("a gap is rounded to the millisecond before its sign is chosen", () => {
+  assert.equal(formatDelta(1234.5), "+1.235s");
+  assert.equal(formatDelta(-1234.4), "-1.234s");
+  assert.equal(formatDelta(0.4), "0.000s");
+  assert.equal(formatDelta(-0.4), "0.000s");
+  assert.equal(formatDelta(0), "0.000s");
+  assert.equal(formatDelta(0.5), "+0.001s");
+  assert.equal(formatDelta(-0.5), "-0.001s");
+  assert.equal(formatDelta(null), "--");
+  assert.equal(formatDelta(Number.NaN), "--");
+});
+
+// The pace prediction's variability is a spread of lap times, and read "+0.412s".
+test("a spread is a length of time, with no sign in front", () => {
+  assert.equal(formatSeconds(412.3), "0.412s");
+  assert.equal(formatSeconds(0.2), "0.000s");
+  assert.equal(formatSeconds(null), "--");
 });
