@@ -488,7 +488,10 @@ def run_fetch(args: argparse.Namespace) -> int:
         print(f"NOT FETCHED: {exc}.")
         return 1
     except (_NotArchived, _NotKept) as exc:
-        print(f"FETCHED, NOT ARCHIVED: {exc}. `fetch-due` or `run` sees it through before it fetches anything.")
+        print(
+            f"FETCHED, NOT ARCHIVED: {exc}. `fetch-due` or `run` against the same store sees it through before it "
+            "fetches anything; a run against another store leaves it, and says so."
+        )
         return 1
     _print_snapshot(snapshot)
     if snapshot.identity.session_type not in IN_SCOPE_SESSION_TYPES:
@@ -587,11 +590,24 @@ def _see_the_spool_through(
             if isinstance(found, Discarded):
                 _remove(directory)
                 continue
-            if found.store != name:
-                elsewhere += 1
-                continue
             if isinstance(found, Unfinished):
                 label = f"{found.year} round {found.event} {found.session_type}"
+            else:
+                label = describe(found)
+            if found.store != name:
+                if isinstance(found, Spooled) or found.served:
+                    # A session F1 served, which only a run against the store
+                    # it was fetched for can archive. Only counted, it could
+                    # wait there for good with nobody told.
+                    seen.failed += 1
+                    print(
+                        f"ATTENTION: {label} was fetched for another store ({found.store}) and waits in the "
+                        f"spool ({directory}) for a run against that store, which archives it."
+                    )
+                else:
+                    elsewhere += 1
+                continue
+            if isinstance(found, Unfinished):
                 if not found.served:
                     if _remove(directory):
                         print(
@@ -599,8 +615,6 @@ def _see_the_spool_through(
                             "The session is fetched again in its turn."
                         )
                     continue
-            else:
-                label = describe(found)
             # A session F1 served. It is archived now, or it stays.
             seen.keeps(found)
             # And the fetch of it succeeded. The run that made it may have

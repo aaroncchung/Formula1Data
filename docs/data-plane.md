@@ -300,12 +300,17 @@ anything:
   fetched meanwhile.
 
 A fetch is for the store it was started for, which for `r2` is one account's
-bucket: a run against another store leaves it as it is, and says how many it
-left. The only fetches removed before they are archived are ones that did not
-run to their end. A fetch that has is marked as served by renaming a file
-that was made with its directory, which needs no room on the disk; should
-that fail and writing it down fail too, the run says that a later run will
-take it for part of a session.
+bucket: a run against another store leaves it as it is. One that F1 served,
+whole or not yet written down, is named in a line that begins `ATTENTION`,
+and the run exits 1 for as long as it waits, since only a run against its
+own store archives it: a `fetch --store <directory>` by hand whose upload
+failed is seen through by `fetch-due --store <directory>`, not by the
+scheduled run against `r2`. The others, which F1 had not served or which
+another run holds, are counted. The only fetches removed before they are
+archived are ones that did not run to their end. A fetch that has is marked
+as served by renaming a file that was made with its directory, which needs
+no room on the disk; should that fail and writing it down fail too, the run
+says that a later run will take it for part of a session.
 
 A fetch is not started with less than 2 GB free where the spool is, by
 `fetch`, `fetch-due` or `run`: a run says so, stops fetching, and exits 1.
@@ -551,8 +556,9 @@ the task yet, and it has not run on a schedule.
   run starts with `[<time>] run started` and, unless it was killed, ends with
   `[<time>] run finished, exit <code>, <seconds> s`. Exit 1 means something
   failed: a fetch, an upload, a build. A line beginning `ATTENTION` names
-  something that wants looking at: a session whose fetch keeps failing, or a
-  directory of the spool that cannot be read. `FETCHED, NOT ARCHIVED` names a
+  something that wants looking at: a session whose fetch keeps failing, a
+  directory of the spool that cannot be read, or a session F1 served that
+  waits in the spool for another store. `FETCHED, NOT ARCHIVED` names a
   session that is waiting in the spool.
 - **A run that did not happen** writes nothing, so it is looked for from
   outside: `python -m f1data last-run` reads `archive/runs/last.json` from the

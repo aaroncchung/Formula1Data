@@ -387,9 +387,11 @@ def test_a_fetch_made_for_one_store_is_not_seen_through_by_a_run_against_another
     served = left_served(job.spool, 2026, SIXTH, "R", theirs)
     started = left_started(job.spool, 2026, SIXTH, "R", theirs)
 
-    output, _ = job.run()
+    output, code = job.run()
 
-    assert "3 fetch(es) in the spool are for another store, and are left for it." in output
+    # The two F1 served are each named, and fail the run (tests/test_pr_review_ops.py).
+    assert "1 fetch(es) in the spool are for another store, and are left for it." in output
+    assert output.count("was fetched for another store (r2:an-account/another-bucket)") == 2 and code == 1
     assert job.read_back == [] and (whole / spool.PENDING_NAME).is_file()
     assert (served / spool.SERVED_NAME).is_file() and (started / spool.INTENT_NAME).is_file()
     assert [item.store for item in spool.waiting(job.spool)] == [theirs]

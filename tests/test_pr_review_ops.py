@@ -581,3 +581,30 @@ def test_a_note_the_store_refuses_does_not_stop_the_fetches(three_races, monkeyp
     assert f"Could not note 2026 Austrian Grand Prix Race (session {AUSTRIA}): that it was fetched, and carried on" in output
     assert output.count("Could not note that the fetch started, and carried on: ConnectionError") == 2
     assert list(store.list(layout.ATTEMPTS_PREFIX)) == []
+
+
+# --- 8: a session F1 served, waiting for another store, is reported -------------------
+
+
+def test_a_whole_fetch_left_for_another_store_fails_the_runs_that_leave_it(job):
+    """`fetch --store <dir>` by hand whose upload failed said that `fetch-due`
+    or `run` would see it through. The scheduled run, against the bucket,
+    counted it as "for another store" and exited 0, on every run for good."""
+    job.store.refusing = "fastf1-cache.tar.gz"
+    output, code = job.run("fetch", "--store", "x", "--year", "2026", "--event", str(EIGHTH), "--session", "R")
+    assert code == 1 and "`fetch-due` or `run` against the same store sees it through" in output
+    job.store.refusing = None
+    (whole,) = spool.waiting(job.spool)
+
+    output, code = job.run("fetch-due", "--store", "y", "--season", "2026")
+
+    assert code == 1 and (whole.directory / spool.PENDING_NAME).is_file()
+    assert (
+        f"ATTENTION: 2026 Austrian Grand Prix Race (session {AUSTRIA}) was fetched for another store ({STORE}) "
+        f"and waits in the spool ({whole.directory}) for a run against that store, which archives it."
+    ) in output
+    assert "are for another store, and are left for it" not in output
+
+    # The run it was fetched for sees it through.
+    output, code = job.run()
+    assert code == 0 and "fetched earlier, archived now." in output and spool.waiting(job.spool) == []

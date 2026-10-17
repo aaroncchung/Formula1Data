@@ -670,7 +670,9 @@ def test_every_fetch_left_for_another_store_is_counted_whole_or_not(job):
 
     output, code = job.run()
 
-    assert "1 fetch(es) in the spool are for another store, and are left for it." in output and code == 0
+    # A served one is more than counted since (tests/test_pr_review_ops.py).
+    assert "ATTENTION: 2026 round 6 R was fetched for another store (r2:an-account/another-bucket)" in output
+    assert code == 1
 
 
 def test_a_session_that_could_not_be_read_back_makes_the_run_fail(job):
