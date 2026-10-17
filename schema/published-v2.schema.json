@@ -1693,7 +1693,7 @@
               "type": "null"
             }
           ],
-          "description": "Laps the set had done at the end of this lap. Null for a set that went on used: F1 does not report its age."
+          "description": "Laps the set had done at the end of this lap, a set that went on used included. Null where F1's tyre data gives no age."
         }
       },
       "required": [
@@ -4106,6 +4106,7 @@
     },
     "TyreDegradationRow": {
       "additionalProperties": false,
+      "description": "One stint, as stints.json has it. Clean laps F1's tyre data gives no stint for are in no row.",
       "properties": {
         "caveats": {
           "items": {
@@ -4121,7 +4122,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "The stint's compound: the one F1 names for any lap of it. Null where it names none."
         },
         "degradation_ms_per_lap": {
           "anyOf": [
@@ -4204,7 +4206,7 @@
           "type": "integer"
         },
         "stint_length": {
-          "description": "The stint's clean laps, with a tyre age or without. F1 gives no age for a set that went on used.",
+          "description": "The stint's clean laps, with a tyre age or without.",
           "type": "integer"
         }
       },

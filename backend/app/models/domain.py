@@ -217,7 +217,7 @@ class RacePaceResult(BaseModel):
 
 class TyreDegradationRow(BaseModel):
     driver_code: str
-    compound: str
+    compound: str | None
     stint: int
     degradation_ms_per_lap: float | None
     raw_slope_ms_per_lap: float | None = None

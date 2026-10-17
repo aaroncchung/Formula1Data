@@ -785,11 +785,16 @@ export interface TyreDegradationModel {
   sprint_fuel_correction_ms_per_lap: number;
 }
 /**
+ * One stint, as stints.json has it. Clean laps F1's tyre data gives no stint for are in no row.
+ *
  * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
  * via the `definition` "TyreDegradationRow".
  */
 export interface TyreDegradationRow {
   caveats: string[];
+  /**
+   * The stint's compound: the one F1 names for any lap of it. Null where it names none.
+   */
   compound: Compound | null;
   /**
    * Null unless fit_status is ok.
@@ -821,7 +826,7 @@ export interface TyreDegradationRow {
   slope_standard_error_ms_per_lap: number | null;
   stint: number;
   /**
-   * The stint's clean laps, with a tyre age or without. F1 gives no age for a set that went on used.
+   * The stint's clean laps, with a tyre age or without.
    */
   stint_length: number;
 }
@@ -1085,7 +1090,7 @@ export interface Lap {
    */
   track_status: string | null;
   /**
-   * Laps the set had done at the end of this lap. Null for a set that went on used: F1 does not report its age.
+   * Laps the set had done at the end of this lap, a set that went on used included. Null where F1's tyre data gives no age.
    */
   tyre_age: number | null;
 }

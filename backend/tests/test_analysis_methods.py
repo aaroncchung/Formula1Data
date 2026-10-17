@@ -682,11 +682,12 @@ class TyreDegradationFitTests(unittest.TestCase):
         self.assertIn("at least 8 are required", row["caveats"][0])
 
     def test_a_stint_with_no_tyre_ages_is_not_said_to_have_no_clean_laps(self):
-        """Bearman's third stint of the 2026 Barcelona GP: 19 clean laps on a set that went on used.
+        """Bearman's third stint of the 2026 Barcelona GP: 19 clean laps and no tyre age for any.
 
-        F1 gives no age for such a set, so there is nothing to fit. The row
-        said "0 clean laps, and at least 8 are required" beside a stint
-        length of 19.
+        F1's tyre data gives none, so there is nothing to fit. The row said
+        "0 clean laps, and at least 8 are required" beside a stint length of
+        19. It then said F1 gives no age for a set that went on used, which
+        F1 does give.
         """
         laps = _stint("AAA", range(1, 20), lambda age: 90_000 + 40 * age)
         for lap in laps:
@@ -703,9 +704,8 @@ class TyreDegradationFitTests(unittest.TestCase):
         self.assertEqual(
             rows["AAA"]["caveats"],
             [
-                "No rate reported: F1 gives a tyre age for 0 of the stint's 19 clean laps, and at "
-                f"least {MIN_DEGRADATION_LAPS} with one are required. It gives none for a set that "
-                "went on used."
+                "No rate reported: F1's tyre data gives a tyre age for 0 of the stint's 19 clean "
+                f"laps, and at least {MIN_DEGRADATION_LAPS} with one are required."
             ],
         )
         self.assertEqual((rows["BBB"]["sample_count"], rows["BBB"]["stint_length"]), (5, 19))

@@ -283,8 +283,8 @@ class Lap(Model):
     sector_3_ms: int | None
     compound: CompoundOrNull = Field(description="Null where F1 reported none.")
     tyre_age: int | None = Field(
-        description="Laps the set had done at the end of this lap. Null for a set that went on used: F1 "
-        "does not report its age."
+        description="Laps the set had done at the end of this lap, a set that went on used included. Null "
+        "where F1's tyre data gives no age."
     )
     stint: int | None = Field(
         description="Which of the driver's sets of tyres the lap was run on, counted as F1 counts them "
@@ -760,18 +760,19 @@ class RacePace(Model):
 
 
 class TyreDegradationRow(Model):
+    """One stint, as stints.json has it. Clean laps F1's tyre data gives no stint for are in no row."""
+
     driver_code: str
-    compound: CompoundOrNull
+    compound: CompoundOrNull = Field(
+        description="The stint's compound: the one F1 names for any lap of it. Null where it names none."
+    )
     stint: int
     sample_count: int = Field(
         description="The stint's clean laps that have a tyre age, which are the ones a fit can use. "
         "Those left out of the fit as outliers are still counted here: the fit is of this many less "
         "excluded_outlier_count."
     )
-    stint_length: int = Field(
-        description="The stint's clean laps, with a tyre age or without. F1 gives no age for a set that "
-        "went on used."
-    )
+    stint_length: int = Field(description="The stint's clean laps, with a tyre age or without.")
     degradation_ms_per_lap: Decimal2 | None = Field(description="Null unless fit_status is ok.")
     raw_slope_ms_per_lap: Decimal2 | None
     fuel_correction_ms_per_lap: Decimal1

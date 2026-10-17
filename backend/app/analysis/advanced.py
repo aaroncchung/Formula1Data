@@ -1007,13 +1007,33 @@ def calculate_fuel_adjusted_tyre_degradation(
     summary: dict[str, Any],
     laps: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    """A rate of tyre wear for each stint, fitted to its clean laps' times against tyre age.
+
+    A stint is a run of laps on one set, as ``stints.json`` has them
+    (``f1data.normalize.stints``, whose rule ``_tyre_runs`` repeats): a lap
+    F1 names no compound for is on the set its stint number says, and the
+    stint has the compound F1 names for any of its laps. The laps used to be
+    grouped by their own compound, so a stint whose compound F1 names a few
+    laps after it went on was fitted as two rows with one stint number, each
+    with part of the laps. And the laps F1's tyre data gives no stint for
+    went into a row of "stint 0" with no compound: in the 2025 Miami GP,
+    whose tyre data begins on lap 25, one for each of 15 drivers, said to be
+    short of tyre ages because F1 gives none for a set that went on used. F1
+    does give them, and these laps have no tyre data at all. They are in no
+    row, and the result says how many there are.
+    """
     fuel_correction = _fuel_correction(summary, session_id)
 
     rows = []
-    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
-    for lap in clean_laps(laps):
-        groups[(lap.get("driver_code"), lap.get("stint"), lap.get("compound"))].append(lap)
-    for (driver, stint, compound), group in groups.items():
+    no_stint: list[dict[str, Any]] = []
+    # The rows come in the order of each stint's first clean lap, as they did.
+    where = {id(lap): index for index, lap in enumerate(laps)}
+    runs = [(run, group) for run in _tyre_runs(laps) if (group := clean_laps(run["laps"]))]
+    for run, group in sorted(runs, key=lambda item: where[id(item[1][0])]):
+        if run["stint"] is None:
+            no_stint.extend(group)
+            continue
+        driver, stint, compound = run["driver"], run["stint"], run["compound"]
         samples = [
             (float(lap["tyre_age"]), float(lap["lap_time_ms"]))
             for lap in group
@@ -1022,9 +1042,9 @@ def calculate_fuel_adjusted_tyre_degradation(
         # Every row carries every field; a fit that is not reported keeps its
         # rate fields empty and says why in ``fit_status`` and ``caveats``.
         row: dict[str, Any] = {
-            "driver_code": str(driver),
-            "compound": str(compound),
-            "stint": int(stint or 0),
+            "driver_code": driver,
+            "compound": compound,
+            "stint": stint,
             "sample_count": len(samples),
             "stint_length": len(group),
             "degradation_ms_per_lap": None,
@@ -1036,17 +1056,17 @@ def calculate_fuel_adjusted_tyre_degradation(
             "excluded_outlier_count": 0,
         }
         if len(samples) < MIN_DEGRADATION_LAPS:
-            # A stint can be short of laps to fit and not of clean laps: F1
-            # gives no tyre age for a set that went on used. Bearman's third
+            # A stint can be short of laps to fit and not of clean laps: F1's
+            # tyre data can give a stint and no tyre age. Bearman's third
             # stint of the 2026 Barcelona GP has 19 clean laps and an age for
             # none, and was said to have "0 clean laps".
             if len(samples) == len(group):
                 why = f"{len(group)} clean laps, and at least {MIN_DEGRADATION_LAPS} are required."
             else:
                 why = (
-                    f"F1 gives a tyre age for {len(samples)} of the stint's {len(group)} clean "
-                    f"laps, and at least {MIN_DEGRADATION_LAPS} with one are required. It gives "
-                    "none for a set that went on used."
+                    f"F1's tyre data gives a tyre age for {len(samples)} of the stint's "
+                    f"{len(group)} clean laps, and at least {MIN_DEGRADATION_LAPS} with one are "
+                    "required."
                 )
             rows.append({**row, "fit_status": "too_few_laps", "caveats": [f"No rate reported: {why}"]})
             continue
@@ -1118,6 +1138,27 @@ def calculate_fuel_adjusted_tyre_degradation(
                 "caveats": caveats,
             }
         )
+    caveats = [
+        "Fuel correction is an explicit generic assumption, not measured car fuel mass.",
+        "Pit, deleted, inaccurate, neutralized, and statistical outlier laps are excluded.",
+        "Track evolution, traffic, weather, and tyre management remain confounding factors.",
+        f"A rate is reported only for a stint with at least {MIN_DEGRADATION_LAPS} clean "
+        "laps whose fitted slope has a standard error of at most "
+        f"{MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP:.0f} ms/lap or "
+        f"{MAX_SLOPE_RELATIVE_STANDARD_ERROR:.0%} of the slope. R² is shown but does not "
+        "decide this: a tyre that barely degrades has an R² near zero however clean the "
+        "stint.",
+    ]
+    if no_stint:
+        drivers = sorted({str(lap.get("driver_code")) for lap in no_stint})
+        bare = all(
+            _named_compound(lap.get("compound")) is None and lap.get("tyre_age") is None for lap in no_stint
+        )
+        caveats.append(
+            f"F1's tyre data gives no stint for {len(no_stint)} clean laps, of {', '.join(drivers)}, "
+            "so the set they were run on is not known and they are in no row."
+            + (" It gives no compound or tyre age for them either." if bare else "")
+        )
     return {
         "session_id": session_id,
         "rows": rows,
@@ -1129,18 +1170,60 @@ def calculate_fuel_adjusted_tyre_degradation(
             "max_slope_standard_error_ms_per_lap": MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP,
             "max_slope_relative_standard_error": MAX_SLOPE_RELATIVE_STANDARD_ERROR,
         },
-        "caveats": [
-            "Fuel correction is an explicit generic assumption, not measured car fuel mass.",
-            "Pit, deleted, inaccurate, neutralized, and statistical outlier laps are excluded.",
-            "Track evolution, traffic, weather, and tyre management remain confounding factors.",
-            f"A rate is reported only for a stint with at least {MIN_DEGRADATION_LAPS} clean "
-            "laps whose fitted slope has a standard error of at most "
-            f"{MAX_SLOPE_STANDARD_ERROR_MS_PER_LAP:.0f} ms/lap or "
-            f"{MAX_SLOPE_RELATIVE_STANDARD_ERROR:.0%} of the slope. R² is shown but does not "
-            "decide this: a tyre that barely degrades has an R² near zero however clean the "
-            "stint.",
-        ],
+        "caveats": caveats,
     }
+
+
+def _tyre_runs(laps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Each driver's runs of laps on one set of tyres, by the rule of ``f1data.normalize.stints``.
+
+    The analyses are given laps and not stints, and cannot import that
+    module, so the rule is here too. Driver by driver in lap order, a new
+    stint number starts a new run, and so does a compound that changes to
+    another under one number, which is F1 correcting itself. A lap with no
+    compound does not: under the same number it is the same set, and the run
+    has the compound F1 does name. Laps with no stint number make runs whose
+    stint is None.
+    """
+    by_driver: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for lap in laps:
+        driver = str(lap.get("driver_code") or "").upper()
+        if driver and lap_number(lap) is not None:
+            by_driver[driver].append(lap)
+    runs: list[dict[str, Any]] = []
+    for driver, driver_laps in by_driver.items():
+        current: dict[str, Any] | None = None
+        for lap in sorted(driver_laps, key=lambda row: lap_number(row) or 0):
+            compound = _named_compound(lap.get("compound"))
+            stint = _stint_number(lap.get("stint"))
+            same_set = (
+                current is not None
+                and current["stint"] == stint
+                and (compound is None or current["compound"] is None or current["compound"] == compound)
+            )
+            if current is None or not same_set:
+                current = {"driver": driver, "stint": stint, "compound": compound, "laps": []}
+                runs.append(current)
+            current["compound"] = current["compound"] or compound
+            current["laps"].append(lap)
+    return runs
+
+
+# How FastF1 and the old pipeline write a compound F1 did not name.
+_UNNAMED_COMPOUNDS = {"", "NAN", "NONE", "UNKNOWN", "TEST_UNKNOWN"}
+
+
+def _named_compound(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return None if text.upper() in _UNNAMED_COMPOUNDS else text
+
+
+def _stint_number(value: Any) -> int | None:
+    """A stint number, or None for one that is missing or is no stint. F1 counts stints from 1."""
+    number = _float(value)
+    return int(number) if number is not None and number >= 1 else None
 
 
 def _fuel_correction(summary: dict[str, Any], session_id: str) -> float:

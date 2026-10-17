@@ -47,7 +47,11 @@ def test_the_laps_a_fit_was_left_without_are_counted_apart_from_the_laps_it_is_o
 
 
 def test_a_stint_on_a_set_f1_gives_no_age_for_is_short_of_ages_and_not_of_clean_laps(tmp_path):
-    """The 2026 Barcelona GP, Bearman's third stint: laps 41 to 59 on softs that went on used."""
+    """The 2026 Barcelona GP, Bearman's third stint: laps 41 to 59 on softs that went on used.
+
+    F1's tyre data gives no age for any of them. The row once said that F1
+    gives none for a set that went on used, which F1 does give.
+    """
     session, _, _ = recorded(tmp_path, BARCELONA_2026)
 
     row = degradation_of(session)[("BEA", 3)]
@@ -55,8 +59,8 @@ def test_a_stint_on_a_set_f1_gives_no_age_for_is_short_of_ages_and_not_of_clean_
     assert (row["compound"], row["fit_status"]) == ("SOFT", "too_few_laps")
     assert (row["sample_count"], row["stint_length"]) == (0, 19)
     assert row["caveats"] == [
-        "No rate reported: F1 gives a tyre age for 0 of the stint's 19 clean laps, and at least "
-        f"{MIN_DEGRADATION_LAPS} with one are required. It gives none for a set that went on used."
+        "No rate reported: F1's tyre data gives a tyre age for 0 of the stint's 19 clean laps, and at "
+        f"least {MIN_DEGRADATION_LAPS} with one are required."
     ]
 
 

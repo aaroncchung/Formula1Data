@@ -202,5 +202,94 @@ class OutEarlyLapTests(unittest.TestCase):
         self.assertIn("Left out, having no such lap: VER.", corners["caveats"])
 
 
+def tyre_laps(driver, numbers, *, stint, compound="MEDIUM", first_age=1, lap_time=None):
+    """Clean laps on one set from ``first_age``, slowing 60 ms a lap of age and quickening 55 ms a lap of fuel."""
+    rows = []
+    for offset, number in enumerate(numbers):
+        age = first_age + offset
+        rows.append(
+            lap(
+                driver,
+                number,
+                lap_time(number) if lap_time else 90_000 + 60 * age - 55 * number,
+                compound=compound,
+                tyre_age=age,
+                stint=stint,
+            )
+        )
+    return rows
+
+
+class TyreStintTests(unittest.TestCase):
+    """Finding 2: rows for laps with no tyre data, and a stint split by when F1 names its compound."""
+
+    def test_laps_with_no_tyre_data_are_in_no_row_and_the_result_says_why(self):
+        """The 2025 Miami GP: F1's tyre data begins on lap 25, and 15 drivers each had a row of
+        "stint 0", compound null, said to be short of tyre ages because F1 gives none for a set
+        that went on used."""
+        laps = [lap("VER", number, 92_000, compound=None, tyre_age=None, stint=None) for number in range(1, 25)]
+        laps += tyre_laps("VER", range(25, 45), stint=1)
+
+        result = calculate_fuel_adjusted_tyre_degradation("s", {"session": "Race", "type": "R"}, laps)
+
+        self.assertEqual([(row["stint"], row["compound"]) for row in result["rows"]], [(1, "MEDIUM")])
+        self.assertIn(
+            "F1's tyre data gives no stint for 23 clean laps, of VER, so the set they were run on is not "
+            "known and they are in no row. It gives no compound or tyre age for them either.",
+            result["caveats"],
+        )
+        every = " ".join(result["caveats"] + [caveat for row in result["rows"] for caveat in row["caveats"]])
+        self.assertNotIn("went on used", every)
+
+    def test_a_stint_whose_compound_is_named_late_is_one_row(self):
+        """F1 often names a set's compound some laps after it went on (f1data.normalize.stints)."""
+        for named_from in (27, 31, 34):
+            for unnamed in (None, "nan"):
+                with self.subTest(named_from=named_from, unnamed=unnamed):
+                    laps = tyre_laps("VER", range(2, 19), stint=1, compound="SOFT", first_age=2)
+                    laps.append(lap("VER", 19, 110_000, compound="SOFT", tyre_age=19, is_pit_in_lap=True))
+                    laps.append(lap("VER", 20, 110_000, compound=None, tyre_age=1, stint=2, is_pit_out_lap=True))
+                    for row in tyre_laps("VER", range(21, 41), stint=2, first_age=2):
+                        row["compound"] = "MEDIUM" if row["lap_number"] >= named_from else unnamed
+                        laps.append(row)
+
+                    result = calculate_fuel_adjusted_tyre_degradation("s", {"type": "R"}, laps)
+                    second = [row for row in result["rows"] if row["stint"] == 2]
+
+                    self.assertEqual(len(second), 1)
+                    self.assertEqual(
+                        (second[0]["compound"], second[0]["sample_count"], second[0]["stint_length"]),
+                        ("MEDIUM", 20, 20),
+                    )
+                    self.assertEqual(second[0]["fit_status"], "ok")
+                    self.assertEqual(second[0]["degradation_ms_per_lap"], 60.0)
+
+    def test_a_change_of_compound_under_one_number_is_two_rows_as_in_stints_json(self):
+        """F1 correcting itself: the run before the change and the run after are two stints."""
+        laps = tyre_laps("VER", range(2, 12), stint=1, compound="SOFT", first_age=2)
+        laps += tyre_laps("VER", range(12, 22), stint=1, compound="MEDIUM", first_age=12)
+
+        result = calculate_fuel_adjusted_tyre_degradation("s", {"type": "R"}, laps)
+
+        self.assertEqual([(row["stint"], row["compound"]) for row in result["rows"]], [(1, "SOFT"), (1, "MEDIUM")])
+
+    def test_a_stint_with_no_tyre_ages_is_not_said_to_be_on_a_used_set(self):
+        """F1 gives ages for sets that went on used: of the 2025 Spanish GP's later stints, 21 begin
+        on a used set with an age."""
+        laps = tyre_laps("BEA", range(41, 60), stint=3, compound="SOFT")
+        for row in laps:
+            row["tyre_age"] = None
+
+        (row,) = calculate_fuel_adjusted_tyre_degradation("s", {"type": "R"}, laps)["rows"]
+
+        self.assertEqual(
+            row["caveats"],
+            [
+                "No rate reported: F1's tyre data gives a tyre age for 0 of the stint's 19 clean laps, and "
+                "at least 8 with one are required."
+            ],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
