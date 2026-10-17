@@ -1,4 +1,4 @@
-"""The key layout, and the rule that ties the coverage bars to the pipeline version."""
+"""The key layout, and the rules that tie the pipeline version to the bars and to what is published."""
 
 from __future__ import annotations
 
@@ -7,6 +7,53 @@ import hashlib
 import pytest
 
 from f1data import coverage, layout
+from f1data.store import MemoryStore
+from tests.sample_bucket import write_sample
+
+# What the sample race publishes (tests/sample_bucket.py), and the pipeline
+# version it was recorded at. The test below tells what to set it to.
+RECORDED_OUTPUT = (27, "71b51d9c09c90ac169ea0e00dfab2ffdf27f45542777905dc455291a4ac73160")
+
+
+def published_output(monkeypatch, pipeline_version: int) -> str:
+    """The SHA-256 of every object the sample writes, by key and as written, under ``pipeline_version``.
+
+    The sample race is built by the real code from the session the tests are
+    built on (tests/race.py): every artifact, the nine analyses among them,
+    then the manifest, the pointer, the index and the standings.
+    """
+    with monkeypatch.context() as patched:
+        patched.setattr(layout, "PIPELINE_VERSION", pipeline_version)
+        store = MemoryStore()
+        write_sample(store)
+    digest = hashlib.sha256()
+    for key in sorted(item.key for item in store.list("")):
+        digest.update(key.encode("utf-8") + b"\0" + hashlib.sha256(store.get(key).data).digest())
+    return digest.hexdigest()
+
+
+def test_changing_what_a_build_publishes_needs_a_new_pipeline_version(monkeypatch):
+    """A pointer written by this pipeline version is not built again. If what a
+    build publishes changes and the version does not, every session published
+    before the change stays as it was. Nothing else said so: the bars are held
+    to the version by the test after this one, and the analyses were not.
+
+    The pipeline version is in the manifest and the pointer, so the recorded
+    output is of one version.
+    """
+    version, recorded = RECORDED_OUTPUT
+    if layout.PIPELINE_VERSION != version:
+        pytest.fail(
+            f"PIPELINE_VERSION is {layout.PIPELINE_VERSION} and the output was recorded under {version}: set "
+            f'RECORDED_OUTPUT in tests/test_layout.py to ({layout.PIPELINE_VERSION}, '
+            f'"{published_output(monkeypatch, layout.PIPELINE_VERSION)}")'
+        )
+    if published_output(monkeypatch, version) != recorded:
+        pytest.fail(
+            f"output changed: bump PIPELINE_VERSION in f1data/layout.py to {version + 1}, say why in the list "
+            f'above it, and set RECORDED_OUTPUT in tests/test_layout.py to ({version + 1}, '
+            f'"{published_output(monkeypatch, version + 1)}")'
+        )
 
 
 def test_changing_a_coverage_bar_needs_a_new_pipeline_version():

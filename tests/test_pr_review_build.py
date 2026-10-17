@@ -10,7 +10,9 @@ partial for want of it and is asked about on every run.
 
 The index was not derived, nor the standings published, when the calendar of
 any one season would not load, as next year's will not on the first of
-January. And a pointer could name its own generation as the one before it.
+January. A pointer could name its own generation as the one before it. And
+nothing held what a build publishes to the pipeline version: that test is in
+tests/test_layout.py.
 """
 
 from __future__ import annotations
