@@ -248,7 +248,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | `fetch --year Y --event E --session S` | Fetch one session as a new snapshot. Any session is archived; only a race or a sprint is ever built. `S` is given to FastF1 as it is written: a name such as `Sprint Shootout`, or `R`, `S`, `Q`, `SQ`, `SS`, `FP1` to `FP3` |
 | `build` | Build and publish every archived race and sprint that needs it, then the index and standings. `--session-key K` to limit; `--shard I/N` to split across jobs |
 | `probe --year Y --event E --session S` | Fetch one session into a scratch directory and report what F1 answered. Archives nothing |
-| `copy-archive --from A --to B` | Copy snapshots between stores, such as a local directory to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves |
+| `copy-archive --from A --to B` | Copy snapshots between stores, such as a directory store to `r2`. A correction of a snapshot's record is not copied: the destination's builds measure for themselves. Fails when `A` holds nothing to copy, and when it is the spool, whose fetches are archived by `fetch-due` or `run` against the store they were fetched for |
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
 | `schema` | Write the published format's JSON Schema from the models. `--check` to fail when the committed file is out of date |
 | `prune` | Say which generations no pointer names and nothing has written for 30 days, with their objects and bytes; `--delete` to remove them, `--keep-days N` for another period. See "Removing old generations" |
@@ -268,9 +268,14 @@ takes the lock before the directory exists and holds it until it is done with
 it. Any other run takes the lock before it does anything to the directory,
 and decides what to do by what the directory is then. The lock is the
 operating system's and goes with the process: nothing is taken for abandoned
-by its age, and two runs cannot both be at one fetch. The spool is the
-program's own: a directory put there by anything else is removed once it is
-an hour old.
+by its age, and two runs cannot both be at one fetch. Only what has a fetch's
+name is looked at: a directory named `<stamp>-<id>`, as in
+`20261017T120000Z-0badcafe`, and the lock beside it. Such a directory with
+nothing in it, or a lock with no directory, is what a run that was stopped
+leaves, and is removed once it is an hour old. Anything else in the spool is
+left as it is, and a run says once that it is there. Give the spool a
+directory of its own all the same, and never point it at a directory store:
+the spool is not a store, and `copy-archive` refuses to copy from it.
 
 What an earlier run left there, a run deals with before it asks F1 for
 anything:

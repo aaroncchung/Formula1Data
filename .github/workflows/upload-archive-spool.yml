@@ -1,19 +1,24 @@
-name: Upload a spooled archive
+name: Upload a directory store's archive
 
 # A stopgap, to be deleted once the fetch machine has R2 credentials of its own.
 #
 # The fetch stage has to run on a machine F1 answers (AR-13), and that machine
-# cannot write to R2 yet. Until it can, a fetch is archived to a local
-# directory (`python -m f1data fetch --store <dir>`), the directory's archive/
-# folder is packed into spool.tar and attached to a draft release, and this
-# workflow copies it into the bucket with the credentials the repository has.
-# Snapshots are written once under names of their own, so copying is additive
-# and safe to repeat.
+# cannot write to R2 yet. Until it can, a fetch is archived into a directory
+# store on that machine (`python -m f1data fetch --store <dir>`), the store's
+# archive/ folder is packed into store.tar and attached to a draft release, and
+# this workflow copies it into the bucket with the credentials the repository
+# has. Snapshots are written once under names of their own, so copying is
+# additive and safe to repeat.
+#
+# The store is not the spool (F1DATA_SPOOL), where a fetch waits until the store
+# it was fetched for has it. Packing the spool uploads nothing: copy-archive
+# refuses it. Releases made before this was said hold the same thing as
+# spool.tar, which is still read.
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Draft release holding spool.tar
+        description: Draft release holding store.tar (or spool.tar, from before)
         default: archive-spool-3
   # workflow_dispatch only works once this file is on the default branch. Until
   # then a push that touches this file runs it from the rewrite branch.
@@ -35,7 +40,7 @@ defaults:
 
 jobs:
   upload:
-    name: Copy the spool into the bucket
+    name: Copy the directory store's archive into the bucket
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -61,14 +66,19 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Download the spool
+      - name: Download the store
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern spool.tar
-          mkdir spool
-          tar -xf spool.tar -C spool
-          find spool -type f | sort
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern store.tar --pattern spool.tar
+          mkdir store
+          for packed in store.tar spool.tar; do
+            if [ -f "$packed" ]; then
+              tar -xf "$packed" -C store
+            fi
+          done
+          find store -type f | sort
 
+      # Fails when what was packed holds nothing to copy, or is a spool.
       - name: Copy to R2
-        run: python -m f1data copy-archive --from spool --to r2 | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python -m f1data copy-archive --from store --to r2 | tee -a "$GITHUB_STEP_SUMMARY"

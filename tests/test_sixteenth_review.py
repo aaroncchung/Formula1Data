@@ -330,7 +330,10 @@ def test_a_fetch_another_run_is_making_is_neither_touched_nor_planned(job):
 
 
 def test_only_what_is_not_a_fetch_is_swept_and_not_while_anything_holds_it(job):
-    stray = job.spool / "left-by-something-else"
+    # Named as a fetch, with nothing in it: its run was stopped before it
+    # wrote anything (what is not named as a fetch is left alone, see
+    # tests/test_pr_review_ops.py).
+    stray = job.spool / "20260101T000000Z-0000abcd"
     stray.mkdir(parents=True)
     (stray / "a file").write_text("of something else", encoding="utf-8")
     orphan = job.spool / "20260101T000000Z-00000000.lock"
@@ -346,11 +349,11 @@ def test_only_what_is_not_a_fetch_is_swept_and_not_while_anything_holds_it(job):
     os.utime(orphan, (long_ago, long_ago))
     with spool.holding(stray):
         output, _ = job.run()
-        assert stray.is_dir() and "it was not a fetch" not in output
+        assert stray.is_dir() and "it held no record of a fetch" not in output
 
     output, _ = job.run()
 
-    assert "Removed left-by-something-else from the spool: it was not a fetch." in output
+    assert "Removed 20260101T000000Z-0000abcd from the spool: it held no record of a fetch." in output
     assert not stray.exists() and not orphan.exists()
     # The fetch the run made is gone with its lock: nothing is left behind.
     assert list(job.spool.iterdir()) == []

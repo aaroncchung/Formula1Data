@@ -51,7 +51,13 @@ A run that takes the lock of a directory it did not make finds one of these.
   turn. A fetch is never carried on from where it stopped: a snapshot is of
   one fetch, made into an empty cache.
 * ``discarded``: a removal that was itself stopped. It is finished.
-* None of them: not a fetch. It is removed once it is an hour old.
+* None of them: a run made the directory and was stopped before it could
+  write into it. It is removed once it is an hour old.
+
+Only a directory with a fetch's name, ``<stamp>-<id>``, and the lock of
+such a name are looked at. Anything else in the spool is not this
+program's and is left as it is: ``F1DATA_SPOOL`` may have been pointed at a
+directory that holds other things, a directory store among them.
 
 The mark that F1 served the session has to be made at the moment a disk is
 likeliest to be full, since a fetch is what fills it. So it is an empty file
@@ -66,6 +72,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shutil
 import time
@@ -102,11 +109,13 @@ _SCHEMA_VERSION = 2
 _LOCK_TRIES = 5
 # Windows refuses to remove a file that any process has open.
 _AN_OPEN_FILE_CANNOT_BE_REMOVED = os.name == "nt"
-# A directory with no record in it is one that something other than a fetch
-# left. So is a lock with no directory, once the run that made it has had
-# time to make the directory.
+# A directory named as a fetch with no record in it is one whose run was
+# stopped before it wrote anything. So is a lock with no directory, once the
+# run that made it has had time to make the directory.
 _NOT_A_FETCH_AFTER_SECONDS = 60 * 60
 _STAMP = "%Y-%m-%dT%H:%M:%SZ"
+# The name ``new_fetch_path`` gives a fetch's directory.
+_FETCH_NAME = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}")
 
 # The directories whose lock this process holds.
 _HELD: set[str] = set()
@@ -397,7 +406,7 @@ def keep(directory: Path, fetched: FetchedSession, fetched_at: datetime, snapsho
 
 
 def discard(directory: Path) -> None:
-    """Remove a directory: a fetch that is in the archive, one F1 did not serve, or what is not a fetch.
+    """Remove a directory: a fetch that is in the archive, one F1 did not serve, or one with nothing in it yet.
 
     Marked first, so that a removal that is stopped part of the way is not
     afterwards taken for a fetch with some of its files missing. If it
@@ -453,7 +462,7 @@ def read(directory: Path) -> Spooled | Unfinished | Discarded | None:
 
 
 def is_stale(directory: Path, now: float | None = None) -> bool:
-    """Whether a directory that is not a fetch has been there long enough to be removed."""
+    """Whether a fetch's directory with no record in it has been there long enough to be removed."""
     now = time.time() if now is None else now
     try:
         return now - Path(directory).stat().st_mtime > _NOT_A_FETCH_AFTER_SECONDS
@@ -464,10 +473,29 @@ def is_stale(directory: Path, now: float | None = None) -> bool:
 # --- looking at the spool without holding anything --------------------------
 
 
+def is_fetch_name(name: str) -> bool:
+    """Whether a name is one ``new_fetch_path`` gives."""
+    return _FETCH_NAME.fullmatch(name) is not None
+
+
 def directories(root: Path) -> list[Path]:
-    """Every directory of the spool, oldest first."""
+    """Every directory of the spool with a fetch's name, oldest first."""
     root = Path(root)
-    return sorted(path for path in root.iterdir() if path.is_dir()) if root.is_dir() else []
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.iterdir() if is_fetch_name(path.name) and path.is_dir())
+
+
+def not_fetches(root: Path) -> list[Path]:
+    """What is in the spool and is neither a fetch's directory nor its lock: nothing of this program's."""
+    root = Path(root)
+    return sorted(path for path in root.iterdir() if not _is_of_a_fetch(path)) if root.is_dir() else []
+
+
+def _is_of_a_fetch(path: Path) -> bool:
+    if path.name.endswith(LOCK_SUFFIX):
+        return is_fetch_name(path.name[: -len(LOCK_SUFFIX)]) and path.is_file()
+    return is_fetch_name(path.name) and path.is_dir()
 
 
 def waiting(root: Path, store: str | None = None) -> list[Spooled]:
@@ -505,7 +533,8 @@ def unreadable(root: Path) -> list[Path]:
 def sweep_locks(root: Path, now: float | None = None) -> None:
     """Remove the locks of directories that are gone.
 
-    Not a lock a run has just made for a directory it is about to make.
+    Not a lock a run has just made for a directory it is about to make, and
+    not a file that only ends as a lock does.
     """
     root = Path(root)
     now = time.time() if now is None else now
@@ -513,6 +542,8 @@ def sweep_locks(root: Path, now: float | None = None) -> None:
         return
     for lock in root.glob(f"*{LOCK_SUFFIX}"):
         directory = lock.with_name(lock.name[: -len(LOCK_SUFFIX)])
+        if not _is_of_a_fetch(lock):
+            continue
         try:
             if directory.exists() or now - lock.stat().st_mtime <= _NOT_A_FETCH_AFTER_SECONDS:
                 continue

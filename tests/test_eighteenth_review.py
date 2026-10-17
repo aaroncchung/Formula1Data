@@ -194,13 +194,13 @@ def test_a_directory_marked_as_served_is_kept_though_nothing_says_what_it_is_of(
     output, code = job.run()
 
     assert code == 1 and f"ATTENTION: {left} is a fetch whose record cannot be read" in output
-    assert "it was not a fetch" not in output and any((left / "cache").rglob("*.ff1pkl"))
+    assert "it held no record of a fetch" not in output and any((left / "cache").rglob("*.ff1pkl"))
     with pytest.raises(spool.UnreadableError, match="nothing to say which"):
         spool.read(left)
     # What is left of a fetch that never began is rubbish all the same.
     (left / spool.SERVED_NAME).rename(left / spool.SERVING_NAME)
     os.utime(left, (long_ago, long_ago))
-    assert "it was not a fetch" in job.run()[0] and not left.exists()
+    assert "it held no record of a fetch" in job.run()[0] and not left.exists()
 
 
 # --- the guide --------------------------------------------------------------------

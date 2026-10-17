@@ -76,6 +76,7 @@ from f1data.spool import (
     keep,
     mark_served,
     new_fetch_path,
+    not_fetches,
     spool_root,
     sweep_locks,
 )
@@ -235,7 +236,8 @@ def main(argv: list[str] | None = None) -> None:
 
     copy = subparsers.add_parser(
         "copy-archive",
-        help="Copy archive snapshots from one store to another, such as a local spool to R2.",
+        help="Copy archive snapshots from one store to another, such as a directory store to R2. Not for the "
+        "spool: what waits there is archived by `fetch-due` or `run` against the store it was fetched for.",
     )
     copy.add_argument("--from", dest="source", required=True, help="Directory, or r2.")
     copy.add_argument("--to", dest="destination", required=True, help="Directory, or r2.")
@@ -534,11 +536,18 @@ def _see_the_spool_through(
     decided by what it is found to be then (f1data/spool.py). A session F1
     served is archived, or stays: uploaded if it is whole, read back from
     its cache and written down first if it is not. What is part of a
-    session, and what is not a fetch, is removed.
+    session is removed. What is not named as a fetch is not touched.
     """
     seen = _Seen()
     elsewhere = 0
     sweep_locks(spool)
+    strangers = not_fetches(spool)
+    if strangers:
+        named = ", ".join(path.name for path in strangers[:3]) + (", ..." if len(strangers) > 3 else "")
+        print(
+            f"{len(strangers)} thing(s) in the spool ({spool}) are not fetches, and are left as they are: {named}. "
+            "The spool is best given a directory of its own."
+        )
     for directory in directories(spool):
         with holding(directory) as mine:
             if not mine:
@@ -567,8 +576,10 @@ def _see_the_spool_through(
                 )
                 continue
             if found is None:
+                # Named as a fetch, with nothing in it to say what of: its
+                # run was stopped before it wrote anything.
                 if is_stale(directory) and _remove(directory):
-                    print(f"Removed {directory.name} from the spool: it was not a fetch.")
+                    print(f"Removed {directory.name} from the spool: it held no record of a fetch.")
                 continue
             if isinstance(found, Discarded):
                 _remove(directory)
@@ -1156,6 +1167,7 @@ def run_last_run(args: argparse.Namespace) -> int:
 
 
 def run_copy_archive(args: argparse.Namespace) -> int:
+    _refuse_a_spool(args.source)
     source, destination = _store(args.source), _store(args.destination)
     items = sorted(source.list(layout.ARCHIVE_PREFIX), key=lambda item: item.key)
     # A snapshot is copied; what a build has since written about it is not.
@@ -1182,6 +1194,10 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     others = [item for item in others if not item.key.endswith(".json")] + [
         item for item in others if item.key.endswith(".json")
     ]
+    if not markers and not others:
+        # Copying nothing and saying so with exit 0 would let a directory that
+        # was meant to be copied be thrown away as uploaded.
+        raise SystemExit(f"{args.source} holds no snapshot and nothing else to copy, so nothing was copied.")
     copied = skipped = not_whole = 0
     with tempfile.TemporaryDirectory(prefix="f1data-copy-") as scratch:
         local, theirs = Path(scratch) / "object", Path(scratch) / "theirs"
@@ -1235,6 +1251,18 @@ def run_copy_archive(args: argparse.Namespace) -> int:
     if not_whole:
         print(f"Left {not_whole} snapshot(s) that are not whole at the source. Copy again when they are.")
     return 1 if not_whole else 0
+
+
+def _refuse_a_spool(spec: str | None) -> None:
+    """Stop before copying from the spool. It is no store, and nothing in it would be copied."""
+    if not spec or spec.strip().lower() == "r2":
+        return
+    path = Path(spec)
+    if path.resolve() == spool_root().resolve() or directories(path):
+        raise SystemExit(
+            f"{spec} is a spool of fetches, not a store, and nothing in it is copied. A fetch waiting there is "
+            "archived by `fetch-due` or `run` against the store it was fetched for: keep the spool until one has."
+        )
 
 
 def _sha256(path: Path) -> str:
