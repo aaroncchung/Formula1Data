@@ -291,5 +291,170 @@ class TyreStintTests(unittest.TestCase):
         )
 
 
+class IdealLapTests(unittest.TestCase):
+    """Finding 3: an ideal lap slower than the best lap."""
+
+    def test_an_ideal_lap_is_of_clean_laps_and_never_slower_than_the_best(self):
+        """Bortoleto in the 2025 Las Vegas GP: lap 1 and an in-lap, then out. His ideal lap of
+        2:23.044 was 12.618 s slower than his lap 1."""
+        laps = [
+            lap("BOR", 1, 130_426, sector_2_ms=38_734, sector_3_ms=44_553, is_pit_in_lap=True,
+                is_accurate=False, track_status="12"),
+            lap("BOR", 2, None, sector_1_ms=59_757, sector_2_ms=45_862, sector_3_ms=56_007,
+                is_pit_in_lap=True, is_pit_out_lap=True, is_accurate=False, track_status="26"),
+        ]
+        laps += [
+            lap("NOR", number, 94_000 + time, sector_1_ms=30_000 + time, sector_2_ms=34_000, sector_3_ms=30_000)
+            for number, time in ((2, 300), (3, 0), (4, 200))
+        ]
+        # Lap 1 has the quickest last two sectors, from the line.
+        laps.append(lap("NOR", 1, 99_000, sector_2_ms=33_000, sector_3_ms=29_000, is_accurate=False))
+
+        rows = {row["driver_code"]: row for row in calculate_ideal_laps("s", laps)["rows"]}
+
+        self.assertEqual(
+            rows["BOR"],
+            {
+                "driver_code": "BOR",
+                "best_sector_1_ms": None,
+                "best_sector_2_ms": None,
+                "best_sector_3_ms": None,
+                "ideal_lap_ms": None,
+                "best_lap_ms": None,
+                "delta_to_ideal_ms": None,
+            },
+        )
+        self.assertEqual((rows["NOR"]["ideal_lap_ms"], rows["NOR"]["best_lap_ms"]), (94_000, 94_000))
+        self.assertEqual(rows["NOR"]["delta_to_ideal_ms"], 0)
+
+    def test_no_time_left_is_given_where_the_ideal_is_slower_than_the_best_lap(self):
+        """F1 can time a lap and leave a sector out."""
+        laps = [
+            lap("NOR", 2, 94_000, sector_1_ms=30_000, sector_2_ms=None, sector_3_ms=30_000),
+            lap("NOR", 3, 95_000, sector_1_ms=30_400, sector_2_ms=34_500, sector_3_ms=30_100),
+        ]
+
+        (row,) = calculate_ideal_laps("s", laps)["rows"]
+
+        self.assertEqual((row["ideal_lap_ms"], row["best_lap_ms"], row["delta_to_ideal_ms"]), (94_500, 94_000, None))
+
+
+class RacePaceTests(unittest.TestCase):
+    """Finding 4: a median of an opening lap or two ranked against medians of the whole race."""
+
+    @staticmethod
+    def race():
+        laps = []
+        for driver, pace in (("VER", 80_000), ("NOR", 80_400), ("PIA", 80_600)):
+            laps += [lap(driver, number, pace) for number in range(1, 62)]
+        # Out after half the clean laps, which is the least that is ranked.
+        laps += [lap("ALO", number, 81_000) for number in range(1, 32)]
+        # Out on lap 25, and on lap 5 with one clean lap, on heavier fuel.
+        laps += [lap("HUL", number, 81_500) for number in range(1, 25)]
+        laps += [lap("LAW", 1, 90_000), lap("LAW", 2, 83_022), lap("LAW", 3, 99_000, is_pit_in_lap=True)]
+        # Three quick laps on new tyres and an empty tank are no pace either.
+        laps += [lap("STR", number, 79_000) for number in range(58, 61)]
+        return laps
+
+    def test_a_driver_with_too_few_clean_laps_has_no_gap_and_does_not_set_the_best(self):
+        """The 2025 Mexico City GP: Lawson, out after five laps, ranked 3.02 s off on one clean lap."""
+        result = calculate_race_pace("s", self.race())
+        rows = {row["driver_code"]: row for row in result["drivers"]}
+
+        self.assertEqual(
+            [(row["driver_code"], row["gap_to_best_ms"]) for row in result["drivers"]],
+            [("VER", 0), ("NOR", 400), ("PIA", 600), ("ALO", 1_000), ("HUL", None), ("LAW", None), ("STR", None)],
+        )
+        # Their figures are still there, with what they are over.
+        self.assertEqual((rows["LAW"]["lap_count"], rows["LAW"]["median_lap_ms"]), (1, 83_022))
+        self.assertEqual(rows["ALO"]["lap_count"], 30)
+        self.assertIn(
+            "A driver has a gap to the best only with at least half as many clean laps as the driver with the "
+            "most, who has 60, and at least 5. No gap for HUL (23), LAW (1), STR (3).",
+            result["caveats"],
+        )
+
+    def test_a_stint_of_fewer_than_five_clean_laps_has_no_gap(self):
+        laps = [lap("VER", number, 80_000, stint=1) for number in range(1, 30)]
+        laps += [lap("VER", number, 79_000, stint=2) for number in range(30, 34)]
+
+        result = calculate_race_pace("s", laps)
+
+        self.assertEqual([(row["stint"], row["gap_to_best_ms"]) for row in result["stints"]], [(1, 0), (2, None)])
+        self.assertIn("A stint has a gap to the best stint only with at least 5 clean laps.", result["caveats"])
+
+    def test_race_pace_has_no_stint_row_for_laps_with_no_stint(self):
+        """Finding 2: such a row had a stint of null, which is how the row for the whole race is marked."""
+        laps = [lap("VER", number, 92_000, compound=None, tyre_age=None, stint=None) for number in range(1, 25)]
+        laps += tyre_laps("VER", range(25, 45), stint=1)
+
+        result = calculate_race_pace("s", laps)
+
+        self.assertEqual([row["stint"] for row in result["stints"]], [1])
+        self.assertEqual([row["lap_count"] for row in result["drivers"]], [43])
+        self.assertIn(
+            "F1's tyre data gives no stint for 23 clean laps, of VER. They are in the drivers' rows and in no "
+            "stint's.",
+            result["caveats"],
+        )
+
+
+class TeammateRowTests(unittest.TestCase):
+    """Finding 5: a team left out, and nothing said, when a driver had no clean lap."""
+
+    def test_a_team_with_a_driver_who_has_no_clean_lap_has_a_row_with_no_figures(self):
+        """The 2025 Austrian GP lost Mercedes, Red Bull and Williams: Antonelli and Verstappen were
+        out on lap 1, Albon retired after 15 laps, and Sainz did not start."""
+        laps = []
+        for driver in ("NOR", "PIA", "RUS", "TSU"):
+            laps += [lap(driver, number, 70_000) for number in range(1, 30)]
+        laps += [lap("ANT", 1, None), lap("VER", 1, None)]
+        laps += [lap("ALB", number, 70_500) for number in range(1, 11)]
+        drivers = [
+            team("NOR", "McLaren"), team("PIA", "McLaren"),
+            team("RUS", "Mercedes"), team("ANT", "Mercedes"),
+            team("TSU", "Red Bull Racing"), team("VER", "Red Bull Racing"),
+            team("ALB", "Williams"), team("SAI", "Williams"),
+        ]
+
+        result = calculate_teammate_comparison("s", laps, drivers)
+        rows = {row["team"]: row for row in result["rows"]}
+
+        self.assertEqual(set(rows), {"McLaren", "Mercedes", "Red Bull Racing", "Williams"})
+        self.assertIsNone(rows["McLaren"].get("caveat"))
+        self.assertEqual(rows["Mercedes"]["caveat"], "No gap: ANT's one lap is not a clean lap.")
+        self.assertEqual(rows["Red Bull Racing"]["caveat"], "No gap: VER's one lap is not a clean lap.")
+        self.assertEqual(rows["Williams"]["caveat"], "No gap: SAI ran no lap.")
+        self.assertEqual(
+            rows["Williams"]["drivers"],
+            [
+                {"driver_code": "ALB", "average_lap_ms": None, "lap_count": 0, "clean_lap_count": 9},
+                {"driver_code": "SAI", "average_lap_ms": None, "lap_count": 0, "clean_lap_count": 0},
+            ],
+        )
+        for name in ("Mercedes", "Red Bull Racing", "Williams"):
+            row = rows[name]
+            self.assertEqual(
+                (row["gap_ms"], row["gap_spread_ms"], row["matched_lap_count"], row["trimmed_lap_count"]),
+                (None, None, 0, 0),
+            )
+        self.assertNotIn("No team had two drivers with clean laps.", result["caveats"])
+
+    def test_a_team_with_one_driver_or_none_who_ran_is_named(self):
+        """Stroll did not start the 2025 Spanish GP and is not in its driver list."""
+        laps = [lap(driver, number, 70_000) for driver in ("NOR", "PIA", "ALO") for number in range(1, 20)]
+        drivers = [
+            team("NOR", "McLaren"), team("PIA", "McLaren"),
+            team("ALO", "Aston Martin"),
+            team("GAS", "Alpine"), team("COL", "Alpine"),
+        ]
+
+        result = calculate_teammate_comparison("s", laps, drivers)
+
+        self.assertEqual([row["team"] for row in result["rows"]], ["McLaren"])
+        self.assertIn("No row for Aston Martin: the session has one driver of the team.", result["caveats"])
+        self.assertIn("No row for Alpine: neither driver ran a lap for the team.", result["caveats"])
+
+
 if __name__ == "__main__":
     unittest.main()

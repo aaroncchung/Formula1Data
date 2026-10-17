@@ -742,13 +742,19 @@ class LapTimes(RootModel[list[LapTimeSeries]]):
 class RacePaceRow(Model):
     driver_code: str
     compound: CompoundOrNull = Field(description="The compound most of the laps were on.")
-    stint: int | None = Field(description="Null in a row for the whole race.")
+    stint: int | None = Field(
+        description="Null in a row for the whole race. A stint's row is of a stint F1's tyre data numbers: "
+        "laps it gives no stint for are in the driver's row and in no stint's."
+    )
     median_lap_ms: Decimal1 | None
     mean_lap_ms: Decimal1 | None
     trimmed_mean_lap_ms: Decimal1 | None
     fastest_clean_lap_ms: int | None
-    lap_count: int
-    gap_to_best_ms: Decimal1 | None
+    lap_count: int = Field(description="The clean laps the row's figures are over.")
+    gap_to_best_ms: Decimal1 | None = Field(
+        description="Milliseconds behind the best median of the rows that are ranked. Null for a row of "
+        "too few clean laps to be ranked, which the caveats name."
+    )
 
 
 class RacePace(Model):
@@ -868,13 +874,19 @@ class Strategy(Model):
 
 
 class IdealLapRow(Model):
+    """A driver's best sectors and best lap, each of their clean laps. A driver with none has nulls."""
+
     driver_code: str
     best_sector_1_ms: int | None
     best_sector_2_ms: int | None
     best_sector_3_ms: int | None
-    ideal_lap_ms: int | None
-    best_lap_ms: int | None
-    delta_to_ideal_ms: int | None
+    ideal_lap_ms: int | None = Field(description="Milliseconds: the three best sectors added up.")
+    best_lap_ms: int | None = Field(description="Milliseconds: the fastest clean lap.")
+    delta_to_ideal_ms: int | None = Field(
+        description="Milliseconds: best_lap_ms less ideal_lap_ms. Null where the ideal lap is slower than "
+        "the best lap, which it can be only where F1 gives a lap's time and not all of its sectors, or "
+        "sectors that do not add up to it."
+    )
 
 
 class IdealLaps(Model):
@@ -897,7 +909,10 @@ class TeammateComparisonRow(Model):
     gap_spread_ms: Decimal1 | None
     matched_lap_count: int
     trimmed_lap_count: int
-    caveat: str | None
+    caveat: str | None = Field(
+        description="Why the row has no gap: too few matched laps, or a driver with no clean lap, whose "
+        "figures are then null."
+    )
 
 
 class TeammateComparison(Model):

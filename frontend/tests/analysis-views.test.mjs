@@ -188,6 +188,26 @@ test("a team without two drivers has no gap", () => {
   assert.equal(teammateGap(team({ drivers: [] })).status, "none");
 });
 
+// The 2025 Austrian GP, as the analysis now writes it: Sainz did not start, and the team has a row with no figures.
+test("a team with a driver who has no clean lap has a row with no gap, and the row's reason", () => {
+  const caveat = "No gap: SAI ran no lap.";
+  const row = team({
+    drivers: [
+      { driver_code: "ALB", average_lap_ms: null, lap_count: 0, clean_lap_count: 9 },
+      { driver_code: "SAI", average_lap_ms: null, lap_count: 0, clean_lap_count: 0 }
+    ],
+    gap_ms: null,
+    gap_spread_ms: null,
+    matched_lap_count: 0,
+    trimmed_lap_count: 0,
+    caveat
+  });
+
+  assert.deepEqual(teammateGap(row), { status: "none", reason: caveat });
+  assert.equal(teammateGapText(teammateGap(row)), "No gap");
+  assert.equal(teammateBasis(row), "0 matched laps");
+});
+
 test("no gap and no caveat still reads as no gap, in words", () => {
   assert.deepEqual(teammateGap(team({ gap_ms: null })), { status: "none", reason: "No gap was published for this team." });
 });

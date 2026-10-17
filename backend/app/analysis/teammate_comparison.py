@@ -1,6 +1,6 @@
 """Intra-team lap-time comparison. Returns plain dictionaries."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from statistics import mean
 from typing import Any
 
@@ -35,32 +35,58 @@ def calculate_teammate_comparison(
     car was held up. Each driver's average is taken over the laps that were
     kept, which makes the gap the difference between the two averages.
     """
+    # A driver with no known team has no team-mate. They used to be pooled
+    # under "Unknown" and compared with each other.
     driver_team = {
-        driver["code"]: driver.get("team", {}).get("name")
+        driver["code"]: team
         for driver in drivers
         if driver.get("code")
+        and (team := (driver.get("team") or {}).get("name"))
+        and team != "Unknown"
     }
-    by_team: dict[str, dict[str, dict[int, float]]] = defaultdict(lambda: defaultdict(dict))
+    clean: dict[str, dict[int, float]] = defaultdict(dict)
+    # Teams in the order their first clean lap comes in the timing, then any
+    # with none, in the order of the driver list.
+    order: dict[str, None] = {}
     for lap in clean_laps(laps):
         driver = lap.get("driver_code")
         number = lap_number(lap)
-        # A driver with no known team has no team-mate. They used to be pooled
-        # under "Unknown" and compared with each other.
         team = driver_team.get(driver)
-        if not driver or number is None or not team or team == "Unknown":
+        if not driver or number is None or not team:
             continue
-        by_team[team][driver][number] = float(lap["lap_time_ms"])
+        clean[driver][number] = float(lap["lap_time_ms"])
+        order.setdefault(team, None)
+    by_team: dict[str, list[str]] = defaultdict(list)
+    for driver, team in driver_team.items():
+        by_team[team].append(driver)
+        order.setdefault(team, None)
+    laps_run = Counter(lap.get("driver_code") for lap in laps)
 
     rows = []
-    for team, team_drivers in by_team.items():
+    not_run = []
+    for team in order:
+        team_drivers = by_team[team]
         if len(team_drivers) < 2:
             continue
         # Two cars per team is the rule; if the data ever lists more, compare
         # the two with the most clean laps rather than guessing at a pairing.
         first, second = sorted(
-            sorted(team_drivers), key=lambda code: len(team_drivers[code]), reverse=True
+            sorted(team_drivers), key=lambda code: (len(clean[code]), laps_run[code]), reverse=True
         )[:2]
-        rows.append(_compare(team, first, team_drivers[first], second, team_drivers[second]))
+        if not laps_run[first] and not laps_run[second]:
+            not_run.append(team)
+            continue
+        row = _compare(team, first, clean[first], second, clean[second])
+        # A team with a driver who has no clean lap used to have no row, and
+        # nothing said so: in 9 of the 24 races of 2025, among them the
+        # Austrian GP, which lost Mercedes, Red Bull and Williams to two cars
+        # out on lap 1 and one that did not start. Its row has no figures,
+        # and says why.
+        without = [code for code in sorted((first, second)) if not clean[code]]
+        if without:
+            why = "; ".join(_no_clean_lap(code, laps_run[code]) for code in without)
+            row["caveat"] = f"No gap: {why}."
+        rows.append(row)
 
     caveats = [
         "Team-mates are compared on matched laps only: the same lap number, with both laps "
@@ -74,9 +100,24 @@ def calculate_teammate_comparison(
         "Matching by lap number assumes both cars are on track together, which holds in a "
         "race or sprint but not in practice or qualifying.",
     ]
-    if not rows:
+    if not any(all(driver["clean_lap_count"] for driver in row["drivers"]) for row in rows):
         caveats.append("No team had two drivers with clean laps.")
+    # Stroll did not start the 2025 Spanish GP, and is not in its driver list.
+    alone = [team for team in order if len(by_team[team]) == 1]
+    for teams, why in ((alone, "the session has one driver of"), (not_run, "neither driver ran a lap for")):
+        if teams:
+            which = "the team" if len(teams) == 1 else "each"
+            caveats.append(f"No row for {', '.join(teams)}: {why} {which}.")
     return {"session_id": session_id, "rows": rows, "caveats": caveats}
+
+
+def _no_clean_lap(driver: str, laps_run: int) -> str:
+    """Why a driver has no clean lap to compare, as far as the lap count says."""
+    if not laps_run:
+        return f"{driver} ran no lap"
+    if laps_run == 1:
+        return f"{driver}'s one lap is not a clean lap"
+    return f"none of {driver}'s {laps_run} laps is a clean lap"
 
 
 def _compare(

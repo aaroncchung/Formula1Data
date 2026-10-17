@@ -398,12 +398,14 @@ export interface IdealLaps {
   rows: IdealLapRow[];
 }
 /**
+ * A driver's best sectors and best lap, each of their clean laps. A driver with none has nulls.
+ *
  * This interface was referenced by `Formula1DataPublishedFormat2`'s JSON-Schema
  * via the `definition` "IdealLapRow".
  */
 export interface IdealLapRow {
   /**
-   * Milliseconds.
+   * Milliseconds: the fastest clean lap.
    */
   best_lap_ms: number | null;
   /**
@@ -419,12 +421,12 @@ export interface IdealLapRow {
    */
   best_sector_3_ms: number | null;
   /**
-   * Milliseconds.
+   * Milliseconds: best_lap_ms less ideal_lap_ms. Null where the ideal lap is slower than the best lap, which it can be only where F1 gives a lap's time and not all of its sectors, or sectors that do not add up to it.
    */
   delta_to_ideal_ms: number | null;
   driver_code: string;
   /**
-   * Milliseconds.
+   * Milliseconds: the three best sectors added up.
    */
   ideal_lap_ms: number | null;
 }
@@ -522,9 +524,12 @@ export interface RacePaceRow {
    */
   fastest_clean_lap_ms: number | null;
   /**
-   * Milliseconds.
+   * Milliseconds behind the best median of the rows that are ranked. Null for a row of too few clean laps to be ranked, which the caveats name.
    */
   gap_to_best_ms: number | null;
+  /**
+   * The clean laps the row's figures are over.
+   */
   lap_count: number;
   /**
    * Milliseconds.
@@ -535,7 +540,7 @@ export interface RacePaceRow {
    */
   median_lap_ms: number | null;
   /**
-   * Null in a row for the whole race.
+   * Null in a row for the whole race. A stint's row is of a stint F1's tyre data numbers: laps it gives no stint for are in the driver's row and in no stint's.
    */
   stint: number | null;
   /**
@@ -679,6 +684,9 @@ export interface TeammateComparison {
  * via the `definition` "TeammateComparisonRow".
  */
 export interface TeammateComparisonRow {
+  /**
+   * Why the row has no gap: too few matched laps, or a driver with no clean lap, whose figures are then null.
+   */
   caveat: string | null;
   drivers: TeammateComparisonDriver[];
   /**

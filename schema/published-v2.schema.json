@@ -1156,6 +1156,7 @@
     },
     "IdealLapRow": {
       "additionalProperties": false,
+      "description": "A driver's best sectors and best lap, each of their clean laps. A driver with none has nulls.",
       "properties": {
         "best_lap_ms": {
           "anyOf": [
@@ -1166,7 +1167,7 @@
               "type": "null"
             }
           ],
-          "description": "Milliseconds."
+          "description": "Milliseconds: the fastest clean lap."
         },
         "best_sector_1_ms": {
           "anyOf": [
@@ -1210,7 +1211,7 @@
               "type": "null"
             }
           ],
-          "description": "Milliseconds."
+          "description": "Milliseconds: best_lap_ms less ideal_lap_ms. Null where the ideal lap is slower than the best lap, which it can be only where F1 gives a lap's time and not all of its sectors, or sectors that do not add up to it."
         },
         "driver_code": {
           "type": "string"
@@ -1224,7 +1225,7 @@
               "type": "null"
             }
           ],
-          "description": "Milliseconds."
+          "description": "Milliseconds: the three best sectors added up."
         }
       },
       "required": [
@@ -2768,9 +2769,10 @@
               "type": "null"
             }
           ],
-          "description": "Milliseconds."
+          "description": "Milliseconds behind the best median of the rows that are ranked. Null for a row of too few clean laps to be ranked, which the caveats name."
         },
         "lap_count": {
+          "description": "The clean laps the row's figures are over.",
           "type": "integer"
         },
         "mean_lap_ms": {
@@ -2806,7 +2808,7 @@
               "type": "null"
             }
           ],
-          "description": "Null in a row for the whole race."
+          "description": "Null in a row for the whole race. A stint's row is of a stint F1's tyre data numbers: laps it gives no stint for are in the driver's row and in no stint's."
         },
         "trimmed_mean_lap_ms": {
           "anyOf": [
@@ -3600,7 +3602,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Why the row has no gap: too few matched laps, or a driver with no clean lap, whose figures are then null."
         },
         "drivers": {
           "items": {
