@@ -9,6 +9,10 @@
 // generation path went out marked immutable for a year.
 const FAILED_PRECONDITION_CACHE_CONTROL = "no-store";
 
+// A range that asks for no bytes of the object is answered for this request
+// alone, like a failed precondition.
+const UNSATISFIABLE_RANGE_CACHE_CONTROL = "no-store";
+
 // Answers a GET or HEAD for `key` from the bucket. Returns `null` when the
 // bucket holds no such object, so the caller decides what a miss means.
 export async function serveR2Object(bucket, key, request, cacheControl) {
@@ -18,8 +22,23 @@ export async function serveR2Object(bucket, key, request, cacheControl) {
     return object ? r2ObjectResponse(object, { key, cacheControl, headOnly: true, requestHeaders }) : null;
   }
   if (bucket?.get) {
-    let rangeHeaders = requestHeaders?.has("range") ? requestHeaders : null;
-    let object = await bucket.get(key, r2GetOptions(requestHeaders, rangeHeaders));
+    // R2 is handed a range only as this module reads one. Given the request's
+    // own header, R2 sent the whole object for `bytes=abc`, which went out as
+    // a 206, and threw for a range past the end, which went out as a 500.
+    const asked = parseByteRange(requestHeaders?.get("range"));
+    if (asked?.suffix === 0) {
+      return unsatisfiedRange(bucket, key, requestHeaders, asked, cacheControl, null);
+    }
+    let rangeHeaders = asked ? new Headers({ range: byteRangeHeader(asked) }) : null;
+    let object;
+    try {
+      object = await bucket.get(key, r2GetOptions(requestHeaders, rangeHeaders));
+    } catch (error) {
+      if (!rangeHeaders) {
+        throw error;
+      }
+      return unsatisfiedRange(bucket, key, requestHeaders, asked, cacheControl, error);
+    }
     if (object?.body && rangeHeaders && !ifRangeHolds(object, requestHeaders)) {
       // Not the version the client holds part of: send all of the one there is.
       await object.body.cancel?.();
@@ -29,6 +48,56 @@ export async function serveR2Object(bucket, key, request, cacheControl) {
     return object ? r2ObjectResponse(object, { key, cacheControl, requestHeaders, rangeHeaders }) : null;
   }
   return null;
+}
+
+// The one range of a `Range` header, or null for a header to ignore. R2
+// serves a single range, and RFC 9110 lets a server ignore a header it cannot
+// or will not use, several ranges and a malformed one alike, and send the
+// whole object. `{offset, last}` is `bytes=offset-last`, with `last` null for
+// `bytes=offset-`; `{suffix}` is `bytes=-suffix`, the last `suffix` bytes.
+export function parseByteRange(value) {
+  const match = /^bytes=([0-9]*)-([0-9]*)$/i.exec(String(value ?? "").trim());
+  if (!match || (match[1] === "" && match[2] === "")) {
+    return null;
+  }
+  const [, first, last] = match;
+  if (first === "") {
+    return { suffix: Number(last) };
+  }
+  if (last !== "" && Number(last) < Number(first)) {
+    return null;
+  }
+  return { offset: Number(first), last: last === "" ? null : Number(last) };
+}
+
+function byteRangeHeader(range) {
+  return "suffix" in range ? `bytes=-${range.suffix}` : `bytes=${range.offset}-${range.last ?? ""}`;
+}
+
+// Whether a range has any byte of an object of this size in it. A range that
+// runs past the end is cut at the end, so only where it starts matters.
+function rangeSatisfiable(range, size) {
+  return "suffix" in range ? range.suffix > 0 : range.offset < size;
+}
+
+// R2 threw while reading a range, or the range asks for no bytes at all. A
+// look at the object says which it is: absent, a range to answer with 416 and
+// the object's size, or a fault to pass on. Preconditions come before a range
+// (RFC 9110), and an `If-Range` that does not hold means the range is ignored
+// and the whole object sent.
+async function unsatisfiedRange(bucket, key, requestHeaders, range, cacheControl, error) {
+  const object = await bucket.head(key);
+  if (!object) {
+    return null;
+  }
+  if (rangeSatisfiable(range, object.size)) {
+    throw error ?? new Error(`R2 could not read ${byteRangeHeader(range)} of ${key}`);
+  }
+  if (!ifRangeHolds(object, requestHeaders)) {
+    const whole = await bucket.get(key, r2GetOptions(requestHeaders, null));
+    return whole ? r2ObjectResponse(whole, { key, cacheControl, requestHeaders, rangeHeaders: null }) : null;
+  }
+  return r2ObjectResponse(object, { key, cacheControl, requestHeaders, unsatisfiableRange: true });
 }
 
 // `If-Range` makes a range request conditional: the range is honoured only if
@@ -72,7 +141,14 @@ function r2GetOptions(headers, rangeHeaders) {
 
 export function r2ObjectResponse(
   object,
-  { key, cacheControl, headOnly = false, requestHeaders = null, rangeHeaders = requestHeaders }
+  {
+    key,
+    cacheControl,
+    headOnly = false,
+    requestHeaders = null,
+    rangeHeaders = requestHeaders,
+    unsatisfiableRange = false
+  }
 ) {
   if (!cacheControl) {
     // No policy is a safe default: the layouts served through here range from
@@ -100,6 +176,12 @@ export function r2ObjectResponse(
     return conditionResponse(preconditionStatus, headers);
   }
 
+  if (unsatisfiableRange) {
+    headers.set("content-range", `bytes */${object.size}`);
+    headers.set("cache-control", UNSATISFIABLE_RANGE_CACHE_CONTROL);
+    return new Response(null, { status: 416, headers });
+  }
+
   if (headOnly) {
     headers.set("content-length", String(object.size));
     return new Response(null, { status: 200, headers });
@@ -115,8 +197,8 @@ export function r2ObjectResponse(
   // Only a request that asked for a range gets a 206: the deployed Worker was
   // answering a plain GET of catalog.json with "206, bytes 0-1582/1583", which
   // shared caches do not store the way they store a 200.
-  const range = rangeHeaders?.has("range") ? object.range : null;
-  if (range && Number.isFinite(range.offset) && Number.isFinite(range.length)) {
+  const range = rangeHeaders?.has("range") ? returnedRange(object) : null;
+  if (range) {
     const end = range.offset + range.length - 1;
     headers.set("content-range", `bytes ${range.offset}-${end}/${object.size}`);
     headers.set("content-length", String(range.length));
@@ -124,6 +206,25 @@ export function r2ObjectResponse(
   }
   headers.set("content-length", String(object.size));
   return new Response(object.body, { status: 200, headers });
+}
+
+// The bytes R2 says it returned, as an offset and a length, or null when it
+// says nothing. An R2 range may also be a suffix, or an offset or a length
+// alone, and each is turned into the bytes it covers.
+function returnedRange(object) {
+  const { range, size } = object;
+  if (!range || !Number.isFinite(size)) {
+    return null;
+  }
+  if (Number.isFinite(range.suffix)) {
+    const length = Math.min(range.suffix, size);
+    return { offset: size - length, length };
+  }
+  if (!Number.isFinite(range.offset) && !Number.isFinite(range.length)) {
+    return null;
+  }
+  const offset = Number.isFinite(range.offset) ? range.offset : 0;
+  return { offset, length: Number.isFinite(range.length) ? range.length : size - offset };
 }
 
 function conditionResponse(status, headers) {

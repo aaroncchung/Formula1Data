@@ -15,7 +15,10 @@ const SESSION_KEY = 11315;
 // A stand-in for the R2 binding that does what R2 does where this Worker
 // depends on it: `head` returns metadata only, a `get` whose `onlyIf` fails
 // returns metadata without a body, and every `get` reports the range it
-// returned, the whole object included.
+// returned, the whole object included. Given a `Range` header, R2 reads what
+// it can of it: it sent the whole object for `bytes=abc`, and threw for a
+// range that starts past the end. That is taken to come before `onlyIf`, so
+// the Worker's answer may not depend on the order.
 function bucketOf(objects) {
   const calls = [];
   const stored = new Map(
@@ -45,20 +48,35 @@ function bucketOf(objects) {
       if (!object) {
         return null;
       }
+      const range = rangeOf(options?.range, object.bytes.byteLength);
       if (options?.onlyIf?.get("if-none-match") === object.httpEtag) {
         return metadata(object);
       }
-      const asked = /^bytes=(\d+)-(\d+)$/.exec(options?.range?.get("range") || "");
-      const range = asked
-        ? { offset: Number(asked[1]), length: Number(asked[2]) - Number(asked[1]) + 1 }
-        : { offset: 0, length: object.bytes.byteLength };
+      const { offset, length } =
+        "suffix" in range ? { offset: object.bytes.byteLength - range.suffix, length: range.suffix } : range;
       return {
         ...metadata(object),
         range,
-        body: new Blob([object.bytes.subarray(range.offset, range.offset + range.length)]).stream()
+        body: new Blob([object.bytes.subarray(offset, offset + length)]).stream()
       };
     }
   };
+}
+
+function rangeOf(headers, size) {
+  const asked = /^bytes=(\d*)-(\d*)$/.exec(headers?.get("range") || "");
+  if (!asked || (asked[1] === "" && asked[2] === "")) {
+    return { offset: 0, length: size };
+  }
+  if (asked[1] === "") {
+    return { suffix: Math.min(Number(asked[2]), size) };
+  }
+  const offset = Number(asked[1]);
+  if (offset >= size) {
+    throw new Error("get: The requested range is not satisfiable (10039)");
+  }
+  const last = asked[2] === "" ? size - 1 : Math.min(Number(asked[2]), size - 1);
+  return { offset, length: last - offset + 1 };
 }
 
 function fetchFrom(bucket, path, init) {
@@ -321,4 +339,110 @@ test("If-Range is checked against the object the range was read from, not a look
   assert.equal(response.headers.get("content-range"), null);
   assert.equal(await response.text(), '{"version":"B, the whole of it"}');
   assert.deepEqual(calls, ["get range", "get whole"]);
+});
+
+// --- found in review of the site and its Worker, 2026-10-17 -------------------
+
+test("a range past the end is a 416 that gives the size, and is kept by no cache", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const size = PUBLISHED["v2/index.json"].length;
+
+  // The deployed Worker answered this with 500, from R2's error.
+  for (const range of ["bytes=99999999-", `bytes=${size}-`, `bytes=${size}-${size + 10}`, "bytes=-0"]) {
+    const response = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range } });
+    assert.equal(response.status, 416, range);
+    assert.equal(response.headers.get("content-range"), `bytes */${size}`, range);
+    assert.equal(response.headers.get("cache-control"), "no-store", range);
+    assert.equal(response.headers.get("access-control-allow-origin"), "*", range);
+    assert.equal(await response.text(), "", range);
+  }
+});
+
+test("a Range header that is not one range of bytes is ignored, and the whole object sent", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const whole = PUBLISHED["v2/index.json"];
+
+  // The deployed Worker answered `bytes=abc` with a 206 of the whole object.
+  for (const range of ["bytes=abc", "bytes=5-2", "bytes=-", "items=0-5", "bytes=0-1,4-5"]) {
+    const response = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range } });
+    assert.equal(response.status, 200, range);
+    assert.equal(response.headers.get("content-range"), null, range);
+    assert.equal(response.headers.get("content-length"), String(whole.length), range);
+    assert.equal(await response.text(), whole, range);
+  }
+});
+
+test("a range from an offset, or of the last bytes, is a 206 of those bytes", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const whole = PUBLISHED["v2/index.json"];
+  const size = whole.length;
+
+  const tail = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range: "bytes=-4" } });
+  assert.equal(tail.status, 206);
+  assert.equal(tail.headers.get("content-range"), `bytes ${size - 4}-${size - 1}/${size}`);
+  assert.equal(tail.headers.get("content-length"), "4");
+  assert.equal(await tail.text(), whole.slice(-4));
+
+  const from = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range: `bytes=${size - 3}-` } });
+  assert.equal(from.status, 206);
+  assert.equal(from.headers.get("content-range"), `bytes ${size - 3}-${size - 1}/${size}`);
+  assert.equal(await from.text(), whole.slice(-3));
+
+  // A range that runs past the end is cut there.
+  const past = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range: `bytes=${size - 2}-${size + 100}` } });
+  assert.equal(past.status, 206);
+  assert.equal(past.headers.get("content-range"), `bytes ${size - 2}-${size - 1}/${size}`);
+});
+
+test("past the end, a missing object is still a 404, a copy still current a 304, and a stale If-Range the whole object", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  const whole = PUBLISHED["v2/index.json"];
+  const etag = (await fetchFrom(bucket, "/data/v2/index.json", { method: "HEAD" })).headers.get("etag");
+
+  const missing = await fetchFrom(bucket, "/data/v2/pointers/1.json", { headers: { range: "bytes=99999999-" } });
+  assert.equal(missing.status, 404);
+
+  // Preconditions are judged before a range.
+  const current = await fetchFrom(bucket, "/data/v2/index.json", {
+    headers: { range: "bytes=99999999-", "if-none-match": etag }
+  });
+  assert.equal(current.status, 304);
+
+  const stale = await fetchFrom(bucket, "/data/v2/index.json", {
+    headers: { range: "bytes=99999999-", "if-range": '"the-version-before"' }
+  });
+  assert.equal(stale.status, 200);
+  assert.equal(await stale.text(), whole);
+});
+
+test("an error from R2 that is not about the range is still a fault", async () => {
+  const bucket = bucketOf(PUBLISHED);
+  bucket.get = async () => {
+    throw new Error("R2 is down");
+  };
+
+  const response = await fetchFrom(bucket, "/data/v2/index.json", { headers: { range: "bytes=0-3" } });
+
+  assert.equal(response.status, 500);
+  assert.equal((await response.json()).code, "worker_error");
+});
+
+test("a page on another origin may send the headers of a range or a conditional request", async () => {
+  const bucket = bucketOf(PUBLISHED);
+
+  const preflight = await fetchFrom(bucket, "/data/v2/index.json", {
+    method: "OPTIONS",
+    headers: {
+      origin: "https://formula1data.pages.dev",
+      "access-control-request-method": "GET",
+      "access-control-request-headers": "range, if-none-match"
+    }
+  });
+
+  assert.equal(preflight.status, 204);
+  const allowed = preflight.headers.get("access-control-allow-headers").split(/,\s*/);
+  for (const name of ["range", "if-match", "if-none-match", "if-modified-since", "if-unmodified-since", "if-range"]) {
+    assert.ok(allowed.includes(name), name);
+  }
+  assert.deepEqual(bucket.calls, []);
 });

@@ -17,6 +17,10 @@ const SERVICE = "formula-1-data-read";
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, HEAD, OPTIONS",
+  // A page may ask for part of an object, or for it only if it changed. A
+  // browser asks before sending those headers to another origin, and sends
+  // them only if the answer allows them.
+  "access-control-allow-headers": "range, if-match, if-none-match, if-modified-since, if-unmodified-since, if-range",
   "access-control-expose-headers": "etag, last-modified, content-length, content-range",
   "access-control-max-age": "86400"
 };
