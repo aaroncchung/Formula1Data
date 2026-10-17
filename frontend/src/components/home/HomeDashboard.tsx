@@ -26,7 +26,7 @@ import type { ReadySession } from "@/lib/published/session";
 import type { PublishedIndex } from "@/lib/published/types";
 import { pointsLabel, resultPosition } from "@/lib/results-view";
 import { meetingHref, STANDINGS_PATH, STRATEGY_PATH, TELEMETRY_PATH } from "@/lib/routes";
-import { readPaceAnalysis, readSessionFigures } from "@/lib/session-summaries";
+import { idealLapLeader, readPaceAnalysis, readSessionFigures } from "@/lib/session-summaries";
 
 const DESCRIPTION =
   "Explore every published session through race pace, telemetry, strategy, tyre, ideal-lap, and car-performance analysis.";
@@ -161,7 +161,7 @@ function SessionFigureCards({ view }: { view: SessionView }) {
   // if they cannot be read, the cards stay blank and say which it is.
   const pending = artifact.status === "loading" ? "Loading" : "Could not be loaded";
   const summary = artifact.status === "ready" ? artifact.data.summary : null;
-  const leader = artifact.status === "ready" ? (artifact.data.idealLaps?.rows[0] ?? null) : null;
+  const leader = artifact.status === "ready" ? idealLapLeader(artifact.data.idealLaps) : null;
   const settled = artifact.status === "ready";
   return (
     <>
@@ -173,14 +173,8 @@ function SessionFigureCards({ view }: { view: SessionView }) {
       />
       <MetricCard
         label="Ideal-lap leader"
-        value={leader ? leader.driver_code : "--"}
-        detail={
-          leader
-            ? `${(Number(leader.delta_to_ideal_ms) / 1000).toFixed(3)}s left on track`
-            : settled
-              ? (summary?.weather_summary ?? "Not published for this session")
-              : pending
-        }
+        value={leader ? leader.value : "--"}
+        detail={leader ? leader.detail : pending}
         tone="amber"
       />
     </>

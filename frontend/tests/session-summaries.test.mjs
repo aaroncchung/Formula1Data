@@ -4,7 +4,14 @@ import test from "node:test";
 import { latestPublishedSession } from "../src/lib/calendar.ts";
 import { PublishedDataError } from "../src/lib/published/errors.ts";
 import { loadSessionByKey } from "../src/lib/published/session.ts";
-import { driverCards, readField, readPaceAnalysis, readSessionFigures, teamCards } from "../src/lib/session-summaries.ts";
+import {
+  driverCards,
+  idealLapLeader,
+  readField,
+  readPaceAnalysis,
+  readSessionFigures,
+  teamCards
+} from "../src/lib/session-summaries.ts";
 import { shareWhilePending } from "../src/lib/shared-request.ts";
 import {
   bucketOf,
@@ -374,4 +381,27 @@ test("a failed request fails every caller that shared it, and the next one asks 
   assert.equal(calls, 1);
 
   assert.equal(await load(), "back");
+});
+
+test("the ideal-lap card names the leader, and says when a figure is missing rather than printing nought", () => {
+  const row = (driver, delta) => ({
+    driver_code: driver,
+    ideal_lap_ms: 65000,
+    best_lap_ms: 65200,
+    best_sector_1_ms: 17000,
+    best_sector_2_ms: 30000,
+    best_sector_3_ms: 18000,
+    delta_to_ideal_ms: delta
+  });
+  const laps = (rows) => ({ rows, caveats: [] });
+
+  assert.deepEqual(idealLapLeader(laps([row("PIA", 212.4), row("NOR", 80)])), {
+    value: "PIA",
+    detail: "0.212s left on track"
+  });
+  // A null was printed as "0.000s left on track".
+  assert.deepEqual(idealLapLeader(laps([row("PIA", null)])), { value: "PIA", detail: "Time left on track not published" });
+  // With no ideal laps the card showed the session's weather under its label.
+  assert.deepEqual(idealLapLeader(laps([])), { value: "--", detail: "No driver has a time in every sector" });
+  assert.deepEqual(idealLapLeader(null), { value: "--", detail: "Not published for this session" });
 });

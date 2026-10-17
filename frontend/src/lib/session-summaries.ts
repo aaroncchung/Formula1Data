@@ -34,6 +34,27 @@ export async function readSessionFigures(view: SessionView): Promise<SessionFigu
 }
 
 /**
+ * The home page's ideal-lap card: the driver first in the ideal laps, and the
+ * time that driver's best lap left on the track. A time that was not
+ * published is said to be missing, where it read "0.000s left on track", and
+ * a session with no ideal laps says so, where the card showed the weather.
+ */
+export function idealLapLeader(idealLaps: IdealLaps | null): { readonly value: string; readonly detail: string } {
+  if (!idealLaps) {
+    return { value: "--", detail: "Not published for this session" };
+  }
+  const leader = idealLaps.rows[0];
+  if (!leader) {
+    return { value: "--", detail: "No driver has a time in every sector" };
+  }
+  const left = leader.delta_to_ideal_ms;
+  return {
+    value: leader.driver_code,
+    detail: left === null ? "Time left on track not published" : `${(left / 1000).toFixed(3)}s left on track`
+  };
+}
+
+/**
  * The pace analysis on its own, for the home page's chart. The race-pace
  * tab's reader (`readRacePace` in artifacts.ts) also reads every lap of the
  * session, which the home page does not show.
