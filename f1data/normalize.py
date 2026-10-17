@@ -251,8 +251,8 @@ def _numbered_by_set(rows: list[Lap]) -> list[Lap]:
     and one lap older than on the lap before. Such a lap keeps the number of
     the set it is still on, and the numbers after it close up.
 
-    Nothing else is read into F1's numbers. F1 gives no age for a set that
-    went on used, so a car that drives through on one keeps the new number.
+    Nothing else is read into F1's numbers. F1 gives no age for some sets,
+    so a car that drives through on one of those keeps the new number.
     And a driver whose numbers from F1 ever go back down keeps them all as
     they are: taking the passages out of numbers that are not a count would
     give two sets one number. No archived session has such a driver.

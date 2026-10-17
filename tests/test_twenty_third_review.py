@@ -116,7 +116,7 @@ def test_the_numbers_after_a_passage_close_up():
     [
         ((2, "HARD", NEW), "a new set of the same compound: its age starts again"),
         ((2, "MEDIUM", 7.0), "another compound, whatever age F1 gives it"),
-        ((2, "HARD", np.nan), "a set that went on used, which F1 gives no age"),
+        ((2, "HARD", np.nan), "a set F1 gives no age for"),
         ((2, "HARD", 6.0), "an age that does not go on by one lap is not the same set going on"),
         ((2, None, 7.0), "no compound named: nothing says it is the same"),
     ],

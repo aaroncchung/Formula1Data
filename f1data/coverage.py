@@ -803,9 +803,9 @@ def _tyre_laps(laps: pd.DataFrame, with_age: bool = False) -> int:
 
     The bar is on compound and stint. When a driver's TimingAppData is missing
     FastF1 leaves the compound empty, and that is what a second fetch can
-    cure. Tyre age is counted apart and is not a bar: F1 does not report the
-    age of a set that went on used, so those laps have a compound, a stint and
-    no age however often they are fetched. In the 2026 Barcelona race that is
+    cure. Tyre age is counted apart and is not a bar: F1 does not report an
+    age for every set, and a lap on such a set has a compound, a stint and
+    no age however often it is fetched. In the 2026 Barcelona race that is
     21 of Bearman's 60 laps, and in the 2026 race at Sepang it is 152 laps
     across eleven drivers.
     """
