@@ -245,14 +245,16 @@ def test_the_car_performance_figures_say_that_a_car_standing_still_is_left_out()
     out while the file said every sample with the channel was counted."""
     def sample(at_ms: int, distance: float, speed: float, throttle: float, brake: bool) -> dict:
         return {
-            "driver_code": "AAA", "lap_number": 1, "relative_time_ms": at_ms, "distance_m": distance,
+            "driver_code": "AAA", "lap_number": 5, "relative_time_ms": at_ms, "distance_m": distance,
             "speed_kph": speed, "throttle_pct": throttle, "brake": brake,
         }
 
     moving = [sample(0, 0.0, 200.0, 100.0, False), sample(250, 14.0, 200.0, 100.0, False)]
     standing = [sample(500 + 250 * n, 20.0, 0.0, 0.0, True) for n in range(8)]
     away = [sample(2500, 26.0, 90.0, 100.0, False), sample(2750, 33.0, 100.0, 100.0, False)]
-    laps = [{"driver_code": "AAA", "lap_number": 1, "lap_time_ms": 90000}]
+    # A clean lap whose telemetry runs its time, which is the only kind profiled
+    # (backend/tests/test_pr_review_analysis.py).
+    laps = [{"driver_code": "AAA", "lap_number": 5, "lap_time_ms": 2750}]
     drivers = [{"code": "AAA", "team": {"name": "A Team"}}]
 
     made = calculate_car_performance("a session", laps, moving + standing + away, drivers)

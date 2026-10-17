@@ -34,8 +34,9 @@ CORNERS = [
     {"number": 2, "letter": "A", "x": 20_000.0, "y": 0.0, "distance_m": 2_000.0},
     {"number": 3, "letter": "", "x": 30_000.0, "y": 0.0, "distance_m": 3_000.0},
 ]
-# How the result names a lap that was not timed, or whose telemetry stops short.
-SHORT_LAP = "Not a whole timed lap"
+# How the result names a driver with no lap to compare: one that was timed, clean and whose
+# telemetry runs the length of its time (backend/tests/test_pr_review_analysis.py).
+LEFT_OUT = "Left out, having no such lap"
 
 
 def lap_rows(
@@ -753,7 +754,9 @@ class OfficialCornerTests(unittest.TestCase):
         )
         self.assertEqual([corner["distance_m"] for corner in result["corners"]], [1000.0, 2000.0, 3000.0])
         self.assertEqual(corners[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
-        self.assertEqual(len(result["caveats"]), 4)
+        # The method's sentences and which laps are compared, and nothing said of BBB's.
+        self.assertEqual(len(result["caveats"]), 5)
+        self.assertNotIn(LEFT_OUT, " ".join(result["caveats"]))
 
     def test_a_lap_with_no_position_data_is_matched_by_distance_and_the_result_names_it(self):
         """The 2026 Monaco race: no position data after lap 5."""
@@ -767,42 +770,6 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(third["BBB"]["apex_distance_m"], 3150.0)
         self.assertIsNotNone(third["BBB"]["brake_start_m"])
         self.assertTrue(any("No position data on the lap of: BBB" in caveat for caveat in result["caveats"]))
-
-    def test_a_lap_that_stops_short_has_no_figures_for_the_corners_it_never_reached(self):
-        """The 2026 Monaco race: Verstappen's only lap ends at the chicane. The
-        nearest of its samples to each later corner is somewhere else on the
-        circuit, and was read as that corner."""
-        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
-        telemetry = lap_rows("AAA") + lap_rows("BBB") + lap_rows("CCC", lap_number=1, stops_at=2_500)
-
-        result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
-
-        corners = by_corner(result)
-        self.assertEqual(set(corners[(3, None)]), {"AAA", "BBB"})
-        # The two it drove through are found where they are, not where a lap
-        # 2,500 m long would have them.
-        self.assertEqual(corners[(1, None)]["CCC"]["apex_distance_m"], 1000.0)
-        self.assertEqual(
-            (corners[(2, "A")]["CCC"]["apex_distance_m"], corners[(2, "A")]["CCC"]["apex_speed_kph"]), (2000.0, 260.0)
-        )
-        self.assertTrue(any(SHORT_LAP in caveat and "CCC" in caveat for caveat in result["caveats"]))
-        self.assertFalse(any("No position data" in caveat for caveat in result["caveats"]))
-        # That says why it has no figures for turn 3. It is not said again as
-        # a whole lap that missed a corner, which this lap is not.
-        self.assertFalse(any("Not seen at a corner" in caveat for caveat in result["caveats"]))
-
-    def test_a_lap_that_stops_short_and_has_no_position_data_is_in_no_corner(self):
-        """Its distance says how far it got, not where the corners are on it."""
-        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
-        short = lap_rows("CCC", lap_number=1, stops_at=2_500, position=False)
-        telemetry = lap_rows("AAA") + lap_rows("BBB") + short
-
-        result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
-
-        self.assertEqual(result["corner_source"], "official")
-        self.assertTrue(all(set(drivers) == {"AAA", "BBB"} for drivers in by_corner(result).values()))
-        self.assertEqual([row["driver_code"] for row in result["representative_laps"]], ["AAA", "BBB", "CCC"])
-        self.assertTrue(any(SHORT_LAP in caveat and "CCC" in caveat for caveat in result["caveats"]))
 
     def test_where_a_whole_laps_position_data_stops_its_corners_are_found_by_distance(self):
         """Not by the last sample that had a position, which is nowhere near them."""
@@ -820,23 +787,16 @@ class OfficialCornerTests(unittest.TestCase):
 
     def test_a_stretch_of_track_that_passes_a_corner_it_is_not_is_never_taken_for_it(self):
         """Monaco again: Tabac and the swimming pool are within 50 m of the road
-        out of Sainte Devote and of the grid. Here every lap runs 30 m from
-        corner 3 when it is 500 m round, 2,500 m before it gets there."""
+        out of Sainte Devote and of the grid. Here a lap runs 30 m from corner
+        3 when it is 500 m round, 2,500 m before it gets there."""
         third = CORNERS[2]
-        laps = [lap("AAA"), lap("BBB"), lap("CCC", lap_number=1, lap_time_ms=None)]
-        telemetry = (
-            passing_close_to(third, lap_rows("AAA"))
-            + lap_rows("BBB")
-            + passing_close_to(third, lap_rows("CCC", lap_number=1, stops_at=2_500))
-        )
+        laps = [lap("AAA"), lap("BBB")]
+        telemetry = passing_close_to(third, lap_rows("AAA")) + lap_rows("BBB")
 
         result = calculate_corner_analysis("s", laps, telemetry, CORNERS, reference_lap_length_m=LAP_LENGTH_M)
 
         corners = by_corner(result)
-        # The lap that stopped at 2,500 m never reached the corner.
-        self.assertEqual(set(corners[(3, None)]), {"AAA", "BBB"})
-        self.assertEqual(set(corners[(2, "A")]), {"AAA", "BBB", "CCC"})
-        # And a whole lap has it where it is, not where the lap first ran past it.
+        # A whole lap has it where it is, not where the lap first ran past it.
         self.assertEqual(corners[(3, None)]["AAA"], {**corners[(3, None)]["BBB"], "driver_code": "AAA"})
         self.assertEqual(corners[(3, None)]["AAA"]["apex_distance_m"], 3000.0)
 
@@ -921,19 +881,6 @@ class OfficialCornerTests(unittest.TestCase):
         self.assertEqual(by_corner(placed)[(2, "A")]["AAA"]["corner_distance_m"], 2100.0)
         self.assertEqual(by_corner(placed)[(1, None)]["AAA"]["corner_distance_m"], 1050.0)
 
-    def test_a_lap_that_was_not_timed_is_also_read_where_its_own_distance_puts_the_corners(self):
-        """A first lap with no time, counted from the grid: only a pass where the corner should be will do,
-        and where that is on this lap is told by the corners its line passes once."""
-        rows = [{**row, "distance_m": row["distance_m"] + 240.0} for row in lap_rows("AAA")]
-
-        result = calculate_corner_analysis("s", [lap("AAA", lap_time_ms=None)], rows, CORNERS)
-
-        self.assertIn(SHORT_LAP, " ".join(result["caveats"]))
-        self.assertEqual(
-            [by_corner(result)[key]["AAA"]["corner_distance_m"] for key in ((1, None), (2, "A"), (3, None))],
-            [1240.0, 2240.0, 3240.0],
-        )
-
     def test_a_whole_lap_whose_distance_goes_out_part_way_round_still_has_the_corners_after_that(self):
         """Where a car's data stops for a stretch its lap's distance runs long from there on.
 
@@ -963,13 +910,11 @@ class OfficialCornerTests(unittest.TestCase):
 
         self.assertEqual(by_corner(result)[(3, None)]["AAA"]["corner_distance_m"], 3000.0)
         self.assertEqual(by_corner(result)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
-        # On a lap that was not timed there is nothing else to go by. Were the early pass taken to say
-        # how far out the lap's distance is, neither corner would be where it should be, and neither found.
-        untimed = calculate_corner_analysis(
-            "s", [lap("AAA", lap_time_ms=None)], rows, [CORNERS[0], hairpin]
-        )
-        self.assertEqual(by_corner(untimed)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
-        self.assertEqual(by_corner(untimed)[(3, None)]["AAA"]["corner_distance_m"], 3000.0)
+        # Were the early pass taken to say how far out the lap's distance is,
+        # neither corner would be where it should be.
+        alone = calculate_corner_analysis("s", [lap("AAA")], rows, [CORNERS[0], hairpin])
+        self.assertEqual(by_corner(alone)[(1, None)]["AAA"]["corner_distance_m"], 1000.0)
+        self.assertEqual(by_corner(alone)[(3, None)]["AAA"]["corner_distance_m"], 3000.0)
 
     def test_the_car_slowing_on_after_the_brake_comes_off_and_then_gathering_speed_is_driven_on_to_another_braking(self):
         """Bearman's lap 49 of the 2025 Japanese GP: off the brake at 91 km/h in the chicane, down to 85, up to 103, on again at 97.

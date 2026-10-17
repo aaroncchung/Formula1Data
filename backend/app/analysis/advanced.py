@@ -68,17 +68,12 @@ OFFICIAL_CORNER_SEARCH_M = 200.0
 # this near one did not go through it: it stopped before the corner, or its
 # position data did.
 #
-# Which of the two limits gives way when they disagree depends on the lap. One
-# that was timed and whose telemetry runs the length of that time went all the
-# way round, so a sample at a corner is that corner even where the lap's
-# distance says otherwise: in the 2026 Chinese sprint F1's car feed repeats
-# itself for seconds at a time on eight drivers' fastest laps, whose speed
-# then measures the lap from 8% short to 15% long. A lap that was not so
-# timed stopped somewhere, and then only a sample that is also where the
-# corner should be will do: in the 2026 Monaco race Verstappen's only lap ends
-# at the chicane, 2,107 m into a lap of 3,278 m, and Tabac and the swimming
-# pool, which he never reached, are within 50 m of the road out of Sainte
-# Devote and of the grid, where he had been two kilometres of lap earlier.
+# Where the two limits disagree, the line is believed. Every lap compared was
+# timed and its telemetry runs the length of that time, so it went all the way
+# round, and a sample at a corner is that corner even where the lap's distance
+# says otherwise: in the 2026 Chinese sprint F1's car feed repeats itself for
+# seconds at a time on eight drivers' fastest laps, whose speed then measures
+# the lap from 8% short to 15% long.
 OFFICIAL_CORNER_REACH_M = 50.0
 # A lap's line runs from one positioned sample to the next. Two further apart
 # than this on the ground have a hole between them, and the line is not drawn
@@ -210,20 +205,26 @@ def calculate_corner_analysis(
     are segmented by the real corners, and the result says so in
     ``corner_source``. Without them, or when none can be found on any lap,
     corners are inferred from where the drivers brake, as before (AR-17).
+
+    A driver's lap is their fastest clean lap whose telemetry runs the length
+    of its lap time (``fastest_complete_telemetry_laps``, by the clock alone:
+    a corner is found by position, and a lap that ran its time went all the
+    way round whatever its distance says). It used to be their fastest lap
+    with any telemetry, and for a driver out early that is what they managed:
+    in the 2026 Monaco GP Verstappen's only lap, lap 1, which has no lap time
+    and stops at the chicane, and in the 2026 Austrian GP Bottas's lap 1, a
+    standing start counted from the grid. Such a driver is left out, and the
+    result names them.
     """
-    by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
-    representatives, samples = representative_telemetry_laps(laps, by_lap)
-    # A driver who retires early is here with whatever lap they managed,
-    # which may not go all the way round.
-    lap_times = {row["driver_code"]: _float(row["lap_time_ms"]) for row in representatives}
-    complete = {driver: _runs_its_lap_time(rows, lap_times[driver]) for driver, rows in samples.items()}
-    placed = _official_corner_rows(
-        _usable_corners(corners),
-        samples,
-        reference_lap_length_m,
-        _usual_lap_end(laps, by_lap),
-        complete,
-    )
+    by_lap = telemetry_by_lap(telemetry, lambda row: lap_number(row) or 0)
+    representatives, samples, left_out = fastest_complete_telemetry_laps(laps, by_lap, by_distance=False)
+    compared = [
+        "Each driver's fastest clean lap whose telemetry runs the length of its lap time is compared: "
+        "accurate, not deleted, not a pit lap, not lap 1 and not run under a safety car, VSC or red flag.",
+    ]
+    if left_out:
+        compared.append(f"Left out, having no such lap: {', '.join(left_out)}.")
+    placed = _official_corner_rows(_usable_corners(corners), samples, reference_lap_length_m)
     if placed is not None:
         official, not_passed = placed
         caveats = [
@@ -244,26 +245,18 @@ def calculate_corner_analysis(
             f"within {OFFICIAL_CORNER_WINDOW_M:.0f} m of it, before the brake next goes on past it, and "
             "the exit speed are given.",
             "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
+            *compared,
         ]
-        unplaced = sorted(
-            driver for driver, rows in samples.items() if complete[driver] and not _has_position(rows)
-        )
+        unplaced = sorted(driver for driver, rows in samples.items() if not _has_position(rows))
         if unplaced:
             caveats.append(
                 f"No position data on the lap of: {', '.join(unplaced)}. Their corners are found by "
                 "distance along the lap, which can be tens of metres out."
             )
-        short = sorted(driver for driver in samples if not complete[driver])
-        if short:
-            caveats.append(
-                f"Not a whole timed lap: {', '.join(short)}. The lap has no lap time, or its telemetry "
-                "does not run the length of it, so its corners are found by position alone, and one it "
-                "did not reach, or has no position data at, has no figures for that driver."
-            )
         if not_passed:
-            # A whole lap can still miss a corner: one that ends down the pit
-            # entry, or leaves the track. Its rows for those corners are not
-            # there, and why is said.
+            # A whole lap can still miss a corner: one that leaves the track,
+            # or whose position feed freezes. Its rows for those corners are
+            # not there, and why is said.
             caveats.append(
                 "Not seen at a corner on the lap compared: "
                 + "; ".join(f"{driver} at turn {', '.join(turns)}" for driver, turns in sorted(not_passed.items()))
@@ -282,6 +275,7 @@ def calculate_corner_analysis(
     caveats = [
         "Corners are inferred from brake application and speed loss, not official circuit geometry.",
         "Entry, apex, and exit values are interpolated by distance between telemetry samples.",
+        *compared,
     ]
     events: list[dict[str, Any]] = []
     for driver, rows in samples.items():
@@ -422,17 +416,11 @@ def _official_corner_rows(
     corners: list[dict[str, Any]],
     samples: dict[str, list[dict[str, Any]]],
     reference_lap_length_m: float | None,
-    usual_lap_length_m: float,
-    complete: dict[str, bool],
 ) -> tuple[list[dict[str, Any]], dict[str, list[str]]] | None:
     """Each official corner with every driver's figures for it, or None if no lap can place one.
 
-    With them, by driver, the corners a lap that went all the way round is
-    not seen to pass.
-
-    ``complete`` says, by driver, whether the lap went all the way round.
-    ``usual_lap_length_m`` is what the telemetry of a normal lap measures, or
-    0 when no lap says.
+    With them, by driver, the corners a lap is not seen to pass. Every lap
+    is one that went all the way round.
     """
     if not corners:
         return None
@@ -441,13 +429,12 @@ def _official_corner_rows(
     not_passed: dict[str, list[str]] = {}
     for driver, rows in sorted(samples.items()):
         # The official distances are along a lap of the reference length, and
-        # are scaled to this lap's. A lap that stopped somewhere is not a lap
-        # long, so its corners are looked for where a normal lap has them.
-        length = _lap_length(rows) if complete[driver] else usual_lap_length_m
+        # are scaled to this lap's.
+        length = _lap_length(rows)
         scale = length / reference_lap_length_m if reference_lap_length_m and length > 0 else 1.0
-        distances = _corners_on_lap(rows, corners, scale, complete[driver])
+        distances = _corners_on_lap(rows, corners, scale)
         found = [(distance, index) for index, distance in enumerate(distances) if distance is not None]
-        if complete[driver] and len(found) < len(corners):
+        if len(found) < len(corners):
             not_passed[driver] = [
                 f"{corner['number']}{corner['letter'] or ''}"
                 for corner, distance in zip(corners, distances)
@@ -487,12 +474,12 @@ def _official_corner_rows(
 
 
 def _corners_on_lap(
-    rows: list[dict[str, Any]], corners: list[dict[str, Any]], scale: float, complete: bool
+    rows: list[dict[str, Any]], corners: list[dict[str, Any]], scale: float
 ) -> list[float | None]:
     """How far round this lap each corner is, by the lap's own distance. None for one the lap does not show.
 
-    ``scale`` turns a corner's official distance into this lap's.
-    ``complete`` says whether the lap went all the way round.
+    ``scale`` turns a corner's official distance into this lap's. The lap
+    went all the way round.
 
     A corner is where the lap's line passes it. Where the line passes it more
     than once, or passes another corner's place on the way to somewhere else,
@@ -517,16 +504,16 @@ def _corners_on_lap(
         near = [item for item in found if due is None or abs(item[1] - due) <= OFFICIAL_CORNER_SEARCH_M]
         if near:
             placed.append(min(near)[1])
-        elif found and complete:
+        elif found:
             # The lap passed the corner, and it is the lap's distance that is out.
             placed.append(min(found)[1])
-        elif complete and due is not None and rows[0]["distance_m"] <= due <= rows[-1]["distance_m"] and not any(
+        elif due is not None and rows[0]["distance_m"] <= due <= rows[-1]["distance_m"] and not any(
             _number(row.get("x")) and _number(row.get("y")) and abs(row["distance_m"] - due) <= OFFICIAL_CORNER_REACH_M
             for row in rows
         ):
-            # No position data where the corner should be. A lap that went
-            # all the way round can still be read by distance, as far as its
-            # samples run. Where it has position data there and the line is
+            # No position data where the corner should be. The lap went all
+            # the way round, so it can still be read by distance, as far as
+            # its samples run. Where it has position data there and the line is
             # nowhere near the corner, the car did not go through it:
             # Antonelli's lap 9 of the 2025 British GP ends down the pit
             # entry, 99 m from turn 17, which was given his figures there.
@@ -806,7 +793,12 @@ def calculate_car_performance(
     telemetry: list[dict[str, Any]],
     drivers: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    representatives, samples = representative_telemetry_laps(laps, telemetry)
+    # Each driver's lap is the one track dominance compares. It used to be the
+    # fastest lap with any telemetry, and for a driver out early that is what
+    # they managed: in the 2026 Monaco GP Verstappen's only lap, lap 1, which
+    # has no lap time and stops 2,107 m round, was profiled and averaged into
+    # Red Bull's figures, and in the 2026 Austrian GP so was Bottas's lap 1.
+    representatives, samples, left_out = fastest_complete_telemetry_laps(laps, telemetry)
     team_by_driver = {
         str(driver.get("code") or "").upper(): str(driver.get("team", {}).get("name") or "Unknown")
         for driver in drivers
@@ -869,17 +861,24 @@ def calculate_car_performance(
             values = [float(row[field]) for row in rows if row.get(field) is not None]
             aggregate[field] = round(mean(values), 1) if values else None
         teams.append(aggregate)
+    caveats = [
+        "Profiles use each driver's fastest clean lap with complete telemetry: accurate, not deleted, "
+        "not a pit lap, not lap 1 and not run under a safety car, VSC or red flag.",
+        "A team's figures are the mean of its drivers' profiles.",
+        "Speed bands are sample averages: low <150, medium 150-250, high >=250 km/h.",
+        "Maximum speed is telemetry-derived and may differ from the official speed trap.",
+        "Throttle and braking percentages exclude samples where that channel is unavailable.",
+        "A sample at which the car has not moved since the one before, as when it stands in its pit box, is left out of every figure.",
+    ]
+    if left_out:
+        caveats.insert(
+            1, f"Left out, having no such lap, and so not in their team's figures: {', '.join(left_out)}."
+        )
     return {
         "session_id": session_id,
         "drivers": driver_rows,
         "teams": teams,
-        "caveats": [
-            "Profiles use each driver's fastest non-deleted lap with telemetry.",
-            "Speed bands are sample averages: low <150, medium 150-250, high >=250 km/h.",
-            "Maximum speed is telemetry-derived and may differ from the official speed trap.",
-            "Throttle and braking percentages exclude samples where that channel is unavailable.",
-            "A sample at which the car has not moved since the one before, as when it stands in its pit box, is left out of every figure.",
-        ],
+        "caveats": caveats,
     }
 
 
@@ -1219,53 +1218,13 @@ def telemetry_by_lap(telemetry: Any, lap_number_of: Any) -> Any:
     return TelemetryByLap(telemetry, lap_number_of)
 
 
-def representative_telemetry_laps(
-    laps: list[dict[str, Any]], telemetry: Any
-) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
-    lap_meta = {
-        (str(lap.get("driver_code") or "").upper(), int(lap.get("lap_number") or 0)): lap
-        for lap in laps
-        if lap.get("driver_code") and lap.get("lap_number")
-    }
-    by_lap = telemetry_by_lap(telemetry, lambda row: int(row.get("lap_number") or 0))
-
-    by_driver: dict[str, list[tuple[str, int]]] = defaultdict(list)
-    for key in by_lap.lap_keys():
-        if by_lap.lap_sample_count(key) >= 3 and not lap_meta.get(key, {}).get("is_deleted"):
-            by_driver[key[0]].append(key)
-
-    representatives = []
-    selected: dict[str, list[dict[str, Any]]] = {}
-    for driver, candidates in sorted(by_driver.items()):
-        key = min(
-            candidates,
-            key=lambda item: (
-                lap_meta.get(item, {}).get("lap_time_ms") is None,
-                lap_meta.get(item, {}).get("lap_time_ms") or math.inf,
-                item[1],
-            ),
-        )
-        prepared = _prepare_samples(by_lap.lap_rows(key))
-        if len(prepared) < 3 or prepared[-1]["distance_m"] <= 0:
-            continue
-        selected[driver] = prepared
-        representatives.append(
-            {
-                "driver_code": driver,
-                "lap_number": key[1],
-                "lap_time_ms": lap_meta.get(key, {}).get("lap_time_ms"),
-            }
-        )
-    return representatives, selected
-
-
 def fastest_complete_telemetry_laps(
-    laps: list[dict[str, Any]], telemetry: Any
+    laps: list[dict[str, Any]], telemetry: Any, by_distance: bool = True
 ) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[str]]:
     """Pick each driver's fastest clean lap whose telemetry runs line to line.
 
-    ``representative_telemetry_laps`` takes the fastest non-deleted lap that
-    has any telemetry, which for a driver who retires early is whatever they
+    The telemetry analyses used to take the fastest non-deleted lap that has
+    any telemetry, which for a driver who retires early is whatever they
     managed. In the 2026 Austrian GP Bottas completed lap 1 and an in-lap, so
     his lap 1 (84.016 s) was compared with flying laps of 70 to 74 s and won
     6 of 25 minisectors. Its telemetry measures 4,495 m against 4,287 m for a
@@ -1273,10 +1232,15 @@ def fastest_complete_telemetry_laps(
     out of step: his straights were timed against everyone else's corners.
 
     Here a lap must pass ``clean_laps`` (accurate, not deleted, not a pit lap,
-    not lap 1, not neutralised) and its telemetry must be complete. A driver
-    with no such lap is left out and named in the third return value. Yellow
-    flags are allowed: the status is session-wide, and a lap that is still the
-    driver's fastest was evidently not slowed by one.
+    not lap 1, not neutralised) and its telemetry must be complete: it runs
+    the length of the lap's time and, with ``by_distance``, starts at the
+    line and measures what a normal lap does (``_covers_lap``). The corner
+    table asks the clock alone. It finds a corner by position, and a lap that
+    ran its time went all the way round whatever its distance says
+    (``OFFICIAL_CORNER_REACH_M``). A driver with no such lap is left out and
+    named in the third return value. Yellow flags are allowed: the status is
+    session-wide, and a lap that is still the driver's fastest was evidently
+    not slowed by one.
     """
     by_lap = telemetry_by_lap(telemetry, lambda row: lap_number(row) or 0)
 
@@ -1299,7 +1263,12 @@ def fastest_complete_telemetry_laps(
     for driver, driver_laps in sorted(candidates.items()):
         for lap_time, number, lap in sorted(driver_laps, key=lambda item: item[:2]):
             rows = _prepare_samples(by_lap.lap_rows((driver, number)))
-            if not _covers_lap(rows, lap_time, usual_end):
+            whole = (
+                _covers_lap(rows, lap_time, usual_end)
+                if by_distance
+                else len(rows) >= 3 and _runs_its_lap_time(rows, lap_time)
+            )
+            if not whole:
                 continue
             selected[driver] = rows
             representatives.append(

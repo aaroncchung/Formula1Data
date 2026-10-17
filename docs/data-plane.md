@@ -154,9 +154,13 @@ What holds for all of them:
   A corner is where the lap's line passes within 50 m of it, between two
   samples where that is nearer than either, and of several passes the one
   where the corner should be along that lap, which is told
-  from the corners the line passes once. A lap that went from line to line
-  and is not seen at a corner (it ended down the pit entry, or its position
-  feed froze) has no row for that corner, and the result names it.
+  from the corners the line passes once. The lap is the driver's fastest
+  clean lap whose telemetry runs the length of its lap time, and a driver
+  with none (out on lap 1, or before a clean lap was done) is left out and
+  named; the car-performance profiles take the laps track dominance takes,
+  and say whom they leave out of a team's figures. A lap that is not seen at
+  a corner (its position feed froze, or it left the track) has no row for
+  that corner, and the result names it.
 - A driver's stints are consecutive runs of laps that never overlap. A lap
   with no compound stays with the set it is numbered with. F1 gives a car a
   new stint number when it goes through the pit lane, whether or not its

@@ -750,7 +750,11 @@ def test_the_monaco_analyses_that_need_position_say_so_and_the_rest_are_whole(mo
     assert all(sector["midpoint"] == {"x": None, "y": None} for sector in dominance["minisectors"])
     assert any("no position data" in caveat for caveat in dominance["caveats"])
     assert read(files, "analysis/strategy.json")["pit_loss"]["stop_count"] == 89
-    assert len(read(files, "analysis/car-performance.json")["drivers"]) == 22
+    # Verstappen's only lap is lap 1, which has no lap time.
+    performance = read(files, "analysis/car-performance.json")
+    profiled = {row["driver_code"] for row in performance["drivers"]}
+    assert len(profiled) == 21 and "VER" not in profiled
+    assert next(team for team in performance["teams"] if "HAD" in team["drivers"])["drivers"] == ["HAD"]
     late = read(files, "telemetry/HAM.json")["laps"][40]
     # Car data alone is about 290 samples for a lap here, so nothing is thinned away.
     assert late["x"] is None and 250 < len(late["speed_kph"]) <= 300
@@ -785,23 +789,19 @@ def test_the_monaco_corners_are_placed_by_the_build_on_a_lap_that_has_position_d
     assert any("No position data on the lap of" in caveat for caveat in analysis["caveats"])
 
 
-def test_a_lap_that_ends_at_the_chicane_has_no_figures_for_the_corners_after_it(monaco):
-    """Verstappen's only lap of the race stops 2,107 m round. Tabac and the
-    swimming pool are within 50 m of where he had been at the start of it."""
+def test_a_lap_that_ends_at_the_chicane_is_not_compared(monaco):
+    """Verstappen's only lap of the race is lap 1, has no lap time and stops
+    2,107 m round. It was in the corner table for the eleven corners it
+    reached; it is in none, and the table says he is left out."""
     if CIRCUIT_INFO not in monaco.extras:
         pytest.skip("this snapshot of the race was fetched before corners were archived without distances")
     analysis = read(monaco.files, "analysis/corner-analysis.json")
 
-    assert {"driver_code": "VER", "lap_number": 1, "lap_time_ms": None} in analysis["representative_laps"]
-    his = [
-        corner["corner_number"]
-        for corner in analysis["corners"]
-        if any(row["driver_code"] == "VER" for row in corner["drivers"])
-    ]
-    assert his == list(range(1, 12))
+    assert "VER" not in {row["driver_code"] for row in analysis["representative_laps"]}
+    assert len(analysis["representative_laps"]) == 21
     for corner in analysis["corners"]:
-        assert len(corner["drivers"]) == (22 if corner["corner_number"] <= 11 else 21), corner["corner_number"]
-    assert any("Not a whole timed lap: VER" in caveat for caveat in analysis["caveats"])
+        assert "VER" not in {row["driver_code"] for row in corner["drivers"]}, corner["corner_number"]
+    assert "Left out, having no such lap: VER." in analysis["caveats"]
 
 
 def test_monaco_without_its_circuit_file_has_its_corners_inferred(monaco):
