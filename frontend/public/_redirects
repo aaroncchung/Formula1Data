@@ -1,0 +1,195 @@
+# Cloudflare Pages reads this file from the root of the export.
+#
+# The addresses of the site before the data plane was rewritten, sent to the
+# pages that show the same thing now. The old site wrote one page for each
+# season, meeting and race it had, at /seasons/<year>/<round>/<type>/, and
+# nothing else under those paths. Each of them is listed here, with and
+# without its trailing slash, because a rule matches one path exactly. The
+# browser keeps a fragment across a redirect, so #lap-times still opens the
+# lap times.
+#
+# No rule has a placeholder. /seasons/ is still a page, and a rule such as
+# /seasons/:year would also take the files Next writes beside it, which the
+# router fetches to change page (/seasons/index.txt, /seasons/__next._tree.txt).
+#
+# A race and a meeting are sent by F1's key, which does not move with the
+# calendar. The old site numbered 2026 before Bahrain became round 16, so its
+# rounds 16 to 22 are today's 17 to 23. Those meetings have no key until one
+# of their sessions is published, and are sent by today's round with a 302,
+# since a round can move again.
+
+# Races.
+/seasons/2025/1/R/ /session/?key=9693 301
+/seasons/2025/1/R /session/?key=9693 301
+/seasons/2025/2/R/ /session/?key=9998 301
+/seasons/2025/2/R /session/?key=9998 301
+/seasons/2025/3/R/ /session/?key=10006 301
+/seasons/2025/3/R /session/?key=10006 301
+/seasons/2025/4/R/ /session/?key=10014 301
+/seasons/2025/4/R /session/?key=10014 301
+/seasons/2025/5/R/ /session/?key=10022 301
+/seasons/2025/5/R /session/?key=10022 301
+/seasons/2025/6/R/ /session/?key=10033 301
+/seasons/2025/6/R /session/?key=10033 301
+/seasons/2025/7/R/ /session/?key=9987 301
+/seasons/2025/7/R /session/?key=9987 301
+/seasons/2025/8/R/ /session/?key=9979 301
+/seasons/2025/8/R /session/?key=9979 301
+/seasons/2025/9/R/ /session/?key=9971 301
+/seasons/2025/9/R /session/?key=9971 301
+/seasons/2025/10/R/ /session/?key=9963 301
+/seasons/2025/10/R /session/?key=9963 301
+/seasons/2025/11/R/ /session/?key=9955 301
+/seasons/2025/11/R /session/?key=9955 301
+/seasons/2025/12/R/ /session/?key=9947 301
+/seasons/2025/12/R /session/?key=9947 301
+/seasons/2025/13/R/ /session/?key=9939 301
+/seasons/2025/13/R /session/?key=9939 301
+/seasons/2025/14/R/ /session/?key=9928 301
+/seasons/2025/14/R /session/?key=9928 301
+/seasons/2025/15/R/ /session/?key=9920 301
+/seasons/2025/15/R /session/?key=9920 301
+/seasons/2025/16/R/ /session/?key=9912 301
+/seasons/2025/16/R /session/?key=9912 301
+/seasons/2025/17/R/ /session/?key=9904 301
+/seasons/2025/17/R /session/?key=9904 301
+/seasons/2025/18/R/ /session/?key=9896 301
+/seasons/2025/18/R /session/?key=9896 301
+/seasons/2025/19/R/ /session/?key=9888 301
+/seasons/2025/19/R /session/?key=9888 301
+/seasons/2025/20/R/ /session/?key=9877 301
+/seasons/2025/20/R /session/?key=9877 301
+/seasons/2025/21/R/ /session/?key=9869 301
+/seasons/2025/21/R /session/?key=9869 301
+/seasons/2025/22/R/ /session/?key=9858 301
+/seasons/2025/22/R /session/?key=9858 301
+/seasons/2025/23/R/ /session/?key=9850 301
+/seasons/2025/23/R /session/?key=9850 301
+/seasons/2025/24/R/ /session/?key=9839 301
+/seasons/2025/24/R /session/?key=9839 301
+/seasons/2026/1/R/ /session/?key=11234 301
+/seasons/2026/1/R /session/?key=11234 301
+/seasons/2026/2/R/ /session/?key=11245 301
+/seasons/2026/2/R /session/?key=11245 301
+/seasons/2026/3/R/ /session/?key=11253 301
+/seasons/2026/3/R /session/?key=11253 301
+/seasons/2026/4/R/ /session/?key=11280 301
+/seasons/2026/4/R /session/?key=11280 301
+/seasons/2026/5/R/ /session/?key=11291 301
+/seasons/2026/5/R /session/?key=11291 301
+/seasons/2026/6/R/ /session/?key=11299 301
+/seasons/2026/6/R /session/?key=11299 301
+/seasons/2026/7/R/ /session/?key=11307 301
+/seasons/2026/7/R /session/?key=11307 301
+/seasons/2026/8/R/ /session/?key=11315 301
+/seasons/2026/8/R /session/?key=11315 301
+/seasons/2026/9/R/ /session/?key=11326 301
+/seasons/2026/9/R /session/?key=11326 301
+
+# Meetings.
+/seasons/2025/1/ /meeting/?key=1254 301
+/seasons/2025/1 /meeting/?key=1254 301
+/seasons/2025/2/ /meeting/?key=1255 301
+/seasons/2025/2 /meeting/?key=1255 301
+/seasons/2025/3/ /meeting/?key=1256 301
+/seasons/2025/3 /meeting/?key=1256 301
+/seasons/2025/4/ /meeting/?key=1257 301
+/seasons/2025/4 /meeting/?key=1257 301
+/seasons/2025/5/ /meeting/?key=1258 301
+/seasons/2025/5 /meeting/?key=1258 301
+/seasons/2025/6/ /meeting/?key=1259 301
+/seasons/2025/6 /meeting/?key=1259 301
+/seasons/2025/7/ /meeting/?key=1260 301
+/seasons/2025/7 /meeting/?key=1260 301
+/seasons/2025/8/ /meeting/?key=1261 301
+/seasons/2025/8 /meeting/?key=1261 301
+/seasons/2025/9/ /meeting/?key=1262 301
+/seasons/2025/9 /meeting/?key=1262 301
+/seasons/2025/10/ /meeting/?key=1263 301
+/seasons/2025/10 /meeting/?key=1263 301
+/seasons/2025/11/ /meeting/?key=1264 301
+/seasons/2025/11 /meeting/?key=1264 301
+/seasons/2025/12/ /meeting/?key=1277 301
+/seasons/2025/12 /meeting/?key=1277 301
+/seasons/2025/13/ /meeting/?key=1265 301
+/seasons/2025/13 /meeting/?key=1265 301
+/seasons/2025/14/ /meeting/?key=1266 301
+/seasons/2025/14 /meeting/?key=1266 301
+/seasons/2025/15/ /meeting/?key=1267 301
+/seasons/2025/15 /meeting/?key=1267 301
+/seasons/2025/16/ /meeting/?key=1268 301
+/seasons/2025/16 /meeting/?key=1268 301
+/seasons/2025/17/ /meeting/?key=1269 301
+/seasons/2025/17 /meeting/?key=1269 301
+/seasons/2025/18/ /meeting/?key=1270 301
+/seasons/2025/18 /meeting/?key=1270 301
+/seasons/2025/19/ /meeting/?key=1271 301
+/seasons/2025/19 /meeting/?key=1271 301
+/seasons/2025/20/ /meeting/?key=1272 301
+/seasons/2025/20 /meeting/?key=1272 301
+/seasons/2025/21/ /meeting/?key=1273 301
+/seasons/2025/21 /meeting/?key=1273 301
+/seasons/2025/22/ /meeting/?key=1274 301
+/seasons/2025/22 /meeting/?key=1274 301
+/seasons/2025/23/ /meeting/?key=1275 301
+/seasons/2025/23 /meeting/?key=1275 301
+/seasons/2025/24/ /meeting/?key=1276 301
+/seasons/2025/24 /meeting/?key=1276 301
+/seasons/2026/1/ /meeting/?key=1279 301
+/seasons/2026/1 /meeting/?key=1279 301
+/seasons/2026/2/ /meeting/?key=1280 301
+/seasons/2026/2 /meeting/?key=1280 301
+/seasons/2026/3/ /meeting/?key=1281 301
+/seasons/2026/3 /meeting/?key=1281 301
+/seasons/2026/4/ /meeting/?key=1284 301
+/seasons/2026/4 /meeting/?key=1284 301
+/seasons/2026/5/ /meeting/?key=1285 301
+/seasons/2026/5 /meeting/?key=1285 301
+/seasons/2026/6/ /meeting/?key=1286 301
+/seasons/2026/6 /meeting/?key=1286 301
+/seasons/2026/7/ /meeting/?key=1287 301
+/seasons/2026/7 /meeting/?key=1287 301
+/seasons/2026/8/ /meeting/?key=1288 301
+/seasons/2026/8 /meeting/?key=1288 301
+/seasons/2026/9/ /meeting/?key=1289 301
+/seasons/2026/9 /meeting/?key=1289 301
+/seasons/2026/10/ /meeting/?key=1290 301
+/seasons/2026/10 /meeting/?key=1290 301
+/seasons/2026/11/ /meeting/?key=1291 301
+/seasons/2026/11 /meeting/?key=1291 301
+/seasons/2026/12/ /meeting/?key=1292 301
+/seasons/2026/12 /meeting/?key=1292 301
+/seasons/2026/13/ /meeting/?key=1293 301
+/seasons/2026/13 /meeting/?key=1293 301
+/seasons/2026/14/ /meeting/?key=1294 301
+/seasons/2026/14 /meeting/?key=1294 301
+/seasons/2026/15/ /meeting/?key=1295 301
+/seasons/2026/15 /meeting/?key=1295 301
+
+# Meetings with no key yet, by today's round.
+/seasons/2026/16/ /meeting/?year=2026&round=17 302
+/seasons/2026/16 /meeting/?year=2026&round=17 302
+/seasons/2026/17/ /meeting/?year=2026&round=18 302
+/seasons/2026/17 /meeting/?year=2026&round=18 302
+/seasons/2026/18/ /meeting/?year=2026&round=19 302
+/seasons/2026/18 /meeting/?year=2026&round=19 302
+/seasons/2026/19/ /meeting/?year=2026&round=20 302
+/seasons/2026/19 /meeting/?year=2026&round=20 302
+/seasons/2026/20/ /meeting/?year=2026&round=21 302
+/seasons/2026/20 /meeting/?year=2026&round=21 302
+/seasons/2026/21/ /meeting/?year=2026&round=22 302
+/seasons/2026/21 /meeting/?year=2026&round=22 302
+/seasons/2026/22/ /meeting/?year=2026&round=23 302
+/seasons/2026/22 /meeting/?year=2026&round=23 302
+
+# Seasons.
+/seasons/2025/ /season/?year=2025 301
+/seasons/2025 /season/?year=2025 301
+/seasons/2026/ /season/?year=2026 301
+/seasons/2026 /season/?year=2026 301
+
+# Pages that were removed.
+/live/ / 302
+/live / 302
+/settings/ / 302
+/settings / 302
