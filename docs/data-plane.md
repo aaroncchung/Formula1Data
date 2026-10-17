@@ -248,6 +248,7 @@ defaults to the `F1DATA_STORE` environment variable.
 | `archive-directory --path P --name N` | Keep a whole directory in the archive as one file, such as an old FastF1 cache |
 | `schema` | Write the published format's JSON Schema from the models. `--check` to fail when the committed file is out of date |
 
+
 Every command is safe to repeat. A snapshot and a generation are written once
 under a name of their own. A pointer, the index and the standings are written
 against the version that was read, so two runs at once cannot lose each other's
@@ -599,6 +600,14 @@ and a lap count; otherwise the session waits. A
 session published short stays on the fetch stage's list however old it is,
 because a result corrected months later can be what left it short.
 
+An answer that Jolpica has no result has the session wait as well, until its
+retry window has closed. A session already published with a result then
+keeps it: built without one, it would have the order on track in place of
+the result. One never published with a result is published as partial once
+the window has closed, with every driver short of the classification. The
+laps a snapshot recorded as classified are what Jolpica had on the day it
+was fetched, so they are not what it is judged by.
+
 The figures a snapshot is judged by were recorded when it was fetched. A build
 measures the feeds again once it has loaded them, and if they are not what the
 record says it writes the figures it measured beside the snapshot, as
@@ -668,7 +677,8 @@ gathered and of the archive, and of nothing else.
 
 A session more than 30 days old is looked up in the calendar on every run, but
 Jolpica is asked for its classification on two days in every thirty, after a
-lost write, and whenever `build --recheck` is given.
+lost write, and whenever `build --recheck` is given. One published without a
+result is asked about on every run until Jolpica has one.
 
 ## Workflows
 

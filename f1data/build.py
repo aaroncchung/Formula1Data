@@ -216,11 +216,11 @@ class Builder:
 
         # After a lost write nothing is taken on trust, the shortcut included.
         if not retry and self._is_settled(pointer, identity):
-            # An old session, published by this pipeline version. Its
-            # classification is not asked for on every run; between the days
-            # it is, the session is built again only if a different snapshot
-            # would now be picked, its calendar entry has changed, or the
-            # snapshot's record has been corrected.
+            # An old session, published by this pipeline version with its
+            # result. Its classification is not asked for on every run;
+            # between the days it is, the session is built again only if a
+            # different snapshot would now be picked, its calendar entry has
+            # changed, or the snapshot's record has been corrected.
             assert pointer is not None
             settled = select_snapshot(snapshots)
             if (
@@ -252,11 +252,22 @@ class Builder:
             except ClassificationMissing as exc:
                 self._unanswered = 0
                 # Usual in the hours after a race: the next run asks again.
-                # But not for ever. Once the retry window has closed the
-                # session is published as partial like any other that is
-                # short, with the classification named as what is missing.
                 if self._now() < publishable_from:
                     return Hold(str(exc))
+                # A session published with a result keeps it. Built now, it
+                # would have the order on track in place of the result.
+                if pointer is not None and pointer.classification_fingerprint is not None:
+                    return Hold(
+                        f"{exc}, and the session is published with a result, which is kept "
+                        "until Jolpica has one again"
+                    )
+                # Otherwise, once the retry window has closed, the session is
+                # published as partial like any other that is short. A
+                # snapshot's record keeps the laps classified on the day it
+                # was fetched, from whatever Jolpica had then. With no result
+                # to publish there is none to judge by, and the classification
+                # is named as what is missing.
+                snapshots = [_unclassified(snapshot) for snapshot in snapshots]
             except ClassificationUnavailable as exc:
                 # Jolpica did not answer, so nothing is known. Never a reason
                 # to publish without a result that may well exist.
@@ -297,6 +308,9 @@ class Builder:
 
     def _is_settled(self, pointer: Pointer | None, identity: SessionIdentity) -> bool:
         if self._recheck or pointer is None or pointer.pipeline_version != layout.PIPELINE_VERSION:
+            return False
+        if is_classified_session(identity.session_type) and pointer.classification_fingerprint is None:
+            # Published without a result. Jolpica is asked on every run until it has one.
             return False
         now = self._now()
         if now - identity.start_time <= CLASSIFICATION_RECHECK_WINDOW:
@@ -503,6 +517,15 @@ def _differences(recorded: dict[str, Any], measured: dict[str, Any]) -> str:
         if was.get(number) != now.get(number):
             found.append(f"driver {number}: {was.get(number)!r} recorded, {now.get(number)!r} measured")
     return "; ".join(found[:6]) + (f"; and {len(found) - 6} more" if len(found) > 6 else "")
+
+
+def _unclassified(snapshot: Snapshot) -> Snapshot:
+    """The snapshot judged with no classification: every driver short of one."""
+    drivers = {
+        code: {**driver, "classified_laps": None}
+        for code, driver in snapshot.coverage.get("drivers", {}).items()
+    }
+    return replace(snapshot, coverage={**snapshot.coverage, "drivers": drivers})
 
 
 def _not_yet(shortfalls: list[Any], publishable_from: datetime) -> str:
