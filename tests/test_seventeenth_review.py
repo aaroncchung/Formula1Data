@@ -393,7 +393,7 @@ def test_a_fetch_is_archived_as_made_when_it_ended_whichever_run_writes_it_down(
 # --- R17-4: the build has its turn, and the stage's time is asked before everything ---
 
 
-def stages(job, monkeypatch, fetch=lambda args: (0, 0), build=lambda args: 0) -> list[str]:
+def stages(job, monkeypatch, fetch=lambda args: cli_module._FetchStage(0, 0), build=lambda args: 0) -> list[str]:
     ran: list[str] = []
     monkeypatch.setattr(cli_module, "_fetch_due", lambda args: (ran.append("fetch"), fetch(args))[1])
     monkeypatch.setattr(cli_module, "run_build", lambda args: (ran.append("build"), build(args))[1])
@@ -408,7 +408,7 @@ def test_a_run_builds_before_it_asks_anything_of_f1_and_again_if_it_fetched(job,
     ran = stages(job, monkeypatch)
     assert job.run("run", "--store", "x")[1] == 0 and ran == ["build", "fetch"]
 
-    ran = stages(job, monkeypatch, fetch=lambda args: (0, 2))
+    ran = stages(job, monkeypatch, fetch=lambda args: cli_module._FetchStage(0, 2))
     assert job.run("run", "--store", "x")[1] == 0 and ran == ["build", "fetch", "build"]
 
     ran = stages(job, monkeypatch, fetch=always(RuntimeError("the fetch stage broke")))

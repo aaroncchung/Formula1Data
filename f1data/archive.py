@@ -568,7 +568,11 @@ INTERRUPTED = "interrupted: the run ended before this fetch did"
 # How many fetches of one calendar entry a note keeps: the latest.
 _ATTEMPTS_KEPT = 12
 _NOTE_TRIES = 6
-_OUTCOMES = ("failed", "succeeded")
+# "stopped" is a fetch this side stopped for a reason that is not the
+# session's, before it could end: it counts neither as a failure nor as a
+# success, as if it had not been made.
+_OUTCOMES = ("failed", "succeeded", "stopped")
+_WITH_A_REASON = ("failed", "stopped")
 
 
 def note_fetch_started(store: ObjectStore, year: int, session_type: str, start_time_utc: str, now: datetime) -> str:
@@ -620,6 +624,23 @@ def note_fetch_succeeded(
     _note(store, year, session_type, start_time_utc, attempt, now, "succeeded", "")
 
 
+def note_fetch_stopped(
+    store: ObjectStore,
+    year: int,
+    session_type: str,
+    start_time_utc: str,
+    reason: str,
+    now: datetime,
+    attempt: str | None = None,
+) -> None:
+    """Note that this side stopped a fetch for a reason that is not the session's, such as FastF1's hourly limit.
+
+    Noted as a failure, it would put the session behind the others next
+    time and, three runs running, name it as one that keeps failing.
+    """
+    _note(store, year, session_type, start_time_utc, attempt, now, "stopped", reason)
+
+
 def _note(
     store: ObjectStore,
     year: int,
@@ -654,7 +675,7 @@ def _note(
             entry.update(started_at=at, started=last)
         if outcome is not None:
             entry.update(ended_at=at, ended=last, outcome=outcome)
-            if outcome == "failed":
+            if outcome in _WITH_A_REASON:
                 entry["error"] = error[:500]
         attempts[name] = entry
         kept = sorted(attempts.items(), key=lambda item: _place(item[1]))[-_ATTEMPTS_KEPT:]
@@ -701,7 +722,7 @@ def _attempts(data: bytes) -> tuple[dict[str, dict[str, Any]], int]:
                 read.update(
                     ended_at=entry["ended_at"], ended=_whole_number(entry["ended"]), outcome=entry["outcome"]
                 )
-                if entry["outcome"] == "failed":
+                if entry["outcome"] in _WITH_A_REASON:
                     read["error"] = str(entry.get("error") or "")
             attempts[str(name)] = read
         except Exception:
@@ -755,7 +776,7 @@ def _not_succeeded(data: bytes, now: datetime) -> list[tuple[datetime, str]]:
     succeeded = max([entry["ended"] for entry in attempts.values() if entry.get("outcome") == "succeeded"], default=0)
     since: list[tuple[int, datetime, str]] = []
     for entry in attempts.values():
-        if entry.get("outcome") == "succeeded":
+        if entry.get("outcome") in ("succeeded", "stopped"):
             continue
         ended = bool(entry.get("outcome"))
         at = parse_utc(entry["ended_at"] if ended else entry["started_at"])

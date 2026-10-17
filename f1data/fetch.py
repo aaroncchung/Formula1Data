@@ -248,6 +248,23 @@ def _quietly(name: str) -> Iterator[None]:
         logger.setLevel(level)
 
 
+def fastf1_limit_reached(exc: BaseException) -> bool:
+    """Whether FastF1 refused a request because this process has made as many as it allows in an hour.
+
+    FastF1 allows 500 requests an hour to any host in one process
+    (``fastf1/req.py``), and past that raises before the request is sent,
+    every time, until the hour has passed. Nothing was asked of F1 then, and
+    nothing is wrong with the session: every fetch after it in the process
+    would fail the same way. Its own error handling never swallows this one.
+    """
+    try:
+        from fastf1.exceptions import RateLimitExceededError
+    except Exception:
+        # A FastF1 that keeps it elsewhere, or has none: known by its name.
+        return any(kind.__name__ == "RateLimitExceededError" for kind in type(exc).__mro__)
+    return isinstance(exc, RateLimitExceededError)
+
+
 def f1_is_answering(years: Iterable[int], timeout: float = 30.0) -> bool:
     """Whether F1's archive answers at all just now, asked for a season's index.
 

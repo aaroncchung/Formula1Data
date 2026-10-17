@@ -52,6 +52,9 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
     # FastF1's mirror. Whichever of the two answered FastF1 answers again out
     # of its cache of responses.
     asked_of = {PIT_STOP_SERIES: (_api.base_url,), WEATHER_SERIES: (_api.base_url, _api.base_url_mirror)}
+    # FastF1's limit on requests among them: a feed refused by it was never
+    # asked for, and the fetch stops as FastF1's own loading would.
+    never_swallowed = _never_swallowed()
     for name, hosts in asked_of.items():
         for host in hosts:
             try:
@@ -61,6 +64,8 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
                 if response.status_code == 200 and response.content:
                     extras[name] = response.content
                     break
+            except never_swallowed:
+                raise
             except Exception as exc:
                 _logger.warning("Could not fetch %s from %s: %s", name, host, exc)
 
@@ -68,9 +73,20 @@ def fetch_extras(fastf1: Any, session: Any, archive_path: str) -> dict[str, byte
         info = _circuit_info(fastf1, session)
         if info is not None:
             extras[CIRCUIT_INFO] = _dump(circuit_info_json(info))
+    except never_swallowed:
+        raise
     except Exception as exc:
         _logger.warning("Could not fetch the circuit information: %s", exc)
     return extras
+
+
+def _never_swallowed() -> tuple[type[BaseException], ...]:
+    """The errors FastF1's own handling always raises (``soft_exceptions`` in ``fastf1/logger.py``)."""
+    try:
+        from fastf1.exceptions import FastF1CriticalError
+    except Exception:
+        return ()
+    return (FastF1CriticalError,)
 
 
 def weather_lines_are_kept(session: Any, extras: dict[str, bytes]) -> bool:

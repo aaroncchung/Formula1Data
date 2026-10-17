@@ -353,11 +353,13 @@ seen through by a later run is the fetch that was begun. A fetch F1 served
 is noted as having succeeded whether or not it has reached the archive yet.
 A fetch that started and of which nothing more is noted has not succeeded:
 it is still going, or its run ended under it, and the note cannot tell
-which. For each entry a run counts the fetches that have not succeeded since
-the last that did, in the order their words reached the note, and names the
-entry at three in a line that begins `ATTENTION`. One that started before
-that success and never ended is counted for six hours from its start, while
-it may still be going, and not after. A note keeps the twelve latest fetches
+which. A fetch the run stopped for FastF1's limit on requests (below) is
+noted as stopped, and counts neither way. For each entry a run counts the
+fetches that have not succeeded since the last that did, in the order their
+words reached the note, and names the entry at three in a line that begins
+`ATTENTION`. One that started before that success and never ended is
+counted for six hours from its start, while it may still be going, and not
+after. A note keeps the twelve latest fetches
 of its entry. New fetches are taken in the order of when each session was last
 tried, whether that fetch failed or arrived: the ones never tried first, then
 the one tried longest ago. So the fetches a run starts reach every session
@@ -380,6 +382,19 @@ there is no result yet is an answer. After two fetches in a row have failed,
 `fetch-due` asks F1's archive, and FastF1's mirror of it, for this season's
 index and last season's. If any answers, the fault is with those sessions
 and the batch carries on; if none does, the batch stops until the next run.
+
+FastF1 makes at most 500 requests an hour in one process, to all hosts
+together, and past that refuses every request, before it is sent, until the
+hour has passed. A fetch makes twenty or so, and a build at least one for
+every session it looks at, since it reads the calendar for each, so a run
+that has many sessions to fetch reaches the limit. The fetch stage then
+stops: `Stopping: FastF1 makes at most 500 requests an hour`. The fetch it
+was in is removed from the spool like any F1 had not served in full, and is
+noted as stopped, which is not a failure: neither it nor the sessions not
+reached count against their entries, and all of them are due on the next
+run, which is a process of its own. `run` does not build again after such a
+stop, since FastF1 would refuse the build's requests too; the next run builds
+what was fetched before it fetches anything.
 
 `run` builds first. What the archive held when a run began is published
 before the run asks anything of F1, so that nothing the fetch stage meets can
@@ -452,11 +467,13 @@ is, and archives nothing):
 
 The first run against an empty bucket has two seasons to fetch: every finished
 race and sprint of this year and last, about fifty sessions, each some 200 MB
-on disk while it is fetched and 100 MB in the bucket. `run` gives its fetch
-stage an hour, so the scheduled job catches up over its first few runs
-without being told to, building as it goes. To do it in one sitting instead:
-`python -m f1data fetch-due` (no time limit unless `--budget-minutes` is
-given), then `python -m f1data build`.
+on disk while it is fetched and 100 MB in the bucket. That cannot be done in
+one sitting: `run` gives its fetch stage an hour, and FastF1 makes no more
+than 500 requests an hour in one process, which is a score of sessions or
+fewer. The scheduled job catches up over its first runs without being told
+to, each building what the one before fetched. By hand, `python -m f1data
+fetch-due` fetches until it reaches the limit and says so; run it again an
+hour later, as many times as it takes, then `python -m f1data build`.
 
 ## Running on a schedule
 

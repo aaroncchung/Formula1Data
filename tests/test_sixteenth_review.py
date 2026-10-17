@@ -429,7 +429,9 @@ def test_the_fetch_stage_starts_no_new_fetch_once_its_time_is_up(three_races, mo
     assert "Stopping: the fetch stage has had its 0 minutes. 3 session(s) left for the next run." in output
 
     seen = []
-    monkeypatch.setattr(cli_module, "_fetch_due", lambda args: (seen.append(args.budget_minutes) or 0, 0))
+    monkeypatch.setattr(
+        cli_module, "_fetch_due", lambda args: cli_module._FetchStage(seen.append(args.budget_minutes) or 0, 0)
+    )
     monkeypatch.setattr(cli_module, "run_build", lambda args: 0)
     three_races.run("run", "--store", "x")
     assert seen == [FETCH_STAGE_BUDGET.total_seconds() / 60] and 0 < seen[0] <= 90

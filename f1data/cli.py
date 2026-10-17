@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from f1data import layout
 from f1data.archive import (
@@ -29,6 +29,7 @@ from f1data.archive import (
     new_snapshot_id,
     note_failed_fetch,
     note_fetch_started,
+    note_fetch_stopped,
     note_fetch_succeeded,
     parse_utc,
     plausible_fetch_time,
@@ -43,6 +44,7 @@ from f1data.fetch import (
     F1_ARCHIVE_HOSTS,
     FetchError,
     f1_is_answering,
+    fastf1_limit_reached,
     fastf1_cache,
     fetch_session,
     read_back,
@@ -692,15 +694,27 @@ def _seasons_in_scope(now: datetime, snapshots: list[Snapshot], published_short:
 
 
 def run_fetch_due(args: argparse.Namespace) -> int:
-    return _fetch_due(args)[0]
+    return _fetch_due(args).status
 
 
-def _fetch_due(args: argparse.Namespace) -> tuple[int, int]:
-    """The fetch stage. Returns its exit status, and how many sessions it put in the archive."""
+class _FetchStage(NamedTuple):
+    """How a fetch stage ended."""
+
+    status: int
+    # How many sessions it put in the archive.
+    archived: int
+    # FastF1 refused a request for its hourly limit, and refuses every one in
+    # this process until the hour is out.
+    limit_reached: bool = False
+
+
+def _fetch_due(args: argparse.Namespace) -> _FetchStage:
+    """The fetch stage."""
     store = _store(args.store)
     now = datetime.now(timezone.utc)
     spool, name = spool_root(), _store_name(args.store)
     failed = failed_in_a_row = not_archived = archived = 0
+    limit_reached = False
     budget = getattr(args, "budget_minutes", None)
     out_of_time = time.monotonic() + budget * 60 if budget is not None else None
 
@@ -829,6 +843,24 @@ def _fetch_due(args: argparse.Namespace) -> tuple[int, int]:
                     note_fetch_succeeded(store, *entry, datetime.now(timezone.utc), attempt)
                     print(f"  FETCHED, NOT ARCHIVED: {exc}. The next run sees it through before it fetches anything.")
                 except Exception as exc:
+                    if fastf1_limit_reached(exc):
+                        # FastF1 asks nothing more of anyone in this process
+                        # for up to an hour, so every fetch after this one
+                        # would fail too. Nothing is wrong with the session:
+                        # it is not counted as failed, and like the ones not
+                        # reached it is due on the next run, in a process of
+                        # its own. What it fetched is removed, as for any fetch
+                        # F1 had not served in full.
+                        limit_reached = True
+                        note_fetch_stopped(
+                            store, *entry, f"{type(exc).__name__}: {exc}", datetime.now(timezone.utc), attempt
+                        )
+                        print(
+                            f"  Stopping: FastF1 makes at most 500 requests an hour in one process and refused "
+                            f"more ({type(exc).__name__}: {exc}). Not counted as a failed fetch. {left} session(s) "
+                            "left for the next run."
+                        )
+                        break
                     # One session failing must not stop the others. The next
                     # run plans it again, since nothing was archived. A fetch
                     # can fail in more ways than FetchError: with the network
@@ -861,7 +893,7 @@ def _fetch_due(args: argparse.Namespace) -> tuple[int, int]:
                     _print_snapshot(snapshot)
     if not args.dry_run:
         _say_what_keeps_failing(store, schedule, now)
-    return (1 if failed or not_archived else 0), archived
+    return _FetchStage(1 if failed or not_archived else 0, archived, limit_reached)
 
 
 def _say_what_keeps_failing(store: ObjectStore, schedule: list[ScheduledSession], now: datetime) -> None:
@@ -995,8 +1027,9 @@ def run_job(args: argparse.Namespace) -> int:
         print("Building what the archive holds.")
         built = build()
         print("Fetching what is due.")
+        limit_reached = False
         try:
-            fetched, archived = _fetch_due(args)
+            fetched, archived, limit_reached = _fetch_due(args)
         except SystemExit as stopped:
             # The fetch stage could not start.
             print(stopped)
@@ -1006,7 +1039,14 @@ def run_job(args: argparse.Namespace) -> int:
             print(f"The fetch stage stopped: {type(exc).__name__}: {exc}")
             # It may have archived something before it did.
             fetched, archived = 1, 1
-        if archived:
+        if archived and limit_reached:
+            # A build asks FastF1 for the calendar of every session, and in
+            # this process FastF1 would refuse: every session would fail.
+            print(
+                "Not building again in this run: FastF1 makes no more requests in this process for up to an "
+                "hour. What was fetched is built by the next run, which builds before it fetches."
+            )
+        elif archived:
             print("Building what was fetched.")
             built = build()
         status = 1 if fetched or built else 0

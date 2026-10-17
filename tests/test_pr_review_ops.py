@@ -15,24 +15,33 @@ repository.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
+from fastf1.exceptions import RateLimitExceededError
 
-from f1data import spool
-from f1data.archive import list_snapshots
+from f1data import cli as cli_module
+from f1data import layout, spool
+from f1data.archive import failed_fetches, failing_fetches, list_snapshots
 from f1data.cli import main
 from f1data.due import plan_fetches
+from f1data.extras import fetch_extras
+from f1data.fetch import fastf1_limit_reached
+from f1data.httplog import HttpRecorder
 from f1data.identity import format_utc
 from f1data.policy import RETRY_INTERVAL, RETRY_SLACK, RETRY_WINDOW, SLOW_RETRY_INTERVAL
-from f1data.store import DirectoryStore
+from f1data.store import DirectoryStore, MemoryStore
 from tests.spooling import left_whole
 from tests.test_due import RACE_START, fetched_at, planned, without_position
-from tests.test_fifteenth_review import EIGHTH, job  # noqa: F401  (a fixture)
+from tests.test_extras import ARCHIVE_PATH
+from tests.test_fifteenth_review import EIGHTH, SEVENTH, SIXTH, job, three_races  # noqa: F401  (fixtures)
 from tests.test_publish import schedule_2026, snapshot
+from tests.test_seventh_review import CALENDAR
 from tests.test_sixteenth_review import STORE
 
 LONG_AGO = time.time() - 2 * 3600
@@ -189,3 +198,132 @@ def test_the_weekly_retry_has_the_same_slack():
     a_week_on = later + SLOW_RETRY_INTERVAL - timedelta(minutes=30)
     assert planned(AUSTRIA_ONLY, [short, again], a_week_on) == [(8, "R")]
     assert planned(AUSTRIA_ONLY, [short, again], a_week_on - RETRY_SLACK) == []
+
+
+# --- 3: FastF1's hourly limit stops the fetch stage, and fails nothing -----------------
+
+THE_LIMIT = "any API: 500 calls/h"
+
+
+def refusing(job, monkeypatch, events: set[int]) -> set[int]:
+    """FastF1 refusing these rounds for its hourly limit, part of the way in. Empty the set to stop."""
+    fetch = cli_module.fetch_session
+
+    def limited(year, event, session_type, cache_dir):
+        if event not in events:
+            return fetch(year, event, session_type, cache_dir)
+        job.fetched.append(event)
+        # Something of the session had arrived.
+        (cache_dir / "2026").mkdir(parents=True)
+        raise RateLimitExceededError(THE_LIMIT)
+
+    monkeypatch.setattr(cli_module, "fetch_session", limited)
+    return events
+
+
+def attempts(store, entry) -> list[dict]:
+    found = store.get(layout.attempt_key(entry.year, entry.session_type, entry.start_time_utc))
+    return list(json.loads(found.data)["attempts"].values())
+
+
+def test_the_batch_stops_at_fastf1s_hourly_limit_and_nothing_is_counted_as_failed(three_races, monkeypatch):
+    """The finding. FastF1 raises before the request is sent, and goes on
+    raising for the rest of the hour. Each fetch after the first refused
+    failed and was noted as failed; F1's archive answered the batch's
+    question, so the batch carried on, and three runs of it named every
+    session as one that keeps failing."""
+    events = refusing(three_races, monkeypatch, {SIXTH})
+
+    output, code = three_races.run()
+
+    assert three_races.fetched == [SIXTH] and code == 0
+    assert (
+        "  Stopping: FastF1 makes at most 500 requests an hour in one process and refused more "
+        f"(RateLimitExceededError: {THE_LIMIT}). Not counted as a failed fetch. 3 session(s) left for the next run."
+    ) in output
+    assert "FAILED" not in output and "ATTENTION" not in output
+    now = datetime.now(timezone.utc)
+    assert failed_fetches(three_races.store, now) == {} and failing_fetches(three_races.store, now) == {}
+    # The note says what stopped it.
+    (entry,) = attempts(three_races.store, CALENDAR[0])
+    assert entry["outcome"] == "stopped" and entry["error"] == f"RateLimitExceededError: {THE_LIMIT}"
+    # What it had of the session went, as for any fetch F1 had not served in full.
+    assert list(three_races.spool.iterdir()) == []
+
+    # The next run is a process of its own. Every session is due, the one that
+    # was stopped first.
+    events.clear()
+    output, code = three_races.run()
+    assert three_races.fetched == [SIXTH, SEVENTH, EIGHTH] and code == 0
+
+
+def test_a_run_stopped_by_the_limit_leaves_its_second_build_to_the_next_run(three_races, monkeypatch):
+    """A build asks FastF1 for the calendar of every session. Straight after
+    the limit, in the same process, every session would fail to build, and a
+    catch-up would fail every run until it was done."""
+    refusing(three_races, monkeypatch, {SEVENTH})
+    built = []
+    monkeypatch.setattr(cli_module, "run_build", lambda args: built.append(args.season) or 0)
+
+    output, code = three_races.run("run", "--store", "x")
+
+    assert three_races.fetched == [SIXTH, SEVENTH] and len(list_snapshots(three_races.store)) == 1
+    assert len(built) == 1 and code == 0
+    assert "Not building again in this run: FastF1 makes no more requests in this process" in output
+
+
+def test_fastf1_raises_its_limit_before_anything_is_sent_and_a_fetch_lets_it_through(tmp_path):
+    """With FastF1's own count full, a fetch gets as far as the calendar and
+    no further. Nothing reached the network, and the directory went."""
+    import fastf1.req as req
+
+    # The limit on every host, not the one on ergast.com alone.
+    (general,) = [
+        limiter
+        for pattern, limiters in req._SessionWithRateLimiting._RATE_LIMITS.items()
+        if pattern.match("https://livetiming.formula1.com/static/")
+        for limiter in limiters
+        if isinstance(limiter, req._CallsPerIntervalLimitRaise)
+    ]
+    saved = list(general._timestamps)
+    general._timestamps.extend([time.time()] * general._timestamps.maxlen)
+    root = tmp_path / "spool"
+    try:
+        with HttpRecorder(forbid_all=True) as guard:
+            with pytest.raises(RateLimitExceededError) as refused:
+                cli_module._fetch_and_archive(MemoryStore(), "a store", root, 2026, 8, "R")
+        assert guard.forbidden == [] and guard.records == []
+    finally:
+        general._timestamps.clear()
+        general._timestamps.extend(saved)
+    assert fastf1_limit_reached(refused.value) and not fastf1_limit_reached(RuntimeError(THE_LIMIT))
+    assert list(root.iterdir()) == []
+
+
+def test_a_feed_fetched_beside_the_session_does_not_swallow_the_limit():
+    """The pit stops, the weather lines and the circuit were each asked for
+    under a catch-all. Refused by the limit after the session had loaded, a
+    fetch was archived without them, as though F1 had not sent them."""
+
+    def refused(*args, **kwargs):
+        raise RateLimitExceededError(THE_LIMIT)
+
+    with pytest.raises(RateLimitExceededError):
+        fetch_extras(SimpleNamespace(Cache=SimpleNamespace(requests_get=refused)), None, ARCHIVE_PATH)
+
+    absent = SimpleNamespace(status_code=404, content=b"")
+    circuit = SimpleNamespace(
+        session_info={"Meeting": {"Circuit": {"Key": 19, "ShortName": "Spielberg"}}}, event=SimpleNamespace(year=2026)
+    )
+    by_mvapi = SimpleNamespace(
+        Cache=SimpleNamespace(requests_get=lambda *args, **kwargs: absent),
+        mvapi=SimpleNamespace(get_circuit_info=refused),
+    )
+    with pytest.raises(RateLimitExceededError):
+        fetch_extras(by_mvapi, circuit, ARCHIVE_PATH)
+
+    # Anything else is what it was: a feed that did not arrive.
+    def reset(*args, **kwargs):
+        raise ConnectionError("connection reset")
+
+    assert fetch_extras(SimpleNamespace(Cache=SimpleNamespace(requests_get=reset)), None, ARCHIVE_PATH) == {}
