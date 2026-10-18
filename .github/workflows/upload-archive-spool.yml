@@ -19,14 +19,8 @@ on:
     inputs:
       release_tag:
         description: Draft release holding store.tar (or spool.tar, from before)
-        default: archive-spool-3
-  # workflow_dispatch only works once this file is on the default branch. Until
-  # then a push that touches this file runs it from the rewrite branch.
-  push:
-    branches:
-      - rewrite/data-plane
-    paths:
-      - .github/workflows/upload-archive-spool.yml
+        required: true
+        type: string
 
 permissions:
   # Draft releases are only visible to a token that can write contents.
@@ -44,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      RELEASE_TAG: ${{ inputs.release_tag || 'archive-spool-3' }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
       R2_BUCKET: ${{ vars.R2_BUCKET }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       # The Cloudflare API token doubles as an R2 key pair (f1data/config.py),

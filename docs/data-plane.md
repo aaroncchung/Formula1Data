@@ -810,12 +810,12 @@ running.
 | `deploy-data-worker.yml` | Manually, and on a push to `main` that touches the Worker | Tests and deploys `formula-1-data-read` |
 | `r2-contract.yml` | Manually, and on a push to the rewrite branch that touches the store | The store's tests against the real bucket |
 | `probe-f1-access.yml` | Manually, and on a push to the rewrite branch that touches it | Whether F1 answers a hosted runner yet |
-| `upload-archive-spool.yml` | Manually, and on a push to the rewrite branch that touches it | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
+| `upload-archive-spool.yml` | Manually, with an explicit release tag | Stopgap: copies a fetch made without R2 credentials into the bucket. Delete it once the fetch machine has credentials |
 
 A schedule runs a workflow as it is on the default branch, and a workflow can
 be started by hand only once it is on the default branch (it can then be run
-against another). That is why each has a push trigger while this work is on a
-branch.
+against another). The archive upload is manual only; the other workflows have
+push triggers while this work is on a branch.
 
 ## Checking a publication
 
