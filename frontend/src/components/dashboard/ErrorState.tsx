@@ -2,7 +2,7 @@ import { AlertTriangle } from "lucide-react";
 
 export function ErrorState({ title, detail }: { title: string; detail?: string }) {
   return (
-    <div className="rounded border border-redline/40 bg-redline/10 p-5">
+    <div className="rounded border border-redline/40 bg-redline/10 p-5" role="alert">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 text-redline" size={18} />
         <div>

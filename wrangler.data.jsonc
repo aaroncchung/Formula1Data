@@ -1,0 +1,25 @@
+{
+	// The read-only Worker of the rewritten data plane. It serves published
+	// data from R2 and has no queue, no D1 and no routes that write. It is
+	// deployed beside the old Worker (wrangler.jsonc) until that one is removed.
+	//
+	//   npx wrangler deploy --config wrangler.data.jsonc
+	"name": "formula-1-data-read",
+	"account_id": "71df6a82dcf39c26ae737d9743120aac",
+	"main": "worker/src/data.mjs",
+	"compatibility_date": "2026-07-12",
+	"workers_dev": true,
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"head_sampling_rate": 1
+		}
+	},
+	"r2_buckets": [
+		{
+			"binding": "ARTIFACTS_BUCKET",
+			"bucket_name": "formula-1-data-artifacts",
+			"preview_bucket_name": "formula-1-data-artifacts-dev"
+		}
+	]
+}

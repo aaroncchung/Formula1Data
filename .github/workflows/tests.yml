@@ -40,6 +40,39 @@ jobs:
       - name: Run test suite
         run: python -m pytest backend/tests -q
 
+  f1data:
+    name: Python (f1data)
+    runs-on: ubuntu-latest
+    steps:
+      # Only what these tests read. The build takes its analyses from
+      # backend/app/analysis, the schema of the published layout is checked
+      # against the models, and one test reads how the publish workflow
+      # checks on the fetch job.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            f1data
+            tests
+            backend/app
+            schema
+            .github/workflows
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        run: python -m pytest tests -q
+
   worker:
     name: Cloudflare Worker
     runs-on: ubuntu-latest
@@ -60,3 +93,32 @@ jobs:
       # node:test against the source modules.
       - name: Run test suite
         run: node --test "worker/tests/*.test.mjs"
+
+  frontend:
+    name: Frontend (lib)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # One suite needs a dependency: it runs the generator that writes the
+      # site's types from schema/published-v2.schema.json and compares the
+      # result with the committed file. The others import the `src/lib`
+      # modules directly, which pull in nothing from node_modules.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # The .mjs suites import .ts sources, which needs type stripping. Node 24
+      # enables it by default; the flag is kept so the same command works on
+      # the Node 22 line a contributor may have locally.
+      - name: Run test suite
+        working-directory: frontend
+        run: npm test

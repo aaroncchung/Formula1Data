@@ -1,0 +1,157 @@
+name: Build and publish
+
+# The build stage of the data plane: read the source archive in R2, build every
+# session that needs it, publish to R2 and derive the index and the standings.
+# It never contacts F1, which refuses hosted runners
+# (docs/architecture-review-findings.md, AR-13), so it can run here while the
+# fetch stage runs on a machine F1 answers.
+#
+# The sessions are split across several jobs that run side by side, and there
+# is deliberately no concurrency group. That is safe by construction: every
+# object that changes is written against the version that was read (section 6,
+# rule 2), and the loser of a write decides again. Each job derives the index,
+# so every run of this workflow is also a run of the plan's fourth acceptance
+# criterion, two publishers started together, on the real bucket.
+on:
+  # Every six hours, a little after the hour the machine that fetches is asked
+  # to run. GitHub runs a schedule only from the default branch, so this does
+  # nothing while the work is on a branch. What a scheduled run adds to
+  # building: it asks when the fetch job last finished (see the last step but
+  # one), which is the only thing that notices that job not running at all,
+  # and it keeps the schedule itself from being turned off (the keepalive job).
+  schedule:
+    - cron: "40 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      session_key:
+        description: Limit to one F1 session key (empty for every archived session)
+        default: ""
+  # workflow_dispatch only works once this file is on the default branch. Until
+  # then a push that touches this file runs it from the rewrite branch. So does
+  # one that touches the file the pipeline version is in: a new version is what
+  # makes every published session due to be built again.
+  push:
+    branches:
+      - rewrite/data-plane
+    paths:
+      - .github/workflows/publish.yml
+      - f1data/layout.py
+
+permissions:
+  contents: read
+
+# An explicit shell makes every step run with "-eo pipefail". Without it a step
+# that pipes into tee reports tee's success whatever came before the pipe.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish:
+    name: Build and publish, part ${{ matrix.part }} of 4
+    runs-on: ubuntu-latest
+    # A session builds in seconds. The limit is for a run that has stopped
+    # making progress, not for one that is working.
+    timeout-minutes: 60
+    strategy:
+      # One part failing says nothing about the others' sessions.
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3]
+    env:
+      PYTHONUNBUFFERED: "1"
+      F1DATA_STORE: r2
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Either an R2 key pair, or the Cloudflare API token, which doubles as
+      # one (f1data/config.py). The token can do more than reach the bucket, so
+      # it is given only where the key pair is not set, which is also the only
+      # case in which it would be used.
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ (secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '') && secrets.CLOUDFLARE_API_TOKEN || '' }}
+      SESSION_KEY: ${{ inputs.session_key }}
+      PART: ${{ matrix.part }}
+    steps:
+      # All the build needs: the package, and the analyses it takes from
+      # backend/app/analysis.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            f1data
+            backend/app
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Build and publish
+        run: |
+          arguments=(--season "$(date -u +%Y)" --shard "$PART/4")
+          if [ -n "$SESSION_KEY" ]; then
+            arguments+=(--session-key "$SESSION_KEY")
+          fi
+          python -m f1data build "${arguments[@]}" | tee publish-output.txt
+
+      # The fetch stage runs on a machine at home, since F1 refuses this one,
+      # and a job that stops running there says nothing anywhere. When this
+      # workflow is started by a schedule it asks when that job last finished
+      # and fails if that is too long ago, if its last two runs both failed,
+      # or if it has never run at all, so that it is noticed here. One part
+      # asks; the others would only say the same. It asks whatever came of the
+      # build before it, after which it used to be skipped whenever the build
+      # failed. A failed build fails the job all the same.
+      #
+      # A job that was never installed has never run, and that fails like the
+      # rest: it is the case most in need of being noticed. For the days
+      # between this workflow reaching the default branch and the job's first
+      # run, set the repository variable F1DATA_FETCH_JOB_NOT_YET_RUN to
+      # "true", and remove it once `last-run` has something to read. While it
+      # is set every scheduled run carries a warning saying so.
+      - name: Check that the fetch job is running
+        if: ${{ !cancelled() && github.event_name == 'schedule' && matrix.part == 0 }}
+        env:
+          NOT_YET_RUN: ${{ vars.F1DATA_FETCH_JOB_NOT_YET_RUN }}
+        run: |
+          arguments=()
+          if [ "$NOT_YET_RUN" = "true" ]; then
+            echo "::warning title=The fetch job has never run, and that is being let pass::F1DATA_FETCH_JOB_NOT_YET_RUN is set. Remove it once the job has run for the first time."
+            arguments+=(--allow-never)
+          fi
+          python -m f1data last-run "${arguments[@]}" | tee last-run-output.txt
+          grep -E '^DEGRADED' last-run-output.txt | sed 's/^/::warning title=The fetch job::/' || true
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -f publish-output.txt ]; then
+            { echo '```'; cat publish-output.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # GitHub turns off the schedule of a workflow in a public repository once
+  # sixty days have passed with no activity in the repository, and the job at
+  # home writes only to R2. In the off-season that would stop publishing and
+  # the one check on that job together, and nothing would say so. Enabling
+  # the workflow through the API is reported to start the sixty days again
+  # (by the keepalive-workflow action, which does this in its API mode, and
+  # by others; GitHub's documentation does not say so). Only on a schedule,
+  # and the one permission it needs is this job's alone.
+  keepalive:
+    name: Keep the schedule on
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Enable this workflow again
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/enable"

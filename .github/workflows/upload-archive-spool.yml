@@ -1,0 +1,81 @@
+name: Upload a directory store's archive
+
+# A stopgap, to be deleted once the fetch machine has R2 credentials of its own.
+#
+# The fetch stage has to run on a machine F1 answers (AR-13), and that machine
+# cannot write to R2 yet. Until it can, a fetch is archived into a directory
+# store on that machine (`python -m f1data fetch --store <dir>`, the directory
+# made first), the store's archive/ folder is packed into store.tar and
+# attached to a draft release, and this workflow copies it into the bucket with
+# the credentials the repository has. Snapshots are written once under names of
+# their own, so copying is additive and safe to repeat.
+#
+# The store is not the spool (F1DATA_SPOOL), where a fetch waits until the store
+# it was fetched for has it. Packing the spool uploads nothing: copy-archive
+# refuses it. Releases made before this was said hold the same thing as
+# spool.tar, which is still read.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Draft release holding store.tar (or spool.tar, from before)
+        required: true
+        type: string
+
+permissions:
+  # Draft releases are only visible to a token that can write contents.
+  contents: write
+
+# An explicit shell makes every step run with "-eo pipefail". Without it a step
+# that pipes into tee reports tee's success whatever came before the pipe.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  upload:
+    name: Copy the directory store's archive into the bucket
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # The Cloudflare API token doubles as an R2 key pair (f1data/config.py),
+      # and can do more than reach the bucket: it is given only where the key
+      # pair is not set, which is also the only case in which it would be used.
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ (secrets.R2_ACCESS_KEY_ID == '' || secrets.R2_SECRET_ACCESS_KEY == '') && secrets.CLOUDFLARE_API_TOKEN || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: f1data
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Download the store
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern store.tar --pattern spool.tar
+          mkdir store
+          for packed in store.tar spool.tar; do
+            if [ -f "$packed" ]; then
+              tar -xf "$packed" -C store
+            fi
+          done
+          find store -type f | sort
+
+      # Fails when what was packed holds nothing to copy, or is a spool.
+      - name: Copy to R2
+        run: python -m f1data copy-archive --from store --to r2 | tee -a "$GITHUB_STEP_SUMMARY"

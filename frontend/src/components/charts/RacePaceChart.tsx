@@ -2,32 +2,41 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
 import { formatDelta, formatMs } from "@/lib/format";
-import type { RacePaceRow } from "@/types/domain";
+import type { RacePaceRow } from "@/lib/published/types";
+import { racePaceChartRows } from "@/lib/race-pace-view";
 
-export function RacePaceChart({ rows }: { rows: RacePaceRow[] }) {
-  const data = rows.map((row) => ({
+export function RacePaceChart({ rows }: { rows: ReadonlyArray<RacePaceRow> }) {
+  const { ranked, unranked } = racePaceChartRows(rows);
+  const data = ranked.map((row) => ({
     driver: row.driver_code,
     median: row.median_lap_ms,
     gap: row.gap_to_best_ms
   }));
   return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 20, left: 8, bottom: 8 }}>
-          <CartesianGrid stroke="#293246" strokeDasharray="3 3" />
-          <XAxis dataKey="driver" stroke="#94a3b8" />
-          <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
-          <Tooltip
-            contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
-            formatter={(value, name) =>
-              name === "gap" ? formatDelta(Number(value)) : formatMs(Number(value))
-            }
-          />
-          <Bar dataKey="median" fill="#f33d3d" radius={[3, 3, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+    <div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 20, left: 8, bottom: 8 }}>
+            <CartesianGrid stroke="#293246" strokeDasharray="3 3" />
+            <XAxis dataKey="driver" stroke="#94a3b8" />
+            <YAxis stroke="#94a3b8" tickFormatter={(value) => formatMs(Number(value))} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              formatter={(value, name) =>
+                name === "gap" ? formatDelta(Number(value)) : formatMs(Number(value))
+              }
+            />
+            <Bar dataKey="median" fill="#f33d3d" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {unranked.length > 0 ? (
+        <p className="mt-2 text-xs text-slate-400">
+          Not ranked, with too few clean laps: {unranked.join(", ")}.
+        </p>
+      ) : null}
     </div>
   );
 }
-

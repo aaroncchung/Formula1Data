@@ -1,0 +1,78 @@
+name: Probe F1 archive access
+
+# Settles where the fetch stage can run (docs/architecture-review-findings.md,
+# AR-13). On 2026-07-25 every F1 feed failed on GitHub-hosted runners and FastF1
+# logged no status. This fetches one completed session from an empty cache on a
+# hosted runner, records the HTTP status of every request, and passes only if
+# every feed arrived and every coverage bar is met (AR-21).
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: Season
+        default: "2026"
+      event:
+        description: Round number or event name
+        default: "8"
+      session:
+        description: Session code (R, S, Q, ...)
+        default: R
+  # workflow_dispatch only works once this file is on the default branch. Until
+  # then a push that touches the file runs it from the rewrite branch.
+  push:
+    branches:
+      - rewrite/data-plane
+    paths:
+      - .github/workflows/probe-f1-access.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Fetch one session from an empty cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"
+      YEAR: ${{ inputs.year || '2026' }}
+      EVENT: ${{ inputs.event || '8' }}
+      SESSION: ${{ inputs.session || 'R' }}
+    steps:
+      # The probe needs nothing but the package.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: f1data
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      # FastF1 logs to stderr, so the file holds the probe's own report only.
+      - name: Probe
+        run: |
+          set -o pipefail
+          python -m f1data probe --year "$YEAR" --event "$EVENT" --session "$SESSION"             --report probe-report.json | tee probe-output.txt
+
+      - name: Summarise
+        if: always()
+        run: |
+          if [ -f probe-output.txt ]; then
+            { echo '```'; cat probe-output.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-report
+          path: probe-report.json
+          if-no-files-found: ignore
+          retention-days: 14

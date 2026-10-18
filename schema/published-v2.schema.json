@@ -1,0 +1,4518 @@
+{
+  "$defs": {
+    "AnalysedCorner": {
+      "additionalProperties": false,
+      "properties": {
+        "corner_number": {
+          "description": "The circuit's own number when corner_source is official, otherwise the order found.",
+          "type": "integer"
+        },
+        "distance_m": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Along the lap the circuit's corners were placed on when corner_source is official, and otherwise the middle of where the drivers were slowest. A driver's own lap has the corner at that driver's corner_distance_m."
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/CornerDriver"
+          },
+          "type": "array"
+        },
+        "letter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "x": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "corner_number",
+        "letter",
+        "distance_m",
+        "x",
+        "y",
+        "drivers"
+      ],
+      "title": "AnalysedCorner",
+      "type": "object"
+    },
+    "Braking": {
+      "description": "What F1's car feed shows of a driver's braking for a corner.",
+      "enum": [
+        "seen",
+        "none",
+        "began_unread",
+        "unread"
+      ],
+      "title": "Braking",
+      "type": "string"
+    },
+    "CarPerformance": {
+      "additionalProperties": false,
+      "description": "analysis/car-performance.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/CarPerformanceDriver"
+          },
+          "type": "array"
+        },
+        "teams": {
+          "items": {
+            "$ref": "#/$defs/CarPerformanceTeam"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "drivers",
+        "teams",
+        "caveats"
+      ],
+      "title": "CarPerformance",
+      "type": "object"
+    },
+    "CarPerformanceDriver": {
+      "additionalProperties": false,
+      "properties": {
+        "braking_pct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per cent, from 0 to 100."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "full_throttle_pct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per cent, from 0 to 100."
+        },
+        "high_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "low_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "max_speed_kph": {
+          "description": "Kilometres an hour.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "medium_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "p95_speed_kph": {
+          "description": "Kilometres an hour.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "driver_code",
+        "team",
+        "lap_number",
+        "max_speed_kph",
+        "p95_speed_kph",
+        "low_speed_avg_kph",
+        "medium_speed_avg_kph",
+        "high_speed_avg_kph",
+        "full_throttle_pct",
+        "braking_pct"
+      ],
+      "title": "CarPerformanceDriver",
+      "type": "object"
+    },
+    "CarPerformanceTeam": {
+      "additionalProperties": false,
+      "properties": {
+        "braking_pct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per cent, from 0 to 100."
+        },
+        "drivers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "full_throttle_pct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per cent, from 0 to 100."
+        },
+        "high_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "low_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "max_speed_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "medium_speed_avg_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "p95_speed_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "drivers",
+        "max_speed_kph",
+        "p95_speed_kph",
+        "low_speed_avg_kph",
+        "medium_speed_avg_kph",
+        "high_speed_avg_kph",
+        "full_throttle_pct",
+        "braking_pct"
+      ],
+      "title": "CarPerformanceTeam",
+      "type": "object"
+    },
+    "Compound": {
+      "description": "A tyre compound, as F1's timing names it.",
+      "enum": [
+        "SOFT",
+        "MEDIUM",
+        "HARD",
+        "INTERMEDIATE",
+        "WET",
+        "SUPERSOFT",
+        "ULTRASOFT",
+        "HYPERSOFT"
+      ],
+      "title": "Compound",
+      "type": "string"
+    },
+    "Confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "ConstructorStanding": {
+      "additionalProperties": false,
+      "properties": {
+        "constructor_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "points": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wins": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "position",
+        "points",
+        "wins",
+        "constructor_id",
+        "name"
+      ],
+      "title": "ConstructorStanding",
+      "type": "object"
+    },
+    "Corner": {
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Degrees. Which way to draw the corner's label from its position."
+        },
+        "distance_m": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Metres from the start line. Null when the corner could not be placed along the lap."
+        },
+        "letter": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set where one number covers several corners, such as 1A."
+        },
+        "number": {
+          "type": "integer"
+        },
+        "x": {
+          "description": "In the units of the position data, tenths of a metre.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "y": {
+          "type": "number",
+          "x-decimals": 1
+        }
+      },
+      "required": [
+        "number",
+        "letter",
+        "x",
+        "y",
+        "angle",
+        "distance_m"
+      ],
+      "title": "Corner",
+      "type": "object"
+    },
+    "CornerAnalysis": {
+      "additionalProperties": false,
+      "description": "analysis/corner-analysis.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "corner_source": {
+          "$ref": "#/$defs/CornerSource"
+        },
+        "corners": {
+          "items": {
+            "$ref": "#/$defs/AnalysedCorner"
+          },
+          "type": "array"
+        },
+        "representative_laps": {
+          "items": {
+            "$ref": "#/$defs/RepresentativeLap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "corner_source",
+        "representative_laps",
+        "corners",
+        "caveats"
+      ],
+      "title": "CornerAnalysis",
+      "type": "object"
+    },
+    "CornerDriver": {
+      "additionalProperties": false,
+      "properties": {
+        "apex_distance_m": {
+          "description": "Metres.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "apex_speed_kph": {
+          "description": "Kilometres an hour.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "brake_duration_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "brake_start_m": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null unless braking is seen: the driver did not brake for the corner, or where they began to is not known."
+        },
+        "braking": {
+          "$ref": "#/$defs/Braking",
+          "description": "seen: the driver braked, and the feed shows it from where it began. none: the brake was read all the way into the corner, and no braking that is the corner's took 8 km/h off the car. began_unread: the driver braked, and where it began the feed has no brake reading, or has the brake on while the car gathers speed, so the brake point and what is counted from it are null. unread: no braking that counts is seen and the feed has no brake reading for part of the approach, so whether the driver braked is not known."
+        },
+        "braking_distance_m": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Metres."
+        },
+        "corner_distance_m": {
+          "description": "Where the corner is along this driver's own lap, which is what the other distances of the row are along: an official corner as it is found on the lap, and a corner inferred from the braking where this driver was slowest. Laps measure their own distance and disagree by tens of metres, so this is not the corner's distance_m.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "entry_speed_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "exit_speed_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        },
+        "speed_loss_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour."
+        }
+      },
+      "required": [
+        "driver_code",
+        "corner_distance_m",
+        "brake_start_m",
+        "apex_distance_m",
+        "braking_distance_m",
+        "entry_speed_kph",
+        "apex_speed_kph",
+        "exit_speed_kph",
+        "speed_loss_kph",
+        "brake_duration_ms",
+        "braking"
+      ],
+      "title": "CornerDriver",
+      "type": "object"
+    },
+    "CornerSource": {
+      "description": "Where the corners of a corner analysis come from.",
+      "enum": [
+        "official",
+        "inferred"
+      ],
+      "title": "CornerSource",
+      "type": "string"
+    },
+    "Corners": {
+      "additionalProperties": false,
+      "description": "corners.json: the circuit's official corner positions. Empty when none were archived.",
+      "properties": {
+        "corners": {
+          "items": {
+            "$ref": "#/$defs/Corner"
+          },
+          "type": "array"
+        },
+        "distance_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DistanceSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null when no corner has a distance."
+        },
+        "fits_track": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "False when the corner positions do not lie on the line reference_lap drove: the archived map is not of this track, or no lap of the session has position data that is whole. They should not be drawn over this session's position data, and the corner analysis infers its corners instead. Null when there is no lap to check against."
+        },
+        "off_track_m": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Metres from the track, as reference_lap drove it, of the corner furthest from it. Null when there is no lap to check against."
+        },
+        "reference_lap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReferenceLap"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The lap the corners were checked against, and placed along when distance_source is telemetry: the fastest clean lap whose position data is whole, or failing that the fastest that has any. Null when no lap has any."
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Degrees to turn the position data by so the map sits as F1 draws it."
+        }
+      },
+      "required": [
+        "rotation",
+        "corners",
+        "distance_source",
+        "reference_lap",
+        "off_track_m",
+        "fits_track"
+      ],
+      "title": "Corners",
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "description": "coverage.json: what arrived for this session, and what it is short of.",
+      "properties": {
+        "circuit_corners": {
+          "type": "integer"
+        },
+        "complete": {
+          "description": "True when shortfalls is empty.",
+          "type": "boolean"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/DriverCoverage"
+          },
+          "type": "array"
+        },
+        "feeds": {
+          "$ref": "#/$defs/CoverageFeeds"
+        },
+        "max_sample_gap_seconds": {
+          "description": "The longest hole between two samples that a lap's car or position data may have and still count.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "pit_stops_in_series": {
+          "description": "Stops F1's pit-stop feed gives a stationary time or a pit-lane time for.",
+          "type": "integer"
+        },
+        "pit_stops_in_timing": {
+          "description": "Entries to the pit lane the timing shows, whether or not the car stopped: a wait through a red flag and a drive-through penalty are each one.",
+          "type": "integer"
+        },
+        "session_ended": {
+          "type": "boolean"
+        },
+        "shortfalls": {
+          "items": {
+            "$ref": "#/$defs/Shortfall"
+          },
+          "type": "array"
+        },
+        "total_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The race distance in laps."
+        }
+      },
+      "required": [
+        "complete",
+        "shortfalls",
+        "feeds",
+        "session_ended",
+        "total_laps",
+        "pit_stops_in_timing",
+        "pit_stops_in_series",
+        "circuit_corners",
+        "max_sample_gap_seconds",
+        "drivers"
+      ],
+      "title": "Coverage",
+      "type": "object"
+    },
+    "CoverageBar": {
+      "description": "Something a session has to have to count as complete (f1data/coverage.py).",
+      "enum": [
+        "session_info",
+        "driver_list",
+        "timing_data",
+        "tyre_data",
+        "track_status",
+        "lap_count",
+        "session_status",
+        "weather",
+        "race_control",
+        "car_data",
+        "position",
+        "car_data_repeats",
+        "position_repeats",
+        "pit_stop_series",
+        "circuit_info",
+        "classification",
+        "measurement"
+      ],
+      "title": "CoverageBar",
+      "type": "string"
+    },
+    "CoverageFeeds": {
+      "additionalProperties": false,
+      "description": "Whether each feed arrived at all.",
+      "properties": {
+        "car_data": {
+          "type": "boolean"
+        },
+        "circuit_info": {
+          "type": "boolean"
+        },
+        "lap_count": {
+          "type": "boolean"
+        },
+        "pit_stop_series": {
+          "type": "boolean"
+        },
+        "position": {
+          "type": "boolean"
+        },
+        "race_control": {
+          "type": "boolean"
+        },
+        "session_info": {
+          "type": "boolean"
+        },
+        "session_status": {
+          "type": "boolean"
+        },
+        "timing_data": {
+          "type": "boolean"
+        },
+        "track_status": {
+          "type": "boolean"
+        },
+        "weather": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_info",
+        "timing_data",
+        "car_data",
+        "position",
+        "weather",
+        "race_control",
+        "track_status",
+        "session_status",
+        "lap_count",
+        "pit_stop_series",
+        "circuit_info"
+      ],
+      "title": "CoverageFeeds",
+      "type": "object"
+    },
+    "DistanceSource": {
+      "description": "Who placed the circuit's corners along the lap.",
+      "enum": [
+        "archive",
+        "telemetry"
+      ],
+      "title": "DistanceSource",
+      "type": "string"
+    },
+    "Driver": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "The code that names the driver in every other artifact: F1's three letters, or the car number as text for a driver neither F1's driver list nor the classification names.",
+          "type": "string"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's country code for the driver. F1 left it empty throughout 2026."
+        },
+        "driver_id": {
+          "description": "The driver's code in lower case.",
+          "type": "string"
+        },
+        "full_name": {
+          "type": "string"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The racing number."
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Team"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null when F1's driver list names no team."
+        }
+      },
+      "required": [
+        "driver_id",
+        "code",
+        "full_name",
+        "number",
+        "team",
+        "country"
+      ],
+      "title": "Driver",
+      "type": "object"
+    },
+    "DriverCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "car_laps": {
+          "description": "Timed laps whose car data runs from start to end with no long hole.",
+          "type": "integer"
+        },
+        "car_repeating_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Timed laps on which more than a quarter of the car samples sent while the car was moving have the speed and the engine speed of the sample before. The car data of such a lap arrived and is counted in car_laps, and is not to be relied on. Null when it was not counted."
+        },
+        "classified_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Laps in the classification. Null when there is none."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "generated_laps": {
+          "description": "Laps FastF1 added for a retirement. They are in laps.json and were never timed.",
+          "type": "integer"
+        },
+        "in_driver_list": {
+          "type": "boolean"
+        },
+        "number": {
+          "type": "string"
+        },
+        "position_laps": {
+          "description": "The same for position data.",
+          "type": "integer"
+        },
+        "position_repeating_laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The same for position data: samples with the place of the sample before."
+        },
+        "timing_laps": {
+          "description": "Laps F1 timed.",
+          "type": "integer"
+        },
+        "tyre_age_laps": {
+          "description": "Timed laps with a tyre age as well.",
+          "type": "integer"
+        },
+        "tyre_laps": {
+          "description": "Timed laps with a compound and a stint.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "driver_code",
+        "number",
+        "in_driver_list",
+        "classified_laps",
+        "timing_laps",
+        "generated_laps",
+        "car_laps",
+        "position_laps",
+        "tyre_laps",
+        "tyre_age_laps",
+        "car_repeating_laps",
+        "position_repeating_laps"
+      ],
+      "title": "DriverCoverage",
+      "type": "object"
+    },
+    "DriverStanding": {
+      "additionalProperties": false,
+      "properties": {
+        "constructors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "driver_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "family_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "given_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "points": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wins": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "position",
+        "points",
+        "wins",
+        "driver_code",
+        "driver_number",
+        "given_name",
+        "family_name",
+        "constructors"
+      ],
+      "title": "DriverStanding",
+      "type": "object"
+    },
+    "DriverTelemetry": {
+      "additionalProperties": false,
+      "description": "telemetry/<driver_code>.json: every lap of one driver that has car data from end to end. A lap with a hole of more than a few seconds in its car data is not here (max_sample_gap_seconds in coverage.json), and the coverage counts it as missing.",
+      "properties": {
+        "driver_code": {
+          "type": "string"
+        },
+        "laps": {
+          "items": {
+            "$ref": "#/$defs/TelemetryLap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "driver_code",
+        "laps"
+      ],
+      "title": "DriverTelemetry",
+      "type": "object"
+    },
+    "Drivers": {
+      "description": "drivers.json: everyone in F1's driver list or the classification.",
+      "items": {
+        "$ref": "#/$defs/Driver"
+      },
+      "title": "Drivers",
+      "type": "array"
+    },
+    "FitStatus": {
+      "description": "Whether a tyre degradation rate is reported for a stint, and if not, why.",
+      "enum": [
+        "ok",
+        "too_few_laps",
+        "poor_fit"
+      ],
+      "title": "FitStatus",
+      "type": "string"
+    },
+    "IdealLapRow": {
+      "additionalProperties": false,
+      "description": "A driver's best sectors and best lap, each of their clean laps. A driver with none has nulls.",
+      "properties": {
+        "best_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds: the fastest clean lap."
+        },
+        "best_sector_1_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "best_sector_2_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "best_sector_3_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "delta_to_ideal_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds: best_lap_ms less ideal_lap_ms. Null where the ideal lap is slower than the best lap, which it can be only where F1 gives a lap's time and not all of its sectors, or sectors that do not add up to it."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "ideal_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds: the three best sectors added up."
+        }
+      },
+      "required": [
+        "driver_code",
+        "best_sector_1_ms",
+        "best_sector_2_ms",
+        "best_sector_3_ms",
+        "ideal_lap_ms",
+        "best_lap_ms",
+        "delta_to_ideal_ms"
+      ],
+      "title": "IdealLapRow",
+      "type": "object"
+    },
+    "IdealLaps": {
+      "additionalProperties": false,
+      "description": "analysis/ideal-laps.json.",
+      "properties": {
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/IdealLapRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows"
+      ],
+      "title": "IdealLaps",
+      "type": "object"
+    },
+    "Identity": {
+      "additionalProperties": false,
+      "description": "Who a session is, from F1's own session information (f1data/identity.py). Two fields are the calendar's, as it stood when the session was fetched: the start time and the round.",
+      "properties": {
+        "archive_path": {
+          "type": "string"
+        },
+        "circuit_key": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "circuit_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meeting_key": {
+          "type": "integer"
+        },
+        "meeting_name": {
+          "type": "string"
+        },
+        "meeting_official_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round_at_fetch": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The round when the session was fetched. The index has the round as it is now."
+        },
+        "session_key": {
+          "type": "integer"
+        },
+        "session_name": {
+          "type": "string"
+        },
+        "session_type": {
+          "$ref": "#/$defs/SessionType"
+        },
+        "start_time_utc": {
+          "description": "When the calendar said the session starts.",
+          "type": "string"
+        },
+        "year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_key",
+        "meeting_key",
+        "year",
+        "session_type",
+        "session_name",
+        "start_time_utc",
+        "meeting_name",
+        "meeting_official_name",
+        "location",
+        "country",
+        "circuit_key",
+        "circuit_name",
+        "archive_path",
+        "round_at_fetch"
+      ],
+      "title": "Identity",
+      "type": "object"
+    },
+    "Index": {
+      "additionalProperties": false,
+      "description": "index.json: the calendar as it is now, with each published session attached.",
+      "properties": {
+        "format_version": {
+          "type": "integer"
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "seasons": {
+          "items": {
+            "$ref": "#/$defs/IndexSeason"
+          },
+          "type": "array"
+        },
+        "unscheduled": {
+          "items": {
+            "$ref": "#/$defs/UnscheduledSession"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "format_version",
+        "seasons",
+        "unscheduled"
+      ],
+      "title": "Index",
+      "type": "object"
+    },
+    "IndexMeeting": {
+      "additionalProperties": false,
+      "properties": {
+        "circuit_key": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's key for the circuit, from the same source."
+        },
+        "circuit_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meeting_key": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's key for the meeting, which does not move. Known once a session of the meeting is published."
+        },
+        "name": {
+          "type": "string"
+        },
+        "official_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "description": "As the calendar has it now. It moves when the calendar changes.",
+          "type": "integer"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/IndexSession"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "round",
+        "name",
+        "official_name",
+        "country",
+        "location",
+        "date",
+        "format",
+        "meeting_key",
+        "circuit_key",
+        "circuit_name",
+        "sessions"
+      ],
+      "title": "IndexMeeting",
+      "type": "object"
+    },
+    "IndexSeason": {
+      "additionalProperties": false,
+      "properties": {
+        "meetings": {
+          "items": {
+            "$ref": "#/$defs/IndexMeeting"
+          },
+          "type": "array"
+        },
+        "year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "year",
+        "meetings"
+      ],
+      "title": "IndexSeason",
+      "type": "object"
+    },
+    "IndexSession": {
+      "additionalProperties": false,
+      "description": "A session of the calendar. The last two keys are there only once it is published.",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "in_scope": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "session_key": {
+          "type": "integer"
+        },
+        "start_time_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "UTC, as ISO 8601."
+        },
+        "type": {
+          "$ref": "#/$defs/SessionType"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "start_time_utc",
+        "in_scope"
+      ],
+      "title": "IndexSession",
+      "type": "object"
+    },
+    "Lap": {
+      "additionalProperties": false,
+      "properties": {
+        "compound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Compound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null where F1 reported none."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "is_accurate": {
+          "description": "FastF1's judgement that the lap's timing is whole and consistent.",
+          "type": "boolean"
+        },
+        "is_deleted": {
+          "description": "The lap time was deleted by the stewards.",
+          "type": "boolean"
+        },
+        "is_pit_in_lap": {
+          "type": "boolean"
+        },
+        "is_pit_out_lap": {
+          "type": "boolean"
+        },
+        "lap_number": {
+          "type": "integer"
+        },
+        "lap_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds. Null for a lap F1 did not time."
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Position at the end of the lap."
+        },
+        "sector_1_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "sector_2_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "sector_3_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "stint": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which of the driver's sets of tyres the lap was run on, counted as F1 counts them but for one thing: F1 gives a new number to a car that went through the pit lane and kept its tyres, and such a lap keeps the number of the set it is still on."
+        },
+        "track_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Every track status code seen during the lap, run together: 1 clear, 2 yellow, 4 safety car, 5 red flag, 6 virtual safety car, 7 virtual safety car ending."
+        },
+        "tyre_age": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Laps the set had done at the end of this lap, a set that went on used included. Null where F1's tyre data gives no age."
+        }
+      },
+      "required": [
+        "driver_code",
+        "lap_number",
+        "lap_time_ms",
+        "sector_1_ms",
+        "sector_2_ms",
+        "sector_3_ms",
+        "compound",
+        "tyre_age",
+        "stint",
+        "position",
+        "is_pit_in_lap",
+        "is_pit_out_lap",
+        "is_deleted",
+        "is_accurate",
+        "track_status"
+      ],
+      "title": "Lap",
+      "type": "object"
+    },
+    "LapTimeSeries": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "description": "The driver's code.",
+          "type": "string"
+        },
+        "x": {
+          "description": "Lap numbers.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "y": {
+          "description": "Lap times in milliseconds.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "x",
+        "y",
+        "color"
+      ],
+      "title": "LapTimeSeries",
+      "type": "object"
+    },
+    "LapTimes": {
+      "description": "analysis/lap-times.json: each driver's timed laps, ready to chart.",
+      "items": {
+        "$ref": "#/$defs/LapTimeSeries"
+      },
+      "title": "LapTimes",
+      "type": "array"
+    },
+    "Laps": {
+      "description": "laps.json: every lap of every driver, in timing order.",
+      "items": {
+        "$ref": "#/$defs/Lap"
+      },
+      "title": "Laps",
+      "type": "array"
+    },
+    "Manifest": {
+      "additionalProperties": false,
+      "description": "manifest.json: every file of a generation. Its SHA-256 is the generation's name.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ManifestFile"
+          },
+          "type": "array"
+        },
+        "format_version": {
+          "type": "integer"
+        },
+        "identity": {
+          "$ref": "#/$defs/Identity"
+        },
+        "pipeline_version": {
+          "type": "integer"
+        },
+        "session_key": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format_version",
+        "pipeline_version",
+        "session_key",
+        "identity",
+        "files"
+      ],
+      "title": "Manifest",
+      "type": "object"
+    },
+    "ManifestFile": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size_bytes",
+        "sha256"
+      ],
+      "title": "ManifestFile",
+      "type": "object"
+    },
+    "ManifestReference": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "title": "ManifestReference",
+      "type": "object"
+    },
+    "Minisector": {
+      "additionalProperties": false,
+      "properties": {
+        "driver_times_ms": {
+          "additionalProperties": {
+            "type": "number",
+            "x-decimals": 1
+          },
+          "description": "Milliseconds through the minisector, by driver code.",
+          "type": "object"
+        },
+        "end_distance_m": {
+          "description": "Metres.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "gap_to_next_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "index": {
+          "type": "integer"
+        },
+        "midpoint": {
+          "$ref": "#/$defs/Point"
+        },
+        "segment_time_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "start_distance_m": {
+          "description": "Metres.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "winner_driver_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "start_distance_m",
+        "end_distance_m",
+        "midpoint",
+        "winner_driver_code",
+        "segment_time_ms",
+        "gap_to_next_ms",
+        "driver_times_ms"
+      ],
+      "title": "Minisector",
+      "type": "object"
+    },
+    "PaceChangeAcrossStop": {
+      "additionalProperties": false,
+      "properties": {
+        "after_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "after_lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "before_lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "caveat": {
+          "type": "string"
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "first_clean_lap_gain_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The lap before the stop minus the lap after it, in milliseconds. Positive is quicker after the stop, which is on other tyres unless the stop list says the tyres were not changed."
+        },
+        "stop_lap": {
+          "description": "The lap the driver first came in on, leaving out any entry to the pit lane the car went through without stopping or waited in through a red flag.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "driver_code",
+        "stop_lap",
+        "first_clean_lap_gain_ms",
+        "before_lap_number",
+        "before_lap_ms",
+        "after_lap_number",
+        "after_lap_ms",
+        "caveat"
+      ],
+      "title": "PaceChangeAcrossStop",
+      "type": "object"
+    },
+    "PacePrediction": {
+      "additionalProperties": false,
+      "description": "analysis/pace-prediction.json. Published for practice sessions only: a race has no such file.",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/PacePredictionDriver"
+          },
+          "type": "array"
+        },
+        "session_type": {
+          "type": "string"
+        },
+        "teams": {
+          "items": {
+            "$ref": "#/$defs/PacePredictionTeam"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "available",
+        "session_type",
+        "drivers",
+        "teams",
+        "caveats"
+      ],
+      "title": "PacePrediction",
+      "type": "object"
+    },
+    "PacePredictionDriver": {
+      "additionalProperties": false,
+      "properties": {
+        "compounds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "estimated_race_pace_ms": {
+          "description": "Milliseconds.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "gap_to_best_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "sample_count": {
+          "type": "integer"
+        },
+        "stint_count": {
+          "type": "integer"
+        },
+        "team": {
+          "type": "string"
+        },
+        "variability_ms": {
+          "description": "Milliseconds.",
+          "type": "number",
+          "x-decimals": 1
+        }
+      },
+      "required": [
+        "driver_code",
+        "team",
+        "estimated_race_pace_ms",
+        "gap_to_best_ms",
+        "sample_count",
+        "stint_count",
+        "variability_ms",
+        "confidence",
+        "compounds"
+      ],
+      "title": "PacePredictionDriver",
+      "type": "object"
+    },
+    "PacePredictionTeam": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "drivers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "estimated_race_pace_ms": {
+          "description": "Milliseconds.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "gap_to_best_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "sample_count": {
+          "type": "integer"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team",
+        "drivers",
+        "estimated_race_pace_ms",
+        "gap_to_best_ms",
+        "sample_count",
+        "confidence"
+      ],
+      "title": "PacePredictionTeam",
+      "type": "object"
+    },
+    "PitLaneTime": {
+      "additionalProperties": false,
+      "description": "Pit-lane transit times from the timing, summarised over the stops F1's pit-stop feed reports.",
+      "properties": {
+        "fastest_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "median_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "slowest_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "stop_count": {
+          "description": "Every entry to the pit lane, a stop or not.",
+          "type": "integer"
+        },
+        "timed_stop_count": {
+          "description": "The stops the three figures are of: the entries to the pit lane that F1's pit-stop feed gives a stationary time for, that have a transit time, and that were not a wait through a red flag.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "median_ms",
+        "fastest_ms",
+        "slowest_ms",
+        "timed_stop_count",
+        "stop_count"
+      ],
+      "title": "PitLaneTime",
+      "type": "object"
+    },
+    "PitLoss": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_window_laps": {
+          "type": "integer"
+        },
+        "estimate_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "excluded_stop_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/PitLossExclusion"
+          },
+          "type": "object"
+        },
+        "minimum_stop_count": {
+          "type": "integer"
+        },
+        "qualifying_stop_count": {
+          "type": "integer"
+        },
+        "spread_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "stop_count": {
+          "description": "Every entry to the pit lane, a stop or not.",
+          "type": "integer"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/StopPitLoss"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "estimate_ms",
+        "spread_ms",
+        "qualifying_stop_count",
+        "stop_count",
+        "minimum_stop_count",
+        "baseline_window_laps",
+        "excluded_stop_counts",
+        "stops"
+      ],
+      "title": "PitLoss",
+      "type": "object"
+    },
+    "PitLossExclusion": {
+      "description": "Why a stop is left out of the pit-loss estimate.",
+      "enum": [
+        "no_lap_number",
+        "red_flag_wait",
+        "no_stop",
+        "missing_lap_time",
+        "first_lap",
+        "back_to_back_stops",
+        "not_green",
+        "too_few_baseline_laps"
+      ],
+      "title": "PitLossExclusion",
+      "type": "string"
+    },
+    "PitStop": {
+      "additionalProperties": false,
+      "properties": {
+        "driver_code": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds from pit entry to pit exit, from the timing. Null when the car did not come back out."
+        },
+        "entry_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the car crossed the pit entry, in milliseconds on the session clock. Null for a stop only F1's pit-stop feed reports."
+        },
+        "lap_number": {
+          "description": "The lap the car came in on.",
+          "type": "integer"
+        },
+        "pit_lane_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds in the pit lane, from F1's pit-stop feed."
+        },
+        "sources": {
+          "$ref": "#/$defs/PitStopSources"
+        },
+        "stationary_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds the car stood still, from F1's pit-stop feed."
+        },
+        "tyres_changed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether the car went out on another set of tyres than it came in on, by F1's tyre data. False for a car that kept its tyres: a drive-through penalty, a penalty served in the pit box, a passage behind the safety car. Null where the tyre data does not say: it names no compound for the lap the car came in on or the one after, or the car did not go out again. The tyre data can lag a stop by some laps, so false beside a stationary time is still a stop."
+        },
+        "under_red_flag": {
+          "description": "Whether the session was red-flagged while the car was in the pit lane. The duration is then a wait for the restart and not a pit stop, and the strategy analysis leaves it out of its pit-lane figures.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "driver_code",
+        "lap_number",
+        "entry_time_ms",
+        "duration_ms",
+        "under_red_flag",
+        "stationary_ms",
+        "pit_lane_ms",
+        "tyres_changed",
+        "sources"
+      ],
+      "title": "PitStop",
+      "type": "object"
+    },
+    "PitStopSources": {
+      "additionalProperties": false,
+      "description": "Where each figure of a pit stop comes from. Null beside a figure that is null.",
+      "properties": {
+        "duration_ms": {
+          "anyOf": [
+            {
+              "const": "timing",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "timing: the gap between the timing's pit-entry and pit-exit times."
+        },
+        "pit_lane_ms": {
+          "anyOf": [
+            {
+              "const": "pit_stop_series",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "pit_stop_series: F1's own pit-stop feed."
+        },
+        "stationary_ms": {
+          "anyOf": [
+            {
+              "const": "pit_stop_series",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "pit_stop_series: F1's own pit-stop feed."
+        }
+      },
+      "required": [
+        "duration_ms",
+        "stationary_ms",
+        "pit_lane_ms"
+      ],
+      "title": "PitStopSources",
+      "type": "object"
+    },
+    "PitStops": {
+      "description": "pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them. Not every entry is a pit stop. One is known to be a stop when F1's pit-stop feed gives it a stationary time or its tyres were changed, and is taken not to be when the feed gives it none and the tyre data says the car kept its tyres.",
+      "items": {
+        "$ref": "#/$defs/PitStop"
+      },
+      "title": "PitStops",
+      "type": "array"
+    },
+    "Point": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "y": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "Point",
+      "type": "object"
+    },
+    "Pointer": {
+      "additionalProperties": false,
+      "description": "pointers/<session_key>.json: which generation is the published one.",
+      "properties": {
+        "also": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What else the generation was built from, outside the archive and the classification: under calendar, the calendar entry the session was built as (year, round, names, and a checksum of the whole row). The publisher's own record, by which it knows to build again; a reader takes the round from the index."
+        },
+        "classification_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/PointerCoverage"
+        },
+        "format_version": {
+          "type": "integer"
+        },
+        "generation": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/Identity"
+        },
+        "manifest": {
+          "$ref": "#/$defs/ManifestReference"
+        },
+        "pipeline_version": {
+          "type": "integer"
+        },
+        "previous_generation": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_at": {
+          "type": "string"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A checksum of what the snapshot's record said of its feeds when the session was judged. A record corrected afterwards has the session decided again."
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "session_key": {
+          "type": "integer"
+        },
+        "snapshot_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "format_version",
+        "pipeline_version",
+        "session_key",
+        "identity",
+        "generation",
+        "manifest",
+        "snapshot_id",
+        "classification_fingerprint",
+        "also",
+        "record",
+        "coverage",
+        "published_at",
+        "previous_generation"
+      ],
+      "title": "Pointer",
+      "type": "object"
+    },
+    "PointerCoverage": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "shortfalls": {
+          "items": {
+            "$ref": "#/$defs/Shortfall"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "complete",
+        "shortfalls"
+      ],
+      "title": "PointerCoverage",
+      "type": "object"
+    },
+    "PositionReplay": {
+      "additionalProperties": false,
+      "description": "position-replay.json: where every car was, every few seconds. Empty arrays when the session has no position data. A session whose position feed stops part-way has frames up to where it stops.",
+      "properties": {
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/ReplayDriver"
+          },
+          "type": "array"
+        },
+        "interval_ms": {
+          "description": "The length of a frame's window in milliseconds.",
+          "type": "integer"
+        },
+        "lap_number": {
+          "description": "The lap the session had reached: the highest any car had started.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "time_ms": {
+          "description": "The start of each frame's window, in milliseconds on the session clock.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "interval_ms",
+        "time_ms",
+        "lap_number",
+        "drivers"
+      ],
+      "title": "PositionReplay",
+      "type": "object"
+    },
+    "RaceControl": {
+      "description": "race-control.json: race control's messages, in order.",
+      "items": {
+        "$ref": "#/$defs/RaceControlMessage"
+      },
+      "title": "RaceControl",
+      "type": "array"
+    },
+    "RaceControlMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "flag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds on the session clock."
+        }
+      },
+      "required": [
+        "time_ms",
+        "lap_number",
+        "category",
+        "message",
+        "flag",
+        "scope"
+      ],
+      "title": "RaceControlMessage",
+      "type": "object"
+    },
+    "RacePace": {
+      "additionalProperties": false,
+      "description": "analysis/race-pace.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/RacePaceRow"
+          },
+          "type": "array"
+        },
+        "stints": {
+          "items": {
+            "$ref": "#/$defs/RacePaceRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "drivers",
+        "stints",
+        "caveats"
+      ],
+      "title": "RacePace",
+      "type": "object"
+    },
+    "RacePaceRow": {
+      "additionalProperties": false,
+      "properties": {
+        "compound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Compound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The compound most of the laps were on."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "fastest_clean_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "gap_to_best_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds behind the best median of the rows that are ranked. Null for a row of too few clean laps to be ranked, which the caveats name."
+        },
+        "lap_count": {
+          "description": "The clean laps the row's figures are over.",
+          "type": "integer"
+        },
+        "mean_lap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "median_lap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "stint": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null in a row for the whole race. A stint's row is of a stint F1's tyre data numbers: laps it gives no stint for are in the driver's row and in no stint's."
+        },
+        "trimmed_mean_lap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        }
+      },
+      "required": [
+        "driver_code",
+        "compound",
+        "stint",
+        "median_lap_ms",
+        "mean_lap_ms",
+        "trimmed_mean_lap_ms",
+        "fastest_clean_lap_ms",
+        "lap_count",
+        "gap_to_best_ms"
+      ],
+      "title": "RacePaceRow",
+      "type": "object"
+    },
+    "ReferenceLap": {
+      "additionalProperties": false,
+      "properties": {
+        "driver_code": {
+          "type": "string"
+        },
+        "lap_number": {
+          "type": "integer"
+        },
+        "length_m": {
+          "description": "The lap's length as its own telemetry measures it, in metres.",
+          "type": "number",
+          "x-decimals": 1
+        }
+      },
+      "required": [
+        "driver_code",
+        "lap_number",
+        "length_m"
+      ],
+      "title": "ReferenceLap",
+      "type": "object"
+    },
+    "ReplayDriver": {
+      "additionalProperties": false,
+      "description": "One car's track, one entry per frame. Null in a frame the car has no position for.",
+      "properties": {
+        "distance_m": {
+          "description": "Metres into the car's current lap. Null as well in a frame where the car has a position and no car data.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array",
+          "x-decimals": 1
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "speed_kph": {
+          "description": "Null as well in a frame where the car has a position and no car data.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array",
+          "x-decimals": 1
+        },
+        "x": {
+          "description": "Tenths of a metre.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array",
+          "x-decimals": 1
+        },
+        "y": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array",
+          "x-decimals": 1
+        }
+      },
+      "required": [
+        "driver_code",
+        "x",
+        "y",
+        "speed_kph",
+        "distance_m"
+      ],
+      "title": "ReplayDriver",
+      "type": "object"
+    },
+    "RepresentativeLap": {
+      "additionalProperties": false,
+      "properties": {
+        "driver_code": {
+          "type": "string"
+        },
+        "lap_number": {
+          "type": "integer"
+        },
+        "lap_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        }
+      },
+      "required": [
+        "driver_code",
+        "lap_number",
+        "lap_time_ms"
+      ],
+      "title": "RepresentativeLap",
+      "type": "object"
+    },
+    "Result": {
+      "additionalProperties": false,
+      "properties": {
+        "behind_at_flag_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a driver with laps_down: milliseconds after the winner that they took the flag. Not a gap, since they had fewer laps to run: it only orders the cars on one lap."
+        },
+        "classified_position": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The position as the classification prints it: a number, or a letter such as R for retired."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "gap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds behind the winner, for a driver who finished on the same lap. Null for everyone else."
+        },
+        "grid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Starting position. 0 for a start from the pit lane."
+        },
+        "laps": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Laps completed. Null for a driver the classification leaves out."
+        },
+        "laps_down": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Laps behind the winner, for a driver who took the flag one or more down. Null for one who did not finish, classified or not. Null for everyone else."
+        },
+        "points": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null for a driver who took part and whom the classification leaves out. Such rows come last."
+        },
+        "provisional": {
+          "description": "True when Jolpica has no classification for the session. The rows are then the order on track from the timing alone, with no status, points or grid.",
+          "type": "boolean"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The winner's race time in milliseconds. Null for everyone else."
+        }
+      },
+      "required": [
+        "position",
+        "driver_code",
+        "classified_position",
+        "status",
+        "points",
+        "grid",
+        "time_ms",
+        "gap_ms",
+        "laps_down",
+        "behind_at_flag_ms",
+        "laps",
+        "provisional"
+      ],
+      "title": "Result",
+      "type": "object"
+    },
+    "Results": {
+      "description": "results.json: the classification in finishing order, then anyone it leaves out.",
+      "items": {
+        "$ref": "#/$defs/Result"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "SessionSummary": {
+      "additionalProperties": false,
+      "description": "summary.json: what the session is, in F1's own words.",
+      "properties": {
+        "circuit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's short name for the circuit."
+        },
+        "clock_zero_utc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the session clock read zero, in UTC to the millisecond. Every position in time in this generation is milliseconds after it."
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_count": {
+          "type": "integer"
+        },
+        "is_sample": {
+          "description": "True only for the invented session used in local development.",
+          "type": "boolean"
+        },
+        "lap_count": {
+          "description": "Laps in laps.json, over every driver. That counts the lap a car stopped on, which FastF1 adds a row for and F1's timing has none of: one or two in most races.",
+          "type": "integer"
+        },
+        "meeting": {
+          "description": "The meeting's name as F1's session information gives it.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session's name, such as Race or Sprint.",
+          "type": "string"
+        },
+        "session_key": {
+          "description": "F1's key for the session. It names the session everywhere.",
+          "type": "integer"
+        },
+        "session_type": {
+          "$ref": "#/$defs/SessionType"
+        },
+        "weather_summary": {
+          "description": "One line for a heading: the air and track temperature ranges, and rain or dry.",
+          "type": "string"
+        },
+        "year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_key",
+        "year",
+        "meeting",
+        "session",
+        "session_type",
+        "circuit",
+        "country",
+        "driver_count",
+        "lap_count",
+        "weather_summary",
+        "clock_zero_utc",
+        "is_sample"
+      ],
+      "title": "SessionSummary",
+      "type": "object"
+    },
+    "SessionType": {
+      "description": "The session's code.",
+      "enum": [
+        "FP1",
+        "FP2",
+        "FP3",
+        "Q",
+        "SQ",
+        "S",
+        "R"
+      ],
+      "title": "SessionType",
+      "type": "string"
+    },
+    "Shortfall": {
+      "additionalProperties": false,
+      "properties": {
+        "bar": {
+          "$ref": "#/$defs/CoverageBar"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "driver": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The driver's code, or null when the whole session is short."
+        }
+      },
+      "required": [
+        "bar",
+        "driver",
+        "detail"
+      ],
+      "title": "Shortfall",
+      "type": "object"
+    },
+    "Standings": {
+      "additionalProperties": false,
+      "description": "standings/<year>.json: the championship tables as Jolpica has them.",
+      "properties": {
+        "constructors": {
+          "items": {
+            "$ref": "#/$defs/ConstructorStanding"
+          },
+          "type": "array"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/DriverStanding"
+          },
+          "type": "array"
+        },
+        "format_version": {
+          "type": "integer"
+        },
+        "rounds": {
+          "$ref": "#/$defs/StandingsRounds",
+          "description": "The round each table stands after."
+        },
+        "schema_version": {
+          "type": "integer"
+        },
+        "year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "format_version",
+        "year",
+        "rounds",
+        "drivers",
+        "constructors"
+      ],
+      "title": "Standings",
+      "type": "object"
+    },
+    "StandingsRounds": {
+      "additionalProperties": false,
+      "properties": {
+        "constructors": {
+          "type": "integer"
+        },
+        "drivers": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "drivers",
+        "constructors"
+      ],
+      "title": "StandingsRounds",
+      "type": "object"
+    },
+    "Stint": {
+      "additionalProperties": false,
+      "properties": {
+        "compound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Compound"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "end_lap": {
+          "type": "integer"
+        },
+        "lap_count": {
+          "type": "integer"
+        },
+        "start_lap": {
+          "type": "integer"
+        },
+        "stint": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "driver_code",
+        "stint",
+        "compound",
+        "start_lap",
+        "end_lap",
+        "lap_count"
+      ],
+      "title": "Stint",
+      "type": "object"
+    },
+    "Stints": {
+      "description": "stints.json: each run of laps a driver did on one set of tyres.",
+      "items": {
+        "$ref": "#/$defs/Stint"
+      },
+      "title": "Stints",
+      "type": "array"
+    },
+    "StopPitLoss": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_lap_count": {
+          "type": "integer"
+        },
+        "baseline_lap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "driver_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excluded_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PitLossExclusion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "in_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "out_lap_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "pit_loss_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        }
+      },
+      "required": [
+        "driver_code",
+        "lap_number",
+        "pit_loss_ms",
+        "in_lap_ms",
+        "out_lap_ms",
+        "baseline_lap_ms",
+        "baseline_lap_count",
+        "excluded_reason"
+      ],
+      "title": "StopPitLoss",
+      "type": "object"
+    },
+    "Strategy": {
+      "additionalProperties": false,
+      "description": "analysis/strategy.json. The stints and stops themselves are in stints.json and pit-stops.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "compound_usage": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "Stints by compound. The key UNKNOWN counts stints whose compound F1 did not report.",
+          "type": "object"
+        },
+        "pit_lane_time": {
+          "$ref": "#/$defs/PitLaneTime"
+        },
+        "pit_loss": {
+          "$ref": "#/$defs/PitLoss"
+        },
+        "pit_loss_estimate_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "undercut_overcut": {
+          "items": {
+            "$ref": "#/$defs/PaceChangeAcrossStop"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "compound_usage",
+        "pit_loss_estimate_ms",
+        "pit_loss",
+        "pit_lane_time",
+        "undercut_overcut",
+        "caveats"
+      ],
+      "title": "Strategy",
+      "type": "object"
+    },
+    "Team": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The team's colour as #RRGGBB."
+        },
+        "name": {
+          "type": "string"
+        },
+        "team_id": {
+          "description": "The team's name in lower case with hyphens.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team_id",
+        "name",
+        "color"
+      ],
+      "title": "Team",
+      "type": "object"
+    },
+    "TeammateComparison": {
+      "additionalProperties": false,
+      "description": "analysis/team-mate-comparison.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/TeammateComparisonRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows",
+        "caveats"
+      ],
+      "title": "TeammateComparison",
+      "type": "object"
+    },
+    "TeammateComparisonDriver": {
+      "additionalProperties": false,
+      "properties": {
+        "average_lap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "clean_lap_count": {
+          "type": "integer"
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "lap_count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "driver_code",
+        "average_lap_ms",
+        "lap_count",
+        "clean_lap_count"
+      ],
+      "title": "TeammateComparisonDriver",
+      "type": "object"
+    },
+    "TeammateComparisonRow": {
+      "additionalProperties": false,
+      "properties": {
+        "caveat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the row has no gap: too few matched laps, or a driver with no clean lap, whose figures are then null."
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/TeammateComparisonDriver"
+          },
+          "type": "array"
+        },
+        "gap_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "gap_spread_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "matched_lap_count": {
+          "type": "integer"
+        },
+        "team": {
+          "type": "string"
+        },
+        "trimmed_lap_count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "team",
+        "drivers",
+        "gap_ms",
+        "gap_spread_ms",
+        "matched_lap_count",
+        "trimmed_lap_count",
+        "caveat"
+      ],
+      "title": "TeammateComparisonRow",
+      "type": "object"
+    },
+    "TelemetryChannel": {
+      "description": "A per-sample array of a telemetry lap.",
+      "enum": [
+        "time_ms",
+        "distance_m",
+        "speed_kph",
+        "throttle_pct",
+        "brake",
+        "rpm",
+        "gear",
+        "drs",
+        "x",
+        "y"
+      ],
+      "title": "TelemetryChannel",
+      "type": "string"
+    },
+    "TelemetryDriverEntry": {
+      "additionalProperties": false,
+      "description": "One driver's laps that have telemetry, as parallel arrays with one entry per lap.",
+      "properties": {
+        "compound": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Compound"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "has_position": {
+          "description": "False for a lap with no usable position data, and so no x and y.",
+          "items": {
+            "type": "boolean"
+          },
+          "type": "array"
+        },
+        "is_accurate": {
+          "description": "Each lap's four flags as in laps.json, so that a page can offer a clean lap first: one that is timed accurately, was not deleted, and neither enters nor leaves the pits.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "is_deleted": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "is_pit_in_lap": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "is_pit_out_lap": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "lap_number": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "lap_time_ms": {
+          "description": "Each lap's time as in laps.json, so that a lap can be picked from here alone.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "The driver's file, relative to the generation.",
+          "type": "string"
+        },
+        "raw_sample_count": {
+          "description": "Samples each lap has at full resolution, which is what the analyses read.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "sample_count": {
+          "description": "Samples published for each lap.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "driver_code",
+        "path",
+        "lap_number",
+        "lap_time_ms",
+        "compound",
+        "is_accurate",
+        "is_deleted",
+        "is_pit_in_lap",
+        "is_pit_out_lap",
+        "sample_count",
+        "raw_sample_count",
+        "has_position"
+      ],
+      "title": "TelemetryDriverEntry",
+      "type": "object"
+    },
+    "TelemetryIndex": {
+      "additionalProperties": false,
+      "description": "telemetry/index.json: which laps have telemetry, and where.",
+      "properties": {
+        "channels": {
+          "description": "The arrays a lap carries. DRS is absent when it never changes in the session, as in 2026, which has no DRS.",
+          "items": {
+            "$ref": "#/$defs/TelemetryChannel"
+          },
+          "type": "array"
+        },
+        "drivers": {
+          "items": {
+            "$ref": "#/$defs/TelemetryDriverEntry"
+          },
+          "type": "array"
+        },
+        "max_samples_per_lap": {
+          "description": "A lap with more samples is thinned evenly to this many, keeping both ends.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_samples_per_lap",
+        "channels",
+        "drivers"
+      ],
+      "title": "TelemetryIndex",
+      "type": "object"
+    },
+    "TelemetryLap": {
+      "additionalProperties": false,
+      "description": "One lap as parallel arrays, one entry per sample.",
+      "properties": {
+        "brake": {
+          "description": "Whether the brake was on. Null from a sample F1's car feed gave no reading of the brake for (it sends 104) until the next that has one. FastF1 reads that mark as the brake on, so it is taken from F1's raw feed.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "distance_m": {
+          "description": "Metres since the lap started, integrated from speed.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array",
+          "x-decimals": 1
+        },
+        "drs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "F1's DRS code. Null when the channel is left out of the session."
+        },
+        "gear": {
+          "description": "0 for neutral, 1 to 8. Null from a sample for which F1's car feed sent a number that is no gear until the next that is one.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "lap_number": {
+          "type": "integer"
+        },
+        "rpm": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "speed_kph": {
+          "description": "Kilometres an hour.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array",
+          "x-decimals": 1
+        },
+        "start_ms": {
+          "description": "When the lap started, in milliseconds on the session clock.",
+          "type": "integer"
+        },
+        "throttle_pct": {
+          "description": "0 to 100. Null at a sample F1's car feed gave no reading of the throttle for (it sends 104, most often for both pedals at once while it repeats the speed it last had), and between such a sample and the one before or after.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "time_ms": {
+          "description": "Milliseconds since the lap started. Add start_ms for the session clock.",
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "x": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Tenths of a metre. Null when the lap has no usable position data. Within a lap that has, null for a sample taken before the position feed started or after it stopped, which can only be within a few seconds of either end of the lap."
+        },
+        "y": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "lap_number",
+        "start_ms",
+        "time_ms",
+        "distance_m",
+        "speed_kph",
+        "throttle_pct",
+        "brake",
+        "rpm",
+        "gear",
+        "drs",
+        "x",
+        "y"
+      ],
+      "title": "TelemetryLap",
+      "type": "object"
+    },
+    "TrackDominance": {
+      "additionalProperties": false,
+      "description": "analysis/track-dominance.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "excluded_drivers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "minisector_count": {
+          "type": "integer"
+        },
+        "minisectors": {
+          "items": {
+            "$ref": "#/$defs/Minisector"
+          },
+          "type": "array"
+        },
+        "representative_laps": {
+          "items": {
+            "$ref": "#/$defs/RepresentativeLap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "representative_laps",
+        "excluded_drivers",
+        "minisector_count",
+        "minisectors",
+        "caveats"
+      ],
+      "title": "TrackDominance",
+      "type": "object"
+    },
+    "TyreDegradation": {
+      "additionalProperties": false,
+      "description": "analysis/tyre-degradation.json.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "$ref": "#/$defs/TyreDegradationModel"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/TyreDegradationRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rows",
+        "model",
+        "caveats"
+      ],
+      "title": "TyreDegradation",
+      "type": "object"
+    },
+    "TyreDegradationModel": {
+      "additionalProperties": false,
+      "properties": {
+        "max_slope_relative_standard_error": {
+          "type": "number",
+          "x-decimals": 2
+        },
+        "max_slope_standard_error_ms_per_lap": {
+          "description": "Milliseconds a lap.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "method": {
+          "type": "string"
+        },
+        "minimum_laps": {
+          "type": "integer"
+        },
+        "race_fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "sprint_fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
+          "type": "number",
+          "x-decimals": 1
+        }
+      },
+      "required": [
+        "method",
+        "race_fuel_correction_ms_per_lap",
+        "sprint_fuel_correction_ms_per_lap",
+        "minimum_laps",
+        "max_slope_standard_error_ms_per_lap",
+        "max_slope_relative_standard_error"
+      ],
+      "title": "TyreDegradationModel",
+      "type": "object"
+    },
+    "TyreDegradationRow": {
+      "additionalProperties": false,
+      "description": "One stint, as stints.json has it. Clean laps F1's tyre data gives no stint for are in no row.",
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "compound": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Compound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The stint's compound: the one F1 names for any lap of it. Null where it names none."
+        },
+        "degradation_ms_per_lap": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 2
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null unless fit_status is ok."
+        },
+        "driver_code": {
+          "type": "string"
+        },
+        "excluded_outlier_count": {
+          "type": "integer"
+        },
+        "fit_status": {
+          "$ref": "#/$defs/FitStatus"
+        },
+        "fuel_correction_ms_per_lap": {
+          "description": "Milliseconds a lap.",
+          "type": "number",
+          "x-decimals": 1
+        },
+        "r_squared": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "raw_slope_ms_per_lap": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 2
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds a lap."
+        },
+        "residual_spread_ms": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds."
+        },
+        "sample_count": {
+          "description": "The stint's clean laps that have a tyre age, which are the ones a fit can use. Those left out of the fit as outliers are still counted here: the fit is of this many less excluded_outlier_count.",
+          "type": "integer"
+        },
+        "slope_standard_error_ms_per_lap": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 2
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Milliseconds a lap."
+        },
+        "stint": {
+          "type": "integer"
+        },
+        "stint_length": {
+          "description": "The stint's clean laps, with a tyre age or without.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "driver_code",
+        "compound",
+        "stint",
+        "sample_count",
+        "stint_length",
+        "degradation_ms_per_lap",
+        "raw_slope_ms_per_lap",
+        "fuel_correction_ms_per_lap",
+        "r_squared",
+        "residual_spread_ms",
+        "slope_standard_error_ms_per_lap",
+        "excluded_outlier_count",
+        "fit_status",
+        "caveats"
+      ],
+      "title": "TyreDegradationRow",
+      "type": "object"
+    },
+    "UnscheduledSession": {
+      "additionalProperties": false,
+      "description": "A published session the calendar no longer lists.",
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "meeting_name": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "session_key": {
+          "type": "integer"
+        },
+        "start_time_utc": {
+          "description": "UTC, as ISO 8601.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SessionType"
+        },
+        "year": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_key",
+        "year",
+        "type",
+        "name",
+        "meeting_name",
+        "start_time_utc",
+        "complete"
+      ],
+      "title": "UnscheduledSession",
+      "type": "object"
+    },
+    "Weather": {
+      "description": "weather.json: every weather sample F1 sent, about one a minute.",
+      "items": {
+        "$ref": "#/$defs/WeatherSample"
+      },
+      "title": "Weather",
+      "type": "array"
+    },
+    "WeatherSample": {
+      "additionalProperties": false,
+      "properties": {
+        "air_temp_c": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Degrees Celsius. Null, like the track temperature and the humidity, when F1's feed gave no value for it, or gave the zero it sends for a sensor with no reading: exactly 0 between readings twenty or more from it."
+        },
+        "humidity_pct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Per cent, from 0 to 100."
+        },
+        "lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "In a race or sprint, the lap the leader was on. Null before the start, after the flag, and in any other session."
+        },
+        "rainfall": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null, like any other reading of a sample, when F1's feed gave no value for it."
+        },
+        "time_ms": {
+          "description": "Milliseconds on the session clock.",
+          "type": "integer"
+        },
+        "track_temp_c": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Degrees Celsius."
+        },
+        "wind_speed_kph": {
+          "anyOf": [
+            {
+              "type": "number",
+              "x-decimals": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Kilometres an hour. F1 reports metres a second."
+        }
+      },
+      "required": [
+        "time_ms",
+        "lap_number",
+        "air_temp_c",
+        "track_temp_c",
+        "humidity_pct",
+        "rainfall",
+        "wind_speed_kph"
+      ],
+      "title": "WeatherSample",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Every object published under v2/, by its path there. Braces mark the parts of a path that vary. Generated from f1data/models.py by `python -m f1data schema`; do not edit. x-decimals on a number, or on an array of numbers, is how many decimal places it is rounded to.",
+  "properties": {
+    "generations/{session_key}/{generation}/analysis/car-performance.json": {
+      "$ref": "#/$defs/CarPerformance",
+      "description": "analysis/car-performance.json."
+    },
+    "generations/{session_key}/{generation}/analysis/corner-analysis.json": {
+      "$ref": "#/$defs/CornerAnalysis",
+      "description": "analysis/corner-analysis.json."
+    },
+    "generations/{session_key}/{generation}/analysis/ideal-laps.json": {
+      "$ref": "#/$defs/IdealLaps",
+      "description": "analysis/ideal-laps.json."
+    },
+    "generations/{session_key}/{generation}/analysis/lap-times.json": {
+      "$ref": "#/$defs/LapTimes",
+      "description": "analysis/lap-times.json: each driver's timed laps, ready to chart."
+    },
+    "generations/{session_key}/{generation}/analysis/pace-prediction.json": {
+      "$ref": "#/$defs/PacePrediction",
+      "description": "analysis/pace-prediction.json. Published for practice sessions only: a race has no such file."
+    },
+    "generations/{session_key}/{generation}/analysis/race-pace.json": {
+      "$ref": "#/$defs/RacePace",
+      "description": "analysis/race-pace.json."
+    },
+    "generations/{session_key}/{generation}/analysis/strategy.json": {
+      "$ref": "#/$defs/Strategy",
+      "description": "analysis/strategy.json. The stints and stops themselves are in stints.json and pit-stops.json."
+    },
+    "generations/{session_key}/{generation}/analysis/team-mate-comparison.json": {
+      "$ref": "#/$defs/TeammateComparison",
+      "description": "analysis/team-mate-comparison.json."
+    },
+    "generations/{session_key}/{generation}/analysis/track-dominance.json": {
+      "$ref": "#/$defs/TrackDominance",
+      "description": "analysis/track-dominance.json."
+    },
+    "generations/{session_key}/{generation}/analysis/tyre-degradation.json": {
+      "$ref": "#/$defs/TyreDegradation",
+      "description": "analysis/tyre-degradation.json."
+    },
+    "generations/{session_key}/{generation}/corners.json": {
+      "$ref": "#/$defs/Corners",
+      "description": "corners.json: the circuit's official corner positions. Empty when none were archived."
+    },
+    "generations/{session_key}/{generation}/coverage.json": {
+      "$ref": "#/$defs/Coverage",
+      "description": "coverage.json: what arrived for this session, and what it is short of."
+    },
+    "generations/{session_key}/{generation}/drivers.json": {
+      "$ref": "#/$defs/Drivers",
+      "description": "drivers.json: everyone in F1's driver list or the classification."
+    },
+    "generations/{session_key}/{generation}/laps.json": {
+      "$ref": "#/$defs/Laps",
+      "description": "laps.json: every lap of every driver, in timing order."
+    },
+    "generations/{session_key}/{generation}/manifest.json": {
+      "$ref": "#/$defs/Manifest",
+      "description": "manifest.json: every file of a generation. Its SHA-256 is the generation's name."
+    },
+    "generations/{session_key}/{generation}/pit-stops.json": {
+      "$ref": "#/$defs/PitStops",
+      "description": "pit-stops.json: every entry to the pit lane, with F1's own figures where it gives them."
+    },
+    "generations/{session_key}/{generation}/position-replay.json": {
+      "$ref": "#/$defs/PositionReplay",
+      "description": "position-replay.json: where every car was, every few seconds."
+    },
+    "generations/{session_key}/{generation}/race-control.json": {
+      "$ref": "#/$defs/RaceControl",
+      "description": "race-control.json: race control's messages, in order."
+    },
+    "generations/{session_key}/{generation}/results.json": {
+      "$ref": "#/$defs/Results",
+      "description": "results.json: the classification in finishing order, then anyone it leaves out."
+    },
+    "generations/{session_key}/{generation}/stints.json": {
+      "$ref": "#/$defs/Stints",
+      "description": "stints.json: each run of laps a driver did on one set of tyres."
+    },
+    "generations/{session_key}/{generation}/summary.json": {
+      "$ref": "#/$defs/SessionSummary",
+      "description": "summary.json: what the session is, in F1's own words."
+    },
+    "generations/{session_key}/{generation}/telemetry/index.json": {
+      "$ref": "#/$defs/TelemetryIndex",
+      "description": "telemetry/index.json: which laps have telemetry, and where."
+    },
+    "generations/{session_key}/{generation}/telemetry/{driver_code}.json": {
+      "$ref": "#/$defs/DriverTelemetry",
+      "description": "telemetry/<driver_code>.json: every lap of one driver that has car data from end to end."
+    },
+    "generations/{session_key}/{generation}/weather.json": {
+      "$ref": "#/$defs/Weather",
+      "description": "weather.json: every weather sample F1 sent, about one a minute."
+    },
+    "index.json": {
+      "$ref": "#/$defs/Index",
+      "description": "index.json: the calendar as it is now, with each published session attached."
+    },
+    "pointers/{session_key}.json": {
+      "$ref": "#/$defs/Pointer",
+      "description": "pointers/<session_key>.json: which generation is the published one."
+    },
+    "standings/{year}.json": {
+      "$ref": "#/$defs/Standings",
+      "description": "standings/<year>.json: the championship tables as Jolpica has them."
+    }
+  },
+  "required": [
+    "index.json",
+    "pointers/{session_key}.json",
+    "standings/{year}.json",
+    "generations/{session_key}/{generation}/manifest.json",
+    "generations/{session_key}/{generation}/summary.json",
+    "generations/{session_key}/{generation}/drivers.json",
+    "generations/{session_key}/{generation}/laps.json",
+    "generations/{session_key}/{generation}/results.json",
+    "generations/{session_key}/{generation}/stints.json",
+    "generations/{session_key}/{generation}/pit-stops.json",
+    "generations/{session_key}/{generation}/weather.json",
+    "generations/{session_key}/{generation}/race-control.json",
+    "generations/{session_key}/{generation}/corners.json",
+    "generations/{session_key}/{generation}/coverage.json",
+    "generations/{session_key}/{generation}/position-replay.json",
+    "generations/{session_key}/{generation}/telemetry/index.json",
+    "generations/{session_key}/{generation}/analysis/lap-times.json",
+    "generations/{session_key}/{generation}/analysis/race-pace.json",
+    "generations/{session_key}/{generation}/analysis/tyre-degradation.json",
+    "generations/{session_key}/{generation}/analysis/strategy.json",
+    "generations/{session_key}/{generation}/analysis/ideal-laps.json",
+    "generations/{session_key}/{generation}/analysis/team-mate-comparison.json",
+    "generations/{session_key}/{generation}/analysis/track-dominance.json",
+    "generations/{session_key}/{generation}/analysis/corner-analysis.json",
+    "generations/{session_key}/{generation}/analysis/car-performance.json",
+    "generations/{session_key}/{generation}/analysis/pace-prediction.json",
+    "generations/{session_key}/{generation}/telemetry/{driver_code}.json"
+  ],
+  "title": "Formula 1 Data, published format 2",
+  "type": "object",
+  "x-format-version": 2
+}

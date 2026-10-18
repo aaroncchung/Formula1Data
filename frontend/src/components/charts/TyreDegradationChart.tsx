@@ -1,82 +1,170 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   CartesianGrid,
-  Legend,
+  ResponsiveContainer,
   Scatter,
   ScatterChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis
+  YAxis,
+  ZAxis,
+  type TooltipContentProps
 } from "recharts";
 
+import { DriverLegend, useDriverSelection } from "@/components/charts/DriverLegend";
+import { CHART_TOOLTIP_STYLE } from "@/lib/chart-utils";
+import { visibleDrivers } from "@/lib/driver-selection";
+import { driverStyle, teamDriverStyles } from "@/lib/driver-style";
 import { formatMs } from "@/lib/format";
-import type { Lap, TyreDegradationResult } from "@/types/domain";
+import {
+  describeTyreAgePlot,
+  isTyreAgePoint,
+  lapsFittedLabel,
+  reportedFitCount,
+  tyreAgePlot,
+  tyreFit,
+  tyreFitLabel,
+  tyreFitsFor
+} from "@/lib/tyre-chart";
+import type { Driver, Lap, TyreDegradation, TyreDegradationRow } from "@/lib/published/types";
 
-const colors = ["#f33d3d", "#2de0c8", "#f5b83d", "#a78bfa", "#fb7185", "#38bdf8"];
+/** Stint fits shown before the reader asks for the rest: three rows of cards. */
+const FIT_PREVIEW_COUNT = 9;
 
 export function TyreDegradationChart({
   laps,
-  degradation
+  degradation,
+  drivers
 }: {
-  laps: Lap[];
-  degradation: TyreDegradationResult;
+  laps: ReadonlyArray<Lap>;
+  degradation: TyreDegradation;
+  drivers: ReadonlyArray<Driver>;
 }) {
-  const byDriver = Array.from(new Set(laps.map((lap) => lap.driver_code))).slice(0, 8);
+  const plot = useMemo(() => tyreAgePlot(laps), [laps]);
+  const codes = useMemo(() => plot.drivers.map((entry) => entry.driver), [plot]);
+  const styles = useMemo(
+    () => teamDriverStyles(drivers, codes.map((code) => ({ code }))),
+    [drivers, codes]
+  );
+  const selection = useDriverSelection(codes);
+  const [showAllFits, setShowAllFits] = useState(false);
+
+  const shown = new Set(visibleDrivers(codes, selection.hidden));
+  const fits = tyreFitsFor(degradation.rows, [...shown], showAllFits ? degradation.rows.length : FIT_PREVIEW_COUNT);
+  const reported = reportedFitCount(degradation.rows, [...shown]);
+
   return (
     <div className="space-y-4">
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 8, right: 20, left: 8, bottom: 8 }}>
             <CartesianGrid stroke="#293246" strokeDasharray="3 3" />
-            <XAxis dataKey="tyre_age" name="Tyre age" stroke="#94a3b8" />
+            <XAxis dataKey="tyre_age" name="Tyre age" type="number" allowDecimals={false} stroke="#94a3b8" />
             <YAxis
               dataKey="lap_time_ms"
               name="Lap time"
+              type="number"
+              domain={["auto", "auto"]}
               stroke="#94a3b8"
               tickFormatter={(value) => formatMs(Number(value))}
             />
-            <Tooltip
-              cursor={{ strokeDasharray: "3 3" }}
-              contentStyle={{ background: "#111722", border: "1px solid #283246", color: "#e5edf8" }}
-              formatter={(value, name) =>
-                name === "lap_time_ms" ? formatMs(Number(value)) : String(value)
-              }
-            />
-            <Legend />
-            {byDriver.map((driver, index) => (
-              <Scatter
-                key={driver}
-                name={driver}
-                data={laps.filter(
-                  (lap) =>
-                    lap.driver_code === driver &&
-                    lap.lap_time_ms &&
-                    lap.tyre_age &&
-                    !lap.is_pit_in_lap &&
-                    !lap.is_pit_out_lap
-                )}
-                fill={colors[index % colors.length]}
-              />
-            ))}
+            <ZAxis range={[30, 30]} />
+            <Tooltip cursor={{ strokeDasharray: "3 3" }} content={TyreAgeTooltip} />
+            {plot.drivers
+              .filter((entry) => shown.has(entry.driver))
+              .map((entry) => {
+                const style = driverStyle(styles, entry.driver);
+                return (
+                  <Scatter
+                    key={entry.driver}
+                    name={entry.driver}
+                    data={entry.points}
+                    fill={style.color}
+                    fillOpacity={style.hollow ? 0 : 1}
+                    stroke={style.color}
+                    strokeWidth={1.5}
+                    isAnimationActive={false}
+                  />
+                );
+              })}
           </ScatterChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {degradation.rows.slice(0, 6).map((row) => (
-          <div key={`${row.driver_code}-${row.stint}-${row.compound}`} className="rounded border border-line bg-white/[0.03] p-3">
-            <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
-            <div className="mt-1 text-xs text-slate-400">{row.compound}</div>
-            <div className="mt-2 text-lg font-black text-aqua">
-              {row.degradation_ms_per_lap === null || row.degradation_ms_per_lap === undefined
-                ? "--"
-                : `${row.degradation_ms_per_lap} ms/lap`}
-            </div>
+      <p className="text-xs text-slate-500">{describeTyreAgePlot(plot)}</p>
+      <DriverLegend drivers={codes} styles={styles} selection={selection} mark="dot" />
+      {fits.total ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="font-semibold text-slate-300">
+              {fits.shown.length === fits.total
+                ? `${fits.total} ${fits.total === 1 ? "stint" : "stints"} for the drivers shown`
+                : `${fits.shown.length} of ${fits.total} stints for the drivers shown`}
+            </span>
+            {/* A stint without a reported rate still has a card, which says so. */}
+            <span>{reported === fits.total ? "Each has a fitted rate." : `${reported} of ${fits.total} have a fitted rate.`}</span>
+            {fits.total > FIT_PREVIEW_COUNT ? (
+              <button
+                type="button"
+                className="rounded border border-line px-2 py-0.5 text-xs text-slate-300 transition hover:border-slate-500"
+                onClick={() => setShowAllFits((current) => !current)}
+              >
+                {showAllFits ? "Show fewer" : `Show all ${fits.total}`}
+              </button>
+            ) : null}
           </div>
-        ))}
-      </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {fits.shown.map((row) => (
+              <TyreFitCard key={`${row.driver_code}-${row.stint}-${row.compound}`} row={row} />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+/**
+ * One stint's fit. A fit that was not reported is not given a number: the
+ * card says there is no rate, and why on hover.
+ */
+function TyreFitCard({ row }: { row: TyreDegradationRow }) {
+  const fit = tyreFit(row);
+  return (
+    <div className="rounded border border-line bg-white/[0.03] p-3" title={fit.status === "reported" ? undefined : fit.reason}>
+      <div className="font-mono text-sm font-bold text-white">{row.driver_code} S{row.stint}</div>
+      <div className="mt-1 text-xs text-slate-400">
+        {row.compound ?? "Compound not reported"} · {lapsFittedLabel(row)}
+      </div>
+      {fit.status === "reported" ? (
+        <div className="mt-2 text-lg font-black text-aqua">
+          {tyreFitLabel(fit)}
+          {fit.standard_error_ms_per_lap === null ? null : (
+            <span className="ml-2 text-xs font-normal text-slate-500">± {fit.standard_error_ms_per_lap.toFixed(1)}</span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-2 text-sm font-semibold text-slate-500">{tyreFitLabel(fit)}</div>
+      )}
+    </div>
+  );
+}
+
+function TyreAgeTooltip({ active, payload }: TooltipContentProps) {
+  const point: unknown = payload?.[0]?.payload;
+  if (!active || !isTyreAgePoint(point)) {
+    return null;
+  }
+  return (
+    <div className="rounded px-3 py-2 text-xs" style={CHART_TOOLTIP_STYLE}>
+      <div className="font-mono font-bold text-white">
+        {point.driver_code} · lap {point.lap_number}
+      </div>
+      <div className="mt-1 font-mono">{formatMs(point.lap_time_ms)}</div>
+      <div className="mt-1 text-slate-400">
+        {point.compound ?? "Unknown compound"} · tyre age {point.tyre_age}
+      </div>
+    </div>
+  );
+}

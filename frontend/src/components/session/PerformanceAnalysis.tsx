@@ -1,47 +1,35 @@
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { DataTable } from "@/components/data-table/DataTable";
 import { EmptyState } from "@/components/dashboard/EmptyState";
+import { AnalysisCaveats } from "@/components/session/AnalysisCaveats";
 import { DriverBadge } from "@/components/session/Badges";
-import { formatDelta, formatMs, formatNumber } from "@/lib/format";
-import type {
-  CarPerformanceResult,
-  CornerAnalysisResult,
-  Driver,
-  IdealLapsResult,
-  PacePredictionResult,
-  TeammateComparisonResult,
-  TrackDominanceResult
-} from "@/types/domain";
+import { TeammateComparison } from "@/components/session/TeammateComparison";
+import { TrackDominance } from "@/components/session/TrackDominance";
+import { teamColorByDriver } from "@/lib/driver-style";
+import { formatDelta, formatMs, formatNumber, formatSeconds } from "@/lib/format";
+import { cornerName, cornerPlace, cornerSourceNote, noBrakePoint, unavailableAnalyses, type AnalysisNotice } from "@/lib/performance-view";
+import type { SessionPerformance } from "@/lib/published/artifacts";
+import type { CarPerformance, CornerAnalysis, Driver, IdealLaps, PacePrediction } from "@/lib/published/types";
 
-type PerformanceAnalysisProps = {
-  drivers: Driver[];
-  idealLaps: IdealLapsResult | null;
-  teammateComparison: TeammateComparisonResult | null;
-  trackDominance: TrackDominanceResult | null;
-  cornerAnalysis: CornerAnalysisResult | null;
-  carPerformance: CarPerformanceResult | null;
-  pacePrediction: PacePredictionResult | null;
-};
+type Drivers = ReadonlyArray<Driver>;
 
-export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
-  const hasNewAnalysis = Boolean(
-    props.trackDominance?.minisectors.length || props.cornerAnalysis?.corners.length ||
-    props.carPerformance?.drivers.length || props.pacePrediction?.drivers.length
-  );
+/** Each analysis is null when the session does not have it. */
+export function PerformanceAnalysis(props: SessionPerformance) {
+  const notices = unavailableAnalyses(props);
   return (
     <div className="space-y-5">
       <div className="grid gap-5 2xl:grid-cols-2">
         <ChartPanel title="Ideal lap potential" description="Best sectors combined versus each driver’s best complete lap.">
           <IdealLapsView result={props.idealLaps} drivers={props.drivers} />
         </ChartPanel>
-        <ChartPanel title="Team-mate race pace" description="Average clean-lap comparison within each team.">
-          <TeammateView result={props.teammateComparison} drivers={props.drivers} />
+        <ChartPanel title="Team-mate race pace" description="The two drivers of each team, the quicker first, with each driver’s average lap.">
+          <TeammateComparison result={props.teammateComparison} drivers={props.drivers} />
           <AnalysisCaveats caveats={props.teammateComparison?.caveats} />
         </ChartPanel>
       </div>
       {props.trackDominance?.minisectors.length ? (
         <ChartPanel title="Track dominance" description={`${props.trackDominance.minisector_count} minisectors coloured by the quickest representative lap.`}>
-          <TrackDominanceView result={props.trackDominance} drivers={props.drivers} />
+          <TrackDominance result={props.trackDominance} drivers={props.drivers} corners={props.corners} />
           <AnalysisCaveats caveats={props.trackDominance.caveats} />
         </ChartPanel>
       ) : null}
@@ -52,7 +40,7 @@ export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
         </ChartPanel>
       ) : null}
       {props.cornerAnalysis?.corners.length ? (
-        <ChartPanel title="Corner analysis" description="Braking, apex and exit metrics detected from representative telemetry laps.">
+        <ChartPanel title="Corner analysis" description={cornerSourceNote(props.cornerAnalysis.corner_source)}>
           <CornerAnalysisView result={props.cornerAnalysis} drivers={props.drivers} />
           <AnalysisCaveats caveats={props.cornerAnalysis.caveats} />
         </ChartPanel>
@@ -63,19 +51,34 @@ export function PerformanceAnalysis(props: PerformanceAnalysisProps) {
           <AnalysisCaveats caveats={props.pacePrediction.caveats} />
         </ChartPanel>
       ) : null}
-      {!hasNewAnalysis ? (
-        <EmptyState
-          title="Advanced telemetry models are not generated yet"
-          detail="Ideal-lap and team-mate analysis are shown above. Re-ingest this session to add track dominance, corner, car-performance, and pace-prediction artifacts."
-        />
-      ) : null}
+      <NotShown notices={notices} />
     </div>
   );
 }
 
-function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; drivers: Driver[] }) {
-  if (!result?.rows.length) return <EmptyState title="Ideal laps unavailable" detail="No sector-combination artifact exists for this session." />;
-  const colors = driverColors(drivers);
+/** The analyses with no panel above, each with its reason, so that none is missing without a word. */
+function NotShown({ notices }: { notices: AnalysisNotice[] }) {
+  if (notices.length === 0) {
+    return null;
+  }
+  return (
+    <section className="rounded border border-line bg-panel p-4" aria-label="Analyses not shown">
+      <div className="eyebrow">Not shown for this session</div>
+      <ul className="mt-3 space-y-1.5 text-sm text-slate-400">
+        {notices.map((notice) => (
+          <li key={notice.title}>
+            <span className="font-semibold text-slate-200">{notice.title}.</span> {notice.reason}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function IdealLapsView({ result, drivers }: { result: IdealLaps | null; drivers: Drivers }) {
+  if (!result) return <EmptyState title="Ideal laps unavailable" detail="This session has no ideal-lap analysis." />;
+  if (!result.rows.length) return <EmptyState title="Ideal laps unavailable" detail="No driver has a time in every sector." />;
+  const colors = teamColorByDriver(drivers);
   return (
     <DataTable rows={result.rows} columns={[
       { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
@@ -86,122 +89,69 @@ function IdealLapsView({ result, drivers }: { result: IdealLapsResult | null; dr
   );
 }
 
-function TeammateView({ result, drivers }: { result: TeammateComparisonResult | null; drivers: Driver[] }) {
-  if (!result?.rows.length) return <EmptyState title="Team-mate comparison unavailable" detail="This session does not contain two comparable drivers per team." />;
-  const colors = driverColors(drivers);
-  return (
-    <div className="space-y-2">
-      {result.rows.map((row) => (
-        <div key={row.team} className="grid gap-3 rounded-md border border-line/70 bg-carbon/40 p-3 sm:grid-cols-[130px_1fr_auto] sm:items-center">
-          <div className="truncate text-sm font-semibold text-slate-300">{row.team}</div>
-          <div className="flex flex-wrap items-center gap-3">
-            {row.drivers.map((driver) => (
-              <div key={driver.driver_code} className="flex items-center gap-2">
-                <DriverBadge code={driver.driver_code} color={colors[driver.driver_code]} />
-                <span className="font-mono text-xs text-slate-400">{formatMs(driver.average_lap_ms)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="font-mono text-sm font-bold text-amber">{formatDelta(row.gap_ms)}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TrackDominanceView({ result, drivers }: { result: TrackDominanceResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
-  const sectors = result.minisectors.filter((sector) => sector.midpoint.x != null && sector.midpoint.y != null && sector.winner_driver_code);
-  if (sectors.length < 2) return <EmptyState title="Track map unavailable" detail="The minisector artifact has no usable coordinates." />;
-  const minX = Math.min(...sectors.map((sector) => Number(sector.midpoint.x)));
-  const maxX = Math.max(...sectors.map((sector) => Number(sector.midpoint.x)));
-  const minY = Math.min(...sectors.map((sector) => Number(sector.midpoint.y)));
-  const maxY = Math.max(...sectors.map((sector) => Number(sector.midpoint.y)));
-  const width = Math.max(maxX - minX, 1);
-  const height = Math.max(maxY - minY, 1);
-  const point = (x: number, y: number) => ({ x: 25 + ((x - minX) / width) * 550, y: 375 - ((y - minY) / height) * 350 });
-  const winners = [...new Set(sectors.map((sector) => sector.winner_driver_code).filter((winner): winner is string => Boolean(winner)))];
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-      <svg viewBox="0 0 600 400" className="min-h-[280px] w-full rounded-md border border-line/70 bg-carbon/50 p-3" role="img" aria-label="Track dominance by driver">
-        {sectors.slice(1).map((sector, index) => {
-          const from = point(Number(sectors[index].midpoint.x), Number(sectors[index].midpoint.y));
-          const to = point(Number(sector.midpoint.x), Number(sector.midpoint.y));
-          return <line key={sector.index} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={colors[sector.winner_driver_code || ""] || "#94a3b8"} strokeWidth="10" strokeLinecap="round" />;
-        })}
-      </svg>
-      <div className="space-y-2">
-        <div className="eyebrow mb-3">Minisectors won</div>
-        {winners.map((winner) => {
-          const count = sectors.filter((sector) => sector.winner_driver_code === winner).length;
-          return (
-            <div key={winner} className="flex items-center justify-between rounded-md border border-line/70 bg-carbon/40 p-3">
-              <DriverBadge code={winner} color={colors[winner]} />
-              <span className="font-mono text-sm font-bold text-white">{count}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function CarPerformanceView({ result, drivers }: { result: CarPerformanceResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+function CarPerformanceView({ result, drivers }: { result: CarPerformance; drivers: Drivers }) {
+  const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
-    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
+    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     { key: "max", header: "Max", align: "right", render: (row) => `${formatNumber(row.max_speed_kph, 0)} km/h` },
     { key: "low", header: "Low speed", align: "right", render: (row) => formatNumber(row.low_speed_avg_kph, 0) },
     { key: "medium", header: "Medium", align: "right", render: (row) => formatNumber(row.medium_speed_avg_kph, 0) },
     { key: "high", header: "High speed", align: "right", render: (row) => formatNumber(row.high_speed_avg_kph, 0) },
-    { key: "throttle", header: "Full throttle", align: "right", render: (row) => `${formatNumber(row.full_throttle_pct, 1)}%` },
-    { key: "braking", header: "Braking", align: "right", render: (row) => `${formatNumber(row.braking_pct, 1)}%` }
+    { key: "throttle", header: "Full throttle", align: "right", render: (row) => percent(row.full_throttle_pct) },
+    { key: "braking", header: "Braking", align: "right", render: (row) => percent(row.braking_pct) }
   ]} />;
 }
 
-function CornerAnalysisView({ result, drivers }: { result: CornerAnalysisResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
-  const rows = result.corners.flatMap((corner) => corner.drivers.map((driver) => ({ ...driver, corner_number: corner.corner_number, distance_m: corner.distance_m })));
+function CornerAnalysisView({ result, drivers }: { result: CornerAnalysis; drivers: Drivers }) {
+  const colors = teamColorByDriver(drivers);
+  const rows = result.corners.flatMap((corner) =>
+    corner.drivers.map((driver) => ({
+      ...driver,
+      corner: cornerName(corner, result.corner_source)
+    }))
+  );
   return <DataTable rows={rows} columns={[
-    { key: "corner", header: "Corner", render: (row) => `T${row.corner_number}` },
+    { key: "corner", header: "Corner", render: (row) => row.corner },
+    // Where along the driver's own lap the corner is, so a row can be found on that lap's distance axis.
+    { key: "at", header: "At", align: "right", render: (row) => metres(cornerPlace(row)) },
     { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
-    { key: "brake", header: "Brake point", align: "right", render: (row) => `${formatNumber(row.brake_start_m, 0)} m` },
-    { key: "distance", header: "Brake distance", align: "right", render: (row) => `${formatNumber(row.braking_distance_m, 0)} m` },
-    { key: "entry", header: "Entry", align: "right", render: (row) => `${formatNumber(row.entry_speed_kph, 0)} km/h` },
-    { key: "apex", header: "Apex", align: "right", render: (row) => `${formatNumber(row.apex_speed_kph, 0)} km/h` },
-    { key: "exit", header: "Exit", align: "right", render: (row) => `${formatNumber(row.exit_speed_kph, 0)} km/h` }
+    {
+      key: "brake",
+      header: "Brake point",
+      align: "right",
+      // A driver can take a corner without braking for it; the row then has an apex and an exit and no braking.
+      // And F1's feed can have no brake reading on the way in, which is not the same and is said apart.
+      render: (row) => (row.brake_start_m === null ? <span className="text-slate-500">{noBrakePoint(row)}</span> : `${formatNumber(row.brake_start_m, 0)} m`)
+    },
+    { key: "distance", header: "Brake distance", align: "right", render: (row) => metres(row.braking_distance_m) },
+    { key: "entry", header: "Entry", align: "right", render: (row) => speed(row.entry_speed_kph) },
+    { key: "apex", header: "Apex", align: "right", render: (row) => speed(row.apex_speed_kph) },
+    { key: "exit", header: "Exit", align: "right", render: (row) => speed(row.exit_speed_kph) }
   ]} />;
 }
 
-function PacePredictionView({ result, drivers }: { result: PacePredictionResult; drivers: Driver[] }) {
-  const colors = driverColors(drivers);
+function PacePredictionView({ result, drivers }: { result: PacePrediction; drivers: Drivers }) {
+  const colors = teamColorByDriver(drivers);
   return <DataTable rows={result.drivers} columns={[
-    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code || "--"} color={colors[row.driver_code || ""]} /> },
+    { key: "driver", header: "Driver", render: (row) => <DriverBadge code={row.driver_code} color={colors[row.driver_code]} /> },
     { key: "pace", header: "Est. pace", align: "right", render: (row) => formatMs(row.estimated_race_pace_ms) },
     { key: "gap", header: "Gap", align: "right", render: (row) => formatDelta(row.gap_to_best_ms) },
-    { key: "runs", header: "Long runs", align: "right", render: (row) => row.stint_count ?? "--" },
-    { key: "laps", header: "Laps", align: "right", render: (row) => row.sample_count ?? "--" },
-    { key: "spread", header: "Variability", align: "right", render: (row) => formatDelta(row.variability_ms) },
-    { key: "confidence", header: "Confidence", render: (row) => String(row.confidence ?? "--") }
+    { key: "runs", header: "Long runs", align: "right", render: (row) => row.stint_count },
+    { key: "laps", header: "Laps", align: "right", render: (row) => row.sample_count },
+    { key: "spread", header: "Variability", align: "right", render: (row) => formatSeconds(row.variability_ms) },
+    { key: "confidence", header: "Confidence", render: (row) => row.confidence }
   ]} />;
 }
 
-function driverColors(drivers: Driver[]) {
-  const used = new Set<string>();
-  return Object.fromEntries(drivers.map((driver) => {
-    const teamColor = driver.team.color || "#94a3b8";
-    const color = used.has(teamColor) ? distinctColor(driver.code) : teamColor;
-    used.add(color);
-    return [driver.code, color];
-  }));
+// A figure the analysis has none of is a dash on its own, without a unit after it.
+function speed(kph: number | null): string {
+  return kph === null ? "--" : `${formatNumber(kph, 0)} km/h`;
 }
 
-function distinctColor(code: string) {
-  const hue = [...code].reduce((sum, char) => sum + char.charCodeAt(0) * 17, 0) % 360;
-  return `hsl(${hue} 78% 64%)`;
+function metres(value: number | null): string {
+  return value === null ? "--" : `${formatNumber(value, 0)} m`;
 }
 
-function AnalysisCaveats({ caveats }: { caveats?: string[] }) {
-  if (!caveats?.length) return null;
-  return <p className="mt-4 rounded-md border border-amber/20 bg-amber/5 p-3 text-xs leading-5 text-slate-400"><span className="font-bold text-amber">Method note: </span>{caveats.join(" ")}</p>;
+function percent(value: number | null): string {
+  return value === null ? "--" : `${formatNumber(value, 1)}%`;
 }

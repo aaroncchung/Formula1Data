@@ -1,16 +1,23 @@
 export const APP_NAME = "Formula 1 Data";
 
-export const NAV_ITEMS = [
+export type NavItem = {
+  href: string;
+  label: string;
+  /** Other paths that belong to this entry, so that it stays highlighted on them. */
+  under?: ReadonlyArray<string>;
+};
+
+export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { href: "/", label: "Dashboard" },
-  { href: "/seasons", label: "Seasons" },
+  // A season, a meeting and a session are each a page of their own, named in
+  // the query string, and all of them are reached from the list of seasons.
+  { href: "/seasons", label: "Seasons", under: ["/season", "/meeting", "/session"] },
   { href: "/telemetry", label: "Telemetry" },
   { href: "/strategy", label: "Strategy" },
   { href: "/standings", label: "Standings" },
   { href: "/drivers", label: "Drivers" },
   { href: "/teams", label: "Teams" },
-  { href: "/circuits", label: "Circuits" },
-  { href: "/live", label: "Live" },
-  { href: "/settings", label: "Settings" }
+  { href: "/circuits", label: "Circuits" }
 ];
 
 export const COMPOUND_COLORS: Record<string, string> = {

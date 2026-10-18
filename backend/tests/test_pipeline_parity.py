@@ -107,9 +107,12 @@ class SharedAnalysisSourceTests(unittest.TestCase):
 
 class AdvancedAnalysisTests(unittest.TestCase):
     def setUp(self) -> None:
+        # The lap times match the telemetry below (1,000 m at 10 and 11 ms/m).
+        # Track dominance only compares laps whose telemetry clock covers the
+        # timed lap; these used to say 89 s and 90 s over 10 s of telemetry.
         self.laps = [
-            _lap("AAA", 2, 89_000),
-            _lap("BBB", 2, 90_000),
+            _lap("AAA", 2, 10_000),
+            _lap("BBB", 2, 11_000),
         ]
         self.telemetry = _telemetry_rows("AAA", 2, time_factor=10.0) + _telemetry_rows(
             "BBB", 2, time_factor=11.0
@@ -164,7 +167,8 @@ class AdvancedAnalysisTests(unittest.TestCase):
 
     def test_fuel_adjusted_degradation_filters_large_outlier(self):
         laps = []
-        for tyre_age in range(1, 7):
+        # Ten laps, so nine remain once the outlier goes: a rate needs eight.
+        for tyre_age in range(1, 11):
             lap_time = 90_000 + 45 * tyre_age
             if tyre_age == 4:
                 lap_time += 5_000
